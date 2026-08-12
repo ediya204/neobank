@@ -880,7 +880,8 @@ export default function PartnerApiIntegration() {
                     borderRadius: 1,
                     bgcolor: 'background.neutral',
                     color: 'text.primary',
-                    fontSize: 14,
+                    typography: 'body2',
+                    fontFamily: 'monospace',
                     overflowWrap: 'anywhere',
                   }}
                 >
@@ -2006,7 +2007,8 @@ export default function PartnerApiIntegration() {
                 bgcolor: 'grey.900',
                 color: 'common.white',
                 overflowX: 'auto',
-                fontSize: 13,
+                typography: 'body2',
+                fontFamily: 'monospace',
               }}
             >
               {`CF-Access-Client-Id: <CLIENT_ID>
@@ -2324,7 +2326,8 @@ Idempotency-Key: <UUID>`}
                     overflowX: 'auto',
                     whiteSpace: 'pre-wrap',
                     overflowWrap: 'anywhere',
-                    fontSize: 13,
+                    typography: 'body2',
+                    fontFamily: 'monospace',
                   }}
                 >
                   {formatJson(selectedDelivery.payload)}
@@ -2607,7 +2610,7 @@ function CredentialProgress({
                 flexShrink: 0,
                 bgcolor: stepBackground,
                 color: stepColor,
-                fontSize: 12,
+                typography: 'caption',
                 fontWeight: 700,
               }}
             >

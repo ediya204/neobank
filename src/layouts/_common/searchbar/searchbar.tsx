@@ -115,7 +115,7 @@ function Searchbar() {
         <Iconify icon="solar:magnifier-linear" />
       </IconButton>
 
-      {lgUp && <Label sx={{ px: 0.75, fontSize: 12, color: 'text.secondary' }}>⌘K</Label>}
+      {lgUp && <Label sx={{ px: 0.75, typography: 'caption', color: 'text.secondary' }}>⌘K</Label>}
     </Stack>
   );
 

@@ -20,12 +20,7 @@ import Typography from '@mui/material/Typography';
 import { AuthApiError } from 'src/auth/context/jwt/auth-api';
 import { useAuthContext } from 'src/auth/hooks';
 import { getRoleLogin, safeReturnTo } from 'src/auth/role-access';
-import {
-  AuthFlowResult,
-  AuthRole,
-  AuthSessionUser,
-  TotpSetupData,
-} from 'src/auth/types';
+import { AuthFlowResult, AuthRole, AuthSessionUser, TotpSetupData } from 'src/auth/types';
 import { useBoolean } from 'src/hooks/use-boolean';
 import { useRouter, useSearchParams } from 'src/routes/hooks';
 import Iconify from 'src/components/iconify';
@@ -35,12 +30,7 @@ import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
 import { paths } from 'src/routes/paths';
 import { RouterLink } from 'src/routes/components';
 
-type Stage =
-  | 'credentials'
-  | 'setup'
-  | 'totp_enroll'
-  | 'totp_verify'
-  | 'recovery_codes';
+type Stage = 'credentials' | 'setup' | 'totp_enroll' | 'totp_verify' | 'recovery_codes';
 
 type Props = {
   initialMode?: 'login' | 'setup';
@@ -84,15 +74,8 @@ function digitsOnly(value: string) {
 
 export default function JwtLoginView({ initialMode = 'login', expectedRole }: Props) {
   const { t } = useTranslation('common');
-  const {
-    login,
-    completeSetup,
-    setupTotp,
-    verifyTotp,
-    refreshSession,
-    logout,
-    sessionError,
-  } = useAuthContext();
+  const { login, completeSetup, setupTotp, verifyTotp, refreshSession, logout, sessionError } =
+    useAuthContext();
   const { enqueueSnackbar } = useSnackbar();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -107,14 +90,11 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     fragmentParams.get('invite_token') ||
     fragmentParams.get('token') ||
     '';
-  const invitationToken =
-    initialMode === 'setup' ? fragmentSetupToken : '';
+  const invitationToken = initialMode === 'setup' ? fragmentSetupToken : '';
   const returnTo = searchParams.get('returnTo');
   const invitationEmail = searchParams.get('email') || '';
 
-  const [stage, setStage] = useState<Stage>(
-    initialMode === 'setup' ? 'setup' : 'credentials'
-  );
+  const [stage, setStage] = useState<Stage>(initialMode === 'setup' ? 'setup' : 'credentials');
   const [email, setEmail] = useState(invitationEmail);
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
@@ -133,27 +113,24 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
   }, [fragmentSetupToken]);
 
-  const loginSchema = useMemo(
-    () => {
-      const accountSchema = Yup.string()
-        .trim()
-        .required(
-          localPortalBypass
-            ? t('auth.validation.local_account_required')
-            : t('auth.validation.email_required')
-        )
-        .max(254, t('auth.validation.email_too_long'));
-      return Yup.object().shape({
-        email: localPortalBypass
-          ? accountSchema
-          : accountSchema.email(t('auth.validation.email_invalid')),
-        password: Yup.string()
-          .required(t('auth.validation.password_required'))
-          .max(128, t('auth.validation.password_too_long')),
-      });
-    },
-    [localPortalBypass, t]
-  );
+  const loginSchema = useMemo(() => {
+    const accountSchema = Yup.string()
+      .trim()
+      .required(
+        localPortalBypass
+          ? t('auth.validation.local_account_required')
+          : t('auth.validation.email_required')
+      )
+      .max(254, t('auth.validation.email_too_long'));
+    return Yup.object().shape({
+      email: localPortalBypass
+        ? accountSchema
+        : accountSchema.email(t('auth.validation.email_invalid')),
+      password: Yup.string()
+        .required(t('auth.validation.password_required'))
+        .max(128, t('auth.validation.password_too_long')),
+    });
+  }, [localPortalBypass, t]);
 
   const setupSchema = useMemo(
     () =>
@@ -291,11 +268,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   const applyFlowResult = useCallback(
     async (result: AuthFlowResult) => {
       const nextEnrollment = result.enrollmentToken || enrollmentToken;
-      if (
-        result.user &&
-        result.user.role !== expectedRole &&
-        result.nextStep !== 'authenticated'
-      ) {
+      if (result.user && result.user.role !== expectedRole && result.nextStep !== 'authenticated') {
         await enforceEntryRole(result.user, false);
       }
       if (result.challengeToken) setChallengeToken(result.challengeToken);
@@ -331,7 +304,11 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
         return;
       }
 
-      throw new AuthApiError(502, 'invalid_auth_response', 'The next authentication step is missing');
+      throw new AuthApiError(
+        502,
+        'invalid_auth_response',
+        'The next authentication step is missing'
+      );
     },
     [
       codeMethods,
@@ -350,11 +327,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     setErrorMessage('');
     setEmail(values.email.trim().toLowerCase());
     try {
-      const result = await login(
-        values.email.trim().toLowerCase(),
-        values.password,
-        expectedRole
-      );
+      const result = await login(values.email.trim().toLowerCase(), values.password, expectedRole);
       loginMethods.setValue('password', '');
       await applyFlowResult(result);
     } catch (error) {
@@ -445,15 +418,9 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
 
   const stageCopy: Record<Stage, { eyebrow: string; title: string; subtitle: string }> = {
     credentials: {
-      eyebrow: localPortalBypass
-        ? t('auth.local_dev.eyebrow')
-        : t('auth.sign_in.eyebrow'),
-      title: localPortalBypass
-        ? t('auth.local_dev.title')
-        : t('auth.sign_in.title'),
-      subtitle: localPortalBypass
-        ? t('auth.local_dev.subtitle')
-        : t('auth.sign_in.subtitle'),
+      eyebrow: localPortalBypass ? t('auth.local_dev.eyebrow') : t('auth.sign_in.eyebrow'),
+      title: localPortalBypass ? t('auth.local_dev.title') : t('auth.sign_in.title'),
+      subtitle: localPortalBypass ? t('auth.local_dev.subtitle') : t('auth.sign_in.subtitle'),
     },
     setup: {
       eyebrow: t('auth.setup.eyebrow'),
@@ -538,9 +505,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   const renderCredentials = (
     <FormProvider methods={loginMethods} onSubmit={handleCredentials}>
       <Stack spacing={2.5}>
-        {localPortalBypass && (
-          <Alert severity="warning">{t('auth.local_dev.warning')}</Alert>
-        )}
+        {localPortalBypass && <Alert severity="warning">{t('auth.local_dev.warning')}</Alert>}
         {sessionError && (
           <Alert severity="warning" sx={{ mb: 0.5 }}>
             {t('auth.errors.session_check_failed')}
@@ -548,11 +513,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
         )}
         <RHFTextField
           name="email"
-          label={
-            localPortalBypass
-              ? t('auth.fields.local_account')
-              : t('auth.fields.email')
-          }
+          label={localPortalBypass ? t('auth.fields.local_account') : t('auth.fields.email')}
           autoComplete={localPortalBypass ? 'off' : 'username'}
           inputProps={{ maxLength: 254 }}
         />
@@ -567,19 +528,13 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
               <InputAdornment position="end">
                 <IconButton
                   aria-label={
-                    passwordVisible.value
-                      ? t('auth.hide_password')
-                      : t('auth.show_password')
+                    passwordVisible.value ? t('auth.hide_password') : t('auth.show_password')
                   }
                   onClick={passwordVisible.onToggle}
                   edge="end"
                 >
                   <Iconify
-                    icon={
-                      passwordVisible.value
-                        ? 'solar:eye-linear'
-                        : 'solar:eye-closed-linear'
-                    }
+                    icon={passwordVisible.value ? 'solar:eye-linear' : 'solar:eye-closed-linear'}
                   />
                 </IconButton>
               </InputAdornment>
@@ -594,9 +549,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
           variant="contained"
           loading={loginMethods.formState.isSubmitting || preparingTotp}
         >
-          {localPortalBypass
-            ? t('auth.local_dev.submit')
-            : t('auth.sign_in.submit')}
+          {localPortalBypass ? t('auth.local_dev.submit') : t('auth.sign_in.submit')}
         </LoadingButton>
         {expectedRole === 'partner' ? (
           <>
@@ -659,19 +612,13 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
               <InputAdornment position="end">
                 <IconButton
                   aria-label={
-                    passwordVisible.value
-                      ? t('auth.hide_password')
-                      : t('auth.show_password')
+                    passwordVisible.value ? t('auth.hide_password') : t('auth.show_password')
                   }
                   onClick={passwordVisible.onToggle}
                   edge="end"
                 >
                   <Iconify
-                    icon={
-                      passwordVisible.value
-                        ? 'solar:eye-linear'
-                        : 'solar:eye-closed-linear'
-                    }
+                    icon={passwordVisible.value ? 'solar:eye-linear' : 'solar:eye-closed-linear'}
                   />
                 </IconButton>
               </InputAdornment>
@@ -755,7 +702,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
           <Stack direction="row" alignItems="flex-start" spacing={1}>
             <Link
               href={totpSetupData.otpauthUri}
-              sx={{ fontSize: 13, flexGrow: 1, overflowWrap: 'anywhere' }}
+              sx={{ typography: 'caption', flexGrow: 1, overflowWrap: 'anywhere' }}
             >
               {totpSetupData.otpauthUri}
             </Link>
@@ -782,9 +729,11 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
         <Stack spacing={2.5}>
           <RHFCode
             name="code"
-            onChange={(value) => codeMethods.setValue('code', digitsOnly(value), {
-              shouldValidate: true,
-            })}
+            onChange={(value) =>
+              codeMethods.setValue('code', digitsOnly(value), {
+                shouldValidate: true,
+              })
+            }
           />
           <LoadingButton
             fullWidth
@@ -822,9 +771,11 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
           <Stack spacing={2.5}>
             <RHFCode
               name="code"
-              onChange={(value) => codeMethods.setValue('code', digitsOnly(value), {
-                shouldValidate: true,
-              })}
+              onChange={(value) =>
+                codeMethods.setValue('code', digitsOnly(value), {
+                  shouldValidate: true,
+                })
+              }
             />
             <LoadingButton
               fullWidth

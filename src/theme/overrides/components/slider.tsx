@@ -18,7 +18,7 @@ export function slider(theme: Theme) {
           opacity: 0.32,
         },
         markLabel: {
-          fontSize: 13,
+          ...theme.typography.caption,
           color: theme.palette.text.disabled,
         },
         valueLabel: {

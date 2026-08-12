@@ -162,7 +162,7 @@ export default function FileManagerFolderItem({
           width: 24,
           height: 24,
           '&:first-of-type': {
-            fontSize: 12,
+            typography: 'caption',
           },
         },
       }}

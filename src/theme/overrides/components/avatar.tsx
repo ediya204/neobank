@@ -97,10 +97,10 @@ export function avatar(theme: Theme) {
           }),
         }),
         avatar: {
-          fontSize: 16,
+          fontSize: theme.typography.body1.fontSize,
           fontWeight: theme.typography.fontWeightSemiBold,
           '&:first-of-type': {
-            fontSize: 12,
+            fontSize: theme.typography.caption.fontSize,
             color: theme.palette.primary.dark,
             backgroundColor: theme.palette.primary.lighter,
           },

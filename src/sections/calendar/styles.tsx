@@ -65,8 +65,7 @@ export const StyledCalendar = styled('div')(({ theme }) => ({
     },
   },
   '& .fc .fc-event .fc-event-main-frame': {
-    fontSize: 13,
-    lineHeight: '20px',
+    ...theme.typography.body2,
     filter: 'brightness(0.48)',
   },
   '& .fc .fc-daygrid-event .fc-event-title': {

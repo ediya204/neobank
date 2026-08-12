@@ -168,7 +168,7 @@ export default function MemberList({
         aria-label={t('portalTeam.members.openActions', { name: memberName(member) })}
         onClick={(event) => openMenu(event, member)}
       >
-                <Iconify icon="solar:menu-dots-bold" />
+        <Iconify icon="solar:menu-dots-bold" />
       </IconButton>
     );
   };
@@ -205,7 +205,7 @@ export default function MemberList({
               <TableRow hover key={member.id}>
                 <TableCell>
                   <Stack direction="row" alignItems="center" spacing={1.25}>
-                    <Avatar sx={{ width: 32, height: 32, fontSize: 13 }}>
+                    <Avatar sx={{ width: 32, height: 32, typography: 'caption' }}>
                       {initials(memberName(member))}
                     </Avatar>
                     <Stack direction="row" alignItems="center" spacing={0.75}>
@@ -241,7 +241,7 @@ export default function MemberList({
         {members.map((member) => (
           <Card key={member.id} sx={{ p: 2, boxShadow: 'none' }}>
             <Stack direction="row" alignItems="flex-start" spacing={1.5}>
-              <Avatar sx={{ width: 40, height: 40, fontSize: 14 }}>
+              <Avatar sx={{ width: 40, height: 40, typography: 'body2' }}>
                 {initials(memberName(member))}
               </Avatar>
               <Box sx={{ minWidth: 0, flex: 1 }}>

@@ -116,7 +116,7 @@ export function button(theme: Theme) {
     const size = {
       ...(smallSize && {
         height: 32,
-        fontSize: 14,
+        fontSize: theme.typography.button.fontSize,
         paddingLeft: 8,
         paddingRight: 8,
         ...(textVariant && {
@@ -134,7 +134,7 @@ export function button(theme: Theme) {
       }),
       ...(largeSize && {
         height: 50,
-        fontSize: 16,
+        fontSize: theme.typography.body1.fontSize,
         paddingLeft: 16,
         paddingRight: 16,
         ...(textVariant && {

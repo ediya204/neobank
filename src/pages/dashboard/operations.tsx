@@ -31,11 +31,7 @@ import { useSnackbar } from 'src/components/snackbar';
 import { ConfirmDialog } from 'src/components/custom-dialog';
 import { getLocalizedApiError } from 'src/locales/api-error';
 import { browserApiFetch } from 'src/utils/browser-api';
-import {
-  CRYPTO_NETWORK_OPTIONS,
-  USD_ASSET_ICON,
-  USDT_ASSET_ICON,
-} from 'src/utils/asset-icons';
+import { CRYPTO_NETWORK_OPTIONS, USD_ASSET_ICON, USDT_ASSET_ICON } from 'src/utils/asset-icons';
 
 type Row = Record<string, any>;
 type Application = { application_id: string; customer_name: string; status: string };
@@ -1716,7 +1712,8 @@ function OperationDetail({ row, compact = false }: { row: Row; compact?: boolean
               bgcolor: 'background.neutral',
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
-              fontSize: 13,
+              typography: 'body2',
+              fontFamily: 'monospace',
             }}
           >
             {JSON.stringify(row.metadata, null, 2)}

@@ -94,7 +94,6 @@ function MegaMenuItem({ parent }: { parent: MegaMenuItemProps }) {
                       sx={{
                         typography: 'body2',
                         color: 'text.primary',
-                        fontSize: 13,
                         transition: (theme) => theme.transitions.create('all'),
                         '&:hover': { color: 'primary.main' },
                       }}
@@ -114,7 +113,6 @@ function MegaMenuItem({ parent }: { parent: MegaMenuItemProps }) {
                   sx={{
                     typography: 'body2',
                     display: 'inline-flex',
-                    fontSize: 13,
                   }}
                 >
                   {more?.title}

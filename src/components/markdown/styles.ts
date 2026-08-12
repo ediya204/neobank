@@ -74,7 +74,8 @@ const StyledMarkdown = styled('div')(({ theme }) => {
 
     // Code Block
     '& pre, & pre > code': {
-      fontSize: 16,
+      ...theme.typography.body1,
+      fontFamily: 'monospace',
       overflowX: 'auto',
       whiteSpace: 'pre',
       padding: theme.spacing(2),
@@ -83,7 +84,8 @@ const StyledMarkdown = styled('div')(({ theme }) => {
       backgroundColor: isLight ? theme.palette.grey[900] : alpha(theme.palette.grey[500], 0.16),
     },
     '& code': {
-      fontSize: 14,
+      ...theme.typography.body2,
+      fontFamily: 'monospace',
       borderRadius: 4,
       whiteSpace: 'pre',
       padding: theme.spacing(0.2, 0.5),

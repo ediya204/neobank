@@ -296,7 +296,10 @@ export function AdminVariantB({ value, onNavigate }: Props) {
     plotOptions: {
       radialBar: {
         hollow: { size: '68%' },
-        dataLabels: { name: { show: true }, value: { fontSize: '28px' } },
+        dataLabels: {
+          name: { show: true },
+          value: { fontSize: theme.typography.h3.fontSize as string },
+        },
       },
     },
   });

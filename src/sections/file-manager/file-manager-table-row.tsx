@@ -176,7 +176,7 @@ export default function FileManagerTableRow({ row, selected, onSelectRow, onDele
                 width: 24,
                 height: 24,
                 '&:first-of-type': {
-                  fontSize: 12,
+                  typography: 'caption',
                 },
               },
             }}

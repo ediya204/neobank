@@ -267,7 +267,8 @@ export default function PortalWebhookDeliveriesPage() {
                     overflowX: 'auto',
                     whiteSpace: 'pre-wrap',
                     overflowWrap: 'anywhere',
-                    fontSize: 13,
+                    typography: 'body2',
+                    fontFamily: 'monospace',
                   }}
                 >
                   {formatJson(selected.payload)}

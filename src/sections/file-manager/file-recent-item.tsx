@@ -129,7 +129,7 @@ export default function FileRecentItem({ file, onDelete, sx, ...other }: Props) 
           width: 24,
           height: 24,
           '&:first-of-type': {
-            fontSize: 12,
+            typography: 'caption',
           },
         },
       }}

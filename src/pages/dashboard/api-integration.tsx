@@ -2330,7 +2330,7 @@ function WebhookDeliveryDetailDialog({
                     borderRadius: 1.5,
                     bgcolor: 'background.neutral',
                     fontFamily: 'monospace',
-                    fontSize: 13,
+                    typography: 'body2',
                     lineHeight: 1.65,
                   }}
                 >
@@ -2364,7 +2364,7 @@ function WebhookDeliveryDetailDialog({
                     bgcolor: 'background.neutral',
                     color: delivery.last_error ? 'error.main' : 'text.secondary',
                     fontFamily: 'monospace',
-                    fontSize: 13,
+                    typography: 'body2',
                   }}
                 >
                   {responseText}

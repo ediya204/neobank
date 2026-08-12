@@ -167,16 +167,12 @@ export default function CalendarFilters({
             <ListItemText
               disableTypography
               primary={
-                <Typography variant="subtitle2" sx={{ fontSize: 13, mt: 0.5 }}>
+                <Typography variant="subtitle2" sx={{ mt: 0.5 }}>
                   {event.title}
                 </Typography>
               }
               secondary={
-                <Typography
-                  variant="caption"
-                  component="div"
-                  sx={{ fontSize: 11, color: 'text.disabled' }}
-                >
+                <Typography variant="caption" component="div" sx={{ color: 'text.disabled' }}>
                   {event.allDay ? (
                     fDateTime(event.start, 'dd MMM yy')
                   ) : (

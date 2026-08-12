@@ -105,7 +105,6 @@ type StyledSubheaderProps = {
 
 export const StyledSubheader = styled(ListSubheader)<StyledSubheaderProps>(({ config, theme }) => ({
   ...theme.typography.overline,
-  fontSize: 11,
   cursor: 'pointer',
   display: 'inline-flex',
   padding: config.itemPadding,

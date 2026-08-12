@@ -55,11 +55,10 @@ export default function MailItem({ mail, selected, onClickMail, sx, ...other }: 
         <Stack alignItems="flex-end" sx={{ ml: 2, height: 44 }}>
           <Typography
             noWrap
-            variant="body2"
+            variant="caption"
             component="span"
             sx={{
               mb: 1.5,
-              fontSize: 12,
               color: 'text.disabled',
             }}
           >

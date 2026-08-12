@@ -247,7 +247,7 @@ function AssetOverview({ summary, loading }: { summary: AssetSummary | null; loa
                 <Typography
                   sx={{
                     mt: 0.5,
-                    fontSize: { xs: '2.2rem', sm: '3rem' },
+                    typography: 'h2',
                     lineHeight: 1.08,
                     fontWeight: 800,
                     letterSpacing: '-0.045em',
@@ -267,7 +267,7 @@ function AssetOverview({ summary, loading }: { summary: AssetSummary | null; loa
                 borderRadius: 1.5,
                 bgcolor: 'rgba(255,255,255,.09)',
                 color: '#DCEBE6',
-                fontSize: 12,
+                typography: 'caption',
                 fontWeight: 700,
                 whiteSpace: 'nowrap',
               }}
@@ -551,11 +551,7 @@ function AccountListRow({
             bgcolor: crypto ? '#E6F6F1' : '#EEF3F8',
           }}
         >
-          <AssetIcon
-            asset={account.currency}
-            network={account.network}
-            size={crypto ? 31 : 29}
-          />
+          <AssetIcon asset={account.currency} network={account.network} size={crypto ? 31 : 29} />
         </Box>
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="subtitle2">{accountLabel(account)}</Typography>

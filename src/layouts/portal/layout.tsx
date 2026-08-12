@@ -139,7 +139,7 @@ function PortalFrame() {
                 </Select>
               )}
             <IconButton onClick={(event) => setAnchor(event.currentTarget)} aria-label="账户菜单">
-              <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', fontSize: 14 }}>
+              <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', typography: 'body2' }}>
                 {customer?.displayName.slice(0, 1) || 'M'}
               </Avatar>
             </IconButton>
@@ -225,7 +225,7 @@ function PortalFrame() {
             key={path}
             onClick={() => navigate(path)}
             color={isActive(path) ? 'primary' : 'inherit'}
-            sx={{ minWidth: 0, py: 1, flexDirection: 'column', gap: 0.25, fontSize: 11 }}
+            sx={{ minWidth: 0, py: 1, flexDirection: 'column', gap: 0.25, typography: 'caption' }}
           >
             <Iconify icon={icon} width={21} />
             {label}

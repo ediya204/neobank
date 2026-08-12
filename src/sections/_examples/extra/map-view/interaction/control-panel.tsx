@@ -59,7 +59,7 @@ function ControlPanel({ settings, onChange }: Props) {
                 '& input': {
                   py: 0.25,
                   width: 40,
-                  fontSize: 14,
+                  typography: 'body2',
                   borderRadius: 0.5,
                   textAlign: 'center',
                   color: 'common.white',
