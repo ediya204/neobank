@@ -18,11 +18,14 @@ import (
 
 var (
 	positiveDecimal = regexp.MustCompile(`^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,18})?$`)
-	currencyCode    = regexp.MustCompile(`^[0-9]+@[0-9]+$`)
 	safeIdentifier  = regexp.MustCompile(`^[A-Za-z0-9_.:@-]{1,128}$`)
 )
 
 const (
+	usdtTRC20ChainID  = "195"
+	usdtTRC20TokenID  = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+	usdtTRC20Currency = usdtTRC20ChainID + "@" + usdtTRC20TokenID
+
 	approveWithdrawalSQL = `UPDATE cregis_withdrawals
     SET status='approved', checker_id=?, approved_at=?, updated_at=?
     WHERE id=? AND tenant_id=? AND status='submitted'`
@@ -70,9 +73,22 @@ func (app *application) createCregisWallet(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if !safeIdentifier.MatchString(input.CustomerID) || !safeIdentifier.MatchString(input.ChainID) ||
-		!safeIdentifier.MatchString(input.Idempotency) || len(input.Alias) > 100 {
+	if !safeIdentifier.MatchString(input.CustomerID) ||
+		!safeIdentifier.MatchString(input.Idempotency) || len(input.Alias) > 100 ||
+		(input.ChainID != "" && input.ChainID != usdtTRC20ChainID) ||
+		(input.TokenID != "" && input.TokenID != usdtTRC20TokenID) ||
+		(input.Currency != "" && input.Currency != usdtTRC20Currency) {
 		validationError(w)
+		return
+	}
+	customerRows, err := app.db.Query(r.Context(), `SELECT id FROM customers
+    WHERE id=? AND tenant_id=? AND status IN ('pending_setup', 'active')`, input.CustomerID, app.tenantID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(customerRows) != 1 {
+		conflict(w, "customer_account_not_available")
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -81,8 +97,8 @@ func (app *application) createCregisWallet(w http.ResponseWriter, r *http.Reques
 		d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_wallets
       (id, tenant_id, customer_id, idempotency_key, chain_id, token_id, currency, alias, status, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?)`, Params: []any{id, app.tenantID,
-			input.CustomerID, input.Idempotency, input.ChainID, nullIfEmpty(input.TokenID),
-			nullIfEmpty(input.Currency), nullIfEmpty(input.Alias), edgeUser(r), now, now}},
+			input.CustomerID, input.Idempotency, usdtTRC20ChainID, usdtTRC20TokenID,
+			usdtTRC20Currency, nullIfEmpty(input.Alias), edgeUser(r), now, now}},
 		d1.Statement{SQL: `SELECT id, customer_id, chain_id, token_id, currency, address, status, created_at
       FROM cregis_wallets WHERE tenant_id=? AND customer_id=? AND idempotency_key=?`, Params: []any{app.tenantID, input.CustomerID, input.Idempotency}},
 	)
@@ -106,7 +122,7 @@ func (app *application) createCregisWallet(w http.ResponseWriter, r *http.Reques
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	response, err := app.cregis.Call(ctx, "/api/v1/address/create", map[string]any{
-		"chain_id":     input.ChainID,
+		"chain_id":     usdtTRC20ChainID,
 		"alias":        input.Alias,
 		"callback_url": app.publicURL + "/api/v1/callbacks/cregis/deposit",
 	})
@@ -132,8 +148,8 @@ func (app *application) createCregisWallet(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"id": id, "customer_id": input.CustomerID, "chain_id": input.ChainID,
-		"token_id": input.TokenID, "currency": input.Currency, "address": data.Address,
+		"id": id, "customer_id": input.CustomerID, "chain_id": usdtTRC20ChainID,
+		"token_id": usdtTRC20TokenID, "currency": usdtTRC20Currency, "address": data.Address,
 		"status": "active", "created_at": now,
 	})
 }
@@ -173,13 +189,27 @@ func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Re
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if !safeIdentifier.MatchString(input.CustomerID) || !currencyCode.MatchString(input.Currency) ||
+	if !safeIdentifier.MatchString(input.CustomerID) || !safeIdentifier.MatchString(input.WalletID) ||
+		(input.Currency != "" && input.Currency != usdtTRC20Currency) ||
 		!safeIdentifier.MatchString(input.Idempotency) ||
 		!isPositiveDecimal(input.Amount) || len(input.ToAddress) < 8 || len(input.ToAddress) > 256 ||
 		len(input.Memo) > 128 || len(input.Remark) > 256 {
 		validationError(w)
 		return
 	}
+	walletRows, err := app.db.Query(r.Context(), `SELECT id, address FROM cregis_wallets
+    WHERE id=? AND tenant_id=? AND customer_id=? AND chain_id=? AND token_id=? AND currency=? AND status='active'`,
+		input.WalletID, app.tenantID, input.CustomerID, usdtTRC20ChainID, usdtTRC20TokenID, usdtTRC20Currency)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(walletRows) != 1 || text(walletRows[0]["address"]) == "" ||
+		(input.FromAddress != "" && input.FromAddress != text(walletRows[0]["address"])) {
+		conflict(w, "wallet_not_available")
+		return
+	}
+	fromAddress := text(walletRows[0]["address"])
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	id := randomID("withdrawal")
 	thirdPartyID := strings.ReplaceAll(randomID("nb"), "_", "")
@@ -187,8 +217,8 @@ func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Re
     (id, tenant_id, customer_id, wallet_id, idempotency_key, third_party_id, currency, amount_text, from_address,
      to_address, memo, remark, status, maker_id, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?)`, Params: []any{id, app.tenantID,
-		input.CustomerID, nullIfEmpty(input.WalletID), input.Idempotency, thirdPartyID, input.Currency,
-		input.Amount, nullIfEmpty(input.FromAddress), input.ToAddress, nullIfEmpty(input.Memo),
+		input.CustomerID, input.WalletID, input.Idempotency, thirdPartyID, usdtTRC20Currency,
+		input.Amount, fromAddress, input.ToAddress, nullIfEmpty(input.Memo),
 		nullIfEmpty(input.Remark), edgeUser(r), now, now}},
 		d1.Statement{SQL: `SELECT id, status, third_party_id, created_at FROM cregis_withdrawals
       WHERE tenant_id=? AND customer_id=? AND idempotency_key=?`, Params: []any{app.tenantID, input.CustomerID, input.Idempotency}},
@@ -276,9 +306,8 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	currency := text(row["currency"])
-	chainID := strings.SplitN(currency, "@", 2)[0]
 	legalResponse, legalErr := app.cregis.Call(ctx, "/api/v1/address/legal", map[string]any{
-		"chain_id": chainID,
+		"chain_id": usdtTRC20ChainID,
 		"address":  text(row["to_address"]),
 	})
 	legal := struct {
@@ -337,7 +366,8 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 		params = append(params, customerID)
 	}
 	withdrawals, err := app.db.Query(r.Context(), `SELECT id, customer_id, 'withdrawal' AS direction, currency, amount_text AS amount,
-    status, to_address AS address, txid, cregis_cid, created_at
+    status, to_address AS address, txid, cregis_cid, maker_id, checker_id, operator_id,
+    approved_at, submitted_at, completed_at, created_at
     FROM cregis_withdrawals WHERE `+filter+` ORDER BY created_at DESC LIMIT 200`, params...)
 	if err != nil {
 		databaseError(app, w, err)
@@ -375,10 +405,24 @@ func (app *application) cregisDepositCallback(w http.ResponseWriter, r *http.Req
 	}
 	cregisCID := text(payload["cid"])
 	address := text(payload["address"])
-	if cregisCID == "" || address == "" {
+	if cregisCID == "" || address == "" || text(payload["chain_id"]) != usdtTRC20ChainID ||
+		text(payload["token_id"]) != usdtTRC20TokenID || !isPositiveDecimal(text(payload["amount"])) {
 		http.Error(w, "invalid callback", http.StatusUnprocessableEntity)
 		return
 	}
+	walletRows, err := app.db.Query(r.Context(), `SELECT id FROM cregis_wallets
+    WHERE tenant_id=? AND address=? AND chain_id=? AND token_id=? AND currency=? AND status='active'`,
+		app.tenantID, address, usdtTRC20ChainID, usdtTRC20TokenID, usdtTRC20Currency)
+	if err != nil {
+		app.logger.Error("lookup Cregis deposit wallet failed", "error", err)
+		http.Error(w, "retry", http.StatusServiceUnavailable)
+		return
+	}
+	if len(walletRows) != 1 {
+		http.Error(w, "unknown wallet", http.StatusUnprocessableEntity)
+		return
+	}
+	walletID := text(walletRows[0]["id"])
 	callbackID := randomID("callback")
 	hash := sha256Hex(raw)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -392,8 +436,8 @@ func (app *application) cregisDepositCallback(w http.ResponseWriter, r *http.Req
 		d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_deposits
       (id, tenant_id, wallet_id, cregis_cid, chain_id, token_id, currency, address, amount_text,
        status, txid, block_height, block_time, received_at, raw_sha256)
-		VALUES (?, ?, (SELECT id FROM cregis_wallets WHERE tenant_id=? AND address=? LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, Params: []any{randomID("deposit"), app.tenantID, app.tenantID, address, cregisCID,
-			text(payload["chain_id"]), text(payload["token_id"]), text(payload["currency"]), address,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, Params: []any{randomID("deposit"), app.tenantID, walletID, cregisCID,
+			usdtTRC20ChainID, usdtTRC20TokenID, usdtTRC20Currency, address,
 			text(payload["amount"]), finalStatus, nullIfEmpty(text(payload["txid"])), nullIfEmpty(text(payload["block_height"])),
 			nullIfEmpty(text(payload["block_time"])), now, hash}},
 	)
@@ -423,7 +467,8 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 	}
 	cregisCID := text(payload["cid"])
 	thirdPartyID := text(payload["third_party_id"])
-	if cregisCID == "" || thirdPartyID == "" {
+	if cregisCID == "" || thirdPartyID == "" || text(payload["chain_id"]) != usdtTRC20ChainID ||
+		text(payload["token_id"]) != usdtTRC20TokenID {
 		http.Error(w, "invalid callback", http.StatusUnprocessableEntity)
 		return
 	}

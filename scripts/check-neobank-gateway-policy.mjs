@@ -1,20 +1,26 @@
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
-const goSource = await readFile(new URL('server-go/cmd/api/cregis_handlers.go', root), 'utf8');
+const goSources = await Promise.all(
+  ['server-go/cmd/api/cregis_handlers.go', 'server-go/cmd/api/customer_auth.go'].map((path) =>
+    readFile(new URL(path, root), 'utf8')
+  )
+);
 const workerSource = await readFile(new URL('worker-d1-gateway/index.ts', root), 'utf8');
 
 const normalize = (sql) => sql.trim().replace(/\s+/g, ' ').toUpperCase();
 const writes = new Set();
 
-for (const match of goSource.matchAll(/\b[A-Za-z0-9_]+SQL\s*=\s*`([\s\S]*?)`/g)) {
-  if (/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(match[1].trim())) writes.add(normalize(match[1]));
-}
-for (const match of goSource.matchAll(/SQL:\s*`([\s\S]*?)`/g)) {
-  if (/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(match[1].trim())) writes.add(normalize(match[1]));
-}
-for (const match of goSource.matchAll(/app\.db\.Query\([^,]+,\s*`([\s\S]*?)`/g)) {
-  if (/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(match[1].trim())) writes.add(normalize(match[1]));
+for (const goSource of goSources) {
+  for (const match of goSource.matchAll(/\b[A-Za-z0-9_]+SQL\s*=\s*`([\s\S]*?)`/g)) {
+    if (/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(match[1].trim())) writes.add(normalize(match[1]));
+  }
+  for (const match of goSource.matchAll(/SQL:\s*`([\s\S]*?)`/g)) {
+    if (/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(match[1].trim())) writes.add(normalize(match[1]));
+  }
+  for (const match of goSource.matchAll(/app\.db\.Query\([^,]+,\s*`([\s\S]*?)`/g)) {
+    if (/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(match[1].trim())) writes.add(normalize(match[1]));
+  }
 }
 
 const policyMatch = workerSource.match(

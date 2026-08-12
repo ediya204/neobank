@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -21,13 +22,17 @@ import (
 )
 
 type application struct {
-	db         *d1.Client
-	cregis     *cregis.Client
-	cregisLive bool
-	edgeSecret []byte
-	publicURL  string
-	tenantID   string
-	logger     *slog.Logger
+	db                     *d1.Client
+	cregis                 *cregis.Client
+	cregisLive             bool
+	edgeSecret             []byte
+	customerPasswordPepper []byte
+	customerTOTPKey        []byte
+	customerRecoveryPepper []byte
+	publicURL              string
+	portalURL              string
+	tenantID               string
+	logger                 *slog.Logger
 }
 
 func main() {
@@ -58,19 +63,41 @@ func main() {
 		os.Exit(1)
 	}
 	publicURL := strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/")
-	if publicURL == "" {
-		logger.Error("invalid configuration", "error", "PUBLIC_BASE_URL is required")
+	if !validConfiguredOrigin(publicURL, false) {
+		logger.Error("invalid configuration", "error", "PUBLIC_BASE_URL must be an HTTPS origin")
+		os.Exit(1)
+	}
+	portalURL := strings.TrimRight(os.Getenv("CUSTOMER_PORTAL_BASE_URL"), "/")
+	if !validConfiguredOrigin(portalURL, true) {
+		logger.Error("invalid configuration", "error", "CUSTOMER_PORTAL_BASE_URL must be an origin")
+		os.Exit(1)
+	}
+	passwordPepper, err := requiredSecret("CUSTOMER_PASSWORD_PEPPER", 32)
+	if err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+	totpKey, err := requiredKey32("CUSTOMER_TOTP_KEY")
+	if err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+	recoveryPepper, err := requiredSecret("CUSTOMER_RECOVERY_PEPPER", 32)
+	if err != nil {
+		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
 	app := &application{
 		db: db, cregis: cregisClient, cregisLive: cregisLive, edgeSecret: []byte(edgeSecret),
-		publicURL: publicURL, tenantID: envOr("TENANT_ID", "neobank"), logger: logger,
+		customerPasswordPepper: passwordPepper, customerTOTPKey: totpKey, customerRecoveryPepper: recoveryPepper,
+		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"), logger: logger,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", app.health)
 	mux.HandleFunc("POST /api/v1/callbacks/cregis/deposit", app.cregisDepositCallback)
 	mux.HandleFunc("POST /api/v1/callbacks/cregis/payout", app.cregisPayoutCallback)
+	mux.Handle("/api/auth/", app.authenticateEdge(http.HandlerFunc(app.auth)))
 	mux.Handle("/api/v1/", app.authenticateEdge(http.HandlerFunc(app.api)))
 
 	port := os.Getenv("PORT")
@@ -90,6 +117,17 @@ func main() {
 		logger.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+func validConfiguredOrigin(value string, allowLocalHTTP bool) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
+		return false
+	}
+	if parsed.Scheme == "https" {
+		return true
+	}
+	return allowLocalHTTP && parsed.Scheme == "http" && (parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "::1")
 }
 
 func (app *application) health(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +151,17 @@ func (app *application) api(w http.ResponseWriter, r *http.Request) {
 		app.health(w, r)
 		return
 	}
+	if app.routeCustomerAPI(w, r) {
+		return
+	}
 	if app.routeCregis(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]string{"code": "not_found"}})
+}
+
+func (app *application) auth(w http.ResponseWriter, r *http.Request) {
+	if app.routeCustomerAuth(w, r) {
 		return
 	}
 	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]string{"code": "not_found"}})

@@ -48,13 +48,65 @@ const ALLOWED_WRITE_SQL = new Set(
     `INSERT OR IGNORE INTO cregis_deposits
       (id, tenant_id, wallet_id, cregis_cid, chain_id, token_id, currency, address, amount_text,
        status, txid, block_height, block_time, received_at, raw_sha256)
-      VALUES (?, ?, (SELECT id FROM cregis_wallets WHERE tenant_id=? AND address=? LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     `INSERT OR IGNORE INTO cregis_callback_events
       (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'payout', ?, ?, ?, ?)`,
     `UPDATE cregis_withdrawals SET status='submitted_to_cregis', cregis_cid=?, submitted_at=COALESCE(submitted_at, ?), updated_at=?
       WHERE tenant_id=? AND third_party_id=? AND status IN ('executing', 'exception')`,
     `UPDATE cregis_withdrawals SET status=?, cregis_cid=?, txid=?, block_height=?, block_time=?, completed_at=?, updated_at=?
       WHERE tenant_id=? AND third_party_id=? AND status='submitted_to_cregis'`,
+    `INSERT OR IGNORE INTO customers
+      (id, tenant_id, email, display_name, status, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'pending_setup', ?, ?, ?)`,
+    `INSERT OR IGNORE INTO customer_credentials
+      (customer_id, password_iterations, setup_token_hash, setup_expires_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO customer_auth_audit_events
+      (id, customer_id, event_type, actor, metadata_json, created_at)
+      SELECT ?, ?, 'customer.created', ?, '{}', ?
+      WHERE EXISTS (SELECT 1 FROM customer_credentials WHERE customer_id=? AND setup_token_hash=?)`,
+    `UPDATE customer_credentials
+      SET password_salt=?, password_hash=?, password_iterations=?, totp_secret_ciphertext=?,
+          setup_consumed_at=?, enrollment_token_hash=?, enrollment_expires_at=?, updated_at=?
+      WHERE customer_id=? AND setup_token_hash=? AND setup_consumed_at IS NULL AND setup_expires_at>?`,
+    `INSERT INTO customer_auth_audit_events
+      (id, customer_id, event_type, actor, metadata_json, created_at)
+      SELECT ?, ?, 'auth.password_enrolled', ?, '{}', ?
+      WHERE EXISTS (SELECT 1 FROM customer_credentials WHERE customer_id=? AND enrollment_token_hash=?)`,
+    `UPDATE customer_credentials SET failed_attempts=?, locked_until=?, updated_at=?
+      WHERE customer_id=?`,
+    `INSERT INTO customer_auth_audit_events
+      (id, customer_id, event_type, actor, metadata_json, created_at) VALUES (?, ?, 'auth.login_failed', ?, '{}', ?)`,
+    `UPDATE customer_credentials SET failed_attempts=0, locked_until=NULL, updated_at=?
+      WHERE customer_id=?`,
+    `INSERT INTO customer_login_challenges
+      (id, customer_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+    `UPDATE customers SET status='active', updated_at=?
+      WHERE id=? AND tenant_id=? AND status='pending_setup'`,
+    `UPDATE customer_credentials
+      SET setup_token_hash=NULL, setup_expires_at=NULL, enrollment_token_hash=NULL, enrollment_expires_at=NULL, updated_at=?
+      WHERE customer_id=? AND enrollment_token_hash=?`,
+    `INSERT INTO customer_recovery_codes
+      (id, customer_id, code_hash, created_at) VALUES (?, ?, ?, ?)`,
+    `UPDATE customer_login_challenges SET consumed_at=?
+      WHERE id=? AND consumed_at IS NULL`,
+    `UPDATE customer_recovery_codes SET used_at=?
+      WHERE id=? AND customer_id=? AND used_at IS NULL`,
+    `INSERT INTO customer_sessions
+      (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, created_at, last_seen_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM customer_recovery_codes WHERE id=? AND customer_id=? AND used_at=?)`,
+    `INSERT INTO customer_auth_audit_events
+      (id, customer_id, event_type, actor, metadata_json, created_at)
+      SELECT ?, ?, 'auth.login_succeeded', ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM customer_sessions WHERE id=? AND customer_id=?)`,
+    `UPDATE customer_sessions SET revoked_at=?, last_seen_at=?
+      WHERE id=? AND revoked_at IS NULL`,
+    `INSERT INTO customer_auth_audit_events
+      (id, customer_id, event_type, actor, metadata_json, created_at) VALUES (?, ?, 'auth.logout', ?, '{}', ?)`,
+    `INSERT INTO customer_sessions
+      (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, created_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ].map(normalizeSQL)
 );
 

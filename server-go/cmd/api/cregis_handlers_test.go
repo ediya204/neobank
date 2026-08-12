@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+func TestOnlyUSDTTRC20AssetIdentifiers(t *testing.T) {
+	if usdtTRC20ChainID != "195" {
+		t.Fatalf("unexpected TRON chain id: %s", usdtTRC20ChainID)
+	}
+	if usdtTRC20TokenID != "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" {
+		t.Fatalf("unexpected USDT-TRC20 token id: %s", usdtTRC20TokenID)
+	}
+	if usdtTRC20Currency != "195@TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" {
+		t.Fatalf("unexpected USDT-TRC20 currency: %s", usdtTRC20Currency)
+	}
+}
+
 func TestSingleAdministratorWithdrawalStateTransitions(t *testing.T) {
 	tests := []struct {
 		name       string

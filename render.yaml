@@ -16,6 +16,12 @@ services:
         sync: false
       - key: EDGE_SHARED_SECRET
         sync: false
+      - key: CUSTOMER_PASSWORD_PEPPER
+        sync: false
+      - key: CUSTOMER_TOTP_KEY
+        sync: false
+      - key: CUSTOMER_RECOVERY_PEPPER
+        sync: false
       - key: CREGIS_BASE_URL
         value: https://t-wsmbuuhb.cregis.io
       - key: CREGIS_ENABLED
@@ -25,6 +31,8 @@ services:
       - key: CREGIS_PROJECT_SECRET
         sync: false
       - key: PUBLIC_BASE_URL
+        sync: false
+      - key: CUSTOMER_PORTAL_BASE_URL
         sync: false
       - key: TENANT_ID
         value: neobank
