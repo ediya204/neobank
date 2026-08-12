@@ -15,6 +15,7 @@ export const paths = {
     portal: {
       login: '/portal/login',
       setup: '/portal/setup',
+      register: '/portal/register',
     },
     jwt: {
       login: '/auth/jwt/login',

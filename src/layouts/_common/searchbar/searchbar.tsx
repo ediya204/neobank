@@ -112,7 +112,7 @@ function Searchbar() {
   const renderButton = (
     <Stack direction="row" alignItems="center">
       <IconButton aria-label={t('header.search_aria')} onClick={search.onTrue}>
-        <Iconify icon="eva:search-fill" />
+        <Iconify icon="solar:magnifier-linear" />
       </IconButton>
 
       {lgUp && <Label sx={{ px: 0.75, fontSize: 12, color: 'text.secondary' }}>⌘K</Label>}
@@ -156,7 +156,7 @@ function Searchbar() {
             onChange={handleSearch}
             startAdornment={
               <InputAdornment position="start">
-                <Iconify icon="eva:search-fill" width={24} sx={{ color: 'text.disabled' }} />
+                <Iconify icon="solar:magnifier-linear" width={24} sx={{ color: 'text.disabled' }} />
               </InputAdornment>
             }
             endAdornment={
@@ -164,7 +164,7 @@ function Searchbar() {
                 <Label sx={{ letterSpacing: 1, color: 'text.secondary' }}>esc</Label>
               ) : (
                 <IconButton aria-label={t('header.close_search')} onClick={handleClose}>
-                  <Iconify icon="mingcute:close-line" />
+                  <Iconify icon="solar:close-circle-linear" />
                 </IconButton>
               )
             }

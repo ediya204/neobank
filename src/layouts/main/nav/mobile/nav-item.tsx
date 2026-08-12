@@ -30,7 +30,7 @@ export default function NavItem({
       {!!children && (
         <Iconify
           width={16}
-          icon={open ? 'eva:arrow-ios-downward-fill' : 'eva:arrow-ios-forward-fill'}
+          icon={open ? 'solar:alt-arrow-down-linear' : 'solar:alt-arrow-right-linear'}
           sx={{ ml: 1 }}
         />
       )}

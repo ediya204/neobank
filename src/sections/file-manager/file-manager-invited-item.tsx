@@ -81,7 +81,7 @@ export default function FileManagerInvitedItem({ person }: Props) {
               handleChangePermission('view');
             }}
           >
-            <Iconify icon="solar:eye-bold" />
+            <Iconify icon="solar:eye-linear" />
             Can view
           </MenuItem>
 

@@ -5,12 +5,14 @@ type AccessClaims = {
   exp?: number;
   iat?: number;
   iss?: string;
+  nbf?: number;
   sub?: string;
 };
 type Jwk = JsonWebKey & { kid?: string; alg?: string; use?: string };
 
 const MAX_BODY_BYTES = 128 * 1024;
 const JWKS_CACHE_MS = 10 * 60 * 1000;
+const ACCESS_ADMIN_SESSION_PATH = '/api/auth/access-admin/session';
 let cachedKeys: { expiresAt: number; keys: Jwk[] } | undefined;
 
 function json(data: unknown, status = 200): Response {
@@ -42,7 +44,7 @@ async function accessKeys(origin: string, refresh = false): Promise<Jwk[]> {
   if (!refresh && cachedKeys && cachedKeys.expiresAt > Date.now()) return cachedKeys.keys;
   const response = await fetch(`${origin}/cdn-cgi/access/certs`, {
     headers: { accept: 'application/json' },
-    redirect: 'error',
+    redirect: 'manual',
   });
   if (!response.ok) throw new Error(`Access JWKS returned ${response.status}`);
   const payload = (await response.json()) as { keys?: Jwk[] };
@@ -66,7 +68,13 @@ async function verifyAccess(request: Request, env: Env): Promise<AccessClaims | 
   const claims = decodeJSON<AccessClaims>(parts[1]);
   if (!header?.kid || header.alg !== 'RS256' || !claims?.email || !claims.exp) return null;
   const now = Math.floor(Date.now() / 1000);
-  if (claims.exp <= now || (claims.iat && claims.iat > now + 60)) return null;
+  if (
+    claims.exp <= now ||
+    (claims.iat && claims.iat > now + 60) ||
+    (claims.nbf && claims.nbf > now + 60)
+  ) {
+    return null;
+  }
   if (claims.iss !== origin || !includesAudience(claims, env.CF_ACCESS_AUD)) return null;
 
   let key = (await accessKeys(origin)).find((candidate) => candidate.kid === header.kid);
@@ -90,9 +98,27 @@ async function verifyAccess(request: Request, env: Env): Promise<AccessClaims | 
 
 function adminAllowed(email: string, env: Env): boolean {
   const normalized = email.trim().toLowerCase();
+  if (!normalized) return false;
   return env.NEOBANK_ADMIN_EMAILS.split(',').some(
     (candidate) => candidate.trim().toLowerCase() === normalized
   );
+}
+
+function accessAdminSession(claims: AccessClaims): Response {
+  const email = (claims.email || '').trim().toLowerCase();
+  return json({
+    user: {
+      id: claims.sub || `access:${email}`,
+      email,
+      display_name: email.split('@')[0] || 'Neobank administrator',
+      role: 'admin',
+      organization: null,
+      membership: null,
+      permissions: [],
+    },
+    session_source: 'cloudflare_access',
+    expires_at: claims.exp,
+  });
 }
 
 async function hmacHex(secret: string, value: string): Promise<string> {
@@ -109,7 +135,7 @@ async function hmacHex(secret: string, value: string): Promise<string> {
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function proxyAPI(request: Request, env: Env, email: string): Promise<Response> {
+async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<Response> {
   const contentLength = Number(request.headers.get('content-length') || '0');
   if (contentLength > MAX_BODY_BYTES) return json({ error: { code: 'payload_too_large' } }, 413);
   const body = await request.arrayBuffer();
@@ -126,15 +152,25 @@ async function proxyAPI(request: Request, env: Env, email: string): Promise<Resp
     byte.toString(16).padStart(2, '0')
   ).join('');
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const canonical = [timestamp, request.method, incoming.pathname + incoming.search, email, bodyHashHex].join(
-    '\n'
-  );
+  const canonical = [
+    timestamp,
+    request.method,
+    incoming.pathname + incoming.search,
+    edgeUser,
+    bodyHashHex,
+  ].join('\n');
   const signature = await hmacHex(env.GO_EDGE_SHARED_SECRET, canonical);
   const headers = new Headers();
   const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
+  const cookie = request.headers.get('cookie');
+  if (cookie) headers.set('cookie', cookie);
+  const origin = request.headers.get('origin');
+  if (origin) headers.set('origin', origin);
+  const csrfToken = request.headers.get('x-csrf-token');
+  if (csrfToken) headers.set('x-csrf-token', csrfToken);
   headers.set('accept', 'application/json');
-  headers.set('x-neobank-user', email);
+  headers.set('x-neobank-user', edgeUser);
   headers.set('x-neobank-edge-timestamp', timestamp);
   headers.set('x-neobank-edge-signature', signature);
 
@@ -142,28 +178,89 @@ async function proxyAPI(request: Request, env: Env, email: string): Promise<Resp
     method: request.method,
     headers,
     body: request.method === 'GET' || request.method === 'HEAD' ? undefined : body,
-    redirect: 'error',
+    redirect: 'manual',
   });
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(`Go API redirect rejected (${response.status})`);
+  }
   const responseHeaders = new Headers();
   responseHeaders.set('cache-control', 'no-store');
   responseHeaders.set('content-type', response.headers.get('content-type') || 'application/json');
+  for (const cookieValue of response.headers.getSetCookie()) {
+    responseHeaders.append('set-cookie', cookieValue);
+  }
   return new Response(response.body, { status: response.status, headers: responseHeaders });
+}
+
+function isPublicCustomerAPI(pathname: string) {
+  return (
+    pathname.startsWith('/api/auth/customer/') ||
+    pathname === '/api/auth/me' ||
+    pathname === '/api/auth/logout' ||
+    pathname.startsWith('/api/v1/customer/')
+  );
+}
+
+function isAdminPage(pathname: string) {
+  return (
+    pathname === '/admin' ||
+    pathname.startsWith('/admin/') ||
+    pathname === '/dashboard' ||
+    pathname.startsWith('/dashboard/')
+  );
+}
+
+function hasValidMutationOrigin(request: Request): boolean {
+  if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
+    return true;
+  }
+  const origin = request.headers.get('origin');
+  return origin === new URL(request.url).origin;
 }
 
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/healthz' && request.method === 'GET') {
-      return json({ status: 'ok', service: 'neobank-web', access_required: true });
+      return json({
+        status: 'ok',
+        service: 'neobank-web',
+        customer_portal: 'public_session_auth',
+        admin_access: 'cloudflare_access',
+      });
     }
     try {
+      if (isPublicCustomerAPI(url.pathname)) {
+        return await proxyAPI(request, env, 'public-customer-edge');
+      }
       const claims = await verifyAccess(request, env);
-      if (!claims) return json({ error: { code: 'access_required' } }, 401);
+      if (isAdminPage(url.pathname) || url.pathname.startsWith('/api/')) {
+        if (!claims) return json({ error: { code: 'access_required' } }, 401);
+      }
+      if (isAdminPage(url.pathname) && !adminAllowed(claims?.email || '', env)) {
+        return json({ error: { code: 'admin_required' } }, 403);
+      }
+      if (url.pathname === ACCESS_ADMIN_SESSION_PATH) {
+        if (request.method !== 'GET') {
+          return Response.json(
+            { error: { code: 'method_not_allowed' } },
+            { status: 405, headers: { allow: 'GET', 'cache-control': 'no-store' } }
+          );
+        }
+        if (!claims || !adminAllowed(claims.email || '', env)) {
+          return json({ error: { code: 'admin_required' } }, 403);
+        }
+        return accessAdminSession(claims);
+      }
       if (url.pathname.startsWith('/api/')) {
+        if (!claims) return json({ error: { code: 'access_required' } }, 401);
         if (!adminAllowed(claims.email || '', env)) {
           return json({ error: { code: 'admin_required' } }, 403);
         }
-        return proxyAPI(request, env, claims.email || '');
+        if (!hasValidMutationOrigin(request)) {
+          return json({ error: { code: 'invalid_origin' } }, 403);
+        }
+        return await proxyAPI(request, env, claims.email || '');
       }
       return env.ASSETS.fetch(request);
     } catch (caught) {

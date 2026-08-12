@@ -24,12 +24,24 @@ const ALLOWED_WRITE_SQL = new Set(
       (id, tenant_id, customer_id, idempotency_key, chain_id, token_id, currency, alias, status, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?)`,
     `UPDATE cregis_wallets SET status='error', updated_at=? WHERE id=? AND status='creating'`,
-    `UPDATE cregis_wallets SET address=?, status='active', updated_at=?
+    `UPDATE cregis_wallets
+      SET address=?, custody_provider='cregis', ownership_verified_at=?, status='active', updated_at=?
       WHERE id=? AND tenant_id=? AND status='creating'`,
+    `UPDATE cregis_wallets
+      SET address=?, status='error', updated_at=? WHERE id=? AND tenant_id=? AND status='creating'`,
     `INSERT OR IGNORE INTO cregis_withdrawals
-      (id, tenant_id, customer_id, wallet_id, idempotency_key, third_party_id, currency, amount_text, from_address,
-       to_address, memo, remark, status, maker_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?)`,
+      (id, tenant_id, customer_id, wallet_id, idempotency_key, third_party_id, currency, amount_text, amount_minor,
+       from_address, to_address, memo, remark, status, maker_id, created_at, updated_at)
+      SELECT ?, ?, ?, w.id, ?, ?, ?, ?, ?, w.address, ?, ?, ?, 'submitted', ?, ?, ?
+      FROM cregis_wallets w JOIN customers c ON c.id=w.customer_id AND c.tenant_id=w.tenant_id
+      WHERE w.id=? AND w.tenant_id=? AND w.customer_id=? AND w.chain_id=? AND w.token_id=? AND w.currency=?
+        AND w.status='active' AND w.custody_provider='cregis' AND w.ownership_verified_at IS NOT NULL
+        AND c.status='active' AND c.kyc_status='approved' AND c.operations_status='active'
+        AND ? <= COALESCE((SELECT SUM(d.amount_minor) FROM cregis_deposits d
+          WHERE d.tenant_id=w.tenant_id AND d.wallet_id=w.id AND d.status='completed'), 0)
+          - COALESCE((SELECT SUM(x.amount_minor) FROM cregis_withdrawals x
+            WHERE x.tenant_id=w.tenant_id AND x.wallet_id=w.id AND x.customer_id=c.id
+              AND x.status NOT IN ('rejected', 'failed', 'cancelled')), 0)`,
     `UPDATE cregis_withdrawals
       SET status='approved', checker_id=?, approved_at=?, updated_at=?
       WHERE id=? AND tenant_id=? AND status='submitted'`,
@@ -43,12 +55,21 @@ const ALLOWED_WRITE_SQL = new Set(
     `UPDATE cregis_withdrawals
       SET status='submitted_to_cregis', cregis_cid=?, submitted_at=?, updated_at=?
       WHERE id=? AND status='executing'`,
+    `UPDATE cregis_withdrawals
+      SET status='submitted_to_cregis', cregis_cid=?, reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND status='exception'`,
+    `UPDATE cregis_withdrawals
+      SET status='failed', reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND status='exception'`,
+    `UPDATE cregis_withdrawals
+      SET status='cancelled', reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND status='exception'`,
     `INSERT OR IGNORE INTO cregis_callback_events
       (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'deposit', ?, ?, ?, ?)`,
     `INSERT OR IGNORE INTO cregis_deposits
-      (id, tenant_id, wallet_id, cregis_cid, chain_id, token_id, currency, address, amount_text,
+      (id, tenant_id, wallet_id, cregis_cid, chain_id, token_id, currency, address, amount_text, amount_minor,
        status, txid, block_height, block_time, received_at, raw_sha256)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     `INSERT OR IGNORE INTO cregis_callback_events
       (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'payout', ?, ?, ?, ?)`,
     `UPDATE cregis_withdrawals SET status='submitted_to_cregis', cregis_cid=?, submitted_at=COALESCE(submitted_at, ?), updated_at=?
@@ -56,15 +77,12 @@ const ALLOWED_WRITE_SQL = new Set(
     `UPDATE cregis_withdrawals SET status=?, cregis_cid=?, txid=?, block_height=?, block_time=?, completed_at=?, updated_at=?
       WHERE tenant_id=? AND third_party_id=? AND status='submitted_to_cregis'`,
     `INSERT OR IGNORE INTO customers
-      (id, tenant_id, email, display_name, status, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'pending_setup', ?, ?, ?)`,
-    `INSERT OR IGNORE INTO customer_credentials
-      (customer_id, password_iterations, setup_token_hash, setup_expires_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)`,
+      (id, tenant_id, email, display_name, status, kyc_status, operations_status, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'pending_setup', 'pending', 'pending', ?, ?, ?)`,
     `INSERT INTO customer_auth_audit_events
       (id, customer_id, event_type, actor, metadata_json, created_at)
       SELECT ?, ?, 'customer.created', ?, '{}', ?
-      WHERE EXISTS (SELECT 1 FROM customer_credentials WHERE customer_id=? AND setup_token_hash=?)`,
+      WHERE EXISTS (SELECT 1 FROM customers WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending')`,
     `UPDATE customer_credentials
       SET password_salt=?, password_hash=?, password_iterations=?, totp_secret_ciphertext=?,
           setup_consumed_at=?, enrollment_token_hash=?, enrollment_expires_at=?, updated_at=?
@@ -82,7 +100,7 @@ const ALLOWED_WRITE_SQL = new Set(
     `INSERT INTO customer_login_challenges
       (id, customer_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)`,
     `UPDATE customers SET status='active', updated_at=?
-      WHERE id=? AND tenant_id=? AND status='pending_setup'`,
+      WHERE id=? AND tenant_id=? AND status='pending_setup' AND kyc_status='approved' AND operations_status='active'`,
     `UPDATE customer_credentials
       SET setup_token_hash=NULL, setup_expires_at=NULL, enrollment_token_hash=NULL, enrollment_expires_at=NULL, updated_at=?
       WHERE customer_id=? AND enrollment_token_hash=?`,
@@ -107,6 +125,37 @@ const ALLOWED_WRITE_SQL = new Set(
     `INSERT INTO customer_sessions
       (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, created_at, last_seen_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `UPDATE customers
+      SET kyc_status=?, kyc_reviewed_by=?, kyc_reviewed_at=?, kyc_review_note=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending'`,
+    `INSERT INTO customer_auth_audit_events
+      (id, customer_id, event_type, actor, metadata_json, created_at)
+      SELECT ?, ?, 'customer.kyc_reviewed', ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM customers
+        WHERE id=? AND tenant_id=? AND kyc_reviewed_by=? AND kyc_reviewed_at=?)`,
+    `UPDATE customers
+      SET operations_status='active', activated_by=?, activated_at=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND kyc_status='approved' AND operations_status='pending'
+        AND status IN ('pending_setup', 'active')`,
+    `INSERT INTO customer_credentials
+      (customer_id, password_iterations, setup_token_hash, setup_expires_at, updated_at)
+      SELECT ?, ?, ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM customers
+        WHERE id=? AND tenant_id=? AND status='pending_setup' AND kyc_status='approved'
+          AND operations_status='active' AND activated_by=? AND activated_at=?)
+      ON CONFLICT(customer_id) DO UPDATE SET
+        password_iterations=excluded.password_iterations,
+        setup_token_hash=excluded.setup_token_hash,
+        setup_expires_at=excluded.setup_expires_at,
+        setup_consumed_at=NULL,
+        enrollment_token_hash=NULL,
+        enrollment_expires_at=NULL,
+        updated_at=excluded.updated_at`,
+    `INSERT INTO customer_auth_audit_events
+      (id, customer_id, event_type, actor, metadata_json, created_at)
+      SELECT ?, ?, 'customer.operations_activated', ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM customers
+        WHERE id=? AND tenant_id=? AND operations_status='active' AND activated_by=? AND activated_at=?)`,
   ].map(normalizeSQL)
 );
 

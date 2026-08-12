@@ -31,6 +31,9 @@ import { useRouter, useSearchParams } from 'src/routes/hooks';
 import Iconify from 'src/components/iconify';
 import FormProvider, { RHFCode, RHFTextField } from 'src/components/hook-form';
 import { useSnackbar } from 'src/components/snackbar';
+import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
+import { paths } from 'src/routes/paths';
+import { RouterLink } from 'src/routes/components';
 
 type Stage =
   | 'credentials'
@@ -474,26 +477,29 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     },
   };
 
+  let roleEntryIcon = 'solar:buildings-2-bold-duotone';
+  let roleEntryLabel = t('auth.role_entries.portal');
+  if (expectedRole === 'admin') {
+    roleEntryIcon = 'solar:shield-user-bold-duotone';
+    roleEntryLabel = t('auth.role_entries.admin');
+  }
+  if (expectedRole === 'customer') {
+    roleEntryIcon = 'solar:user-circle-bold-duotone';
+    roleEntryLabel = '客户账户';
+  }
+
   const renderHead = (
     <Stack spacing={1.5} sx={{ mb: 4 }}>
+      <Box>
+        <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+          {APP_NAME_CN}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+          {APP_NAME_EN}
+        </Typography>
+      </Box>
       <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-        <Chip
-          icon={
-            <Iconify
-              icon={
-                expectedRole === 'admin'
-                  ? 'solar:shield-user-bold-duotone'
-                  : 'solar:buildings-2-bold-duotone'
-              }
-            />
-          }
-          label={
-            expectedRole === 'admin'
-              ? t('auth.role_entries.admin')
-              : t('auth.role_entries.portal')
-          }
-          size="small"
-        />
+        <Chip icon={<Iconify icon={roleEntryIcon} />} label={roleEntryLabel} size="small" />
         {stage !== 'credentials' && stage !== 'setup' && (
           <Chip
             icon={<Iconify icon="solar:shield-check-bold-duotone" />}
@@ -571,8 +577,8 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
                   <Iconify
                     icon={
                       passwordVisible.value
-                        ? 'solar:eye-bold'
-                        : 'solar:eye-closed-bold'
+                        ? 'solar:eye-linear'
+                        : 'solar:eye-closed-linear'
                     }
                   />
                 </IconButton>
@@ -592,11 +598,38 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
             ? t('auth.local_dev.submit')
             : t('auth.sign_in.submit')}
         </LoadingButton>
-        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-          {localPortalBypass
-            ? t('auth.local_dev.helper')
-            : t('auth.sign_in.provisioned_only')}
-        </Typography>
+        {expectedRole === 'partner' ? (
+          <>
+            {localPortalBypass && (
+              <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+                {t('auth.local_dev.helper')}
+              </Typography>
+            )}
+            <Divider>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                {t('auth.sign_in.new_customer')}
+              </Typography>
+            </Divider>
+            <Button
+              fullWidth
+              component={RouterLink}
+              href={paths.auth.portal.register}
+              size="large"
+              variant="outlined"
+              color="inherit"
+              startIcon={<Iconify icon="solar:user-plus-bold-duotone" />}
+            >
+              {t('auth.sign_in.open_account')}
+            </Button>
+            <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+              {t('auth.sign_in.registration_helper')}
+            </Typography>
+          </>
+        ) : (
+          <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+            {t('auth.sign_in.provisioned_only')}
+          </Typography>
+        )}
       </Stack>
     </FormProvider>
   );
@@ -636,8 +669,8 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
                   <Iconify
                     icon={
                       passwordVisible.value
-                        ? 'solar:eye-bold'
-                        : 'solar:eye-closed-bold'
+                        ? 'solar:eye-linear'
+                        : 'solar:eye-closed-linear'
                     }
                   />
                 </IconButton>
@@ -709,7 +742,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
             aria-label={t('auth.totp_setup.copy_manual_key')}
             onClick={() => copyText(totpSetupData.secret)}
           >
-            <Iconify icon="solar:copy-bold-duotone" />
+            <Iconify icon="solar:copy-linear" />
           </IconButton>
         </Stack>
       </Paper>
@@ -731,7 +764,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
               aria-label={t('auth.totp_setup.copy_otpauth_uri')}
               onClick={() => copyText(totpSetupData.otpauthUri || '')}
             >
-              <Iconify icon="solar:copy-bold-duotone" />
+              <Iconify icon="solar:copy-linear" />
             </IconButton>
           </Stack>
         </Stack>
@@ -860,7 +893,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
       <Button
         variant="outlined"
         color="inherit"
-        startIcon={<Iconify icon="solar:copy-bold-duotone" />}
+        startIcon={<Iconify icon="solar:copy-linear" />}
         onClick={() => copyText(recoveryCodes.join('\n'))}
       >
         {t('auth.recovery_codes.copy_all')}

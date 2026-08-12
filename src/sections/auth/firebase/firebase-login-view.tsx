@@ -125,7 +125,7 @@ export default function FirebaseLoginView() {
           endAdornment: (
             <InputAdornment position="end">
               <IconButton onClick={password.onToggle} edge="end">
-                <Iconify icon={password.value ? 'solar:eye-bold' : 'solar:eye-closed-bold'} />
+                <Iconify icon={password.value ? 'solar:eye-linear' : 'solar:eye-closed-linear'} />
               </IconButton>
             </InputAdornment>
           ),

@@ -67,7 +67,7 @@ export default function MultiFilePreview({ thumbnail, files, onRemove, sx }: Upl
                     },
                   }}
                 >
-                  <Iconify icon="mingcute:close-line" width={14} />
+                  <Iconify icon="solar:close-circle-linear" width={14} />
                 </IconButton>
               )}
             </Stack>
@@ -104,7 +104,7 @@ export default function MultiFilePreview({ thumbnail, files, onRemove, sx }: Upl
 
             {onRemove && (
               <IconButton size="small" onClick={() => onRemove(file)}>
-                <Iconify icon="mingcute:close-line" width={16} />
+                <Iconify icon="solar:close-circle-linear" width={16} />
               </IconButton>
             )}
           </Stack>

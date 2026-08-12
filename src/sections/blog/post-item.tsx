@@ -197,7 +197,7 @@ export function PostContent({
         </Stack>
 
         <Stack direction="row" alignItems="center">
-          <Iconify icon="solar:eye-bold" width={16} sx={{ mr: 0.5 }} />
+          <Iconify icon="solar:eye-linear" width={16} sx={{ mr: 0.5 }} />
           {fShortenNumber(totalViews)}
         </Stack>
 

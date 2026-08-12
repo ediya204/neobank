@@ -56,7 +56,7 @@ export default function SettingsDrawer() {
       </Tooltip>
 
       <IconButton aria-label={t('settings.close')} onClick={settings.onClose}>
-        <Iconify icon="mingcute:close-line" />
+        <Iconify icon="solar:close-circle-linear" />
       </IconButton>
     </Stack>
   );
@@ -133,7 +133,7 @@ export default function SettingsDrawer() {
       >
         {t('settings.stretch')}
         <Tooltip title={t('settings.stretch_hint')}>
-          <Iconify icon="eva:info-outline" width={16} sx={{ ml: 0.5 }} />
+          <Iconify icon="solar:info-circle-linear" width={16} sx={{ ml: 0.5 }} />
         </Tooltip>
       </Typography>
 

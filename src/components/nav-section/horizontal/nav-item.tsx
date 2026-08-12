@@ -74,13 +74,13 @@ const NavItem = forwardRef<HTMLDivElement, Props>(
 
         {caption && (
           <Tooltip title={caption} arrow>
-            <Iconify width={16} icon="eva:info-outline" sx={{ ml: 0.5, color: 'text.disabled' }} />
+            <Iconify width={16} icon="solar:info-circle-linear" sx={{ ml: 0.5, color: 'text.disabled' }} />
           </Tooltip>
         )}
 
         {!!children && (
           <Iconify
-            icon={subItem ? 'eva:arrow-ios-forward-fill' : 'eva:arrow-ios-downward-fill'}
+            icon={subItem ? 'solar:alt-arrow-right-linear' : 'solar:alt-arrow-down-linear'}
             width={16}
             sx={{ flexShrink: 0, ml: 0.5 }}
           />

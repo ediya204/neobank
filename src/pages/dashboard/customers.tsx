@@ -28,7 +28,7 @@ import Label from 'src/components/label';
 import { useSettingsContext } from 'src/components/settings';
 import { getLocalizedApiError } from 'src/locales/api-error';
 import { browserApiFetch } from 'src/utils/browser-api';
-import { USD_ASSET_ICON } from 'src/utils/asset-icons';
+import { CRYPTO_NETWORK_OPTIONS, USD_ASSET_ICON } from 'src/utils/asset-icons';
 
 type VaAccount = {
   account_name: string;
@@ -116,32 +116,7 @@ type ApiEnvelope<T> = {
   };
 };
 
-const CHAINS = [
-  {
-    value: 'TRON',
-    name: 'TRON',
-    standard: 'TRC20',
-    icon: 'cryptocurrency-color:trx',
-  },
-  {
-    value: 'ETHEREUM',
-    name: 'Ethereum',
-    standard: 'ERC20',
-    icon: 'cryptocurrency-color:eth',
-  },
-  {
-    value: 'SOLANA',
-    name: 'Solana',
-    standard: 'SPL',
-    icon: 'cryptocurrency-color:sol',
-  },
-  {
-    value: 'BSC',
-    name: 'BNB Smart Chain',
-    standard: 'BEP20',
-    icon: 'cryptocurrency-color:bnb',
-  },
-] as const;
+const CHAINS = CRYPTO_NETWORK_OPTIONS;
 
 async function apiGet<T>(path: string, errorMessage: string, signal?: AbortSignal): Promise<T> {
   let response: Response;
@@ -443,7 +418,7 @@ function CustomerListPage() {
   return (
     <>
       <Helmet>
-        <title>{t('customers.pageTitle')} | moventra</title>
+        <title>{t('customers.pageTitle')} | SCC Digital Bank</title>
       </Helmet>
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
         <Stack
@@ -462,7 +437,7 @@ function CustomerListPage() {
           <Stack direction="row" spacing={1}>
             <Button
               color="inherit"
-              startIcon={<Iconify icon="solar:refresh-bold" />}
+              startIcon={<Iconify icon="solar:refresh-linear" />}
               disabled={loading}
               onClick={() => load()}
             >
@@ -502,7 +477,7 @@ function CustomerListPage() {
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
+                    <Iconify icon="solar:magnifier-linear" sx={{ color: 'text.disabled' }} />
                   </InputAdornment>
                 ),
               }}
@@ -613,7 +588,7 @@ function CustomerDetailsPage({ customerId }: { customerId: string }) {
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
         <Button
           color="inherit"
-          startIcon={<Iconify icon="eva:arrow-ios-back-fill" />}
+          startIcon={<Iconify icon="solar:alt-arrow-left-linear" />}
           onClick={() => navigate('/dashboard/customers')}
           sx={{ mb: 3 }}
         >
@@ -644,7 +619,7 @@ function CustomerDetailsPage({ customerId }: { customerId: string }) {
     <>
       <Helmet>
         <title>
-          {t('customers.details.documentTitle', { name: customer.customer_name })} | moventra
+          {t('customers.details.documentTitle', { name: customer.customer_name })} | SCC Digital Bank
         </title>
       </Helmet>
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
@@ -658,7 +633,7 @@ function CustomerDetailsPage({ customerId }: { customerId: string }) {
           <Box>
             <Button
               color="inherit"
-              startIcon={<Iconify icon="eva:arrow-ios-back-fill" />}
+              startIcon={<Iconify icon="solar:alt-arrow-left-linear" />}
               onClick={() => navigate('/dashboard/customers')}
               sx={{ mb: 1 }}
             >
@@ -679,7 +654,7 @@ function CustomerDetailsPage({ customerId }: { customerId: string }) {
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
             <Button
               color="inherit"
-              startIcon={<Iconify icon="solar:pen-new-square-bold-duotone" />}
+              startIcon={<Iconify icon="solar:pen-bold" />}
               onClick={() => navigate(`/dashboard/va-applications/${customer.application_id}`)}
             >
               {t('customers.details.manageOnboarding')}
@@ -687,7 +662,7 @@ function CustomerDetailsPage({ customerId }: { customerId: string }) {
             <Button
               variant="contained"
               disabled={!isActive}
-              startIcon={<Iconify icon="solar:inbox-in-bold-duotone" />}
+              startIcon={<Iconify icon="solar:download-minimalistic-bold-duotone" />}
               onClick={() => navigate(`/dashboard/operations/deposits${operationQuery}`)}
             >
               {t('customers.details.recordDeposit')}
@@ -822,7 +797,7 @@ function CustomerDetailsPage({ customerId }: { customerId: string }) {
             </Box>
             <Button
               color="inherit"
-              startIcon={<Iconify icon="solar:refresh-bold" />}
+              startIcon={<Iconify icon="solar:refresh-linear" />}
               disabled={loading}
               onClick={() => load()}
             >

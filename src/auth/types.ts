@@ -21,7 +21,10 @@ export type AuthStateType = {
   user: AuthUserType;
 };
 
-export type AuthRole = 'admin' | 'partner';
+export type AuthRole =
+  | 'admin'
+  | 'partner'
+  | 'customer';
 
 export type PortalPermission =
   | 'team.read'
@@ -91,7 +94,7 @@ export type AuthFlowResult = {
 
 export type AuthSessionData = {
   user: AuthSessionUser;
-  csrfToken: string;
+  csrfToken: string | null;
 };
 
 export type CompleteSetupInput = {

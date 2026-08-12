@@ -237,7 +237,7 @@
       "currentVersion": "Version {{version}} · Updated by {{operator}}",
       "systemOperator": "System",
       "addressEyebrow": "Allowlisted destination",
-      "addressTitle": "moventra TRON treasury address",
+      "addressTitle": "SCC Digital Bank TRON treasury address",
       "addressDescription": "New batches save a snapshot of this address. Changes do not affect existing batches.",
       "addressLabel": "TRON destination address"
     },
@@ -271,7 +271,7 @@
     "messages": {
       "batchCreated": "Sweep batch created. The selected customer balances are now locked.",
       "rateUpdated": "The fixed net conversion rate has been updated.",
-      "addressUpdated": "The moventra TRON allowlisted address has been updated."
+      "addressUpdated": "The SCC Digital Bank TRON allowlisted address has been updated."
     },
     "errors": {
       "loadFailed": "Unable to load sweep data. Try again.",

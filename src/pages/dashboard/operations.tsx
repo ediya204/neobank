@@ -31,7 +31,11 @@ import { useSnackbar } from 'src/components/snackbar';
 import { ConfirmDialog } from 'src/components/custom-dialog';
 import { getLocalizedApiError } from 'src/locales/api-error';
 import { browserApiFetch } from 'src/utils/browser-api';
-import { USD_ASSET_ICON } from 'src/utils/asset-icons';
+import {
+  CRYPTO_NETWORK_OPTIONS,
+  USD_ASSET_ICON,
+  USDT_ASSET_ICON,
+} from 'src/utils/asset-icons';
 
 type Row = Record<string, any>;
 type Application = { application_id: string; customer_name: string; status: string };
@@ -92,17 +96,12 @@ const WITHDRAWAL_FEE_DEFINITIONS: WithdrawalFeeDefinition[] = [
     type: 'usdt_withdrawal',
     labelKey: 'types.cryptoWithdrawal',
     asset: 'USDT',
-    icon: 'cryptocurrency-color:usdt',
+    icon: USDT_ASSET_ICON,
     descriptionKey: 'fees.cryptoDescription',
     defaultAmount: '5',
   },
 ];
-const CRYPTO_NETWORKS = [
-  { value: 'TRON', label: 'TRON', standard: 'TRC20', icon: 'cryptocurrency-color:trx' },
-  { value: 'ETHEREUM', label: 'Ethereum', standard: 'ERC20', icon: 'cryptocurrency-color:eth' },
-  { value: 'SOLANA', label: 'Solana', standard: 'SPL', icon: 'cryptocurrency-color:sol' },
-  { value: 'BSC', label: 'BNB Smart Chain', standard: 'BEP20', icon: 'cryptocurrency-color:bnb' },
-] as const;
+const CRYPTO_NETWORKS = CRYPTO_NETWORK_OPTIONS;
 const OPERATION_STATUSES = [
   { value: 'all', labelKey: 'status.all' },
   { value: 'submitted', labelKey: 'status.submitted' },
@@ -142,12 +141,12 @@ const SECTION_META: Record<
   deposits: {
     titleKey: 'sections.deposits.title',
     descriptionKey: 'sections.deposits.description',
-    icon: 'solar:inbox-in-bold-duotone',
+    icon: 'solar:download-minimalistic-bold-duotone',
   },
   withdrawals: {
     titleKey: 'sections.withdrawals.title',
     descriptionKey: 'sections.withdrawals.description',
-    icon: 'solar:outbox-bold-duotone',
+    icon: 'solar:upload-minimalistic-bold-duotone',
   },
   otc: {
     titleKey: 'sections.otc.title',
@@ -777,7 +776,7 @@ export default function OperationsPage({ section = 'deposits' }: { section?: Ope
     <>
       <Helmet>
         <title>
-          {t(sectionMeta.titleKey)} | {t('page.admin')} | moventra
+          {t(sectionMeta.titleKey)} | {t('page.admin')} | SCC Digital Bank
         </title>
       </Helmet>
       <Container maxWidth="xl">
@@ -903,7 +902,7 @@ export default function OperationsPage({ section = 'deposits' }: { section?: Ope
                   <Button
                     variant={pendingOnly ? 'contained' : 'outlined'}
                     color={pendingOnly ? 'warning' : 'inherit'}
-                    startIcon={<Iconify icon="solar:inbox-in-bold-duotone" />}
+                    startIcon={<Iconify icon="solar:download-minimalistic-bold-duotone" />}
                     onClick={() => setPendingOnly((current) => !current)}
                   >
                     {pendingOnly
@@ -984,7 +983,7 @@ export default function OperationsPage({ section = 'deposits' }: { section?: Ope
                   </TextField>
                 </>
               )}
-              <Button startIcon={<Iconify icon="solar:refresh-bold" />} onClick={() => load()}>
+              <Button startIcon={<Iconify icon="solar:refresh-linear" />} onClick={() => load()}>
                 {t('actions.refresh')}
               </Button>
               {allowAllCustomers && !applicationId && (
@@ -1825,7 +1824,7 @@ function ApiSecuritySettings({
         </Box>
         <Button
           color="inherit"
-          startIcon={<Iconify icon="solar:refresh-bold" />}
+          startIcon={<Iconify icon="solar:refresh-linear" />}
           disabled={loading || Boolean(mutation)}
           onClick={() => onRefresh()}
         >
@@ -1906,7 +1905,7 @@ function ApiSecuritySettings({
             transform: { xs: 'rotate(90deg)', md: 'none' },
           }}
         >
-          <Iconify icon="eva:arrow-ios-forward-fill" width={24} />
+          <Iconify icon="solar:alt-arrow-right-linear" width={24} />
         </Box>
 
         <Box
@@ -2207,7 +2206,7 @@ function WithdrawalFeeSettings({
         </Box>
         <Button
           color="inherit"
-          startIcon={<Iconify icon="solar:refresh-bold" />}
+          startIcon={<Iconify icon="solar:refresh-linear" />}
           disabled={Boolean(saving) || loading}
           onClick={() => onRefresh()}
         >
@@ -2393,7 +2392,7 @@ function renderOperationType(row: Row, t: TFunction<'operations'>) {
       </Typography>
       <Stack direction="row" spacing={0.75} alignItems="center">
         <OtcLegValue asset={row.sell_asset} network={row.sell_network} />
-        <Iconify icon="eva:arrow-forward-fill" width={15} color="text.disabled" />
+        <Iconify icon="solar:alt-arrow-right-linear" width={15} color="text.disabled" />
         <OtcLegValue asset={row.buy_asset} network={row.buy_network} />
       </Stack>
     </Stack>
@@ -2501,7 +2500,7 @@ function OperationTableAmount({
           {completed ? '−' : ''}
           {formatOperationNumber(sellAmount, locale)} {sellAsset}
         </Typography>
-        <Iconify icon="eva:arrow-forward-fill" width={15} color="text.disabled" />
+        <Iconify icon="solar:alt-arrow-right-linear" width={15} color="text.disabled" />
         <Typography
           component="span"
           variant="body2"
@@ -2915,7 +2914,7 @@ function OtcLegValue({ asset, network }: { asset: string; network?: string }) {
   if (network) return <NetworkValue network={network} compact />;
   return (
     <Stack direction="row" spacing={0.75} alignItems="center">
-      <Iconify icon={asset === 'USD' ? USD_ASSET_ICON : 'cryptocurrency-color:usdt'} width={16} />
+      <Iconify icon={asset === 'USD' ? USD_ASSET_ICON : USDT_ASSET_ICON} width={16} />
       <Typography variant="caption" color="text.secondary">
         {asset}
       </Typography>

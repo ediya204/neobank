@@ -11,7 +11,7 @@ export default function Page500() {
   return (
     <>
       <Helmet>
-        <title>{t('error_pages.server_error.page_title')} | moventra</title>
+        <title>{t('error_pages.server_error.page_title')} | SCC Digital Bank</title>
       </Helmet>
 
       <View500 />

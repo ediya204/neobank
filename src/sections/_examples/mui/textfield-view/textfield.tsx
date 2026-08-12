@@ -160,9 +160,9 @@ export default function Textfield({ variant }: Props) {
                   edge="end"
                 >
                   {values.showPassword ? (
-                    <Iconify icon="solar:eye-bold" width={24} />
+                    <Iconify icon="solar:eye-linear" width={24} />
                   ) : (
-                    <Iconify icon="solar:eye-closed-bold" width={24} />
+                    <Iconify icon="solar:eye-closed-linear" width={24} />
                   )}
                 </IconButton>
               </InputAdornment>

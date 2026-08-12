@@ -27,7 +27,7 @@ const TABS = [
   {
     value: 'profile',
     label: 'Profile',
-    icon: <Iconify icon="solar:user-id-bold" width={24} />,
+    icon: <Iconify icon="solar:user-id-bold-duotone" width={24} />,
   },
   {
     value: 'followers',

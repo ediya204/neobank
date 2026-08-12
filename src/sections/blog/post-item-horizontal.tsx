@@ -100,7 +100,7 @@ export default function PostItemHorizontal({ post }: Props) {
               </Stack>
 
               <Stack direction="row" alignItems="center">
-                <Iconify icon="solar:eye-bold" width={16} sx={{ mr: 0.5 }} />
+                <Iconify icon="solar:eye-linear" width={16} sx={{ mr: 0.5 }} />
                 {fShortenNumber(totalViews)}
               </Stack>
 
@@ -144,7 +144,7 @@ export default function PostItemHorizontal({ post }: Props) {
             router.push(paths.dashboard.post.details(title));
           }}
         >
-          <Iconify icon="solar:eye-bold" />
+          <Iconify icon="solar:eye-linear" />
           View
         </MenuItem>
 

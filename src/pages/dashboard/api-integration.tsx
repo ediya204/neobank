@@ -1063,7 +1063,7 @@ export default function ApiIntegrationApprovalPage() {
     return (
       <>
         <Helmet>
-          <title>{t('apiIntegrationApproval.pageTitle')} | moventra</title>
+          <title>{t('apiIntegrationApproval.pageTitle')} | SCC Digital Bank</title>
         </Helmet>
         <Container maxWidth={settings.themeStretch ? false : 'xl'}>
           <Box sx={{ mb: 4 }}>
@@ -1090,7 +1090,7 @@ export default function ApiIntegrationApprovalPage() {
   return (
     <>
       <Helmet>
-        <title>{t('apiIntegrationApproval.pageTitle')} | moventra</title>
+        <title>{t('apiIntegrationApproval.pageTitle')} | SCC Digital Bank</title>
       </Helmet>
 
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
@@ -1109,7 +1109,7 @@ export default function ApiIntegrationApprovalPage() {
           </Box>
           <Button
             color="inherit"
-            startIcon={<Iconify icon="solar:refresh-bold" />}
+            startIcon={<Iconify icon="solar:refresh-linear" />}
             disabled={loading}
             onClick={() => load()}
           >
@@ -1835,7 +1835,7 @@ export default function ApiIntegrationApprovalPage() {
                           )}
                         </Stack>
                         <Iconify
-                          icon="eva:arrow-ios-forward-fill"
+                          icon="solar:alt-arrow-right-linear"
                           width={18}
                           sx={{ color: 'text.disabled', flexShrink: 0 }}
                         />
@@ -2240,7 +2240,7 @@ function WebhookDeliveryDetailDialog({
           onClick={onClose}
           sx={{ position: 'absolute', top: 14, right: 14 }}
         >
-          <Iconify icon="mingcute:close-line" />
+          <Iconify icon="solar:close-circle-linear" />
         </IconButton>
       </DialogTitle>
 

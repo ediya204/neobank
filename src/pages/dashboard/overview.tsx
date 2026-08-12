@@ -26,7 +26,7 @@ import PrototypeVariantSwitcher from 'src/components/prototype-variant-switcher'
 import { useSettingsContext } from 'src/components/settings';
 import { getLocalizedApiError } from 'src/locales/api-error';
 import { browserApiFetch } from 'src/utils/browser-api';
-import { USD_ASSET_ICON } from 'src/utils/asset-icons';
+import { CRYPTO_NETWORK_OPTIONS, USD_ASSET_ICON } from 'src/utils/asset-icons';
 
 export type BalanceSummary = {
   asset: string;
@@ -87,32 +87,7 @@ const AdminOverviewVisualizationPrototype = lazy(
   () => import('src/pages/dashboard/overview-visualization-prototype')
 );
 
-const CHAINS = [
-  {
-    value: 'TRON',
-    name: 'TRON',
-    standard: 'TRC20',
-    icon: 'cryptocurrency-color:trx',
-  },
-  {
-    value: 'ETHEREUM',
-    name: 'Ethereum',
-    standard: 'ERC20',
-    icon: 'cryptocurrency-color:eth',
-  },
-  {
-    value: 'SOLANA',
-    name: 'Solana',
-    standard: 'SPL',
-    icon: 'cryptocurrency-color:sol',
-  },
-  {
-    value: 'BSC',
-    name: 'BNB Smart Chain',
-    standard: 'BEP20',
-    icon: 'cryptocurrency-color:bnb',
-  },
-] as const;
+const CHAINS = CRYPTO_NETWORK_OPTIONS;
 
 async function getOverview(errorMessage: string, signal?: AbortSignal): Promise<OverviewData> {
   const response = await browserApiFetch('/api/browser/v1/admin/overview', {
@@ -250,7 +225,7 @@ export default function AdminOverviewPage() {
   return (
     <>
       <Helmet>
-        <title>{t('overview.pageTitle')} | moventra</title>
+        <title>{t('overview.pageTitle')} | SCC Digital Bank</title>
       </Helmet>
 
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
@@ -269,7 +244,7 @@ export default function AdminOverviewPage() {
           </Box>
           <Button
             color="inherit"
-            startIcon={<Iconify icon="solar:refresh-bold" />}
+            startIcon={<Iconify icon="solar:refresh-linear" />}
             disabled={loading}
             onClick={() => load()}
           >
@@ -347,7 +322,7 @@ export default function AdminOverviewPage() {
             title={t('overview.metrics.pendingDeposits')}
             value={overview.pending.deposits}
             helper={t('overview.metrics.pendingDepositsHelper')}
-            icon="solar:inbox-in-bold-duotone"
+            icon="solar:download-minimalistic-bold-duotone"
             color="success"
             onClick={() => navigate('/dashboard/operations/deposits')}
           />
@@ -518,7 +493,7 @@ export default function AdminOverviewPage() {
                 <Button
                   fullWidth
                   variant="contained"
-                  startIcon={<Iconify icon="solar:inbox-in-bold-duotone" />}
+                  startIcon={<Iconify icon="solar:download-minimalistic-bold-duotone" />}
                   onClick={() => navigate('/dashboard/operations/deposits')}
                 >
                   {t('overview.quickActions.recordDeposit')}
@@ -784,7 +759,7 @@ function RecentTransactionAmount({ row, locale }: { row: RecentTransaction; loca
           {completed ? '−' : ''}
           {formatAmount(row.amount, locale)} {row.asset}
         </Typography>
-        <Iconify icon="eva:arrow-forward-fill" width={15} color="text.disabled" />
+        <Iconify icon="solar:alt-arrow-right-linear" width={15} color="text.disabled" />
         <Typography
           component="span"
           variant="body2"

@@ -37,6 +37,7 @@ import {
   Customer,
   demoOrganizationId,
   demoUsers,
+  supportedFiatCurrencies,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
 
@@ -46,8 +47,15 @@ type CustomerForm = {
   legalName: string;
   email: string;
   phone: string;
+  phoneCountryCode: string;
   countryCode: string;
   registrationNo: string;
+  dateOfBirth: string;
+  nationality: string;
+  contactName: string;
+  contactRole: string;
+  beneficialOwnerName: string;
+  beneficialOwnerOwnership: string;
 };
 
 const emptyCustomer: CustomerForm = {
@@ -56,15 +64,22 @@ const emptyCustomer: CustomerForm = {
   legalName: '',
   email: '',
   phone: '',
+  phoneCountryCode: '+852',
   countryCode: 'SG',
   registrationNo: '',
+  dateOfBirth: '',
+  nationality: '',
+  contactName: '',
+  contactRole: '',
+  beneficialOwnerName: '',
+  beneficialOwnerOwnership: '',
 };
 
-const fiatCurrencies: Currency[] = ['USD', 'SGD', 'HKD', 'EUR', 'GBP'];
+const fiatCurrencies: Currency[] = supportedFiatCurrencies;
 
 export default function OnboardingWorkspace({ portal = false }: { portal?: boolean }) {
   const [tab, setTab] = useState<'customers' | 'va'>('customers');
-  const [userId, setUserId] = useState('usr_maker');
+  const [userId, setUserId] = useState('usr_admin');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vaRequests, setVaRequests] = useState<VirtualAccountRequest[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -105,34 +120,73 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
   const createCustomer = async (event: FormEvent) => {
     event.preventDefault();
     try {
+      const common = {
+        organizationId: demoOrganizationId,
+        type: customerForm.type,
+        displayName: customerForm.displayName,
+        legalName: customerForm.legalName,
+        email: customerForm.email,
+        phone: customerForm.phone,
+        phoneCountryCode: customerForm.phoneCountryCode,
+        countryCode: customerForm.countryCode,
+      };
+      const typeSpecific =
+        customerForm.type === 'INDIVIDUAL'
+          ? {
+              dateOfBirth: customerForm.dateOfBirth,
+              nationality: customerForm.nationality,
+            }
+          : {
+              registrationNo: customerForm.registrationNo,
+              contactName: customerForm.contactName,
+              contactRole: customerForm.contactRole,
+              beneficialOwnerName: customerForm.beneficialOwnerName,
+              beneficialOwnerOwnership: Number(customerForm.beneficialOwnerOwnership),
+            };
       await coreApi('/customers', {
         method: 'POST',
         userId,
-        body: JSON.stringify({ ...customerForm, organizationId: demoOrganizationId }),
+        body: JSON.stringify({ ...common, ...typeSpecific }),
       });
       setCustomerOpen(false);
       setCustomerForm(emptyCustomer);
-      setSuccess('开户申请已提交，等待另一名复核人员审核');
+      setSuccess('开户申请已提交，需先完成 KYC 人工审核，再由运营批准开户');
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : '提交失败');
     }
   };
 
-  const reviewCustomer = async (customer: Customer, action: 'approve' | 'reject') => {
+  const reviewKyc = async (customer: Customer, decision: 'APPROVE' | 'REJECT') => {
     try {
-      await coreApi(`/customers/${customer.id}/${action}`, {
+      await coreApi(`/customers/${customer.id}/kyc`, {
         method: 'PATCH',
         userId,
-        body: JSON.stringify(
-          action === 'approve' ? { note: '资料核验通过' } : { reason: '资料不完整，请重新提交' }
-        ),
+        body: JSON.stringify({
+          decision,
+          note: decision === 'APPROVE' ? 'KYC 资料人工核验通过' : 'KYC 资料未通过人工核验',
+        }),
       });
-      setSuccess(action === 'approve' ? '客户开户已通过，五币种钱包已自动创建' : '开户申请已拒绝');
+      setSuccess(decision === 'APPROVE' ? 'KYC 已通过，申请进入运营开户审核' : 'KYC 未通过，申请已拒绝');
       setSelectedCustomer(null);
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : '审核失败');
+    }
+  };
+
+  const approveCustomer = async (customer: Customer) => {
+    try {
+      await coreApi(`/customers/${customer.id}/approve`, {
+        method: 'PATCH',
+        userId,
+        body: JSON.stringify({ note: 'KYC 已通过，运营批准开户' }),
+      });
+      setSuccess('运营已批准开户，USD/HKD 与 USDT-TRON 钱包已创建');
+      setSelectedCustomer(null);
+      await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : '运营审核失败');
     }
   };
 
@@ -152,7 +206,7 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
       setVaOpen(false);
       setSelectedCustomer(null);
       setTab('va');
-      setSuccess('VA 申请已提交，等待另一名人员复核');
+      setSuccess('VA 申请已提交，管理员可直接完成审批');
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : 'VA 申请失败');
@@ -169,14 +223,14 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
       setSuccess(action === 'approve' ? 'VA 已开通并建立独立余额账户' : 'VA 申请已拒绝');
       await load();
     } catch (value) {
-      setError(value instanceof Error ? value.message : '复核失败');
+      setError(value instanceof Error ? value.message : '审批失败');
     }
   };
 
   return (
     <>
       <Helmet>
-        <title>客户开户与 VA | Moventra</title>
+        <title>客户开户与 VA | SCC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
@@ -184,7 +238,7 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
             <Box>
               <Typography variant="h4">客户开户与 VA</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                支持个人和企业开户；审核通过后创建五币种法币钱包，可继续申请一个或多个独立 VA。
+                支持个人和企业开户；先完成人工 KYC，再由运营批准开户。只有运营批准后才创建钱包。
               </Typography>
             </Box>
             <Stack direction="row" spacing={1.5}>
@@ -204,7 +258,7 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
               </FormControl>
               <Button
                 variant="contained"
-                startIcon={<Iconify icon="mingcute:add-line" />}
+                startIcon={<Iconify icon="solar:add-circle-linear" />}
                 onClick={() => setCustomerOpen(true)}
               >
                 发起开户
@@ -252,7 +306,8 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
         currentUserId={userId}
         portal={portal}
         onClose={() => setSelectedCustomer(null)}
-        onReview={reviewCustomer}
+        onReviewKyc={reviewKyc}
+        onApproveCustomer={approveCustomer}
         onRequestVa={() => setVaOpen(true)}
       />
       <Dialog open={vaOpen} onClose={() => setVaOpen(false)} fullWidth maxWidth="sm">
@@ -321,6 +376,7 @@ function CustomerTable({
             <TableCell>类型</TableCell>
             <TableCell>国家/地区</TableCell>
             <TableCell>邮箱</TableCell>
+            <TableCell>KYC</TableCell>
             <TableCell>状态</TableCell>
             <TableCell>钱包/VA</TableCell>
           </TableRow>
@@ -342,6 +398,7 @@ function CustomerTable({
               <TableCell>{customer.type === 'BUSINESS' ? '企业' : '个人'}</TableCell>
               <TableCell>{customer.countryCode}</TableCell>
               <TableCell>{customer.email}</TableCell>
+              <TableCell>{kycStatusLabel(customer.kycStatus, customer.status)}</TableCell>
               <TableCell>
                 <CustomerStatus status={customer.status} />
               </TableCell>
@@ -350,7 +407,7 @@ function CustomerTable({
           ))}
           {!rows.length && (
             <TableRow>
-              <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+              <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
                 {loading ? '加载中…' : '暂无开户申请'}
               </TableCell>
             </TableRow>
@@ -415,7 +472,7 @@ function VaRequestTable({
                     <Button
                       size="small"
                       variant="contained"
-                      disabled={request.makerId === currentUserId}
+                      disabled={request.makerId === currentUserId && currentUserId !== 'usr_admin'}
                       onClick={() => onReview(request, 'approve').catch(() => undefined)}
                     >
                       通过
@@ -488,6 +545,15 @@ function CustomerDialog({
                 onChange={(event) => set('email', event.target.value)}
               />
               <TextField
+                required
+                sx={{ width: { sm: 150 } }}
+                label="电话区号"
+                value={form.phoneCountryCode}
+                inputProps={{ pattern: '^\\+[1-9][0-9]{0,3}$', maxLength: 5 }}
+                onChange={(event) => set('phoneCountryCode', event.target.value)}
+              />
+              <TextField
+                required
                 fullWidth
                 label="电话"
                 value={form.phone}
@@ -498,21 +564,82 @@ function CustomerDialog({
               <TextField
                 required
                 fullWidth
-                label="国家代码"
+                label={form.type === 'BUSINESS' ? '注册国家/地区' : '常住国家/地区'}
                 value={form.countryCode}
                 inputProps={{ maxLength: 2 }}
                 onChange={(event) => set('countryCode', event.target.value.toUpperCase())}
               />
-              {form.type === 'BUSINESS' && (
+              {form.type === 'BUSINESS' ? (
                 <TextField
+                  required
                   fullWidth
                   label="注册号"
                   value={form.registrationNo}
                   onChange={(event) => set('registrationNo', event.target.value)}
                 />
+              ) : (
+                <TextField
+                  required
+                  fullWidth
+                  label="国籍代码"
+                  value={form.nationality}
+                  inputProps={{ maxLength: 2 }}
+                  onChange={(event) => set('nationality', event.target.value.toUpperCase())}
+                />
               )}
             </Stack>
-            <Alert severity="info">提交后进入待审核；提交人不能审批自己创建的客户。</Alert>
+            {form.type === 'INDIVIDUAL' ? (
+              <TextField
+                required
+                fullWidth
+                type="date"
+                label="出生日期"
+                value={form.dateOfBirth}
+                InputLabelProps={{ shrink: true }}
+                inputProps={{ max: new Date().toISOString().slice(0, 10) }}
+                onChange={(event) => set('dateOfBirth', event.target.value)}
+              />
+            ) : (
+              <>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                  <TextField
+                    required
+                    fullWidth
+                    label="授权联系人"
+                    value={form.contactName}
+                    onChange={(event) => set('contactName', event.target.value)}
+                  />
+                  <TextField
+                    required
+                    fullWidth
+                    label="联系人职务"
+                    value={form.contactRole}
+                    onChange={(event) => set('contactRole', event.target.value)}
+                  />
+                </Stack>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                  <TextField
+                    required
+                    fullWidth
+                    label="最终受益人姓名"
+                    value={form.beneficialOwnerName}
+                    onChange={(event) => set('beneficialOwnerName', event.target.value)}
+                  />
+                  <TextField
+                    required
+                    fullWidth
+                    type="number"
+                    label="持股或控制比例（%）"
+                    value={form.beneficialOwnerOwnership}
+                    inputProps={{ min: 0.01, max: 100, step: 0.01 }}
+                    onChange={(event) => set('beneficialOwnerOwnership', event.target.value)}
+                  />
+                </Stack>
+              </>
+            )}
+            <Alert severity="info">
+              提交后进入 KYC 待审核。KYC 通过仅进入运营审核，不会自动开通账户或钱包。
+            </Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -531,14 +658,16 @@ function CustomerDrawer({
   currentUserId,
   portal,
   onClose,
-  onReview,
+  onReviewKyc,
+  onApproveCustomer,
   onRequestVa,
 }: {
   customer: Customer | null;
   currentUserId: string;
   portal: boolean;
   onClose: () => void;
-  onReview: (customer: Customer, action: 'approve' | 'reject') => Promise<void>;
+  onReviewKyc: (customer: Customer, decision: 'APPROVE' | 'REJECT') => Promise<void>;
+  onApproveCustomer: (customer: Customer) => Promise<void>;
   onRequestVa: () => void;
 }) {
   if (!customer) return null;
@@ -561,9 +690,31 @@ function CustomerDrawer({
         </Stack>
         <Info label="法定名称" value={customer.legalName} />
         <Info label="邮箱" value={customer.email} />
+        <Info
+          label="电话"
+          value={`${customer.phoneCountryCode || ''} ${customer.phone || ''}`.trim() || '-'}
+        />
+        <Info label="KYC 状态" value={kycStatusLabel(customer.kycStatus, customer.status)} />
+        {customer.type === 'INDIVIDUAL' ? (
+          <>
+            <Info label="出生日期" value={customer.dateOfBirth?.slice(0, 10) || '-'} />
+            <Info label="国籍" value={customer.nationality || '-'} />
+          </>
+        ) : (
+          <>
+            <Info label="企业注册号" value={customer.registrationNo || '-'} />
+            <Info label="授权联系人" value={customer.contactName || '-'} />
+            <Info label="联系人职务" value={customer.contactRole || '-'} />
+            <Info label="最终受益人" value={customer.beneficialOwnerName || '-'} />
+            <Info
+              label="持股或控制比例"
+              value={customer.beneficialOwnerOwnership ? `${customer.beneficialOwnerOwnership}%` : '-'}
+            />
+          </>
+        )}
         <Info label="客户编号" value={customer.id} />
         <Alert severity="info">
-          开户通过后自动创建 USD、SGD、HKD、EUR、GBP 五个法币钱包；数字钱包保持禁用。
+          KYC 通过不代表开户完成。运营批准后才创建 USD、HKD 法币钱包和 USDT-TRON 数字钱包。
         </Alert>
         {customer.status === 'ACTIVE' && (
           <>
@@ -590,25 +741,35 @@ function CustomerDrawer({
             </Button>
           </>
         )}
-        {!portal && customer.status === 'PENDING_REVIEW' && (
+        {!portal && customer.status === 'PENDING_REVIEW' && customer.kycStatus === 'PENDING' && (
           <Stack direction="row" spacing={1}>
             <Button
               fullWidth
               color="error"
               variant="outlined"
-              onClick={() => onReview(customer, 'reject').catch(() => undefined)}
+              onClick={() => onReviewKyc(customer, 'REJECT').catch(() => undefined)}
             >
-              拒绝
+              KYC 不通过
             </Button>
             <Button
               fullWidth
               variant="contained"
-              disabled={customer.creatorId === currentUserId}
-              onClick={() => onReview(customer, 'approve').catch(() => undefined)}
+              disabled={customer.creatorId === currentUserId && currentUserId !== 'usr_admin'}
+              onClick={() => onReviewKyc(customer, 'APPROVE').catch(() => undefined)}
             >
-              审核通过
+              KYC 通过
             </Button>
           </Stack>
+        )}
+        {!portal && customer.status === 'PENDING_REVIEW' && customer.kycStatus === 'APPROVED' && (
+          <Button
+            fullWidth
+            variant="contained"
+            disabled={customer.creatorId === currentUserId && currentUserId !== 'usr_admin'}
+            onClick={() => onApproveCustomer(customer).catch(() => undefined)}
+          >
+            运营批准开户
+          </Button>
         )}
       </Stack>
     </Drawer>
@@ -624,10 +785,16 @@ function CustomerStatus({ status }: { status: string }) {
     PENDING_REVIEW: '待审核',
     REJECTED: '已拒绝',
     SUSPENDED: '已暂停',
-    SUBMITTED: '待复核',
+    SUBMITTED: '待审批',
     APPROVED: '已开通',
   };
   return <Label color={color}>{labels[status] || status}</Label>;
+}
+function kycStatusLabel(status: Customer['kycStatus'], customerStatus: Customer['status']) {
+  if (status === 'APPROVED') {
+    return customerStatus === 'PENDING_REVIEW' ? '已通过，待运营审核' : '已通过';
+  }
+  return { PENDING: '待人工审核', REJECTED: '未通过' }[status];
 }
 function Info({ label, value }: { label: string; value: string }) {
   return (

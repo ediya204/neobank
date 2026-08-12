@@ -122,7 +122,7 @@ export default function AccountPopover() {
           onClick={handleLogout}
           sx={{ m: 1, fontWeight: 'fontWeightBold', color: 'error.main' }}
         >
-          <Iconify icon="solar:logout-2-bold-duotone" width={20} sx={{ mr: 1.5 }} />
+          <Iconify icon="solar:logout-2-linear" width={20} sx={{ mr: 1.5 }} />
           {t('account.logout')}
         </MenuItem>
       </CustomPopover>

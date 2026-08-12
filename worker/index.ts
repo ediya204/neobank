@@ -9958,7 +9958,7 @@ async function createSweepBatch(env: Env, request: Request) {
     `SELECT * FROM sweep_settings WHERE id='ethan_tron_address'`
   ).first<SweepSettingRow>();
   if (!setting?.tron_address || !validCryptoAddress('TRON', setting.tron_address)) {
-    return error(409, 'sweep_address_missing', '请先配置 moventra TRON 白名单地址');
+    return error(409, 'sweep_address_missing', '请先配置 SCC数字银行 TRON 白名单地址');
   }
   const totalMinor = items.reduce((sum, item) => sum + item.amountMinor, 0);
   if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0) {

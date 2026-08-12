@@ -9,7 +9,10 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
   app.use(helmet());
   app.enableCors({
-    origin: (process.env.WEB_ORIGIN || 'http://localhost:3002').split(','),
+    origin: (
+      process.env.WEB_ORIGIN ||
+      'http://localhost:3002,http://localhost:8787,http://127.0.0.1:8787'
+    ).split(','),
     credentials: true,
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

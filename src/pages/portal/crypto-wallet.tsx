@@ -36,46 +36,148 @@ import {
   Typography,
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
+import { NETWORK_META, USDT_ASSET_ICON } from 'src/utils/asset-icons';
 import Label from 'src/components/label';
+import { useAuthContext } from 'src/auth/hooks';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 import {
   coreApi,
   CryptoNetwork,
   CryptoTransfer,
   CryptoWallet,
+  supportedCryptoNetwork,
 } from 'src/features/finance/core-api';
+import {
+  cryptoWalletStatusDetails,
+  isWithdrawalReady,
+  normalizeCryptoWalletStatus,
+} from 'src/features/finance/crypto-wallet-status';
 
 export type CryptoWalletView = 'overview' | 'deposit' | 'withdraw';
+
+type CustomerWalletRow = {
+  id: string;
+  customer_id: string;
+  address?: string | null;
+  status: string;
+  custody_provider?: string | null;
+  ownership_verified_at?: string | null;
+  deposit_enabled?: boolean | number;
+  available_balance?: string;
+  frozen_balance?: string;
+};
+
+type CustomerHistoryRow = {
+  id: string;
+  customer_id: string;
+  wallet_id: string;
+  direction: 'deposit' | 'withdrawal';
+  amount: string;
+  status: string;
+  address: string;
+  txid?: string;
+  created_at: string;
+};
+
+type CustomerHistory = {
+  withdrawals: CustomerHistoryRow[];
+  deposits: CustomerHistoryRow[];
+};
+
+function toCustomerWallet(row: CustomerWalletRow): CryptoWallet {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    asset: 'USDT',
+    network: 'TRON',
+    networkLabel: 'Tron',
+    tokenStandard: 'TRC20',
+    walletAddress: row.deposit_enabled && row.address ? row.address : '',
+    status: normalizeCryptoWalletStatus(row.status),
+    availableBalance: row.available_balance || '0',
+    frozenBalance: row.frozen_balance || '0',
+    minimumDeposit: '0',
+    withdrawalFee: '0',
+    confirmationsRequired: 20,
+    custodyProvider: row.custody_provider === 'cregis' ? 'CREGIS' : null,
+    ownershipVerifiedAt: row.ownership_verified_at || null,
+    depositEnabled: Boolean(row.deposit_enabled && row.address),
+  };
+}
+
+function isDepositReady(wallet: CryptoWallet | undefined): wallet is CryptoWallet {
+  return Boolean(
+    wallet?.status === 'ACTIVE' &&
+      wallet.depositEnabled &&
+      wallet.custodyProvider === 'CREGIS' &&
+      wallet.ownershipVerifiedAt &&
+      wallet.walletAddress
+  );
+}
+
+function normalizeCustomerTransferStatus(status: string): CryptoTransfer['status'] {
+  if (status === 'completed') return 'COMPLETED';
+  if (status === 'submitted') return 'SUBMITTED';
+  if (status === 'rejected') return 'REJECTED';
+  if (['failed', 'exception', 'cancelled'].includes(status)) return 'FAILED';
+  return 'PROCESSING';
+}
+
+function toCustomerTransfer(row: CustomerHistoryRow, wallet: CryptoWallet): CryptoTransfer {
+  const status = normalizeCustomerTransferStatus(row.status);
+  const deposit = row.direction === 'deposit';
+  return {
+    id: row.id,
+    reference: row.id,
+    customerId: row.customer_id,
+    walletId: row.wallet_id,
+    asset: 'USDT',
+    network: 'TRON',
+    direction: deposit ? 'DEPOSIT' : 'WITHDRAWAL',
+    status,
+    amount: row.amount,
+    feeAmount: '0',
+    netAmount: row.amount,
+    fromAddress: deposit ? '链上来源' : wallet.walletAddress,
+    toAddress: deposit ? row.address : row.address,
+    txHash: row.txid,
+    confirmations: status === 'COMPLETED' ? 20 : 0,
+    submittedAt: row.created_at,
+    completedAt: status === 'COMPLETED' ? row.created_at : undefined,
+    createdAt: row.created_at,
+    wallet,
+  };
+}
+
+function renderDepositQrCode(wallet: CryptoWallet, qrCode: string, customerSession: boolean) {
+  if (qrCode) {
+    return (
+      <Box
+        component="img"
+        src={qrCode}
+        alt={`${wallet.network} USDT 收币二维码`}
+        sx={{ width: 170, height: 170 }}
+      />
+    );
+  }
+  if (customerSession) {
+    return (
+      <Typography variant="caption" color="text.secondary" align="center" sx={{ px: 2 }}>
+        请复制并逐字核对上方 TRC20 地址
+      </Typography>
+    );
+  }
+  return <Skeleton variant="rectangular" width={170} height={170} />;
+}
 
 const networkMeta: Record<
   CryptoNetwork,
   { name: string; standard: string; icon: string; color: string; soft: string }
-> = {
-  TRON: {
-    name: 'Tron',
-    standard: 'TRC20',
-    icon: 'cryptocurrency-color:trx',
-    color: '#EF3340',
-    soft: '#FFF0F1',
-  },
-  BSC: {
-    name: 'BNB Smart Chain',
-    standard: 'BEP20',
-    icon: 'cryptocurrency-color:bnb',
-    color: '#E9B719',
-    soft: '#FFF8DF',
-  },
-  ETHEREUM: {
-    name: 'Ethereum',
-    standard: 'ERC20',
-    icon: 'logos:ethereum-color',
-    color: '#627EEA',
-    soft: '#EEF1FF',
-  },
-};
+> = NETWORK_META;
 
 export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoWalletView }) {
   const navigate = useNavigate();
+  const { user } = useAuthContext();
   const { customer } = usePortalCustomer();
   const [wallets, setWallets] = useState<CryptoWallet[]>([]);
   const [transfers, setTransfers] = useState<CryptoTransfer[]>([]);
@@ -88,18 +190,40 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
     setLoading(true);
     setError('');
     try {
+      if (user?.role === 'customer') {
+        const [walletPayload, history] = await Promise.all([
+          coreApi<{ data: CustomerWalletRow[] }>('/customer/wallets'),
+          coreApi<CustomerHistory>('/customer/history'),
+        ]);
+        const customerWallets = walletPayload.data.map(toCustomerWallet);
+        const walletById = new Map(customerWallets.map((row) => [row.id, row]));
+        const customerTransfers = [...history.withdrawals, ...history.deposits]
+          .map((row) => {
+            const wallet = walletById.get(row.wallet_id);
+            return wallet ? toCustomerTransfer(row, wallet) : null;
+          })
+          .filter((row): row is CryptoTransfer => Boolean(row))
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+        setWallets(customerWallets);
+        setTransfers(customerTransfers);
+        return;
+      }
       const [walletRows, transferRows] = await Promise.all([
         coreApi<CryptoWallet[]>(`/crypto-wallets?customerId=${customer.id}`),
         coreApi<CryptoTransfer[]>(`/crypto-wallets/transfers?customerId=${customer.id}`),
       ]);
-      setWallets(walletRows);
-      setTransfers(transferRows);
+      setWallets(
+        walletRows
+          .filter((row) => row.network === supportedCryptoNetwork)
+          .map((row) => ({ ...row, status: normalizeCryptoWalletStatus(row.status) }))
+      );
+      setTransfers(transferRows.filter((row) => row.network === supportedCryptoNetwork));
     } catch (value) {
       setError(value instanceof Error ? value.message : '数字钱包加载失败');
     } finally {
       setLoading(false);
     }
-  }, [customer]);
+  }, [customer, user?.role]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -108,11 +232,18 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
   let title = '数字钱包';
   if (view === 'deposit') title = '收币';
   if (view === 'withdraw') title = '付币';
+  const hasActiveWallet = wallets.some(isWithdrawalReady);
+
+  useEffect(() => {
+    if (view === 'withdraw' && !loading && !hasActiveWallet) {
+      navigate('/portal/crypto-wallet', { replace: true });
+    }
+  }, [hasActiveWallet, loading, navigate, view]);
 
   return (
     <>
       <Helmet>
-        <title>{title} | Moventra</title>
+        <title>{title} | SCC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
@@ -124,15 +255,15 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
                     onClick={() => navigate('/portal/crypto-wallet')}
                     aria-label="返回数字钱包"
                   >
-                    <Iconify icon="eva:arrow-back-fill" />
+                    <Iconify icon="solar:alt-arrow-left-linear" />
                   </IconButton>
                 )}
                 <Box>
                   <Typography variant="h4">{title}</Typography>
                   <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                    {view === 'overview' && '在 TRON、BSC 和 Ethereum 网络管理 USDT。'}
-                    {view === 'deposit' && '选择网络并使用对应地址接收 USDT。'}
-                    {view === 'withdraw' && '向外部链上地址发送 USDT。'}
+                    {view === 'overview' && '通过 TRON（TRC20）网络管理 USDT。'}
+                    {view === 'deposit' && '使用 TRON（TRC20）地址接收 USDT。'}
+                    {view === 'withdraw' && '通过 TRON（TRC20）向外部地址发送 USDT。'}
                   </Typography>
                 </Box>
               </Stack>
@@ -140,14 +271,15 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
             <Stack direction="row" spacing={1}>
               <Button
                 variant={view === 'deposit' ? 'contained' : 'outlined'}
-                startIcon={<Iconify icon="solar:download-minimalistic-bold" />}
+                startIcon={<Iconify icon="solar:download-minimalistic-bold-duotone" />}
                 onClick={() => navigate('/portal/crypto-wallet/deposit')}
               >
                 收币
               </Button>
               <Button
                 variant={view === 'withdraw' ? 'contained' : 'outlined'}
-                startIcon={<Iconify icon="solar:upload-minimalistic-bold" />}
+                startIcon={<Iconify icon="solar:upload-minimalistic-bold-duotone" />}
+                disabled={loading || !hasActiveWallet}
                 onClick={() => navigate('/portal/crypto-wallet/withdraw')}
               >
                 付币
@@ -171,6 +303,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
               loading={loading}
               customerId={customer?.id || ''}
               onOpenTransfer={setSelectedTransfer}
+              customerSession={user?.role === 'customer'}
             />
           )}
           {view === 'withdraw' && (
@@ -181,6 +314,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
               customerId={customer?.id || ''}
               onOpenTransfer={setSelectedTransfer}
               onCreated={load}
+              customerSession={user?.role === 'customer'}
             />
           )}
         </Stack>
@@ -204,6 +338,7 @@ function WalletOverview({
   const navigate = useNavigate();
   const total = wallets.reduce((sum, wallet) => sum + Number(wallet.availableBalance), 0);
   const frozen = wallets.reduce((sum, wallet) => sum + Number(wallet.frozenBalance), 0);
+  const canWithdraw = wallets.some(isWithdrawalReady);
   return (
     <>
       <Card sx={{ bgcolor: '#102C27', color: 'common.white' }}>
@@ -211,7 +346,7 @@ function WalletOverview({
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={3}>
             <Box>
               <Stack direction="row" alignItems="center" spacing={1}>
-                <Iconify icon="cryptocurrency-color:usdt" width={30} />
+                <Iconify icon={USDT_ASSET_ICON} width={30} />
                 <Typography sx={{ opacity: 0.72 }}>USDT 总余额</Typography>
               </Stack>
               {loading ? (
@@ -222,14 +357,14 @@ function WalletOverview({
                 </Typography>
               )}
               <Typography variant="body2" sx={{ mt: 1, opacity: 0.62 }}>
-                冻结 {formatUsdt(frozen)} · 分布在 {wallets.length} 条网络
+                冻结 {formatUsdt(frozen)} · TRON（TRC20）网络
               </Typography>
             </Box>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <Button
                 variant="contained"
                 color="inherit"
-                startIcon={<Iconify icon="solar:download-minimalistic-bold" />}
+                startIcon={<Iconify icon="solar:download-minimalistic-bold-duotone" />}
                 onClick={() => navigate('/portal/crypto-wallet/deposit')}
                 sx={{
                   color: '#102C27',
@@ -241,7 +376,8 @@ function WalletOverview({
               </Button>
               <Button
                 variant="outlined"
-                startIcon={<Iconify icon="solar:upload-minimalistic-bold" />}
+                startIcon={<Iconify icon="solar:upload-minimalistic-bold-duotone" />}
+                disabled={loading || !canWithdraw}
                 onClick={() => navigate('/portal/crypto-wallet/withdraw')}
                 sx={{ color: 'common.white', borderColor: 'rgba(255,255,255,.38)' }}
               >
@@ -281,6 +417,7 @@ function WalletOverview({
 
 function NetworkWalletCard({ wallet }: { wallet: CryptoWallet }) {
   const meta = networkMeta[wallet.network];
+  const status = cryptoWalletStatusDetails(wallet.status);
   return (
     <Card>
       <CardContent sx={{ p: 3 }}>
@@ -305,7 +442,7 @@ function NetworkWalletCard({ wallet }: { wallet: CryptoWallet }) {
               </Typography>
             </Box>
           </Stack>
-          <Chip size="small" label="正常" color="success" variant="soft" />
+          <Chip size="small" label={status.label} color={status.color} variant="soft" />
         </Stack>
         <Typography variant="h4" sx={{ mt: 3 }}>
           {formatUsdt(wallet.availableBalance)}
@@ -331,28 +468,33 @@ function DepositView({
   loading,
   customerId,
   onOpenTransfer,
+  customerSession,
 }: {
   wallets: CryptoWallet[];
   transfers: CryptoTransfer[];
   loading: boolean;
   customerId: string;
   onOpenTransfer: (transfer: CryptoTransfer) => void;
+  customerSession: boolean;
 }) {
-  const [network, setNetwork] = useState<CryptoNetwork>('BSC');
+  const [network, setNetwork] = useState<CryptoNetwork>('TRON');
   const [qrCode, setQrCode] = useState('');
   const [copied, setCopied] = useState(false);
-  const wallet = wallets.find((row) => row.network === network) || wallets[0];
+  const depositWallets = wallets.filter((row) => isDepositReady(row));
+  const wallet = depositWallets.find((row) => row.network === network) || depositWallets[0];
+  const depositWalletIds = new Set(depositWallets.map((row) => row.id));
+  const visibleTransfers = transfers.filter((row) => depositWalletIds.has(row.walletId));
 
   useEffect(() => {
-    if (!wallet || !customerId) return;
+    if (!isDepositReady(wallet) || !customerId || customerSession) return;
     setQrCode('');
     coreApi<{ dataUrl: string }>(`/crypto-wallets/${wallet.id}/qr?customerId=${customerId}`)
       .then((result) => setQrCode(result.dataUrl))
       .catch(() => setQrCode(''));
-  }, [customerId, wallet]);
+  }, [customerId, customerSession, wallet]);
 
   const copyAddress = async () => {
-    if (!wallet) return;
+    if (!isDepositReady(wallet)) return;
     await navigator.clipboard?.writeText(wallet.walletAddress);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
@@ -369,7 +511,7 @@ function DepositView({
       >
         <Card>
           <CardContent sx={{ p: { xs: 2.5, md: 3.5 } }}>
-            <Stepper orientation="vertical" activeStep={2}>
+            <Stepper orientation="vertical" activeStep={wallet ? 2 : 1}>
               <Step>
                 <StepLabel>
                   <Typography variant="subtitle2">选择币种</Typography>
@@ -381,7 +523,7 @@ function DepositView({
                     InputProps={{
                       readOnly: true,
                       startAdornment: (
-                        <Iconify icon="cryptocurrency-color:usdt" width={22} sx={{ mr: 1 }} />
+                        <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />
                       ),
                     }}
                   />
@@ -396,10 +538,10 @@ function DepositView({
                     <InputLabel>网络</InputLabel>
                     <Select
                       label="网络"
-                      value={wallets.some((row) => row.network === network) ? network : ''}
+                      value={depositWallets.some((row) => row.network === network) ? network : ''}
                       onChange={(event) => setNetwork(event.target.value as CryptoNetwork)}
                     >
-                      {wallets.map((row) => {
+                      {depositWallets.map((row) => {
                         const meta = networkMeta[row.network];
                         return (
                           <MenuItem key={row.id} value={row.network}>
@@ -409,7 +551,7 @@ function DepositView({
                       })}
                     </Select>
                   </FormControl>
-                  {wallet && (
+                  {wallet ? (
                     <Typography
                       variant="caption"
                       color="text.secondary"
@@ -418,6 +560,11 @@ function DepositView({
                       最少充值 {wallet.minimumDeposit} USDT · {wallet.confirmationsRequired}{' '}
                       次确认到账
                     </Typography>
+                  ) : (
+                    <Alert severity="warning" sx={{ mt: 1.5 }}>
+                      充值暂未开放。只有 Cregis 成功分配地址，并确认该地址属于当前 SCC
+                      项目后，系统才会显示收币地址和二维码。
+                    </Alert>
                   )}
                 </Box>
               </Step>
@@ -426,7 +573,7 @@ function DepositView({
                   <Typography variant="subtitle2">获取收币地址</Typography>
                 </StepLabel>
                 <Box sx={{ ml: { xs: 0, sm: 4.5 }, mt: 1.5 }}>
-                  {wallet ? (
+                  {isDepositReady(wallet) && (
                     <Stack
                       direction={{ xs: 'column', md: 'row' }}
                       spacing={3}
@@ -457,7 +604,7 @@ function DepositView({
                         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5 }}>
                           <Iconify icon="solar:shield-check-bold" color="success.main" />
                           <Typography variant="caption" color="text.secondary">
-                            地址已通过本地风控校验；Cregis 接入后启用链上地址托管。
+                            Cregis 已确认该地址属于当前 SCC 项目；转账前请逐字核对网络与地址。
                           </Typography>
                         </Stack>
                       </Box>
@@ -474,20 +621,15 @@ function DepositView({
                           bgcolor: 'common.white',
                         }}
                       >
-                        {qrCode ? (
-                          <Box
-                            component="img"
-                            src={qrCode}
-                            alt={`${wallet.network} USDT 收币二维码`}
-                            sx={{ width: 170, height: 170 }}
-                          />
-                        ) : (
-                          <Skeleton variant="rectangular" width={170} height={170} />
-                        )}
+                        {renderDepositQrCode(wallet, qrCode, customerSession)}
                       </Box>
                     </Stack>
-                  ) : (
-                    <Skeleton height={180} />
+                  )}
+                  {!isDepositReady(wallet) && loading && <Skeleton height={180} />}
+                  {!isDepositReady(wallet) && !loading && (
+                    <Alert severity="info" icon={<Iconify icon="solar:shield-warning-bold" />}>
+                      当前没有通过 Cregis 项目归属验证的充值地址。地址、复制按钮和二维码均已停用。
+                    </Alert>
                   )}
                 </Box>
               </Step>
@@ -505,12 +647,17 @@ function DepositView({
             <Notice number="3" text="达到网络确认数后，余额会自动更新。" />
             <Notice
               number="4"
-              text="本地阶段地址用于界面和流程验收，真实到账将在接入 Cregis 后启用。"
+              text="只有 Cregis 成功分配并验证属于当前 SCC 项目的地址，才会开放充值。"
             />
           </CardContent>
         </Card>
       </Box>
-      <TransferList title="近期收币" rows={transfers} loading={loading} onOpen={onOpenTransfer} />
+      <TransferList
+        title="近期收币"
+        rows={visibleTransfers}
+        loading={loading}
+        onOpen={onOpenTransfer}
+      />
     </>
   );
 }
@@ -522,6 +669,7 @@ function WithdrawView({
   customerId,
   onOpenTransfer,
   onCreated,
+  customerSession,
 }: {
   wallets: CryptoWallet[];
   transfers: CryptoTransfer[];
@@ -529,6 +677,7 @@ function WithdrawView({
   customerId: string;
   onOpenTransfer: (transfer: CryptoTransfer) => void;
   onCreated: () => Promise<void>;
+  customerSession: boolean;
 }) {
   const [network, setNetwork] = useState<CryptoNetwork>('TRON');
   const [address, setAddress] = useState('');
@@ -537,12 +686,13 @@ function WithdrawView({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const wallet = wallets.find((row) => row.network === network) || wallets[0];
+  const withdrawalWallets = wallets.filter(isWithdrawalReady);
+  const wallet = withdrawalWallets.find((row) => row.network === network) || withdrawalWallets[0];
   const fee = Number(wallet?.withdrawalFee || 0);
   const net = Math.max(0, Number(amount || 0) - fee);
 
   const validate = () => {
-    if (!wallet) return '请选择可用网络';
+    if (!isWithdrawalReady(wallet)) return '当前没有状态正常的可付币钱包';
     if (!address) return '请输入收币地址';
     const valid =
       network === 'TRON'
@@ -566,25 +716,39 @@ function WithdrawView({
   };
 
   const submit = async () => {
-    if (!wallet) return;
+    if (!isWithdrawalReady(wallet)) {
+      setError('当前没有状态正常的可付币钱包');
+      setConfirmOpen(false);
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
-      await coreApi('/crypto-wallets/withdrawals', {
+      await coreApi(customerSession ? '/customer/withdrawals' : '/crypto-wallets/withdrawals', {
         method: 'POST',
-        body: JSON.stringify({
-          customerId,
-          walletId: wallet.id,
-          network: wallet.network,
-          amount,
-          toAddress: address,
-          idempotencyKey: crypto.randomUUID(),
-        }),
+        body: JSON.stringify(
+          customerSession
+            ? {
+                wallet_id: wallet.id,
+                currency: '195@TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+                amount,
+                to_address: address,
+                idempotency_key: crypto.randomUUID(),
+              }
+            : {
+                customerId,
+                walletId: wallet.id,
+                network: wallet.network,
+                amount,
+                toAddress: address,
+                idempotencyKey: crypto.randomUUID(),
+              }
+        ),
       });
       setConfirmOpen(false);
       setAmount('');
       setAddress('');
-      setSuccess('付币申请已提交，平台双人复核后进入链上执行。');
+      setSuccess('付币申请已提交，平台管理员审批后进入人工链上执行。');
       await onCreated();
     } catch (value) {
       setError(value instanceof Error ? value.message : '付币提交失败');
@@ -617,6 +781,11 @@ function WithdrawView({
                     {success}
                   </Alert>
                 )}
+                {!loading && !withdrawalWallets.length && (
+                  <Alert severity="warning">
+                    付币暂不可用。只有状态为“正常”的钱包可以发起付币；创建中、异常、冻结或已关闭的钱包均已停用。
+                  </Alert>
+                )}
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
                     币种
@@ -627,19 +796,19 @@ function WithdrawView({
                     InputProps={{
                       readOnly: true,
                       startAdornment: (
-                        <Iconify icon="cryptocurrency-color:usdt" width={22} sx={{ mr: 1 }} />
+                        <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />
                       ),
                     }}
                   />
                 </Box>
-                <FormControl fullWidth>
+                <FormControl fullWidth disabled={!withdrawalWallets.length}>
                   <InputLabel>发送网络</InputLabel>
                   <Select
                     label="发送网络"
-                    value={wallets.some((row) => row.network === network) ? network : ''}
+                    value={withdrawalWallets.some((row) => row.network === network) ? network : ''}
                     onChange={(event) => setNetwork(event.target.value as CryptoNetwork)}
                   >
-                    {wallets.map((row) => (
+                    {withdrawalWallets.map((row) => (
                       <MenuItem key={row.id} value={row.network}>
                         {networkMeta[row.network].name} ({row.tokenStandard}) · 可用{' '}
                         {formatUsdt(row.availableBalance)}
@@ -649,6 +818,7 @@ function WithdrawView({
                 </FormControl>
                 <TextField
                   required
+                  disabled={!wallet}
                   label="收币地址"
                   placeholder={network === 'TRON' ? 'T...' : '0x...'}
                   value={address}
@@ -657,6 +827,7 @@ function WithdrawView({
                 />
                 <TextField
                   required
+                  disabled={!wallet}
                   type="number"
                   label="发送数量（USDT）"
                   value={amount}
@@ -675,9 +846,14 @@ function WithdrawView({
                   </CardContent>
                 </Card>
                 <Alert severity="warning">
-                  链上转账不可撤销。提交后将冻结发送金额，并由另一名人员复核。
+                  链上转账不可撤销。提交后将冻结发送金额，并由平台管理员审批。
                 </Alert>
-                <Button type="submit" variant="contained" size="large" disabled={!wallet}>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  size="large"
+                  disabled={!isWithdrawalReady(wallet) || submitting}
+                >
                   核对并提交
                 </Button>
               </Stack>
@@ -695,7 +871,7 @@ function WithdrawView({
             <Divider sx={{ my: 2 }} />
             <Stack direction="row" justifyContent="space-between">
               <Typography color="text.secondary">预计处理</Typography>
-              <Typography variant="subtitle2">复核后 5–20 分钟</Typography>
+              <Typography variant="subtitle2">审批后 5–20 分钟</Typography>
             </Stack>
           </CardContent>
         </Card>
@@ -723,7 +899,7 @@ function WithdrawView({
           <Button
             variant="contained"
             color="warning"
-            disabled={submitting}
+            disabled={submitting || !isWithdrawalReady(wallet)}
             onClick={() => submit().catch(() => undefined)}
           >
             {submitting ? '提交中…' : '确认提交'}
@@ -751,10 +927,10 @@ function TransferList({
         <Box>
           <Typography variant="h6">{title}</Typography>
           <Typography variant="body2" color="text.secondary">
-            所有网络统一展示，点击记录查看详情。
+            仅展示 TRON（TRC20）网络记录，点击可查看详情。
           </Typography>
         </Box>
-        <Button endIcon={<Iconify icon="eva:arrow-ios-forward-fill" />}>全部记录</Button>
+        <Button endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}>全部记录</Button>
       </Stack>
       <TableContainer>
         <Table>
@@ -842,7 +1018,7 @@ function TransferDrawer({
               <Typography color="text.secondary">{transfer.reference}</Typography>
             </Box>
             <IconButton onClick={onClose}>
-              <Iconify icon="mingcute:close-line" />
+              <Iconify icon="solar:close-circle-linear" />
             </IconButton>
           </Stack>
           <Stack alignItems="center" spacing={1.5} sx={{ py: 2 }}>
@@ -880,7 +1056,7 @@ function TransferDrawer({
                 <DetailRow label="目标地址" value={shorten(transfer.toAddress, 10, 8)} mono />
                 <DetailRow
                   label="TXID"
-                  value={transfer.txHash ? shorten(transfer.txHash, 10, 8) : '复核后生成'}
+                  value={transfer.txHash ? shorten(transfer.txHash, 10, 8) : '执行后生成'}
                   mono
                 />
                 <DetailRow label="网络确认" value={`${transfer.confirmations} 次`} />
@@ -892,7 +1068,7 @@ function TransferDrawer({
             </CardContent>
           </Card>
           {transfer.status === 'SUBMITTED' && (
-            <Alert severity="info">指令正在等待另一名人员复核，复核前资金处于冻结状态。</Alert>
+            <Alert severity="info">指令正在等待平台审批，审批前资金处于冻结状态。</Alert>
           )}
           {transfer.rejectionReason && <Alert severity="error">{transfer.rejectionReason}</Alert>}
         </Stack>
@@ -903,7 +1079,7 @@ function TransferDrawer({
 
 function CryptoStatus({ status }: { status: CryptoTransfer['status'] }) {
   const labels = {
-    SUBMITTED: '待复核',
+    SUBMITTED: '待审批',
     PROCESSING: '链上处理中',
     COMPLETED: '成功',
     REJECTED: '已拒绝',

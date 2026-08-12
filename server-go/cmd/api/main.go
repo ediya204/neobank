@@ -22,7 +22,7 @@ import (
 )
 
 type application struct {
-	db                     *d1.Client
+	db                     databaseClient
 	cregis                 *cregis.Client
 	cregisLive             bool
 	edgeSecret             []byte
@@ -33,6 +33,11 @@ type application struct {
 	portalURL              string
 	tenantID               string
 	logger                 *slog.Logger
+}
+
+type databaseClient interface {
+	Batch(context.Context, ...d1.Statement) ([]d1.Result, error)
+	Query(context.Context, string, ...any) ([]map[string]any, error)
 }
 
 func main() {

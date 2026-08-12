@@ -1,9 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Card,
   CardContent,
   Container,
@@ -24,27 +26,60 @@ import {
   Typography,
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
+import CustomBreadcrumbs from 'src/components/custom-breadcrumbs';
+import Label from 'src/components/label';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 import {
   coreApi,
   Currency,
   Customer,
   FundingChannel,
+  isSupportedPortalAccount,
   OperationType,
+  RateVersion,
+  supportedFiatCurrencies,
 } from 'src/features/finance/core-api';
 import { accountLabel, money } from './customer-shared';
 
 export type CustomerAction = 'transfer' | 'fx' | 'otc' | 'payout' | 'beneficiaries';
 
+type PayoutMethod = 'PLATFORM' | 'POBO' | 'VA';
+
+const payoutMethods: Array<{
+  value: PayoutMethod;
+  title: string;
+  description: string;
+  icon: string;
+}> = [
+  {
+    value: 'PLATFORM',
+    title: '代付',
+    description: '平台银行通道代为执行付款',
+    icon: 'solar:bank-bold-duotone',
+  },
+  {
+    value: 'POBO',
+    title: 'POBO',
+    description: '以客户名义向第三方付款',
+    icon: 'solar:user-check-bold-duotone',
+  },
+  {
+    value: 'VA',
+    title: 'VA 转出',
+    description: '从客户的 USD / HKD VA 账户付款',
+    icon: 'solar:wallet-money-bold-duotone',
+  },
+];
+
 const copy: Record<CustomerAction, { title: string; description: string; icon: string }> = {
   transfer: {
-    title: '转账',
-    description: '在你的同币种账户之间转移资金。',
+    title: '账户内划转',
+    description: '在自己的同币种账户之间转移资金。',
     icon: 'solar:transfer-horizontal-bold-duotone',
   },
   fx: {
-    title: '换汇',
-    description: '在五种法币余额之间完成兑换。',
+    title: 'USD / HKD 换汇',
+    description: '使用当前报价在 USD 与 HKD 余额之间兑换。',
     icon: 'solar:refresh-square-bold-duotone',
   },
   otc: {
@@ -53,9 +88,9 @@ const copy: Record<CustomerAction, { title: string; description: string; icon: s
     icon: 'solar:hand-money-bold-duotone',
   },
   payout: {
-    title: '向第三方付款',
-    description: '选择已保存的银行收款人，提交跨境付款申请。',
-    icon: 'solar:card-send-bold-duotone',
+    title: '法币转出',
+    description: '向已登记的银行收款人提交 USD / HKD 付款申请。',
+    icon: 'solar:upload-minimalistic-bold-duotone',
   },
   beneficiaries: {
     title: '收款人',
@@ -65,15 +100,17 @@ const copy: Record<CustomerAction, { title: string; description: string; icon: s
 };
 
 export default function CustomerActionPage({ action }: { action: CustomerAction }) {
+  const [searchParams] = useSearchParams();
   const { customer, refresh } = usePortalCustomer();
   const [detail, setDetail] = useState<Customer | null>(null);
   const [channels, setChannels] = useState<FundingChannel[]>([]);
+  const [rates, setRates] = useState<RateVersion[]>([]);
   const [sourceId, setSourceId] = useState('');
   const [targetId, setTargetId] = useState('');
   const [beneficiaryId, setBeneficiaryId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [payoutMethod, setPayoutMethod] = useState<'VA' | 'POBO' | 'PLATFORM'>('POBO');
+  const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('PLATFORM');
   const [beneficiaryOpen, setBeneficiaryOpen] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -81,12 +118,14 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
 
   const loadDetail = async () => {
     if (!customer) return;
-    const [customerDetail, channelRows] = await Promise.all([
+    const [customerDetail, channelRows, rateRows] = await Promise.all([
       coreApi<Customer>(`/customers/${customer.id}`),
-      coreApi<FundingChannel[]>('/funding-channels?organizationId=org_demo'),
+      coreApi<FundingChannel[]>(`/funding-channels?organizationId=${customer.organizationId}`),
+      coreApi<RateVersion[]>('/rates'),
     ]);
     setDetail(customerDetail);
     setChannels(channelRows);
+    setRates(rateRows);
   };
 
   useEffect(() => {
@@ -98,7 +137,8 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
       (detail?.accounts || []).filter(
         (row) =>
           ['SYSTEM_WALLET', 'VIRTUAL_ACCOUNT', 'CRYPTO_WALLET'].includes(row.kind) &&
-          row.status === 'ACTIVE'
+          row.status === 'ACTIVE' &&
+          isSupportedPortalAccount(row)
       ),
     [detail]
   );
@@ -115,13 +155,32 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
   const payoutAccounts = accounts.filter((row) => {
     if (!selectedBeneficiary) return false;
     if (row.currency !== selectedBeneficiary.currency) return false;
-    return payoutMethod === 'VA' ? row.kind === 'VIRTUAL_ACCOUNT' : row.kind === 'SYSTEM_WALLET';
+    const expectedKind = payoutMethod === 'VA' ? 'VIRTUAL_ACCOUNT' : 'SYSTEM_WALLET';
+    return row.kind === expectedKind && supportedFiatCurrencies.includes(row.currency);
   });
   const sourceOptions =
     action === 'payout'
       ? payoutAccounts
-      : accounts.filter((row) => action === 'otc' || row.kind !== 'CRYPTO_WALLET');
+      : accounts.filter((row) => {
+          if (action === 'otc') return true;
+          return row.kind === 'SYSTEM_WALLET' && supportedFiatCurrencies.includes(row.currency);
+        });
   const sourceFieldLabel = action === 'payout' ? '付款账户' : '从账户';
+  const quote = useMemo(() => {
+    if (!source || !amount || Number(amount) <= 0) return null;
+    const target = accounts.find((row) => row.id === targetId);
+    if (!target || (action !== 'fx' && action !== 'otc')) return null;
+    const rate = rates.find(
+      (row) =>
+        row.active &&
+        row.type === (action === 'fx' ? 'FX' : 'OTC') &&
+        row.baseCurrency === source.currency &&
+        row.quoteCurrency === target.currency
+    );
+    if (!rate) return null;
+    const received = Number(amount) * Number(rate.sellRate) * (1 - Number(rate.feeBps) / 10000);
+    return { rate, target, received };
+  }, [accounts, action, amount, rates, source, targetId]);
 
   useEffect(() => {
     setTargetId('');
@@ -129,6 +188,28 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
   useEffect(() => {
     if (action === 'payout') setSourceId('');
   }, [action, beneficiaryId, payoutMethod]);
+
+  useEffect(() => {
+    if (action !== 'otc' || !accounts.length) return;
+    const requestedSource = searchParams.get('source');
+    const requestedTargetKind = searchParams.get('targetKind');
+    const preferredSource = accounts.find(
+      (row) => row.currency === requestedSource && row.kind === 'CRYPTO_WALLET'
+    );
+    const resolvedSource = preferredSource || source;
+    if (preferredSource && sourceId !== preferredSource.id) {
+      setSourceId(preferredSource.id);
+      return;
+    }
+    if (!resolvedSource || !requestedTargetKind) return;
+    const preferredTarget = accounts.find(
+      (row) =>
+        row.id !== resolvedSource.id &&
+        row.kind === requestedTargetKind &&
+        row.currency !== resolvedSource.currency
+    );
+    if (preferredTarget && targetId !== preferredTarget.id) setTargetId(preferredTarget.id);
+  }, [accounts, action, searchParams, source, sourceId, targetId]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -166,9 +247,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
       if (action === 'payout') {
         type = 'PAYOUT';
         if (!selectedBeneficiary) throw new Error('请选择第三方收款人');
-        let channelType: FundingChannel['type'] = 'PLATFORM_PAYOUT';
-        if (payoutMethod === 'VA') channelType = 'VA_PAYOUT';
-        if (payoutMethod === 'POBO') channelType = 'POBO_PAYOUT';
+        const channelType = payoutChannelType(payoutMethod);
         const channel = channels.find(
           (row) =>
             row.type === channelType &&
@@ -186,8 +265,8 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
       await coreApi('/operations', { method: 'POST', body: JSON.stringify(payload) });
       setSuccess(
         action === 'payout'
-          ? '付款已提交。平台复核通过后将由银行或支付通道执行。'
-          : '指令已提交审核，完成后余额会自动更新。'
+          ? '付款已提交。平台管理员审批后将由银行或支付通道执行。'
+          : '指令已提交审批，完成后余额会自动更新。'
       );
       setAmount('');
       setNote('');
@@ -213,30 +292,17 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
   return (
     <>
       <Helmet>
-        <title>{info.title} | Moventra</title>
+        <title>{info.title} | SCC Digital Bank</title>
       </Helmet>
       <Container maxWidth="md">
         <Stack spacing={3}>
-          <Box>
-            <Stack direction="row" alignItems="center" spacing={1.5}>
-              <Box
-                sx={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 2,
-                  display: 'grid',
-                  placeItems: 'center',
-                  bgcolor: 'primary.lighter',
-                }}
-              >
-                <Iconify icon={info.icon} width={26} color="primary.main" />
-              </Box>
-              <Box>
-                <Typography variant="h4">{info.title}</Typography>
-                <Typography color="text.secondary">{info.description}</Typography>
-              </Box>
-            </Stack>
-          </Box>
+          <CustomBreadcrumbs
+            heading={info.title}
+            links={[{ name: '收付与兑换', href: '/portal/money/transfers' }, { name: info.title }]}
+          />
+          <Typography color="text.secondary" sx={{ mt: -2 }}>
+            {info.description}
+          </Typography>
           {error && (
             <Alert severity="error" onClose={() => setError('')}>
               {error}
@@ -254,7 +320,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                   <StepLabel>填写信息</StepLabel>
                 </Step>
                 <Step>
-                  <StepLabel>平台复核</StepLabel>
+                  <StepLabel>平台审批</StepLabel>
                 </Step>
                 <Step>
                   <StepLabel>完成</StepLabel>
@@ -264,6 +330,49 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                 <Stack spacing={2.5}>
                   {action === 'payout' && (
                     <>
+                      <Typography variant="h6">选择转出方式</Typography>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+                          gap: 1.5,
+                        }}
+                      >
+                        {payoutMethods.map((method) => {
+                          const selected = payoutMethod === method.value;
+                          return (
+                            <ButtonBase
+                              key={method.value}
+                              onClick={() => setPayoutMethod(method.value)}
+                              sx={{
+                                p: 2,
+                                borderRadius: 1.5,
+                                border: '1px solid',
+                                borderColor: selected ? 'primary.main' : 'divider',
+                                bgcolor: selected ? 'primary.lighter' : 'background.paper',
+                                textAlign: 'left',
+                                alignItems: 'flex-start',
+                                '&:hover': { borderColor: 'primary.main' },
+                              }}
+                            >
+                              <Stack spacing={1} sx={{ width: 1 }}>
+                                <Stack
+                                  direction="row"
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                >
+                                  <Iconify icon={method.icon} width={26} color="primary.main" />
+                                  {selected && <Label color="primary">已选择</Label>}
+                                </Stack>
+                                <Typography variant="subtitle2">{method.title}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {method.description}
+                                </Typography>
+                              </Stack>
+                            </ButtonBase>
+                          );
+                        })}
+                      </Box>
                       <Stack
                         direction={{ xs: 'column', sm: 'row' }}
                         justifyContent="space-between"
@@ -271,7 +380,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                       >
                         <Typography variant="h6">第三方收款人</Typography>
                         <Button
-                          startIcon={<Iconify icon="mingcute:add-line" />}
+                          startIcon={<Iconify icon="solar:add-circle-linear" />}
                           onClick={() => setBeneficiaryOpen(true)}
                         >
                           新增收款人
@@ -297,20 +406,47 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                           ))}
                         </Select>
                       </FormControl>
-                      <FormControl fullWidth>
-                        <InputLabel>付款方式</InputLabel>
-                        <Select
-                          label="付款方式"
-                          value={payoutMethod}
-                          onChange={(event) =>
-                            setPayoutMethod(event.target.value as typeof payoutMethod)
-                          }
-                        >
-                          <MenuItem value="VA">VA 账户直接付款</MenuItem>
-                          <MenuItem value="POBO">以客户名义付款（POBO）</MenuItem>
-                          <MenuItem value="PLATFORM">平台代付</MenuItem>
-                        </Select>
-                      </FormControl>
+                      {selectedBeneficiary && (
+                        <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
+                          <CardContent sx={{ p: 2.5 }}>
+                            <Stack spacing={1.25}>
+                              <Stack direction="row" justifyContent="space-between" gap={2}>
+                                <Typography variant="body2" color="text.secondary">
+                                  收款人
+                                </Typography>
+                                <Typography variant="subtitle2">
+                                  {selectedBeneficiary.name}
+                                </Typography>
+                              </Stack>
+                              <Stack direction="row" justifyContent="space-between" gap={2}>
+                                <Typography variant="body2" color="text.secondary">
+                                  收款银行
+                                </Typography>
+                                <Typography variant="subtitle2">
+                                  {selectedBeneficiary.bankName}
+                                </Typography>
+                              </Stack>
+                              <Stack direction="row" justifyContent="space-between" gap={2}>
+                                <Typography variant="body2" color="text.secondary">
+                                  币种与账号
+                                </Typography>
+                                <Typography variant="subtitle2">
+                                  {selectedBeneficiary.currency} · ••••
+                                  {selectedBeneficiary.accountNumber.slice(-4)}
+                                </Typography>
+                              </Stack>
+                              <Stack direction="row" justifyContent="space-between" gap={2}>
+                                <Typography variant="body2" color="text.secondary">
+                                  SWIFT / BIC
+                                </Typography>
+                                <Typography variant="subtitle2">
+                                  {selectedBeneficiary.swiftBic || '—'}
+                                </Typography>
+                              </Stack>
+                            </Stack>
+                          </CardContent>
+                        </Card>
+                      )}
                     </>
                   )}
                   <FormControl required fullWidth>
@@ -356,6 +492,50 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                         : '请先选择付款账户'
                     }
                   />
+                  {(action === 'fx' || action === 'otc') && source && targetId && amount && (
+                    <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
+                      <CardContent sx={{ p: 2.5 }}>
+                        {quote ? (
+                          <Stack spacing={1.25}>
+                            <Stack direction="row" justifyContent="space-between" gap={2}>
+                              <Typography variant="body2" color="text.secondary">
+                                卖出金额
+                              </Typography>
+                              <Typography variant="subtitle2">
+                                {money(amount, source.currency)}
+                              </Typography>
+                            </Stack>
+                            <Stack direction="row" justifyContent="space-between" gap={2}>
+                              <Typography variant="body2" color="text.secondary">
+                                当前汇率
+                              </Typography>
+                              <Typography variant="subtitle2">
+                                1 {source.currency} = {Number(quote.rate.sellRate).toLocaleString()}{' '}
+                                {quote.target.currency}
+                              </Typography>
+                            </Stack>
+                            <Stack direction="row" justifyContent="space-between" gap={2}>
+                              <Typography variant="body2" color="text.secondary">
+                                报价费率
+                              </Typography>
+                              <Typography variant="subtitle2">
+                                {(quote.rate.feeBps / 100).toFixed(2)}%
+                              </Typography>
+                            </Stack>
+                            <Divider />
+                            <Stack direction="row" justifyContent="space-between" gap={2}>
+                              <Typography variant="subtitle2">预计到账</Typography>
+                              <Typography variant="h6" color="primary.main">
+                                {money(quote.received, quote.target.currency)}
+                              </Typography>
+                            </Stack>
+                          </Stack>
+                        ) : (
+                          <Alert severity="warning">当前币种组合暂无有效报价。</Alert>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
                   <TextField
                     label="备注（选填）"
                     value={note}
@@ -364,7 +544,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                     minRows={2}
                   />
                   <Alert severity="info">
-                    提交后进入平台双人复核；复核通过前你可以在交易记录中查看进度。
+                    提交后进入平台单人审批；审批完成前你可以在交易记录中查看进度。
                   </Alert>
                   <Button
                     size="large"
@@ -395,6 +575,12 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
   );
 }
 
+function payoutChannelType(method: PayoutMethod): FundingChannel['type'] {
+  if (method === 'VA') return 'VA_PAYOUT';
+  if (method === 'POBO') return 'POBO_PAYOUT';
+  return 'PLATFORM_PAYOUT';
+}
+
 function BeneficiaryPage({
   customer,
   onCreate,
@@ -412,7 +598,7 @@ function BeneficiaryPage({
   return (
     <>
       <Helmet>
-        <title>收款人 | Moventra</title>
+        <title>收款人 | SCC Digital Bank</title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>
@@ -425,7 +611,7 @@ function BeneficiaryPage({
             </Box>
             <Button
               variant="contained"
-              startIcon={<Iconify icon="mingcute:add-line" />}
+              startIcon={<Iconify icon="solar:add-circle-linear" />}
               onClick={onCreate}
             >
               新增收款人
@@ -567,7 +753,7 @@ function BeneficiaryDialog({
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value as Currency)}
                 >
-                  {(['USD', 'SGD', 'HKD', 'EUR', 'GBP'] as Currency[]).map((item) => (
+                  {supportedFiatCurrencies.map((item) => (
                     <MenuItem key={item} value={item}>
                       {item}
                     </MenuItem>

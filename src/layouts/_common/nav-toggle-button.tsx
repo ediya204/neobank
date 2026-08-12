@@ -61,8 +61,8 @@ export default function NavToggleButton({ sx, ...other }: IconButtonProps) {
         width={16}
         icon={
           settings.themeLayout === 'vertical'
-            ? 'eva:arrow-ios-back-fill'
-            : 'eva:arrow-ios-forward-fill'
+            ? 'solar:alt-arrow-left-linear'
+            : 'solar:alt-arrow-right-linear'
         }
       />
     </IconButton>

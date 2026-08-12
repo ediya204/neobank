@@ -102,7 +102,7 @@ export default function PortalWebhookDeliveriesPage() {
   return (
     <>
       <Helmet>
-        <title>{translate('全部 Webhook 投递')} | moventra</title>
+        <title>{translate('全部 Webhook 投递')} | SCC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl" sx={{ py: { xs: 3, md: 5 } }}>
         <Stack spacing={3}>
@@ -122,7 +122,7 @@ export default function PortalWebhookDeliveriesPage() {
               component={RouterLink}
               to="/portal/api"
               variant="outlined"
-              startIcon={<Iconify icon="eva:arrow-back-fill" width={18} />}
+              startIcon={<Iconify icon="solar:alt-arrow-left-linear" width={18} />}
             >
               {translate('返回 Webhook 配置')}
             </Button>

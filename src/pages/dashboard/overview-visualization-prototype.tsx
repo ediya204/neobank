@@ -372,14 +372,14 @@ export function AdminVariantB({ value, onNavigate }: Props) {
               label={data.text('待确认入账', 'Deposits')}
               value={String(value.pending.deposits)}
               helper={data.text('等待核实', 'Awaiting verification')}
-              icon="solar:inbox-in-bold-duotone"
+              icon="solar:download-minimalistic-bold-duotone"
             />
             <Box sx={{ pt: 2 }}>
               <Metric
                 label={data.text('待处理转出', 'Withdrawals')}
                 value={String(value.pending.withdrawals)}
                 helper={data.text('等待人工处理', 'Manual action required')}
-                icon="solar:outbox-bold-duotone"
+                icon="solar:upload-minimalistic-bold-duotone"
               />
             </Box>
           </Stack>

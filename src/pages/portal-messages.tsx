@@ -333,7 +333,7 @@ export default function PortalMessages({ selectedId }: { selectedId?: string }) 
           >
             <Button
               color="inherit"
-              startIcon={<Iconify icon="eva:arrow-ios-back-fill" />}
+              startIcon={<Iconify icon="solar:alt-arrow-left-linear" />}
               onClick={() => navigate('/portal/messages')}
               sx={{ display: { xs: 'inline-flex', md: 'none' }, minHeight: 44, mb: 2 }}
             >

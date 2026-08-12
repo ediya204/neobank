@@ -175,7 +175,7 @@ export default function RoleList({
             aria-label={t('portalTeam.rolesTab.editFor', { role: roleName(role) })}
             onClick={() => setEditRole(role)}
           >
-            <Iconify icon="solar:pen-bold-duotone" />
+            <Iconify icon="solar:pen-bold" />
           </IconButton>
         </Tooltip>
         <Tooltip title={t('portalTeam.actions.deleteRole')}>

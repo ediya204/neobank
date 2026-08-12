@@ -97,7 +97,7 @@ export default function VaApplicationListPage() {
   return (
     <>
       <Helmet>
-        <title>{t('applications.list.pageTitle')} | moventra</title>
+        <title>{t('applications.list.pageTitle')} | SCC Digital Bank</title>
       </Helmet>
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
         <CustomBreadcrumbs
@@ -111,7 +111,7 @@ export default function VaApplicationListPage() {
               component={RouterLink}
               href={paths.dashboard.vaApplications.new}
               variant="contained"
-              startIcon={<Iconify icon="mingcute:add-line" />}
+              startIcon={<Iconify icon="solar:add-circle-linear" />}
             >
               {t('applications.list.newApplication')}
             </Button>
@@ -184,7 +184,7 @@ export default function VaApplicationListPage() {
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
+                    <Iconify icon="solar:magnifier-linear" sx={{ color: 'text.disabled' }} />
                   </InputAdornment>
                 ),
               }}
@@ -290,7 +290,7 @@ export default function VaApplicationListPage() {
                             component={RouterLink}
                             href={paths.dashboard.vaApplications.details(application.id)}
                             color="inherit"
-                            endIcon={<Iconify icon="eva:arrow-ios-forward-fill" />}
+                            endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}
                           >
                             {t('common.view')}
                           </Button>

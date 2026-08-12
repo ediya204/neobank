@@ -167,7 +167,7 @@ function ParentItem({ path = '', title, open, hasSub, ...other }: ParentItemProp
       >
         {title}
 
-        {hasSub && <Iconify icon="eva:arrow-ios-forward-fill" width={16} sx={{ ml: 1 }} />}
+        {hasSub && <Iconify icon="solar:alt-arrow-right-linear" width={16} sx={{ ml: 1 }} />}
       </ListItem>
     </Link>
   );

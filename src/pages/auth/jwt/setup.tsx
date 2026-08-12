@@ -9,15 +9,14 @@ type Props = {
 
 export default function SetupPage({ expectedRole }: Props) {
   const { t } = useTranslation('common');
-  const title =
-    expectedRole === 'admin'
-      ? t('auth.page_titles.admin_setup')
-      : t('auth.page_titles.portal_setup');
+  let title = t('auth.page_titles.portal_setup');
+  if (expectedRole === 'admin') title = t('auth.page_titles.admin_setup');
+  if (expectedRole === 'customer') title = '激活客户账户';
 
   return (
     <>
       <Helmet>
-        <title>{title} | moventra</title>
+        <title>{title} | SCC Digital Bank</title>
       </Helmet>
 
       <JwtLoginView initialMode="setup" expectedRole={expectedRole} />

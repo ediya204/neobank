@@ -25,10 +25,14 @@ services:
       - key: CREGIS_BASE_URL
         value: https://t-wsmbuuhb.cregis.io
       - key: CREGIS_ENABLED
-        value: "false"
+        sync: false
       - key: CREGIS_PROJECT_ID
         sync: false
       - key: CREGIS_PROJECT_SECRET
+        sync: false
+      - key: CREGIS_RELAY_URL
+        sync: false
+      - key: CREGIS_RELAY_SECRET
         sync: false
       - key: PUBLIC_BASE_URL
         sync: false

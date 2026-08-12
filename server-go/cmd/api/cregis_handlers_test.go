@@ -5,6 +5,31 @@ import (
 	"testing"
 )
 
+func TestUSDTMicroUnitConversionIsExactAndBounded(t *testing.T) {
+	tests := map[string]int64{
+		"0.000001":             1,
+		"1":                    1_000_000,
+		"1.23":                 1_230_000,
+		"9223372036854.775807": 9_223_372_036_854_775_807,
+	}
+	for input, expected := range tests {
+		actual, ok := parseUSDTMicroUnits(input)
+		if !ok || actual != expected {
+			t.Fatalf("parseUSDTMicroUnits(%q) = %d, %v; want %d, true", input, actual, ok, expected)
+		}
+		if formatted := formatUSDTMicroUnits(actual); formatted != input {
+			t.Fatalf("formatUSDTMicroUnits(%d) = %q; want %q", actual, formatted, input)
+		}
+	}
+	for _, input := range []string{
+		"0", "0.000000", "1.0000001", "01", "-1", "1e6", "9223372036854.775808",
+	} {
+		if _, ok := parseUSDTMicroUnits(input); ok {
+			t.Fatalf("unsafe micro-unit amount accepted: %q", input)
+		}
+	}
+}
+
 func TestOnlyUSDTTRC20AssetIdentifiers(t *testing.T) {
 	if usdtTRC20ChainID != "195" {
 		t.Fatalf("unexpected TRON chain id: %s", usdtTRC20ChainID)
@@ -57,5 +82,57 @@ func TestSingleAdministratorWithdrawalStateTransitions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDepositWalletActivationRequiresCregisOwnershipEvidence(t *testing.T) {
+	for _, required := range []string{
+		"custody_provider='cregis'",
+		"ownership_verified_at=?",
+		"status='active'",
+		"status='creating'",
+	} {
+		if !strings.Contains(activateVerifiedWalletSQL, required) {
+			t.Fatalf("verified wallet activation SQL must contain %q: %s", required, activateVerifiedWalletSQL)
+		}
+	}
+	if strings.Contains(failWalletOwnershipVerificationSQL, "status='active'") ||
+		strings.Contains(failWalletOwnershipVerificationSQL, "ownership_verified_at") {
+		t.Fatalf("failed ownership verification must not enable deposits: %s", failWalletOwnershipVerificationSQL)
+	}
+}
+
+func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testing.T) {
+	for _, required := range []string{
+		"INSERT OR IGNORE INTO cregis_withdrawals",
+		"amount_minor",
+		"c.kyc_status='approved'",
+		"c.operations_status='active'",
+		"c.status='active'",
+		"SUM(d.amount_minor)",
+		"SUM(x.amount_minor)",
+		"status NOT IN ('rejected', 'failed', 'cancelled')",
+	} {
+		if !strings.Contains(reserveWithdrawalSQL, required) {
+			t.Fatalf("atomic reservation SQL must contain %q", required)
+		}
+	}
+}
+
+func TestPayoutPersistenceCannotClaimAStaleSubmissionState(t *testing.T) {
+	for _, required := range []string{"status='submitted_to_cregis'", "cregis_cid=?", "status='executing'"} {
+		if !strings.Contains(persistWithdrawalSubmissionSQL, required) {
+			t.Fatalf("payout persistence SQL must contain %q", required)
+		}
+	}
+	for _, status := range []string{"submitted_to_cregis", "completed", "rejected", "failed"} {
+		if !isCregisFinalOrSubmittedStatus(status) {
+			t.Fatalf("callback-advanced status %q must be readable after an update race", status)
+		}
+	}
+	for _, status := range []string{"executing", "exception", "approved", "cancelled", ""} {
+		if isCregisFinalOrSubmittedStatus(status) {
+			t.Fatalf("stale or unrelated status %q must not be reported as a successful submission", status)
+		}
 	}
 }

@@ -175,7 +175,7 @@ function ParentItem({ title, path = '', icon, open, hasSub, ...other }: ParentIt
 
       {title}
 
-      {hasSub && <Iconify icon="eva:arrow-ios-downward-fill" width={16} sx={{ ml: 1 }} />}
+      {hasSub && <Iconify icon="solar:alt-arrow-down-linear" width={16} sx={{ ml: 1 }} />}
     </Link>
   );
 }

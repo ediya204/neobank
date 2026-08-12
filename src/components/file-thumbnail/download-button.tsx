@@ -42,7 +42,7 @@ export default function DownloadButton({ onDownload }: Props) {
         },
       }}
     >
-      <Iconify icon="eva:arrow-circle-down-fill" width={24} />
+      <Iconify icon="solar:download-minimalistic-bold-duotone" width={24} />
     </IconButton>
   );
 }

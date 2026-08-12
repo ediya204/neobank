@@ -1040,7 +1040,7 @@ export default function PartnerApiIntegration() {
               <Button
                 color="inherit"
                 disabled={Boolean(credentialMutation)}
-                startIcon={<Iconify icon="solar:refresh-bold" />}
+                startIcon={<Iconify icon="solar:refresh-linear" />}
                 onClick={() => loadIntegration('all')}
               >
                 {translate('刷新')}
@@ -1048,7 +1048,7 @@ export default function PartnerApiIntegration() {
               <Button
                 variant="contained"
                 disabled={Boolean(credentialMutation) || Boolean(pendingRotation)}
-                startIcon={<Iconify icon="solar:add-circle-bold" />}
+                startIcon={<Iconify icon="solar:add-circle-linear" />}
                 onClick={() => {
                   setCredentialError('');
                   setCredentialDialogError('');
@@ -1281,7 +1281,7 @@ export default function PartnerApiIntegration() {
               <Typography variant="h6">{translate('已加入白名单的 IP')}</Typography>
               <Button
                 variant="contained"
-                startIcon={<Iconify icon="solar:add-circle-bold" />}
+                startIcon={<Iconify icon="solar:add-circle-linear" />}
                 onClick={() => {
                   setIpFormErrors({});
                   setIpDialogOpen(true);
@@ -1635,7 +1635,7 @@ export default function PartnerApiIntegration() {
                 <Typography variant="h6">{translate('Webhook 端点')}</Typography>
                 <Button
                   variant="contained"
-                  startIcon={<Iconify icon="solar:add-circle-bold" />}
+                  startIcon={<Iconify icon="solar:add-circle-linear" />}
                   onClick={() => {
                     setWebhookFormErrors({});
                     setWebhookForm((current) => ({ ...current, action: 'upsert' }));
@@ -1954,7 +1954,7 @@ export default function PartnerApiIntegration() {
                   to="/portal/webhook-deliveries"
                   variant="outlined"
                   size="small"
-                  endIcon={<Iconify icon="eva:arrow-ios-forward-fill" width={16} />}
+                  endIcon={<Iconify icon="solar:alt-arrow-right-linear" width={16} />}
                 >
                   {translate('查看全部')}
                 </Button>
@@ -2395,7 +2395,7 @@ function SecretValue({
         </Box>
         <Button
           variant="outlined"
-          startIcon={<Iconify icon="solar:copy-bold" />}
+          startIcon={<Iconify icon="solar:copy-linear" />}
           onClick={() => onCopy(value)}
         >
           {translate('复制')}
@@ -2518,7 +2518,7 @@ function PanelHeader({
         color="inherit"
         size="small"
         disabled={loading}
-        startIcon={<Iconify icon="solar:refresh-bold" />}
+        startIcon={<Iconify icon="solar:refresh-linear" />}
         onClick={() => onRefresh()}
         sx={{
           width: { xs: '100%', sm: 'auto' },

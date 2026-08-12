@@ -8,7 +8,7 @@ type Props = {
   isRTL?: boolean;
 };
 
-export function LeftIcon({ icon = 'eva:arrow-ios-forward-fill', isRTL }: Props) {
+export function LeftIcon({ icon = 'solar:alt-arrow-right-linear', isRTL }: Props) {
   return (
     <Iconify
       icon={icon}
@@ -22,7 +22,7 @@ export function LeftIcon({ icon = 'eva:arrow-ios-forward-fill', isRTL }: Props) 
   );
 }
 
-export function RightIcon({ icon = 'eva:arrow-ios-forward-fill', isRTL }: Props) {
+export function RightIcon({ icon = 'solar:alt-arrow-right-linear', isRTL }: Props) {
   return (
     <Iconify
       icon={icon}

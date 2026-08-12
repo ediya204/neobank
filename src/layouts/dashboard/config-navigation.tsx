@@ -100,7 +100,7 @@ export function useNavData() {
                         icon: <Iconify icon="solar:wallet-money-bold-duotone" />,
                       },
                       {
-                        title: '内部转账',
+                        title: '收付与兑换',
                         path: '/portal/money/transfers',
                         icon: <Iconify icon="solar:transfer-horizontal-bold-duotone" />,
                       },
@@ -226,11 +226,6 @@ export function useNavData() {
                   icon: <Iconify icon="solar:upload-minimalistic-bold-duotone" />,
                 },
                 {
-                  title: '内部转账',
-                  path: paths.dashboard.fundOperations.transfers,
-                  icon: <Iconify icon="solar:transfer-horizontal-bold-duotone" />,
-                },
-                {
                   title: '法币换汇',
                   path: paths.dashboard.fundOperations.fx,
                   icon: <Iconify icon="solar:refresh-square-bold-duotone" />,
@@ -241,7 +236,7 @@ export function useNavData() {
                   icon: <Iconify icon="solar:hand-money-bold-duotone" />,
                 },
                 {
-                  title: '数字钱包复核',
+                  title: '数字钱包审批',
                   path: '/dashboard/operations/crypto-wallets',
                   icon: <Iconify icon="solar:wallet-2-bold-duotone" />,
                 },
@@ -251,7 +246,7 @@ export function useNavData() {
                   icon: <Iconify icon="solar:tuning-square-2-bold-duotone" />,
                 },
                 {
-                  title: '复核中心',
+                  title: '审批中心',
                   path: paths.dashboard.fundOperations.approvals,
                   icon: <Iconify icon="solar:clipboard-check-bold-duotone" />,
                 },

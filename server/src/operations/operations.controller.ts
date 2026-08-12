@@ -48,11 +48,15 @@ export class OperationsController {
   @Get()
   list(
     @Query('organizationId') organizationId: string,
+    @Req() request: Request,
     @Query('status') status?: OperationStatus,
     @Query('type') type?: OperationType,
     @Query('customerId') customerId?: string
   ) {
-    return this.operations.list({ organizationId, status, type, customerId });
+    return this.operations.list(
+      { organizationId, status, type, customerId },
+      currentUserId(request)
+    );
   }
 
   @Get('approvals')
@@ -61,8 +65,8 @@ export class OperationsController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.operations.get(id);
+  get(@Param('id') id: string, @Req() request: Request) {
+    return this.operations.get(id, currentUserId(request));
   }
 
   @Post()

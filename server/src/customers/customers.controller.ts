@@ -1,5 +1,17 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import { IsEmail, IsEnum, IsOptional, IsString, Length } from 'class-validator';
+import {
+  IsDateString,
+  IsEmail,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  Max,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { Currency, CustomerStatus, CustomerType } from '@prisma/client';
 import { CustomersService } from './customers.service';
 import type { Request } from 'express';
@@ -8,12 +20,26 @@ import { currentUserId } from '../common/current-user';
 class CreateCustomerDto {
   @IsString() organizationId!: string;
   @IsEnum(CustomerType) type!: CustomerType;
-  @IsString() displayName!: string;
-  @IsString() legalName!: string;
+  @IsString() @Length(1, 160) displayName!: string;
+  @IsString() @Length(1, 180) legalName!: string;
   @IsEmail() email!: string;
-  @IsString() @Length(2, 2) countryCode!: string;
-  @IsOptional() @IsString() phone?: string;
-  @IsOptional() @IsString() registrationNo?: string;
+  @IsString() @Matches(/^[A-Za-z]{2}$/) countryCode!: string;
+  @IsString() @Matches(/^[0-9 ()-]{6,24}$/) phone!: string;
+  @IsString() @Matches(/^\+[1-9][0-9]{0,3}$/) phoneCountryCode!: string;
+  @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
+  @IsString() @Length(1, 80) registrationNo?: string;
+  @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.INDIVIDUAL)
+  @IsDateString() dateOfBirth?: string;
+  @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.INDIVIDUAL)
+  @IsString() @Matches(/^[A-Za-z]{2}$/) nationality?: string;
+  @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
+  @IsString() @Length(1, 120) contactName?: string;
+  @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
+  @IsString() @Length(1, 100) contactRole?: string;
+  @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
+  @IsString() @Length(1, 120) beneficialOwnerName?: string;
+  @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
+  @IsNumber() @Min(0.01) @Max(100) beneficialOwnerOwnership?: number;
 }
 
 class ReviewCustomerDto {
@@ -22,6 +48,16 @@ class ReviewCustomerDto {
 
 class RejectCustomerDto {
   @IsString() reason!: string;
+}
+
+enum KycDecision {
+  APPROVE = 'APPROVE',
+  REJECT = 'REJECT',
+}
+
+class ReviewKycDto {
+  @IsEnum(KycDecision) decision!: KycDecision;
+  @IsOptional() @IsString() note?: string;
 }
 
 class CreateVaRequestDto {
@@ -35,13 +71,17 @@ export class CustomersController {
   constructor(private readonly customers: CustomersService) {}
 
   @Get()
-  list(@Query('organizationId') organizationId: string, @Query('status') status?: CustomerStatus) {
-    return this.customers.list(organizationId, status);
+  list(
+    @Query('organizationId') organizationId: string,
+    @Req() request: Request,
+    @Query('status') status?: CustomerStatus
+  ) {
+    return this.customers.list(organizationId, currentUserId(request), status);
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.customers.get(id);
+  get(@Param('id') id: string, @Req() request: Request) {
+    return this.customers.get(id, currentUserId(request));
   }
 
   @Post()
@@ -52,6 +92,11 @@ export class CustomersController {
   @Patch(':id/approve')
   approve(@Param('id') id: string, @Body() dto: ReviewCustomerDto, @Req() request: Request) {
     return this.customers.approve(id, currentUserId(request), dto.note);
+  }
+
+  @Patch(':id/kyc')
+  reviewKyc(@Param('id') id: string, @Body() dto: ReviewKycDto, @Req() request: Request) {
+    return this.customers.reviewKyc(id, currentUserId(request), dto.decision, dto.note);
   }
 
   @Patch(':id/reject')
@@ -65,7 +110,7 @@ export class CustomersController {
   }
 
   @Get(':id/virtual-account-requests')
-  listVaRequests(@Param('id') id: string) {
-    return this.customers.listVirtualAccountRequests(id);
+  listVaRequests(@Param('id') id: string, @Req() request: Request) {
+    return this.customers.listVirtualAccountRequests(id, currentUserId(request));
   }
 }

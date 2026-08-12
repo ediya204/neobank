@@ -168,7 +168,7 @@ export default function MemberList({
         aria-label={t('portalTeam.members.openActions', { name: memberName(member) })}
         onClick={(event) => openMenu(event, member)}
       >
-        <Iconify icon="eva:more-vertical-fill" />
+                <Iconify icon="solar:menu-dots-bold" />
       </IconButton>
     );
   };

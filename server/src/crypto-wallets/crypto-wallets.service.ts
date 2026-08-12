@@ -9,12 +9,13 @@ import {
   CryptoNetwork,
   CryptoTransferDirection,
   CryptoTransferStatus,
+  JournalSide,
   Prisma,
   UserRole,
 } from '@prisma/client';
-import { randomBytes } from 'node:crypto';
-import * as QRCode from 'qrcode';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { supportedCryptoAsset, supportedCryptoNetwork } from '../supported-assets';
 
 type CreateWithdrawalInput = {
   customerId: string;
@@ -29,20 +30,41 @@ type CreateWithdrawalInput = {
 export class CryptoWalletsService {
   constructor(private readonly db: PrismaService) {}
 
-  listWallets(customerId: string) {
-    return this.db.cryptoWallet.findMany({
-      where: { customerId },
+  async listWallets(customerId: string, userId: string) {
+    await this.requireCustomerTenant(customerId, userId);
+    const wallets = await this.db.cryptoWallet.findMany({
+      where: {
+        customerId,
+        asset: supportedCryptoAsset,
+        network: supportedCryptoNetwork,
+        status: 'ACTIVE',
+      },
       orderBy: { network: 'asc' },
     });
+    return wallets.map((wallet) => ({
+      ...wallet,
+      walletAddress: '',
+      custodyProvider: null,
+      ownershipVerifiedAt: null,
+      depositEnabled: false,
+    }));
   }
 
-  listTransfers(
+  async listTransfers(
     customerId: string,
+    userId: string,
     direction?: CryptoTransferDirection,
     status?: CryptoTransferStatus
   ) {
-    return this.db.cryptoTransfer.findMany({
-      where: { customerId, ...(direction ? { direction } : {}), ...(status ? { status } : {}) },
+    await this.requireCustomerTenant(customerId, userId);
+    const transfers = await this.db.cryptoTransfer.findMany({
+      where: {
+        customerId,
+        asset: supportedCryptoAsset,
+        network: supportedCryptoNetwork,
+        ...(direction ? { direction } : {}),
+        ...(status ? { status } : {}),
+      },
       include: {
         wallet: true,
         maker: { select: { id: true, displayName: true } },
@@ -51,21 +73,38 @@ export class CryptoWalletsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return transfers.map((transfer) => ({
+      ...transfer,
+      ...(transfer.direction === 'DEPOSIT' ? { toAddress: '' } : {}),
+      wallet: {
+        ...transfer.wallet,
+        walletAddress: '',
+        custodyProvider: null,
+        ownershipVerifiedAt: null,
+        depositEnabled: false,
+      },
+    }));
   }
 
-  async qrCode(id: string, customerId: string) {
-    const wallet = await this.db.cryptoWallet.findFirst({ where: { id, customerId } });
+  async qrCode(id: string, customerId: string, userId: string) {
+    await this.requireCustomerTenant(customerId, userId);
+    const wallet = await this.db.cryptoWallet.findFirst({
+      where: {
+        id,
+        customerId,
+        asset: supportedCryptoAsset,
+        network: supportedCryptoNetwork,
+        status: 'ACTIVE',
+      },
+    });
     if (!wallet) throw new NotFoundException('crypto_wallet_not_found');
-    return {
-      dataUrl: await QRCode.toDataURL(wallet.walletAddress, {
-        width: 280,
-        margin: 2,
-        color: { dark: '#0B1F1A', light: '#FFFFFFFF' },
-      }),
-    };
+    throw new ConflictException('crypto_deposit_unavailable_until_cregis_ownership_verified');
   }
 
   async createWithdrawal(input: CreateWithdrawalInput, makerId: string) {
+    if (input.network !== supportedCryptoNetwork) {
+      throw new BadRequestException('unsupported_crypto_network');
+    }
     const amount = new Prisma.Decimal(input.amount);
     if (!amount.isPositive()) throw new BadRequestException('withdrawal_amount_must_be_positive');
     this.validateAddress(input.network, input.toAddress);
@@ -76,7 +115,12 @@ export class CryptoWalletsService {
           where: { customerId: input.customerId, idempotencyKey: input.idempotencyKey },
         });
         if (existing) return existing;
-        const wallet = await tx.cryptoWallet.findUnique({ where: { id: input.walletId } });
+        const [wallet, customer, maker, mirrorAccount] = await Promise.all([
+          tx.cryptoWallet.findUnique({ where: { id: input.walletId } }),
+          tx.customer.findUnique({ where: { id: input.customerId } }),
+          tx.user.findUnique({ where: { id: makerId } }),
+          this.mirrorAccount(tx, input.customerId),
+        ]);
         if (
           !wallet ||
           wallet.customerId !== input.customerId ||
@@ -85,10 +129,17 @@ export class CryptoWalletsService {
         ) {
           throw new BadRequestException('invalid_crypto_wallet');
         }
-        const customer = await tx.customer.findUnique({ where: { id: input.customerId } });
         if (!customer || customer.status !== 'ACTIVE') {
           throw new ForbiddenException('active_customer_required');
         }
+        if (
+          !maker?.active ||
+          !maker.organizationId ||
+          maker.organizationId !== customer.organizationId
+        ) {
+          throw new ForbiddenException('cross_tenant_crypto_operation');
+        }
+        if (!mirrorAccount) throw new ConflictException('crypto_account_mirror_not_configured');
         if (amount.lte(wallet.withdrawalFee)) {
           throw new BadRequestException('amount_must_exceed_network_fee');
         }
@@ -101,10 +152,28 @@ export class CryptoWalletsService {
           },
         });
         if (frozen.count !== 1) throw new ConflictException('insufficient_crypto_balance');
-        const netAmount = amount.sub(wallet.withdrawalFee);
-        return tx.cryptoTransfer.create({
+        const mirrorFrozen = await tx.account.updateMany({
+          where: {
+            id: mirrorAccount.id,
+            status: 'ACTIVE',
+            availableBalance: { gte: amount },
+          },
           data: {
-            reference: this.reference('CWO'),
+            availableBalance: { decrement: amount },
+            frozenBalance: { increment: amount },
+            version: { increment: 1 },
+          },
+        });
+        if (mirrorFrozen.count !== 1) {
+          throw new ConflictException('crypto_account_mirror_balance_mismatch');
+        }
+        const netAmount = amount.sub(wallet.withdrawalFee);
+        const transferId = randomUUID();
+        const reference = this.reference('CWO');
+        const transfer = await tx.cryptoTransfer.create({
+          data: {
+            id: transferId,
+            reference,
             idempotencyKey: input.idempotencyKey,
             customerId: input.customerId,
             walletId: wallet.id,
@@ -121,6 +190,25 @@ export class CryptoWalletsService {
           },
           include: { wallet: true },
         });
+        await tx.operation.create({
+          data: {
+            id: transferId,
+            reference: `OP-${reference}`,
+            idempotencyKey: `crypto:${input.idempotencyKey}`,
+            customerId: input.customerId,
+            type: 'PAYOUT',
+            status: 'SUBMITTED',
+            currency: 'USDT',
+            amount: netAmount,
+            feeAmount: wallet.withdrawalFee,
+            sourceAccountId: mirrorAccount.id,
+            makerId,
+            narrative: `USDT TRON withdrawal ${reference}`,
+            submittedAt: new Date(),
+            metadata: { rail: 'TRON', cryptoTransferId: transferId },
+          },
+        });
+        return transfer;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
@@ -128,13 +216,23 @@ export class CryptoWalletsService {
 
   async approve(id: string, checkerId: string) {
     return this.db.$transaction(async (tx) => {
-      const transfer = await tx.cryptoTransfer.findUnique({ where: { id } });
+      const transfer = await tx.cryptoTransfer.findUnique({
+        where: { id },
+        include: { customer: { select: { organizationId: true } } },
+      });
       if (!transfer) throw new NotFoundException('crypto_transfer_not_found');
       if (transfer.status !== 'SUBMITTED') throw new ConflictException('transfer_not_submitted');
-      if (transfer.makerId === checkerId) {
-        throw new ForbiddenException('maker_cannot_approve_own_crypto_transfer');
+      const checker = await this.requireRole(tx, checkerId, ['ADMIN', 'CHECKER']);
+      if (checker.organizationId !== transfer.customer.organizationId) {
+        throw new NotFoundException('crypto_transfer_not_found');
       }
-      await this.requireRole(tx, checkerId, ['ADMIN', 'CHECKER']);
+      if (transfer.makerId === checkerId && checker.role !== 'ADMIN') {
+        throw new ForbiddenException('admin_required_for_self_approval');
+      }
+      await tx.operation.updateMany({
+        where: { id: transfer.id, status: 'SUBMITTED' },
+        data: { status: 'PROCESSING', checkerId, approvedAt: new Date() },
+      });
       return tx.cryptoTransfer.update({
         where: { id },
         data: { status: 'PROCESSING', checkerId, approvedAt: new Date() },
@@ -144,14 +242,21 @@ export class CryptoWalletsService {
   }
 
   async reject(id: string, reason: string, checkerId: string) {
+    if (!reason.trim()) throw new BadRequestException('rejection_reason_required');
     return this.db.$transaction(async (tx) => {
-      const transfer = await tx.cryptoTransfer.findUnique({ where: { id } });
+      const transfer = await tx.cryptoTransfer.findUnique({
+        where: { id },
+        include: { customer: { select: { organizationId: true } } },
+      });
       if (!transfer) throw new NotFoundException('crypto_transfer_not_found');
       if (transfer.status !== 'SUBMITTED') throw new ConflictException('transfer_not_submitted');
-      if (transfer.makerId === checkerId) {
-        throw new ForbiddenException('maker_cannot_review_own_crypto_transfer');
+      const checker = await this.requireRole(tx, checkerId, ['ADMIN', 'CHECKER']);
+      if (checker.organizationId !== transfer.customer.organizationId) {
+        throw new NotFoundException('crypto_transfer_not_found');
       }
-      await this.requireRole(tx, checkerId, ['ADMIN', 'CHECKER']);
+      if (transfer.makerId === checkerId && checker.role !== 'ADMIN') {
+        throw new ForbiddenException('admin_required_for_self_approval');
+      }
       await tx.cryptoWallet.update({
         where: { id: transfer.walletId },
         data: {
@@ -160,9 +265,36 @@ export class CryptoWalletsService {
           version: { increment: 1 },
         },
       });
+      const mirrorAccount = await this.mirrorAccount(tx, transfer.customerId);
+      if (!mirrorAccount) throw new ConflictException('crypto_account_mirror_not_configured');
+      const mirrorReleased = await tx.account.updateMany({
+        where: { id: mirrorAccount.id, frozenBalance: { gte: transfer.amount } },
+        data: {
+          availableBalance: { increment: transfer.amount },
+          frozenBalance: { decrement: transfer.amount },
+          version: { increment: 1 },
+        },
+      });
+      if (mirrorReleased.count !== 1) {
+        throw new ConflictException('crypto_account_mirror_balance_mismatch');
+      }
+      await tx.operation.updateMany({
+        where: { id: transfer.id, status: 'SUBMITTED' },
+        data: {
+          status: 'REJECTED',
+          checkerId,
+          rejectionReason: reason.trim(),
+          approvedAt: new Date(),
+        },
+      });
       return tx.cryptoTransfer.update({
         where: { id },
-        data: { status: 'REJECTED', checkerId, rejectionReason: reason, approvedAt: new Date() },
+        data: {
+          status: 'REJECTED',
+          checkerId,
+          rejectionReason: reason.trim(),
+          approvedAt: new Date(),
+        },
         include: { wallet: true },
       });
     });
@@ -170,16 +302,102 @@ export class CryptoWalletsService {
 
   async execute(id: string, txHash: string, operatorId: string) {
     return this.db.$transaction(async (tx) => {
-      const transfer = await tx.cryptoTransfer.findUnique({ where: { id } });
+      const transfer = await tx.cryptoTransfer.findUnique({
+        where: { id },
+        include: { customer: { select: { organizationId: true } } },
+      });
       if (!transfer) throw new NotFoundException('crypto_transfer_not_found');
       if (transfer.status !== 'PROCESSING') throw new ConflictException('transfer_not_processing');
-      await this.requireRole(tx, operatorId, ['ADMIN', 'OPERATOR']);
+      const operator = await this.requireRole(tx, operatorId, ['ADMIN', 'OPERATOR']);
+      if (operator.organizationId !== transfer.customer.organizationId) {
+        throw new NotFoundException('crypto_transfer_not_found');
+      }
       if (!/^0x[a-fA-F0-9]{64}$/.test(txHash))
         throw new BadRequestException('invalid_transaction_hash');
       await tx.cryptoWallet.update({
         where: { id: transfer.walletId },
         data: { frozenBalance: { decrement: transfer.amount }, version: { increment: 1 } },
       });
+      const mirrorAccount = await this.mirrorAccount(tx, transfer.customerId);
+      if (!mirrorAccount) throw new ConflictException('crypto_account_mirror_not_configured');
+      const mirrorConsumed = await tx.account.updateMany({
+        where: { id: mirrorAccount.id, frozenBalance: { gte: transfer.amount } },
+        data: { frozenBalance: { decrement: transfer.amount }, version: { increment: 1 } },
+      });
+      if (mirrorConsumed.count !== 1) {
+        throw new ConflictException('crypto_account_mirror_balance_mismatch');
+      }
+      const linkedOperation = await tx.operation.findUnique({ where: { id: transfer.id } });
+      if (linkedOperation) {
+        const [clearing, feeAccount] = await Promise.all([
+          tx.account.findFirst({
+            where: { kind: 'PLATFORM_CLEARING', currency: 'USDT', status: 'ACTIVE' },
+          }),
+          tx.account.findFirst({
+            where: { kind: 'FEE_REVENUE', currency: 'USDT', status: 'ACTIVE' },
+          }),
+        ]);
+        if (!clearing || !feeAccount) {
+          throw new ConflictException('crypto_ledger_accounts_not_configured');
+        }
+        await tx.journalEntry.create({
+          data: {
+            reference: `${linkedOperation.reference}-principal`,
+            operationId: linkedOperation.id,
+            description: linkedOperation.narrative || `USDT withdrawal ${transfer.reference}`,
+            lines: {
+              create: [
+                {
+                  accountId: mirrorAccount.id,
+                  side: JournalSide.DEBIT,
+                  currency: 'USDT',
+                  amount: transfer.netAmount,
+                },
+                {
+                  accountId: clearing.id,
+                  side: JournalSide.CREDIT,
+                  currency: 'USDT',
+                  amount: transfer.netAmount,
+                },
+              ],
+            },
+          },
+        });
+        if (!transfer.feeAmount.isZero()) {
+          await tx.journalEntry.create({
+            data: {
+              reference: `${linkedOperation.reference}-fee`,
+              operationId: linkedOperation.id,
+              description: `USDT TRON network fee ${transfer.reference}`,
+              lines: {
+                create: [
+                  {
+                    accountId: mirrorAccount.id,
+                    side: JournalSide.DEBIT,
+                    currency: 'USDT',
+                    amount: transfer.feeAmount,
+                  },
+                  {
+                    accountId: feeAccount.id,
+                    side: JournalSide.CREDIT,
+                    currency: 'USDT',
+                    amount: transfer.feeAmount,
+                  },
+                ],
+              },
+            },
+          });
+        }
+        await tx.operation.update({
+          where: { id: linkedOperation.id },
+          data: {
+            status: 'COMPLETED',
+            operatorId,
+            externalReference: txHash,
+            executedAt: new Date(),
+          },
+        });
+      }
       return tx.cryptoTransfer.update({
         where: { id },
         data: {
@@ -206,6 +424,36 @@ export class CryptoWalletsService {
     const user = await tx.user.findUnique({ where: { id: userId } });
     if (!user || !user.active || !roles.includes(user.role)) {
       throw new ForbiddenException('insufficient_crypto_operation_role');
+    }
+    return user;
+  }
+
+  private mirrorAccount(tx: Prisma.TransactionClient, customerId: string) {
+    return tx.account.findFirst({
+      where: {
+        customerId,
+        kind: 'CRYPTO_WALLET',
+        currency: 'USDT',
+        network: supportedCryptoNetwork,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  private async requireCustomerTenant(customerId: string, userId: string) {
+    const [customer, user] = await Promise.all([
+      this.db.customer.findUnique({
+        where: { id: customerId },
+        select: { organizationId: true },
+      }),
+      this.db.user.findUnique({
+        where: { id: userId },
+        select: { active: true, organizationId: true },
+      }),
+    ]);
+    if (!customer) throw new NotFoundException('customer_not_found');
+    if (!user?.active || !user.organizationId || user.organizationId !== customer.organizationId) {
+      throw new ForbiddenException('cross_tenant_crypto_customer');
     }
   }
 

@@ -1,4 +1,5 @@
 import { Helmet } from 'react-helmet-async';
+import { APP_DISPLAY_NAME } from 'src/config-global';
 import {
   Alert,
   Box,
@@ -18,7 +19,7 @@ export default function CustomerSettings() {
   return (
     <>
       <Helmet>
-        <title>账户设置 | Moventra</title>
+        <title>账户设置 | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="md">
         <Stack spacing={3}>
@@ -80,7 +81,7 @@ export default function CustomerSettings() {
                 <Typography color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
                   邀请财务人员，并分别设置查看、制单和审批权限。
                 </Typography>
-                <Alert severity="info">企业内部复核与平台资金复核相互独立。</Alert>
+                <Alert severity="info">企业内部审批与平台资金审批相互独立。</Alert>
                 <Button sx={{ mt: 2 }}>管理企业成员</Button>
               </CardContent>
             </Card>

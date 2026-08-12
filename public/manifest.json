@@ -1,6 +1,6 @@
 {
-  "name": "moventra",
-  "short_name": "moventra",
+  "name": "SCC数字银行 · SCC Digital Bank",
+  "short_name": "SCC Bank",
   "display": "standalone",
   "start_url": "/",
   "theme_color": "#2065D1",

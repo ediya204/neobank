@@ -34,9 +34,17 @@ export function button(theme: Theme) {
 
     const largeSize = ownerState.size === 'large';
 
+    let iconSize = 18;
+    if (smallSize) iconSize = 16;
+    if (largeSize) iconSize = 20;
+
     const defaultStyle = {
       '@media (pointer: coarse)': {
         minHeight: 44,
+      },
+      '& .MuiButton-startIcon .component-iconify, & .MuiButton-endIcon .component-iconify': {
+        width: iconSize,
+        height: iconSize,
       },
       ...(inheritColor && {
         // CONTAINED

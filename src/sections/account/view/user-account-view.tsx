@@ -23,7 +23,7 @@ const TABS = [
   {
     value: 'general',
     label: 'General',
-    icon: <Iconify icon="solar:user-id-bold" width={24} />,
+    icon: <Iconify icon="solar:user-id-bold-duotone" width={24} />,
   },
   {
     value: 'billing',

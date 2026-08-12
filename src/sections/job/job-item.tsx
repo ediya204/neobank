@@ -131,7 +131,7 @@ export default function JobItem({ job, onView, onEdit, onDelete }: Props) {
             onView();
           }}
         >
-          <Iconify icon="solar:eye-bold" />
+          <Iconify icon="solar:eye-linear" />
           View
         </MenuItem>
 

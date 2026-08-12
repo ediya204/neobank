@@ -90,7 +90,7 @@ export default function Upload({
         },
       }}
     >
-      <Iconify icon="mingcute:close-line" width={18} />
+      <Iconify icon="solar:close-circle-linear" width={18} />
     </IconButton>
   );
 
@@ -112,7 +112,7 @@ export default function Upload({
             size="small"
             variant="contained"
             onClick={onUpload}
-            startIcon={<Iconify icon="eva:cloud-upload-fill" />}
+            startIcon={<Iconify icon="solar:cloud-upload-bold-duotone" />}
           >
             Upload
           </Button>

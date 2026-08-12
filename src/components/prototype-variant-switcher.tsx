@@ -62,13 +62,13 @@ export default function PrototypeVariantSwitcher({
     >
       <Stack direction="row" alignItems="center" spacing={0.75}>
         <IconButton color="inherit" size="small" onClick={() => cycle(-1)}>
-          <Iconify icon="eva:arrow-ios-back-fill" />
+          <Iconify icon="solar:alt-arrow-left-linear" />
         </IconButton>
         <Typography variant="subtitle2" sx={{ minWidth: 190, textAlign: 'center' }}>
           {variants[currentIndex].key} — {variants[currentIndex].label}
         </Typography>
         <IconButton color="inherit" size="small" onClick={() => cycle(1)}>
-          <Iconify icon="eva:arrow-ios-forward-fill" />
+          <Iconify icon="solar:alt-arrow-right-linear" />
         </IconButton>
       </Stack>
     </Box>

@@ -147,7 +147,7 @@ function CardItem({ card }: CardItemProps) {
             </Typography>
 
             <IconButton color="inherit" onClick={currency.onToggle} sx={{ opacity: 0.48 }}>
-              <Iconify icon={currency.value ? 'solar:eye-bold' : 'solar:eye-closed-bold'} />
+              <Iconify icon={currency.value ? 'solar:eye-linear' : 'solar:eye-closed-linear'} />
             </IconButton>
           </Stack>
         </div>

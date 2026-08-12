@@ -46,20 +46,20 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
     : [
         ['客户开户', `${root}/onboarding`, 'solar:user-plus-bold-duotone'],
         ['法币入账', `${root}/operations/deposits`, 'solar:download-minimalistic-bold-duotone'],
-        ['复核中心', `${root}/operations/approvals`, 'solar:clipboard-check-bold-duotone'],
+        ['审批中心', `${root}/operations/approvals`, 'solar:clipboard-check-bold-duotone'],
         ['资金通道', `${root}/funding-channels`, 'solar:bank-bold-duotone'],
       ];
   return (
     <>
       <Helmet>
-        <title>业务总览 | Moventra</title>
+        <title>业务总览 | SCC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
           <Box>
             <Typography variant="h4">业务总览</Typography>
             <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-              客户开户、五币种钱包、独立 VA、法币入账和出款复核的本地实时数据。
+              客户开户、USD/HKD 账户、独立 VA、USDT-TRON 与资金审批的本地实时数据。
             </Typography>
           </Box>
           {error && <Alert severity="error">{error}</Alert>}
@@ -73,7 +73,7 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
             <Metric title="有效客户" value={metrics.customers} />
             <Metric title="法币钱包" value={metrics.wallets} />
             <Metric title="独立 VA" value={metrics.va} />
-            <Metric title="待复核" value={metrics.approvals} highlight />
+            <Metric title="待审批" value={metrics.approvals} highlight />
             <Metric title="执行中出款" value={metrics.processing} highlight />
           </Box>
           <Card>
@@ -109,10 +109,12 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
                 <Box>
                   <Typography variant="h6">数字钱包</Typography>
                   <Typography color="text.secondary">
-                    页面和账户状态已完成，充值、提币、链上转账等待 Cregis 接入。
+                    仅支持 USDT-TRON（TRC20）；本地审批与记账已启用，真实链上广播保持人工执行。
                   </Typography>
                 </Box>
-                <Button disabled>第二阶段启用</Button>
+                <Button onClick={() => navigate('/dashboard/operations/crypto-wallets')}>
+                  进入审批
+                </Button>
               </Stack>
             </CardContent>
           </Card>

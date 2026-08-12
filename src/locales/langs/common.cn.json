@@ -48,7 +48,8 @@
       "admin_login": "管理后台安全登录",
       "admin_setup": "管理后台账户激活",
       "portal_login": "合作方 Portal 安全登录",
-      "portal_setup": "合作方 Portal 账户激活"
+      "portal_setup": "合作方 Portal 账户激活",
+      "registration": "个人与企业开户注册"
     },
     "role_entries": {
       "admin": "运营管理后台",
@@ -67,7 +68,7 @@
       "assurance_totp": "使用验证器生成的一次性动态验证码",
       "assurance_audit": "登录与敏感操作均可审计",
       "partner": {
-        "eyebrow": "moventra 合作方支付工作台",
+        "eyebrow": "SCC数字银行合作方支付工作台",
         "title": "统一管理账户、资金与付款",
         "subtitle": "通过合作方 Portal 发起虚拟账户开户，查看法币与数字资产余额，并集中跟踪入账、转出、兑换及交易记录。",
         "assurance_session": "账户与资金数据按合作方权限隔离",
@@ -112,7 +113,114 @@
       "title": "欢迎回来",
       "subtitle": "使用管理员分配的账户登录。密码通过后，还需要验证器动态验证码。",
       "submit": "继续身份验证",
-      "provisioned_only": "账户由管理员预先创建，当前不开放自主注册。"
+      "provisioned_only": "管理账户由管理员预先创建，不提供自主注册。",
+      "new_customer": "首次使用 SCC数字银行？",
+      "open_account": "个人或企业开户注册",
+      "registration_helper": "提交申请后仍需完成 KYC / KYB 与运营审核，审核通过前不会开通账户。"
+    },
+    "registration": {
+      "eyebrow": "安全开户注册",
+      "progress": "第 {{current}} / {{total}} 步",
+      "already_have_account": "已有账户？",
+      "sign_in": "返回登录",
+      "steps": {
+        "account_type": "选择开户类型",
+        "details": "填写开户注册资料",
+        "kyc": "准备身份验证",
+        "review": "确认并提交申请"
+      },
+      "account_type": {
+        "description": "请选择与你的实际身份相符的类型。开户资料、验证范围和审核要求会根据选择调整。",
+        "individual": {
+          "title": "个人账户",
+          "description": "适用于以个人名义持有和管理账户的申请人。"
+        },
+        "business": {
+          "title": "企业账户",
+          "description": "适用于公司、机构及其他登记实体，需核验董事与最终受益人。"
+        }
+      },
+      "details": {
+        "privacy": "本步骤仅收集开户预审所需资料。身份证件与人脸信息将在受保护的 KYC 页面完成。",
+        "authorized_contact": "授权联系人",
+        "beneficial_owner": "最终受益人",
+        "contact": "联系方式",
+        "email_hint": "该邮箱用于申请识别、KYC 补件及后续审核联络。"
+      },
+      "fields": {
+        "full_name": "证件上的完整姓名",
+        "date_of_birth": "出生日期",
+        "nationality": "国籍",
+        "legal_name": "企业法定名称",
+        "registration_number": "企业注册编号",
+        "incorporation_country": "注册国家或地区",
+        "contact_name": "联系人姓名",
+        "contact_role": "职务或与企业关系",
+        "beneficial_owner_name": "最终受益人姓名",
+        "ownership": "持股或控制比例（%）",
+        "email": "电子邮箱",
+        "phone_code": "国家区号",
+        "phone": "电话号码",
+        "residence_country": "常住 / 营业国家或地区"
+      },
+      "countries": {
+        "hk": "中国香港",
+        "sg": "新加坡",
+        "cn": "中国大陆",
+        "gb": "英国",
+        "us": "美国"
+      },
+      "kyc": {
+        "provider_handoff": "提交申请后，合规人员会人工审核 KYC / KYB 资料；如需补件，将通过预留邮箱联系。当前流程不接入第三方 KYC 服务商。",
+        "item_label": "验证 {{number}}",
+        "individual": {
+          "document": "有效身份证或护照",
+          "face": "本人活体与人脸核验",
+          "address": "近期住址证明"
+        },
+        "business": {
+          "company": "企业注册及存续证明",
+          "people": "董事、授权人及最终受益人身份",
+          "ownership": "股权与控制结构说明"
+        },
+        "security_title": "人工 KYC 与运营复核",
+        "security_description": "KYC 结论由后台人工记录，并需经过独立运营审核；KYC 通过不代表账户已开通。",
+        "consent": "我同意为开户注册、身份核验、反洗钱及制裁筛查目的处理所提交的资料。"
+      },
+      "review": {
+        "pending_notice": "提交只会创建待审核申请。KYC / KYB 未通过或运营未批准前，账户、钱包和资金功能均不会启用。",
+        "account_type": "开户类型",
+        "applicant": "申请人 / 企业",
+        "email": "联系邮箱",
+        "phone": "联系电话",
+        "kyc": "身份验证",
+        "kyc_pending": "待人工 KYC 审核",
+        "declaration": "我确认资料真实、完整且为本人或经授权提交，并同意相关条款与隐私说明。"
+      },
+      "validation": {
+        "required": "请填写此项。",
+        "account_type": "请选择个人账户或企业账户。",
+        "email": "请输入有效的电子邮箱。",
+        "phone": "请输入有效的电话号码。",
+        "ownership": "比例必须大于 0 且不超过 100。",
+        "kyc_consent": "请确认身份验证资料处理授权。",
+        "terms": "请确认声明后再提交。"
+      },
+      "actions": {
+        "back": "上一步",
+        "continue": "继续",
+        "submit": "提交开户申请"
+      },
+      "success": {
+        "eyebrow": "待人工身份审核",
+        "title": "开户申请已收到",
+        "subtitle": "你的申请已进入资料预审。申请提交不代表开户完成，账户在 KYC / KYB 与运营审核通过前不会启用。",
+        "reference": "申请编号",
+        "next_email": "妥善保存申请编号，并留意补件联络。",
+        "next_kyc": "等待合规人员完成人工 KYC / KYB 审核。",
+        "next_review": "等待合规与运营审核；通过后再设置登录密码和动态验证码。",
+        "back_to_login": "返回登录"
+      }
     },
     "local_dev": {
       "badge": "仅限本地",

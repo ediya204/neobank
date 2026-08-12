@@ -14,12 +14,17 @@ import {
   getCsrfToken,
   setCsrfToken,
 } from 'src/auth/csrf-token';
+import {
+  IS_ISOLATED_WALLET_DEPLOYMENT,
+  isIsolatedAccessAdminPath,
+} from 'src/config/deployment-mode';
 import { AuthContext } from './auth-context';
 import {
   AuthApiError,
   beginTotpSetup,
   changeCurrentPassword,
   completeInitialSetup,
+  getAccessAdminSession,
   getSession,
   loginWithPassword,
   logoutSession,
@@ -53,17 +58,36 @@ const initialState: State = {
 };
 
 function localDemoUser(): AuthSessionUser | null {
-  if (process.env.NODE_ENV !== 'development' || process.env.REACT_APP_LOCAL_DEMO !== 'true') {
+  if (
+    IS_ISOLATED_WALLET_DEPLOYMENT ||
+    process.env.NODE_ENV !== 'development' ||
+    process.env.REACT_APP_LOCAL_DEMO !== 'true'
+  ) {
     return null;
   }
+  // Customer authentication is always exercised against the real local Go
+  // session API. A synthetic user here would bypass login and then fail every
+  // customer-scoped request because no server session exists.
+  if (window.location.pathname.startsWith('/customer')) return null;
+
   const partner = window.location.pathname.startsWith('/portal');
+  let role: AuthRole = 'admin';
+  let id = 'usr_admin';
+  let email = 'admin@moventra.local';
+  let displayName = '本地管理员';
+  if (partner) {
+    role = 'partner';
+    id = 'usr_maker';
+    email = 'partner@moventra.local';
+    displayName = '本地合作方';
+  }
   return {
-    id: partner ? 'usr_maker' : 'usr_admin',
-    email: partner ? 'partner@moventra.local' : 'admin@moventra.local',
-    displayName: partner ? '本地合作方' : '本地管理员',
-    role: partner ? 'partner' : 'admin',
+    id,
+    email,
+    displayName,
+    role,
     organization: partner
-      ? { id: 'org_demo', name: 'Moventra Demo Partner', partnerKey: 'moventra-demo' }
+      ? { id: 'org_demo', name: 'SCC Digital Bank Demo Partner', partnerKey: 'moventra-demo' }
       : null,
     membership: partner
       ? {
@@ -131,7 +155,9 @@ export function AuthProvider({ children }: Props) {
       dispatch({ type: Types.INITIAL, payload: { user: demoUser, sessionError: null } });
       return demoUser;
     }
-    const session = await getSession();
+    const session = isIsolatedAccessAdminPath(window.location.pathname)
+      ? await getAccessAdminSession()
+      : await getSession();
     setCsrfToken(session?.csrfToken);
     dispatch({
       type: Types.INITIAL,
@@ -221,13 +247,18 @@ export function AuthProvider({ children }: Props) {
       dispatch({ type: Types.LOGOUT });
       return;
     }
+    if (isIsolatedAccessAdminPath(window.location.pathname) && state.user?.role === 'admin') {
+      clearCsrfToken();
+      dispatch({ type: Types.LOGOUT });
+      return;
+    }
     try {
       await logoutSession(getCsrfToken());
     } finally {
       clearCsrfToken();
       dispatch({ type: Types.LOGOUT });
     }
-  }, []);
+  }, [state.user?.role]);
 
   const changePassword = useCallback(
     async (input: ChangePasswordInput) => {

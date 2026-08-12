@@ -113,7 +113,7 @@ export default function NotificationsPopover() {
       )}
       {!smUp && (
         <IconButton aria-label={t('header.close_notifications')} onClick={drawer.onFalse}>
-          <Iconify icon="mingcute:close-line" />
+          <Iconify icon="solar:close-circle-linear" />
         </IconButton>
       )}
     </Stack>

@@ -53,7 +53,11 @@ import PortalSettings from 'src/pages/portal-settings';
 import portalEn from 'src/locales/langs/portal.en.json';
 import portalCn from 'src/locales/langs/portal.cn.json';
 import { browserApiFetch } from 'src/utils/browser-api';
-import { USD_ASSET_ICON } from 'src/utils/asset-icons';
+import {
+  CRYPTO_NETWORK_OPTIONS,
+  USD_ASSET_ICON,
+  USDT_ASSET_ICON,
+} from 'src/utils/asset-icons';
 import { truncateIdentifier } from 'src/utils/identifier';
 import { SUPPORTED_CALLING_CODE_VALUES } from 'src/data/supported-country-calling-codes';
 
@@ -95,32 +99,7 @@ const DEFAULT_WITHDRAWAL_FEES: WithdrawalFeeSetting[] = [
   { type: 'fiat_withdrawal', asset: 'USD', amount: '30' },
   { type: 'usdt_withdrawal', asset: 'USDT', amount: '5' },
 ];
-const CHAIN_OPTIONS = [
-  {
-    value: 'TRON',
-    label: 'TRON',
-    standard: 'TRC20',
-    icon: 'cryptocurrency-color:trx',
-  },
-  {
-    value: 'ETHEREUM',
-    label: 'Ethereum',
-    standard: 'ERC20',
-    icon: 'cryptocurrency-color:eth',
-  },
-  {
-    value: 'SOLANA',
-    label: 'Solana',
-    standard: 'SPL',
-    icon: 'cryptocurrency-color:sol',
-  },
-  {
-    value: 'BSC',
-    label: 'BNB Smart Chain',
-    standard: 'BEP20',
-    icon: 'cryptocurrency-color:bnb',
-  },
-] as const;
+const CHAIN_OPTIONS = CRYPTO_NETWORK_OPTIONS;
 
 const ASSET_OPTIONS = [
   {
@@ -131,7 +110,7 @@ const ASSET_OPTIONS = [
   {
     value: 'USDT',
     label: 'Tether',
-    icon: 'cryptocurrency-color:usdt',
+    icon: USDT_ASSET_ICON,
   },
 ] as const;
 
@@ -1088,7 +1067,7 @@ export default function PartnerPortalPage() {
     <>
       <Helmet>
         <title>
-          {translate(copy.title)} | {translate('合作方 Portal')} | moventra
+          {translate(copy.title)} | {translate('合作方 Portal')} | SCC Digital Bank
         </title>
       </Helmet>
       <Container maxWidth={portalSettings.themeStretch ? false : 'xl'} sx={{ minWidth: 0 }}>
@@ -2124,7 +2103,7 @@ export default function PartnerPortalPage() {
                 </Box>
               </Box>
               <Iconify
-                icon="eva:arrow-forward-fill"
+                icon="solar:alt-arrow-right-linear"
                 width={22}
                 sx={{ color: 'text.disabled', transform: { xs: 'rotate(90deg)', sm: 'none' } }}
               />
@@ -2709,7 +2688,7 @@ function WalletCustomerList({
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Iconify icon="eva:search-fill" width={20} />
+                    <Iconify icon="solar:magnifier-linear" width={20} />
                   </InputAdornment>
                 ),
               }}
@@ -2966,7 +2945,7 @@ function WalletCustomerList({
                   <Typography variant="caption" color="text.secondary">
                     {portalText('更新于 {{time}}', { time: formatDate(row.updated_at) })}
                   </Typography>
-                  <Iconify icon="eva:arrow-ios-forward-fill" width={18} />
+                  <Iconify icon="solar:alt-arrow-right-linear" width={18} />
                 </Stack>
               </Button>
             );
@@ -3197,7 +3176,7 @@ function WalletWorkspace({
           <Button
             variant="outlined"
             color="inherit"
-            startIcon={<Iconify icon="eva:arrow-ios-back-fill" />}
+            startIcon={<Iconify icon="solar:alt-arrow-left-linear" />}
             onClick={onBack}
             sx={{ alignSelf: 'flex-start' }}
           >
@@ -3238,7 +3217,7 @@ function WalletWorkspace({
                 <Button
                   variant="outlined"
                   color="inherit"
-                  startIcon={<Iconify icon="eva:arrow-ios-back-fill" />}
+                  startIcon={<Iconify icon="solar:alt-arrow-left-linear" />}
                   onClick={onBack}
                 >
                   {portalText('返回钱包')}
@@ -3255,7 +3234,7 @@ function WalletWorkspace({
                   }}
                 >
                   <Iconify
-                    icon={isFiat ? USD_ASSET_ICON : 'solar:wallet-money-bold-duotone'}
+                    icon={isFiat ? USD_ASSET_ICON : USDT_ASSET_ICON}
                     width={24}
                   />
                 </Box>
@@ -3339,9 +3318,7 @@ function WalletWorkspace({
                     >
                       <Iconify
                         icon={
-                          isFiat
-                            ? 'solar:dollar-minimalistic-bold-duotone'
-                            : 'solar:wallet-bold-duotone'
+                          isFiat ? USD_ASSET_ICON : USDT_ASSET_ICON
                         }
                         width={28}
                       />
@@ -3802,7 +3779,7 @@ function WalletWorkspace({
                         !feeReady ||
                         submitting
                       }
-                      endIcon={<Iconify icon="eva:arrow-ios-forward-fill" />}
+                      endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}
                       sx={{ minWidth: 220 }}
                     >
                       {portalText(submitting ? '提交中…' : '预览并确认转出')}
@@ -4633,7 +4610,7 @@ function CustomerOverviewTable({ rows, onOpen }: { rows: any[]; onOpen: (id: str
               fullWidth
               variant="soft"
               onClick={() => onOpen(row.application_id)}
-              endIcon={<Iconify icon="eva:arrow-ios-forward-fill" />}
+              endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}
               sx={{ mt: 2, minHeight: 44 }}
             >
               {portalText('查看详情')}
@@ -5037,7 +5014,7 @@ function TransactionHistoryGrid({
                     {row.id}
                   </Typography>
                 </Box>
-                <Iconify icon="eva:arrow-ios-forward-fill" width={18} sx={{ flexShrink: 0 }} />
+                <Iconify icon="solar:alt-arrow-right-linear" width={18} sx={{ flexShrink: 0 }} />
               </Stack>
             </Button>
           ))}
@@ -5157,7 +5134,7 @@ function TransactionDetailDrawer({ value, onClose }: { value: any | null; onClos
           </Typography>
         </Box>
         <IconButton aria-label={portalText('关闭交易详情')} onClick={onClose}>
-          <Iconify icon="mingcute:close-line" />
+          <Iconify icon="solar:close-circle-linear" />
         </IconButton>
       </Stack>
 
@@ -5483,7 +5460,7 @@ function RecentOtcHistory({ rows }: { rows: any[] }) {
               ) : (
                 <AssetValue asset={row.sell_asset} compact />
               )}
-              <Iconify icon="eva:arrow-forward-fill" width={16} color="text.disabled" />
+              <Iconify icon="solar:alt-arrow-right-linear" width={16} color="text.disabled" />
               {row.buy_network ? (
                 <ChainValue network={row.buy_network} />
               ) : (
@@ -5647,7 +5624,7 @@ function TransactionChannel({ value, compact = false }: { value: any; compact?: 
         ) : (
           <AssetValue asset={value.asset} compact />
         )}
-        <Iconify icon="eva:arrow-forward-fill" width={compact ? 15 : 18} color="text.disabled" />
+        <Iconify icon="solar:alt-arrow-right-linear" width={compact ? 15 : 18} color="text.disabled" />
         {value.counter_network ? (
           <ChainValue network={value.counter_network} compact={compact} />
         ) : (
@@ -5780,7 +5757,7 @@ function BalanceCustomerOverview({
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <Iconify icon="eva:search-fill" width={20} />
+                  <Iconify icon="solar:magnifier-linear" width={20} />
                 </InputAdornment>
               ),
             }}

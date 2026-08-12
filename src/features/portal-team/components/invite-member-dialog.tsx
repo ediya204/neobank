@@ -117,7 +117,7 @@ export default function InviteMemberDialog({
                 <Button
                   color="inherit"
                   variant="outlined"
-                  startIcon={<Iconify icon="solar:copy-bold-duotone" />}
+                  startIcon={<Iconify icon="solar:copy-linear" />}
                   onClick={copySetupLink}
                 >
                   {copied ? t('portalTeam.invite.linkCopied') : t('portalTeam.invite.copyLink')}

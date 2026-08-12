@@ -216,7 +216,7 @@ export default function ChatNav({
 
         {!collapseDesktop && (
           <IconButton onClick={handleClickCompose}>
-            <Iconify width={24} icon="solar:user-plus-bold" />
+            <Iconify width={24} icon="solar:user-plus-bold-duotone" />
           </IconButton>
         )}
       </Stack>

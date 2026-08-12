@@ -1,5 +1,15 @@
+import { getCsrfToken } from 'src/auth/csrf-token';
+
 export type Currency = 'USD' | 'SGD' | 'HKD' | 'EUR' | 'GBP' | 'USDT';
 export type CryptoNetwork = 'TRON' | 'BSC' | 'ETHEREUM';
+export type CryptoWalletStatus =
+  | 'PENDING'
+  | 'CREATING'
+  | 'ACTIVE'
+  | 'ERROR'
+  | 'FROZEN'
+  | 'CLOSED'
+  | 'DISABLED';
 export type OperationType =
   | 'DEPOSIT'
   | 'PAYOUT'
@@ -24,6 +34,43 @@ export type MoneyAccount = {
   frozenBalance: string;
 };
 
+export const supportedFiatCurrencies: Currency[] = ['USD', 'HKD'];
+export const supportedCryptoNetwork: CryptoNetwork = 'TRON';
+
+export function isSupportedPortalAccount(account: MoneyAccount) {
+  if (supportedFiatCurrencies.includes(account.currency)) return true;
+  return account.currency === 'USDT' && account.network === supportedCryptoNetwork;
+}
+
+export type AssetSource = 'balance_account' | 'virtual_account' | 'digital_wallet';
+
+export type AssetDistributionItem = {
+  currency: Currency;
+  availableBalance: string;
+  frozenBalance: string;
+  totalBalance: string;
+  reportingRate: string | null;
+  reportingValue: string | null;
+  shareBps: number;
+  accountCount: number;
+  sources: AssetSource[];
+};
+
+export type AssetSummary = {
+  customerId: string;
+  reportingCurrency: 'USD';
+  valuationStatus: 'complete' | 'partial';
+  missingRates: Currency[];
+  asOf: string;
+  ratesAsOf: string | null;
+  balanceBasis: 'materialized_account_balances';
+  totalAvailable: string;
+  totalFrozen: string;
+  totalBalance: string;
+  accountCount: number;
+  distribution: AssetDistributionItem[];
+};
+
 export type Customer = {
   id: string;
   organizationId: string;
@@ -32,7 +79,20 @@ export type Customer = {
   displayName: string;
   legalName: string;
   email: string;
+  phone?: string;
+  phoneCountryCode?: string;
   countryCode: string;
+  registrationNo?: string;
+  dateOfBirth?: string;
+  nationality?: string;
+  contactName?: string;
+  contactRole?: string;
+  beneficialOwnerName?: string;
+  beneficialOwnerOwnership?: string;
+  kycStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+  kycReviewerId?: string;
+  kycReviewedAt?: string;
+  kycReviewNote?: string;
   accounts: MoneyAccount[];
   beneficiaries?: Beneficiary[];
   creatorId?: string;
@@ -156,12 +216,15 @@ export type CryptoWallet = {
   networkLabel: string;
   tokenStandard: string;
   walletAddress: string;
-  status: 'PENDING' | 'ACTIVE' | 'FROZEN' | 'CLOSED' | 'DISABLED';
+  status: CryptoWalletStatus;
   availableBalance: string;
   frozenBalance: string;
   minimumDeposit: string;
   withdrawalFee: string;
   confirmationsRequired: number;
+  custodyProvider?: 'CREGIS' | null;
+  ownershipVerifiedAt?: string | null;
+  depositEnabled?: boolean;
 };
 
 export type CryptoTransfer = {
@@ -191,25 +254,37 @@ export type CryptoTransfer = {
   operator?: { id: string; displayName: string };
 };
 
-const baseUrl = process.env.REACT_APP_CORE_API_URL || 'http://localhost:4000/api/v1';
+const baseUrl = process.env.REACT_APP_CORE_API_URL || '/api/v1';
 
 export async function coreApi<T>(
   path: string,
   init?: RequestInit & { userId?: string }
 ): Promise<T> {
   const { userId = 'usr_maker', headers, ...requestInit } = init || {};
+  const method = (requestInit.method || 'GET').toUpperCase();
+  const csrfToken = getCsrfToken();
   const response = await fetch(`${baseUrl}${path}`, {
     ...requestInit,
+    credentials: 'include',
+    cache: 'no-store',
     headers: {
-      'content-type': 'application/json',
-      'x-user-id': userId,
+      ...(requestInit.body ? { 'content-type': 'application/json' } : {}),
+      ...(process.env.NODE_ENV === 'development' ? { 'x-user-id': userId } : {}),
+      ...(method !== 'GET' && method !== 'HEAD' && csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
       ...headers,
     },
   });
-  const payload = await response.json().catch(() => null);
+  const contentType = response.headers.get('content-type') || '';
+  const payload = contentType.toLowerCase().includes('application/json')
+    ? await response.json().catch(() => null)
+    : null;
   if (!response.ok) {
     const message = Array.isArray(payload?.message) ? payload.message.join('，') : payload?.message;
-    throw new Error(message || `请求失败 (${response.status})`);
+    const code = payload?.error?.code;
+    throw new Error(message || code || `请求失败 (${response.status})`);
+  }
+  if (payload === null) {
+    throw new Error('API 响应格式无效');
   }
   return payload as T;
 }

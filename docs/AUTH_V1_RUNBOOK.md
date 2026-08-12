@@ -12,7 +12,37 @@ Configured human identities:
 - `security-admin@example.com` — `admin`
 - `partner@example.com` — `partner`
 
-There is no public registration.
+There is no public self-service creation of an authenticated Admin or Partner
+identity. `/portal/register` provides the applicant-facing individual/business
+account-opening V1 UI, including KYC/KYB preparation and explicit pending-review
+states. The separate Core API/admin onboarding workspace now mirrors the same
+individual/business fields and enforces two manual checkpoints: Compliance
+records the KYC result, then Operations separately approves account opening.
+There is still no public submission API, email verification, KYC-provider
+session, or automatic identity provisioning connected to `/portal/register`.
+Do not treat its local completion screen as a stored or production-accepted
+application.
+
+The intended registration lifecycle is:
+
+`application_submitted -> kyc_pending -> kyc_approved -> operations_review -> active`
+
+KYC completion does not activate an account. After Operations approval, the
+existing one-time setup-link flow remains responsible for password and TOTP
+enrollment.
+
+The Core API implementation represents this boundary as:
+
+- `Customer.status=PENDING_REVIEW` and `kycStatus=PENDING` after submission;
+- `kycStatus=APPROVED` after manual Compliance review, while the customer
+  remains `PENDING_REVIEW` and has no account or wallet;
+- `Customer.status=ACTIVE` only after the explicit Operations approval route;
+- `kycStatus=REJECTED` with `Customer.status=REJECTED` for a rejected manual
+  KYC review.
+
+The KYC provider name, provider session, and provider Webhook are deliberately
+out of scope. A production Postgres rollout of the matching schema migration is
+also a separate, manually approved operation.
 
 ## Local Partner Portal bypass
 

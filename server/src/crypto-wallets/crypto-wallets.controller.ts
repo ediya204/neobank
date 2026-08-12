@@ -27,22 +27,27 @@ export class CryptoWalletsController {
   constructor(private readonly wallets: CryptoWalletsService) {}
 
   @Get()
-  listWallets(@Query('customerId') customerId: string) {
-    return this.wallets.listWallets(customerId);
+  listWallets(@Query('customerId') customerId: string, @Req() request: Request) {
+    return this.wallets.listWallets(customerId, currentUserId(request));
   }
 
   @Get('transfers')
   listTransfers(
     @Query('customerId') customerId: string,
+    @Req() request: Request,
     @Query('direction') direction?: CryptoTransferDirection,
     @Query('status') status?: CryptoTransferStatus
   ) {
-    return this.wallets.listTransfers(customerId, direction, status);
+    return this.wallets.listTransfers(customerId, currentUserId(request), direction, status);
   }
 
   @Get(':id/qr')
-  qrCode(@Param('id') id: string, @Query('customerId') customerId: string) {
-    return this.wallets.qrCode(id, customerId);
+  qrCode(
+    @Param('id') id: string,
+    @Query('customerId') customerId: string,
+    @Req() request: Request
+  ) {
+    return this.wallets.qrCode(id, customerId, currentUserId(request));
   }
 
   @Post('withdrawals')

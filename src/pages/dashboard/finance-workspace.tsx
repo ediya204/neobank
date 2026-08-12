@@ -43,6 +43,7 @@ import {
   Operation,
   OperationType,
   RateVersion,
+  supportedFiatCurrencies,
 } from 'src/features/finance/core-api';
 
 export type FinanceSection =
@@ -78,7 +79,7 @@ const sectionCopy: Record<
   },
   deposits: {
     title: '法币入账',
-    description: '录入银行到账，经过双人复核后记入指定钱包或 VA。',
+    description: '录入银行到账，经授权管理员审批后记入指定钱包或 VA。',
     type: 'DEPOSIT',
   },
   payouts: {
@@ -93,7 +94,7 @@ const sectionCopy: Record<
   },
   fx: {
     title: '法币换汇',
-    description: '在 USD、SGD、HKD、EUR、GBP 之间按版本化汇率兑换。',
+    description: '在 USD 与 HKD 之间按版本化汇率兑换。',
     type: 'FX',
   },
   otc: {
@@ -103,13 +104,13 @@ const sectionCopy: Record<
   },
   adjustments: {
     title: '调账管理',
-    description: '所有余额增减都通过补偿流水和双人复核完成。',
+    description: '所有余额增减都通过补偿流水和管理员审批完成。',
     type: 'ADJUSTMENT',
   },
-  approvals: { title: '复核中心', description: '复核其他人员提交的入账、出款、调账、转账与兑换。' },
+  approvals: { title: '审批中心', description: '由一名授权管理员审批入账、出款、调账与兑换。' },
 };
 
-const currencies: Currency[] = ['USD', 'SGD', 'HKD', 'EUR', 'GBP'];
+const currencies: Currency[] = [...supportedFiatCurrencies];
 
 type OperationForm = {
   customerId: string;
@@ -133,7 +134,7 @@ type OperationForm = {
 const initialForm: OperationForm = {
   customerId: '',
   currency: 'USD',
-  quoteCurrency: 'SGD',
+  quoteCurrency: 'HKD',
   amount: '',
   feeAmount: '0',
   sourceAccountId: '',
@@ -151,7 +152,7 @@ const initialForm: OperationForm = {
 
 export default function FinanceWorkspace({ section }: { section: FinanceSection }) {
   const copy = sectionCopy[section];
-  const [userId, setUserId] = useState<string>('usr_maker');
+  const [userId, setUserId] = useState<string>('usr_admin');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -241,7 +242,11 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   );
 
   const openCreate = () => {
-    setForm({ ...initialForm, customerId: customers[0]?.id || '' });
+    setForm({
+      ...initialForm,
+      customerId: customers[0]?.id || '',
+      quoteCurrency: copy.type === 'OTC' ? 'USDT' : initialForm.quoteCurrency,
+    });
     setCreateOpen(true);
   };
 
@@ -291,7 +296,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       if (copy.type === 'ADJUSTMENT') payload.adjustmentDirection = form.adjustmentDirection;
       await coreApi('/operations', { method: 'POST', body: JSON.stringify(payload), userId });
       setCreateOpen(false);
-      setSuccess('已提交，等待另一名人员复核');
+      setSuccess('已提交，授权管理员可直接审批');
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : '提交失败');
@@ -314,7 +319,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       setRejectOpen(false);
       setExecuteOpen(false);
       const messages = {
-        approve: '复核通过',
+        approve: '审批通过',
         reject: '已拒绝并释放冻结资金',
         execute: '出款执行完成',
       };
@@ -329,7 +334,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     <>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
         <Metric
-          title="待复核"
+          title="待审批"
           value={summary.submitted}
           color="warning"
           icon="solar:clipboard-check-bold-duotone"
@@ -359,7 +364,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
                 onChange={(event) => setStatus(event.target.value)}
               >
                 <MenuItem value="all">全部</MenuItem>
-                <MenuItem value="SUBMITTED">待复核</MenuItem>
+                <MenuItem value="SUBMITTED">待审批</MenuItem>
                 <MenuItem value="PROCESSING">执行中</MenuItem>
                 <MenuItem value="COMPLETED">已完成</MenuItem>
                 <MenuItem value="REJECTED">已拒绝</MenuItem>
@@ -402,7 +407,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   return (
     <>
       <Helmet>
-        <title>{copy.title} | Moventra</title>
+        <title>{copy.title} | SCC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
@@ -431,7 +436,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
               {copy.type && (
                 <Button
                   variant="contained"
-                  startIcon={<Iconify icon="mingcute:add-line" />}
+                  startIcon={<Iconify icon="solar:add-circle-linear" />}
                   onClick={openCreate}
                 >
                   新建{copy.title}
@@ -451,7 +456,8 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
             </Alert>
           )}
           <Alert severity="info">
-            所有入账、出款和调账均需双人复核；提交人无法审批自己创建的指令。
+            当前为单人审批模式：一名授权管理员可以提交并审批；银行流水号或链上 Tx Hash
+            仍需在实际执行后人工回填。
           </Alert>
 
           {workspaceContent}
@@ -841,7 +847,7 @@ function RateDialog({
 }) {
   const [type, setType] = useState<'FX' | 'OTC'>('FX');
   const [baseCurrency, setBaseCurrency] = useState<Currency>('USD');
-  const [quoteCurrency, setQuoteCurrency] = useState<Currency>('SGD');
+  const [quoteCurrency, setQuoteCurrency] = useState<Currency>('HKD');
   const [buyRate, setBuyRate] = useState('1');
   const [sellRate, setSellRate] = useState('1');
   const [feeBps, setFeeBps] = useState('20');
@@ -997,7 +1003,7 @@ function Metric({
 
 function ChannelGrid({ channels }: { channels: FundingChannel[] }) {
   const descriptions: Record<FundingChannel['type'], string> = {
-    FIAT_INBOUND: '接收银行汇款，匹配客户与目标 VA/钱包，复核后入账。',
+    FIAT_INBOUND: '接收银行汇款，匹配客户与目标 VA/钱包，管理员审批后入账。',
     VA_PAYOUT: '从指定独立 VA 余额扣款，以该 VA 持有人信息作为付款人。',
     POBO_PAYOUT: '从系统钱包扣款，由通道以客户名义执行 POBO 付款。',
     PLATFORM_PAYOUT: '从系统钱包扣款，以平台母账户作为银行付款人。',
@@ -1218,8 +1224,8 @@ function OperationDialog({
   );
   const dialogNotice =
     type === 'DEPOSIT'
-      ? '提交后进入待复核；另一名人员复核通过后才会记入目标钱包或 VA。'
-      : '提交后将冻结相关余额并进入复核；请切换到另一名复核人员完成审批。';
+      ? '提交后进入待审批；授权管理员确认到账后记入目标钱包或 VA。'
+      : '提交后将冻结相关余额并进入待审批；授权管理员可直接完成审批。';
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
       <Box component="form" onSubmit={onSubmit}>
@@ -1419,7 +1425,7 @@ function OperationDialog({
         <DialogActions>
           <Button onClick={onClose}>取消</Button>
           <Button type="submit" variant="contained">
-            提交复核
+            提交审批
           </Button>
         </DialogActions>
       </Box>
@@ -1469,6 +1475,7 @@ function OperationDrawer({
 }) {
   if (!operation) return null;
   const isOwn = operation.maker.id === currentUserId;
+  const isAdmin = currentUserId === 'usr_admin';
   return (
     <Drawer
       anchor="right"
@@ -1484,8 +1491,11 @@ function OperationDrawer({
           </Box>
           <StatusLabel status={operation.status} />
         </Stack>
-        {isOwn && operation.status === 'SUBMITTED' && (
-          <Alert severity="warning">这是你提交的指令，不能由你本人复核。</Alert>
+        {isOwn && operation.status === 'SUBMITTED' && isAdmin && (
+          <Alert severity="info">单人审批模式下，管理员可以审批自己提交的指令。</Alert>
+        )}
+        {isOwn && operation.status === 'SUBMITTED' && !isAdmin && (
+          <Alert severity="warning">该身份没有自审批权限，请切换为平台管理员。</Alert>
         )}
         <Detail label="客户" value={operation.customer.displayName} />
         <Detail label="金额" value={formatMoney(operation.amount, operation.currency)} />
@@ -1526,7 +1536,7 @@ function OperationDrawer({
         )}
         <Divider />
         <Detail label="提交人" value={operation.maker.displayName} />
-        <Detail label="复核人" value={operation.checker?.displayName || '待复核'} />
+        <Detail label="审批人" value={operation.checker?.displayName || '待审批'} />
         <Detail label="执行人" value={operation.operator?.displayName || '-'} />
         {operation.rejectionReason && (
           <Alert severity="error">拒绝原因：{operation.rejectionReason}</Alert>
@@ -1537,8 +1547,8 @@ function OperationDrawer({
             <Button fullWidth color="error" variant="outlined" onClick={onReject}>
               拒绝
             </Button>
-            <Button fullWidth variant="contained" disabled={isOwn} onClick={onApprove}>
-              复核通过
+            <Button fullWidth variant="contained" disabled={isOwn && !isAdmin} onClick={onApprove}>
+              审批通过
             </Button>
           </Stack>
         )}
@@ -1569,7 +1579,7 @@ function StatusLabel({ status }: { status: Operation['status'] }) {
   if (status === 'PROCESSING') color = 'info';
   const labels: Record<Operation['status'], string> = {
     DRAFT: '草稿',
-    SUBMITTED: '待复核',
+    SUBMITTED: '待审批',
     APPROVED: '已批准',
     REJECTED: '已拒绝',
     PROCESSING: '执行中',

@@ -102,7 +102,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
         </Typography>
         <Tooltip title={t('common.copy')}>
           <IconButton color="primary" onClick={copy}>
-            <Iconify icon="solar:copy-outline" />
+            <Iconify icon="solar:copy-linear" />
           </IconButton>
         </Tooltip>
       </Stack>
@@ -272,7 +272,7 @@ export default function VaApplicationDetailsPage() {
     <>
       <Helmet>
         <title>
-          {t('applications.details.documentTitle', { name: application.customerName })} | moventra
+          {t('applications.details.documentTitle', { name: application.customerName })} | SCC Digital Bank
         </title>
       </Helmet>
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
@@ -331,7 +331,7 @@ export default function VaApplicationDetailsPage() {
                   color="inherit"
                   disabled={application.status === 'changes_requested'}
                   startIcon={
-                    <Iconify icon={editingProfile ? 'eva:close-fill' : 'solar:pen-bold'} />
+                    <Iconify icon={editingProfile ? 'solar:close-circle-linear' : 'solar:pen-bold'} />
                   }
                   onClick={() => {
                     if (editingProfile) {
@@ -499,7 +499,7 @@ export default function VaApplicationDetailsPage() {
                     </Typography>
                   </Box>
                   <Button
-                    startIcon={<Iconify icon="solar:copy-outline" />}
+                    startIcon={<Iconify icon="solar:copy-linear" />}
                     onClick={async () => {
                       await navigator.clipboard.writeText(
                         accountFields.map(([label, value]) => `${label}: ${value}`).join('\n')

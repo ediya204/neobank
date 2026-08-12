@@ -30,6 +30,12 @@ enum CustomerStatus {
   SUSPENDED
 }
 
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum Currency {
   USD
   SGD
@@ -173,6 +179,7 @@ model User {
   executedOperations       Operation[]             @relation("OperationOperator")
   createdCustomers         Customer[]              @relation("CustomerCreator")
   reviewedCustomers        Customer[]              @relation("CustomerReviewer")
+  kycReviewedCustomers     Customer[]              @relation("CustomerKycReviewer")
   submittedVaRequests      VirtualAccountRequest[] @relation("VaRequestMaker")
   reviewedVaRequests       VirtualAccountRequest[] @relation("VaRequestChecker")
   submittedCryptoTransfers CryptoTransfer[]        @relation("CryptoTransferMaker")
@@ -183,34 +190,45 @@ model User {
 }
 
 model Customer {
-  id              String                  @id @default(uuid())
-  organizationId  String
-  organization    Organization            @relation(fields: [organizationId], references: [id])
-  externalId      String?
-  type            CustomerType
-  status          CustomerStatus          @default(DRAFT)
-  displayName     String
-  legalName       String
-  email           String
-  phone           String?
-  countryCode     String
-  creatorId       String
-  creator         User                    @relation("CustomerCreator", fields: [creatorId], references: [id])
-  reviewerId      String?
-  reviewer        User?                   @relation("CustomerReviewer", fields: [reviewerId], references: [id])
-  reviewedAt      DateTime?
-  reviewNote      String?
-  registrationNo  String?
-  dateOfBirth     DateTime?
-  metadata        Json?
-  accounts        Account[]
-  beneficiaries   Beneficiary[]
-  operations      Operation[]
-  vaRequests      VirtualAccountRequest[]
-  cryptoWallets   CryptoWallet[]
-  cryptoTransfers CryptoTransfer[]
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  id                       String                  @id @default(uuid())
+  organizationId           String
+  organization             Organization            @relation(fields: [organizationId], references: [id])
+  externalId               String?
+  type                     CustomerType
+  status                   CustomerStatus          @default(DRAFT)
+  displayName              String
+  legalName                String
+  email                    String
+  phone                    String?
+  phoneCountryCode         String?
+  countryCode              String
+  creatorId                String
+  creator                  User                    @relation("CustomerCreator", fields: [creatorId], references: [id])
+  reviewerId               String?
+  reviewer                 User?                   @relation("CustomerReviewer", fields: [reviewerId], references: [id])
+  reviewedAt               DateTime?
+  reviewNote               String?
+  registrationNo           String?
+  dateOfBirth              DateTime?
+  nationality              String?
+  contactName              String?
+  contactRole              String?
+  beneficialOwnerName      String?
+  beneficialOwnerOwnership Decimal?                @db.Decimal(5, 2)
+  kycStatus                KycStatus               @default(PENDING)
+  kycReviewerId            String?
+  kycReviewer              User?                   @relation("CustomerKycReviewer", fields: [kycReviewerId], references: [id])
+  kycReviewedAt            DateTime?
+  kycReviewNote            String?
+  metadata                 Json?
+  accounts                 Account[]
+  beneficiaries            Beneficiary[]
+  operations               Operation[]
+  vaRequests               VirtualAccountRequest[]
+  cryptoWallets            CryptoWallet[]
+  cryptoTransfers          CryptoTransfer[]
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
 
   @@unique([organizationId, externalId])
   @@index([organizationId, status])
@@ -397,6 +415,7 @@ model Operation {
   updatedAt           DateTime             @updatedAt
 
   @@unique([customerId, idempotencyKey])
+  @@unique([channelId, remittanceReference])
   @@index([customerId, status, createdAt])
   @@index([status, type, createdAt])
 }

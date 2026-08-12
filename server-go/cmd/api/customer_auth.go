@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -80,8 +79,14 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 
 func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request) bool {
 	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/customers":
+		app.listAdminCustomers(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/customers":
 		app.createCustomer(w, r)
+	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc"):
+		app.reviewCustomerKYC(w, r, adminCustomerRouteID(r.URL.Path, "/kyc"))
+	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/activate"):
+		app.activateCustomerOperations(w, r, adminCustomerRouteID(r.URL.Path, "/activate"))
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/profile":
 		app.getCustomerProfile(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/wallets":
@@ -113,8 +118,6 @@ func (app *application) createCustomer(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	nowText := databaseTimestamp(now)
 	customerID := randomID("customer")
-	setupToken := randomToken(32)
-	setupHash := tokenHash(setupToken)
 	existing, err := app.db.Query(r.Context(), `SELECT id FROM customers WHERE tenant_id=? AND email=?`, app.tenantID, email)
 	if err != nil {
 		databaseError(app, w, err)
@@ -126,28 +129,24 @@ func (app *application) createCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: `INSERT OR IGNORE INTO customers
-      (id, tenant_id, email, display_name, status, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'pending_setup', ?, ?, ?)`, Params: []any{customerID, app.tenantID, email, displayName, edgeUser(r), nowText, nowText}},
-		d1.Statement{SQL: `INSERT OR IGNORE INTO customer_credentials
-      (customer_id, password_iterations, setup_token_hash, setup_expires_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)`, Params: []any{customerID, customerPasswordIterations, setupHash, databaseTimestamp(now.Add(customerSetupDuration)), nowText}},
+	      (id, tenant_id, email, display_name, status, kyc_status, operations_status, created_by, created_at, updated_at)
+	      VALUES (?, ?, ?, ?, 'pending_setup', 'pending', 'pending', ?, ?, ?)`, Params: []any{customerID, app.tenantID, email, displayName, edgeUser(r), nowText, nowText}},
 		d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
-      (id, customer_id, event_type, actor, metadata_json, created_at)
-      SELECT ?, ?, 'customer.created', ?, '{}', ?
-      WHERE EXISTS (SELECT 1 FROM customer_credentials WHERE customer_id=? AND setup_token_hash=?)`, Params: []any{randomID("audit"), customerID, edgeUser(r), nowText, customerID, setupHash}},
+	      (id, customer_id, event_type, actor, metadata_json, created_at)
+	      SELECT ?, ?, 'customer.created', ?, '{}', ?
+	      WHERE EXISTS (SELECT 1 FROM customers WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending')`, Params: []any{randomID("audit"), customerID, edgeUser(r), nowText, customerID, app.tenantID}},
 	)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
-	if len(results) < 2 || resultChanges(results[:1]) != 1 || resultChanges(results[1:2]) != 1 {
+	if len(results) != 2 || resultChanges(results[:1]) != 1 || resultChanges(results[1:2]) != 1 {
 		conflict(w, "customer_already_exists")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id": customerID, "email": email, "display_name": displayName, "status": "pending_setup",
-		"setup_token": setupToken, "setup_expires_at": databaseTimestamp(now.Add(customerSetupDuration)),
-		"setup_url": app.portalURL + "/customer/setup#setup_token=" + url.QueryEscape(setupToken),
+		"kyc_status": "pending", "operations_status": "pending",
 	})
 }
 
@@ -167,7 +166,7 @@ func (app *application) completeCustomerSetup(w http.ResponseWriter, r *http.Req
 	setupHash := tokenHash(input.SetupToken)
 	rows, err := app.db.Query(r.Context(), `SELECT c.id, c.email, c.display_name, cc.setup_expires_at
     FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
-    WHERE c.tenant_id=? AND c.status='pending_setup' AND cc.setup_token_hash=?
+	    WHERE c.tenant_id=? AND c.status='pending_setup' AND c.kyc_status='approved' AND c.operations_status='active' AND cc.setup_token_hash=?
       AND cc.setup_consumed_at IS NULL AND cc.setup_expires_at>?`, app.tenantID, setupHash, databaseTimestamp(now))
 	if err != nil {
 		databaseError(app, w, err)
@@ -231,7 +230,7 @@ func (app *application) customerTOTPSetup(w http.ResponseWriter, r *http.Request
 	nowText := databaseTimestamp(time.Now())
 	rows, err := app.db.Query(r.Context(), `SELECT c.email, cc.totp_secret_ciphertext
     FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
-    WHERE c.tenant_id=? AND c.status='pending_setup' AND cc.enrollment_token_hash=?
+	    WHERE c.tenant_id=? AND c.status='pending_setup' AND c.kyc_status='approved' AND c.operations_status='active' AND cc.enrollment_token_hash=?
       AND cc.enrollment_expires_at>?`, app.tenantID, tokenHash(input.EnrollmentToken), nowText)
 	if err != nil {
 		databaseError(app, w, err)
@@ -267,7 +266,7 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 	rows, err := app.db.Query(r.Context(), `SELECT c.id, c.status, cc.password_salt, cc.password_hash,
       cc.password_iterations, cc.failed_attempts, cc.locked_until
     FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
-    WHERE c.tenant_id=? AND c.email=?`, app.tenantID, email)
+	    WHERE c.tenant_id=? AND c.email=? AND c.kyc_status='approved' AND c.operations_status='active'`, app.tenantID, email)
 	if err != nil {
 		databaseError(app, w, err)
 		return
@@ -345,14 +344,15 @@ func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Reques
 	if enrollment {
 		rows, err = app.db.Query(r.Context(), `SELECT c.id, c.email, c.display_name, cc.totp_secret_ciphertext, cc.credential_version
       FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
-      WHERE c.tenant_id=? AND c.status='pending_setup' AND cc.enrollment_token_hash=?
+		      WHERE c.tenant_id=? AND c.status='pending_setup' AND c.kyc_status='approved' AND c.operations_status='active' AND cc.enrollment_token_hash=?
         AND cc.enrollment_expires_at>?`, app.tenantID, tokenHash(input.EnrollmentToken), nowText)
 	} else {
 		rows, err = app.db.Query(r.Context(), `SELECT c.id, c.email, c.display_name, cc.totp_secret_ciphertext, cc.credential_version,
         lc.id AS challenge_row_id
       FROM customer_login_challenges lc JOIN customers c ON c.id=lc.customer_id
       JOIN customer_credentials cc ON cc.customer_id=c.id
-      WHERE c.tenant_id=? AND c.status='active' AND lc.token_hash=? AND lc.consumed_at IS NULL AND lc.expires_at>?`,
+	      WHERE c.tenant_id=? AND c.status='active' AND c.kyc_status='approved' AND c.operations_status='active'
+	        AND lc.token_hash=? AND lc.consumed_at IS NULL AND lc.expires_at>?`,
 			app.tenantID, tokenHash(input.ChallengeID), nowText)
 	}
 	if err != nil {
@@ -394,7 +394,7 @@ func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Reques
 	if enrollment {
 		statements = append(statements,
 			d1.Statement{SQL: `UPDATE customers SET status='active', updated_at=?
-        WHERE id=? AND tenant_id=? AND status='pending_setup'`, Params: []any{nowText, customerID, app.tenantID}},
+	        WHERE id=? AND tenant_id=? AND status='pending_setup' AND kyc_status='approved' AND operations_status='active'`, Params: []any{nowText, customerID, app.tenantID}},
 			d1.Statement{SQL: `UPDATE customer_credentials
         SET setup_token_hash=NULL, setup_expires_at=NULL, enrollment_token_hash=NULL, enrollment_expires_at=NULL, updated_at=?
         WHERE customer_id=? AND enrollment_token_hash=?`, Params: []any{nowText, customerID, tokenHash(input.EnrollmentToken)}},
@@ -490,20 +490,26 @@ func (app *application) listCustomerWallets(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "session_expired"}})
 		return
 	}
-	rows, err := app.db.Query(r.Context(), `SELECT id, customer_id, chain_id, token_id, currency, address, alias, status, created_at
+	rows, err := app.db.Query(r.Context(), `SELECT id, customer_id, chain_id, token_id, currency,
+    CASE WHEN status='active' AND custody_provider='cregis' AND ownership_verified_at IS NOT NULL
+      THEN address ELSE NULL END AS address,
+    alias, status, custody_provider, ownership_verified_at,
+    CASE WHEN status='active' AND custody_provider='cregis' AND ownership_verified_at IS NOT NULL
+      AND address IS NOT NULL THEN 1 ELSE 0 END AS deposit_enabled,
+    created_at
     FROM cregis_wallets WHERE tenant_id=? AND customer_id=? ORDER BY created_at DESC`, app.tenantID, session.CustomerID)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
 	for _, row := range rows {
-		available, balanceErr := app.customerWalletAvailableBalance(r, text(row["id"]), session.CustomerID)
+		available, frozen, balanceErr := app.customerWalletBalances(r, text(row["id"]), session.CustomerID)
 		if balanceErr != nil {
 			databaseError(app, w, balanceErr)
 			return
 		}
 		row["available_balance"] = available
-		row["frozen_balance"] = "0"
+		row["frozen_balance"] = frozen
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
@@ -524,7 +530,8 @@ func (app *application) listCustomerHistory(w http.ResponseWriter, r *http.Reque
 	deposits, err := app.db.Query(r.Context(), `SELECT d.id, w.customer_id, d.wallet_id, 'deposit' AS direction, d.currency, d.amount_text AS amount,
     d.status, d.address, d.txid, d.cregis_cid, d.received_at AS created_at
     FROM cregis_deposits d JOIN cregis_wallets w ON w.id=d.wallet_id
-    WHERE d.tenant_id=? AND w.customer_id=? ORDER BY d.received_at DESC LIMIT 200`, app.tenantID, session.CustomerID)
+    WHERE d.tenant_id=? AND w.customer_id=? AND w.status='active' AND w.custody_provider='cregis'
+      AND w.ownership_verified_at IS NOT NULL ORDER BY d.received_at DESC LIMIT 200`, app.tenantID, session.CustomerID)
 	if err != nil {
 		databaseError(app, w, err)
 		return
@@ -532,38 +539,22 @@ func (app *application) listCustomerHistory(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"withdrawals": withdrawals, "deposits": deposits})
 }
 
-func (app *application) customerWalletAvailableBalance(r *http.Request, walletID, customerID string) (string, error) {
-	deposits, err := app.db.Query(r.Context(), `SELECT d.amount_text FROM cregis_deposits d
-    JOIN cregis_wallets w ON w.id=d.wallet_id
-    WHERE d.tenant_id=? AND d.wallet_id=? AND w.customer_id=? AND d.status='completed'`, app.tenantID, walletID, customerID)
-	if err != nil {
-		return "", err
-	}
-	withdrawals, err := app.db.Query(r.Context(), `SELECT amount_text FROM cregis_withdrawals
-    WHERE tenant_id=? AND wallet_id=? AND customer_id=?
-      AND status NOT IN ('rejected', 'failed', 'cancelled')`, app.tenantID, walletID, customerID)
-	if err != nil {
-		return "", err
-	}
-	balance := new(big.Rat)
-	for _, row := range deposits {
-		amount, ok := new(big.Rat).SetString(text(row["amount_text"]))
-		if !ok {
-			return "", errors.New("invalid stored deposit amount")
+func (app *application) customerWalletBalances(r *http.Request, walletID, customerID string) (string, string, error) {
+	rows, err := app.db.Query(r.Context(), walletBalancesSQL,
+		app.tenantID, walletID, app.tenantID, walletID, customerID,
+		app.tenantID, walletID, customerID)
+	if err != nil || len(rows) != 1 {
+		if err == nil {
+			err = errors.New("wallet balance query returned no row")
 		}
-		balance.Add(balance, amount)
+		return "", "", err
 	}
-	for _, row := range withdrawals {
-		amount, ok := new(big.Rat).SetString(text(row["amount_text"]))
-		if !ok {
-			return "", errors.New("invalid stored withdrawal amount")
-		}
-		balance.Sub(balance, amount)
+	available, availableErr := strconv.ParseInt(text(rows[0]["available_minor"]), 10, 64)
+	frozen, frozenErr := strconv.ParseInt(text(rows[0]["frozen_minor"]), 10, 64)
+	if availableErr != nil || frozenErr != nil || available < 0 || frozen < 0 {
+		return "", "", errors.New("invalid stored wallet balance")
 	}
-	if balance.Sign() < 0 {
-		return "0", nil
-	}
-	return strings.TrimRight(strings.TrimRight(balance.FloatString(18), "0"), "."), nil
+	return formatUSDTMicroUnits(available), formatUSDTMicroUnits(frozen), nil
 }
 
 func (app *application) createCustomerWithdrawal(w http.ResponseWriter, r *http.Request) {
@@ -584,19 +575,12 @@ func (app *application) createCustomerWithdrawal(w http.ResponseWriter, r *http.
 	}
 	walletID, _ := input["wallet_id"].(string)
 	amountText, _ := input["amount"].(string)
-	requested, requestedOK := new(big.Rat).SetString(amountText)
-	if !safeIdentifier.MatchString(walletID) || !requestedOK || requested.Sign() <= 0 {
+	if !safeIdentifier.MatchString(walletID) {
 		validationError(w)
 		return
 	}
-	availableText, err := app.customerWalletAvailableBalance(r, walletID, session.CustomerID)
-	if err != nil {
-		databaseError(app, w, err)
-		return
-	}
-	available, availableOK := new(big.Rat).SetString(availableText)
-	if !availableOK || requested.Cmp(available) > 0 {
-		conflict(w, "insufficient_available_balance")
+	if _, ok := parseUSDTMicroUnits(amountText); !ok {
+		validationError(w)
 		return
 	}
 	input["customer_id"] = session.CustomerID
@@ -620,7 +604,8 @@ func (app *application) loadCustomerSession(r *http.Request) (*customerSession, 
       c.email, c.display_name, c.status, cc.credential_version AS current_credential_version
     FROM customer_sessions s JOIN customers c ON c.id=s.customer_id
     JOIN customer_credentials cc ON cc.customer_id=c.id
-    WHERE c.tenant_id=? AND s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND c.status='active'`,
+	    WHERE c.tenant_id=? AND s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND c.status='active'
+	      AND c.kyc_status='approved' AND c.operations_status='active'`,
 		app.tenantID, tokenHash(cookie.Value), databaseTimestamp(now))
 	if err != nil || len(rows) != 1 {
 		return nil, "", errors.New("session invalid")

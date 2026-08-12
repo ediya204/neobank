@@ -10,7 +10,7 @@ import {
 } from '@prisma/client';
 
 const db = new PrismaClient();
-const currencies: Currency[] = ['USD', 'SGD', 'HKD', 'EUR', 'GBP'];
+const currencies: Currency[] = ['USD', 'HKD'];
 
 async function main() {
   const organization = await db.organization.upsert({
@@ -42,6 +42,9 @@ async function main() {
       externalId: 'CUST-10001',
       type: 'BUSINESS',
       status: 'ACTIVE',
+      kycStatus: 'APPROVED',
+      kycReviewedAt: new Date('2026-07-30T09:00:00Z'),
+      kycReviewNote: 'Demo KYC approved before Operations activation',
       displayName: 'Northstar Trading Pte. Ltd.',
       legalName: 'Northstar Trading Pte. Ltd.',
       email: 'finance@northstar.example',
@@ -61,6 +64,9 @@ async function main() {
       externalId: 'CUST-10002',
       type: 'INDIVIDUAL',
       status: 'ACTIVE',
+      kycStatus: 'APPROVED',
+      kycReviewedAt: new Date('2026-07-30T09:05:00Z'),
+      kycReviewNote: 'Demo KYC approved before Operations activation',
       displayName: '陈思远',
       legalName: '陈思远',
       email: 'siyuan.chen@example.local',
@@ -77,7 +83,7 @@ async function main() {
       kind: 'SYSTEM_WALLET',
       currency,
       name: `${currency} 法币钱包`,
-      availableBalance: currency === 'USD' ? 125000 : currency === 'SGD' ? 68000 : 25000,
+      availableBalance: currency === 'USD' ? 125000 : 25000,
     });
     await upsertAccount({
       accountNumber: `WALLET-${individualCustomer.id}-${currency}`,
@@ -85,7 +91,7 @@ async function main() {
       kind: 'SYSTEM_WALLET',
       currency,
       name: `${currency} 余额账户`,
-      availableBalance: currency === 'USD' ? 12850 : currency === 'SGD' ? 8600 : 1500,
+      availableBalance: currency === 'USD' ? 12850 : 1500,
     });
     await upsertAccount({
       accountNumber: `CLEARING-${currency}`,
@@ -102,23 +108,23 @@ async function main() {
   }
 
   await upsertAccount({
-    accountNumber: 'VA-SG-001-88392001',
+    accountNumber: 'VA-US-001-88392001',
     customerId: customer.id,
     kind: 'VIRTUAL_ACCOUNT',
-    currency: 'SGD',
-    name: 'SGD 独立 VA',
-    bankName: 'DBS Bank Ltd.',
-    swiftBic: 'DBSSSGSG',
+    currency: 'USD',
+    name: 'USD 独立 VA',
+    bankName: 'Citibank N.A.',
+    swiftBic: 'CITIUS33',
     availableBalance: 35600,
   });
   await upsertAccount({
-    accountNumber: 'VA-SG-IND-66820119',
+    accountNumber: 'VA-US-IND-66820119',
     customerId: individualCustomer.id,
     kind: 'VIRTUAL_ACCOUNT',
-    currency: 'SGD',
-    name: '我的 SGD 收款账户',
-    bankName: 'DBS Bank Ltd.',
-    swiftBic: 'DBSSSGSG',
+    currency: 'USD',
+    name: '我的 USD 收款账户',
+    bankName: 'Citibank N.A.',
+    swiftBic: 'CITIUS33',
     availableBalance: 3200,
   });
   await upsertAccount({
@@ -139,20 +145,17 @@ async function main() {
     name: 'USDT 钱包（Cregis 第二阶段）',
     network: 'TRON',
     status: 'ACTIVE',
+    availableBalance: 18420.5,
   });
 
   await seedCryptoWallets(customer.id, {
-    tron: 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE',
-    bsc: '0x795bd3739cd1b843313d949fc719659f48faa056',
-    ethereum: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984',
-    balances: [18420.5, 6320.75, 2150.25],
+    tron: 'CREGIS_UNASSIGNED_BIZ_TRON',
+    balance: 18420.5,
     prefix: 'BIZ',
   });
   await seedCryptoWallets(individualCustomer.id, {
-    tron: 'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8',
-    bsc: '0x8ba1f109551bd432803012645ac136ddd64dba72',
-    ethereum: '0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae',
-    balances: [2680.4, 850.25, 320.1],
+    tron: 'CREGIS_UNASSIGNED_IND_TRON',
+    balance: 2680.4,
     prefix: 'IND',
   });
   await upsertAccount({
@@ -163,7 +166,10 @@ async function main() {
     name: 'USDT 钱包（等待 Cregis）',
     network: 'TRON',
     status: 'ACTIVE',
+    availableBalance: 2680.4,
   });
+  await syncCryptoAccountMirror(customer.id);
+  await syncCryptoAccountMirror(individualCustomer.id);
   await upsertAccount({
     accountNumber: 'CLEARING-USDT',
     kind: 'PLATFORM_CLEARING',
@@ -221,11 +227,11 @@ async function main() {
       id: 'ben_demo_individual',
       customerId: individualCustomer.id,
       name: '陈思远',
-      currency: 'SGD',
-      bankName: 'OCBC Bank',
+      currency: 'USD',
+      bankName: 'Citibank N.A.',
       accountNumber: '501-882910-3',
-      swiftBic: 'OCBCSGSG',
-      countryCode: 'SG',
+      swiftBic: 'CITIUS33',
+      countryCode: 'US',
     },
   });
 
@@ -313,17 +319,11 @@ async function seedCryptoWallets(
   customerId: string,
   input: {
     tron: string;
-    bsc: string;
-    ethereum: string;
-    balances: [number, number, number];
+    balance: number;
     prefix: string;
   }
 ) {
-  const definitions = [
-    ['TRON', 'Tron', 'TRC20', input.tron, input.balances[0], 1, 20],
-    ['BSC', 'BNB Smart Chain', 'BEP20', input.bsc, input.balances[1], 0.8, 15],
-    ['ETHEREUM', 'Ethereum', 'ERC20', input.ethereum, input.balances[2], 5, 12],
-  ] as const;
+  const definitions = [['TRON', 'Tron', 'TRC20', input.tron, input.balance, 1, 20]] as const;
   for (const [
     network,
     networkLabel,
@@ -380,6 +380,24 @@ async function seedCryptoWallets(
       },
     });
   }
+}
+
+async function syncCryptoAccountMirror(customerId: string) {
+  const wallet = await db.cryptoWallet.findUnique({
+    where: { customerId_asset_network: { customerId, asset: 'USDT', network: 'TRON' } },
+  });
+  if (!wallet) return;
+  await db.account.updateMany({
+    where: {
+      customerId,
+      kind: 'CRYPTO_WALLET',
+      currency: 'USDT',
+      network: 'TRON',
+      availableBalance: 0,
+      frozenBalance: 0,
+    },
+    data: { availableBalance: wallet.availableBalance, frozenBalance: wallet.frozenBalance },
+  });
 }
 
 function demoRate(base: Currency, quote: Currency) {

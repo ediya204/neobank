@@ -293,7 +293,7 @@
     "ipAllowlist": "IP 白名单",
     "machineApiDescription": "服务令牌始终是第一层认证；IP 白名单是可选的第二层来源限制。",
     "machineApiTitle": "机器 API 访问安全",
-    "namePlaceholder": "例如 moventra 生产服务器",
+    "namePlaceholder": "例如 SCC数字银行生产服务器",
     "rateLimitDescription": "每 {{seconds}} 秒最多 {{limit}} 次请求，超限返回 HTTP 429；此项为平台级只读配置。",
     "secondLayer": "第二层",
     "trafficProtection": "流量保护",

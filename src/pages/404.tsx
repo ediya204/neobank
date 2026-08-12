@@ -11,7 +11,7 @@ export default function NotFoundPage() {
   return (
     <>
       <Helmet>
-        <title>{t('error_pages.not_found.page_title')} | moventra</title>
+        <title>{t('error_pages.not_found.page_title')} | SCC Digital Bank</title>
       </Helmet>
 
       <NotFoundView />

@@ -96,7 +96,7 @@ const ParentItem = forwardRef<HTMLDivElement, ParentItemProps>(
 
       <ListItemText primaryTypographyProps={{ typography: 'body2' }}>{title}</ListItemText>
 
-      {hasSub && <Iconify icon="eva:arrow-ios-forward-fill" width={16} />}
+      {hasSub && <Iconify icon="solar:alt-arrow-right-linear" width={16} />}
     </ListItemButton>
   )
 );
@@ -149,7 +149,7 @@ function SubMenu({ parent, pathname }: SubMenuProps) {
         >
           <Stack direction="row" alignItems="center" px={1} py={1.5}>
             <IconButton onClick={handleCloseDrawer}>
-              <Iconify icon="eva:arrow-ios-back-fill" width={16} />
+              <Iconify icon="solar:alt-arrow-left-linear" width={16} />
             </IconButton>
 
             <Typography noWrap variant="subtitle1" sx={{ ml: 1, textTransform: 'capitalize' }}>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import {
   Alert,
@@ -16,6 +16,7 @@ import {
   InputLabel,
   MenuItem,
   Select,
+  Skeleton,
   Stack,
   Tab,
   Tabs,
@@ -23,11 +24,17 @@ import {
   Typography,
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
+import AssetIcon from 'src/components/asset-icon';
+import CustomBreadcrumbs from 'src/components/custom-breadcrumbs';
+import { APP_DISPLAY_NAME } from 'src/config-global';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 import {
+  AssetDistributionItem,
+  AssetSummary,
   coreApi,
   Currency,
   MoneyAccount,
+  supportedFiatCurrencies,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
 import { AccountKindChip, accountLabel, money } from './customer-shared';
@@ -39,6 +46,39 @@ export default function CustomerAccounts() {
   const [tab, setTab] = useState<AccountTab>('all');
   const [selected, setSelected] = useState<MoneyAccount | null>(null);
   const [vaOpen, setVaOpen] = useState(false);
+  const [summary, setSummary] = useState<AssetSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    if (!customer?.id) {
+      setSummary(null);
+      setSummaryLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+    setSummaryLoading(true);
+    setSummaryError('');
+    coreApi<AssetSummary>(`/accounts/summary?customerId=${encodeURIComponent(customer.id)}`)
+      .then((value) => {
+        if (active) setSummary(value);
+      })
+      .catch((value) => {
+        if (active) {
+          setSummary(null);
+          setSummaryError(value instanceof Error ? value.message : '资产汇总加载失败');
+        }
+      })
+      .finally(() => {
+        if (active) setSummaryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [customer?.id]);
+
   const accounts = (customer?.accounts || []).filter((row) => {
     if (tab === 'wallet') return row.kind === 'SYSTEM_WALLET';
     if (tab === 'va') return row.kind === 'VIRTUAL_ACCOUNT';
@@ -48,26 +88,29 @@ export default function CustomerAccounts() {
   return (
     <>
       <Helmet>
-        <title>我的账户 | Moventra</title>
+        <title>我的账户 | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2}>
-            <Box>
-              <Typography variant="h4">账户</Typography>
-              <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                查看多币种余额和专属收款账户。
-              </Typography>
-            </Box>
-            <Button
-              variant="contained"
-              startIcon={<Iconify icon="solar:add-circle-bold" />}
-              onClick={() => setVaOpen(true)}
-            >
-              申请新的 VA
-            </Button>
-          </Stack>
+          <CustomBreadcrumbs
+            heading="资产与账户"
+            links={[{ name: '总览', href: '/portal/home' }, { name: '资产与账户' }]}
+            action={
+              <Button
+                variant="contained"
+                startIcon={<Iconify icon="solar:add-circle-linear" />}
+                onClick={() => setVaOpen(true)}
+              >
+                申请新的 VA
+              </Button>
+            }
+          />
+          <Typography color="text.secondary" sx={{ mt: -2 }}>
+            查看 USD、HKD 与 USDT-TRON 的可用、冻结和账面余额。
+          </Typography>
           {error && <Alert severity="error">{error}</Alert>}
+          {summaryError && !error && <Alert severity="error">{summaryError}</Alert>}
+          <AssetOverview summary={summary} loading={summaryLoading} />
           <Card>
             <Tabs
               value={tab}
@@ -82,17 +125,44 @@ export default function CustomerAccounts() {
               <Tab value="crypto" label="数字钱包" />
             </Tabs>
           </Card>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
-              gap: 2.5,
-            }}
-          >
-            {accounts.map((account) => (
-              <AccountCard key={account.id} account={account} onOpen={() => setSelected(account)} />
+          <Card sx={{ overflow: 'hidden' }}>
+            <Box
+              sx={{
+                display: { xs: 'none', md: 'grid' },
+                gridTemplateColumns: 'minmax(220px, 1.35fr) 140px 1fr 1fr 150px',
+                gap: 2,
+                px: 3,
+                py: 1.5,
+                bgcolor: 'background.neutral',
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Typography variant="caption" color="text.secondary">
+                账户
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                类型
+              </Typography>
+              <Typography variant="caption" color="text.secondary" textAlign="right">
+                可用余额
+              </Typography>
+              <Typography variant="caption" color="text.secondary" textAlign="right">
+                冻结余额
+              </Typography>
+              <Typography variant="caption" color="text.secondary" textAlign="right">
+                操作
+              </Typography>
+            </Box>
+            {accounts.map((account, index) => (
+              <AccountListRow
+                key={account.id}
+                account={account}
+                divider={index < accounts.length - 1}
+                onOpen={() => setSelected(account)}
+              />
             ))}
-          </Box>
+          </Card>
           {!accounts.length && (
             <Card sx={{ py: 8, textAlign: 'center' }}>
               <Typography color="text.secondary">暂无此类账户</Typography>
@@ -114,6 +184,255 @@ export default function CustomerAccounts() {
   );
 }
 
+const assetColors: Record<Currency, string> = {
+  USD: '#B9E6D8',
+  SGD: '#82B7F4',
+  HKD: '#F0C97A',
+  EUR: '#AE9CE6',
+  GBP: '#E89B84',
+  USDT: '#4FBFA2',
+};
+
+function AssetOverview({ summary, loading }: { summary: AssetSummary | null; loading: boolean }) {
+  const chartBackground = useMemo(() => {
+    if (!summary?.distribution.length) return '#E8ECEA';
+    let cursor = 0;
+    const segments = summary.distribution.map((item) => {
+      const start = cursor;
+      cursor += item.shareBps / 100;
+      return `${assetColors[item.currency]} ${start}% ${cursor}%`;
+    });
+    if (cursor < 100) segments.push(`#E8ECEA ${cursor}% 100%`);
+    return `conic-gradient(${segments.join(', ')})`;
+  }, [summary]);
+  const asOf = summary
+    ? new Intl.DateTimeFormat('zh-CN', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(summary.asOf))
+    : '';
+
+  return (
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.15fr) minmax(380px, .85fr)' },
+        gap: 2.5,
+      }}
+    >
+      <Card
+        sx={{
+          color: '#F2F8F5',
+          bgcolor: '#123F38',
+          backgroundImage:
+            'radial-gradient(circle at 90% 10%, rgba(109, 190, 164, .2), transparent 34%)',
+          boxShadow: 'none',
+        }}
+      >
+        <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
+            <Box>
+              <Typography variant="overline" sx={{ color: '#B9D7CE', letterSpacing: 1.3 }}>
+                资产总览
+              </Typography>
+              {loading ? (
+                <Skeleton
+                  width={260}
+                  height={64}
+                  sx={{ bgcolor: 'rgba(255,255,255,.12)', mt: 0.5 }}
+                />
+              ) : (
+                <Typography
+                  sx={{
+                    mt: 0.5,
+                    fontSize: { xs: '2.2rem', sm: '3rem' },
+                    lineHeight: 1.08,
+                    fontWeight: 800,
+                    letterSpacing: '-0.045em',
+                  }}
+                >
+                  {money(summary?.totalBalance || 0, 'USD')}
+                </Typography>
+              )}
+              <Typography variant="body2" sx={{ color: '#B9D7CE', mt: 1 }}>
+                多币种资产 USD 估值{asOf ? ` · ${asOf}` : ''}
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                px: 1.25,
+                py: 0.75,
+                borderRadius: 1.5,
+                bgcolor: 'rgba(255,255,255,.09)',
+                color: '#DCEBE6',
+                fontSize: 12,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              估算值
+            </Box>
+          </Stack>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, 1fr)' },
+              mt: { xs: 4, sm: 5 },
+              pt: 2.5,
+              borderTop: '1px solid rgba(255,255,255,.14)',
+              gap: { xs: 2.5, sm: 2 },
+            }}
+          >
+            <AssetMetric
+              label="可用余额"
+              value={summary ? money(summary.totalAvailable, 'USD') : '$0.00'}
+              loading={loading}
+            />
+            <AssetMetric
+              label="冻结余额"
+              value={summary ? money(summary.totalFrozen, 'USD') : '$0.00'}
+              loading={loading}
+            />
+            <AssetMetric
+              label="资产账户"
+              value={`${summary?.accountCount || 0} 个`}
+              loading={loading}
+            />
+          </Box>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ boxShadow: 'none', border: '1px solid', borderColor: 'divider' }}>
+        <CardContent sx={{ p: { xs: 3, sm: 3.5 } }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+            <Box>
+              <Typography variant="h6">资产分布</Typography>
+              <Typography variant="caption" color="text.secondary">
+                按 USD 估值计算
+              </Typography>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              {summary?.distribution.length || 0} 个币种
+            </Typography>
+          </Stack>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '110px minmax(0, 1fr)', sm: '132px minmax(0, 1fr)' },
+              alignItems: 'center',
+              gap: { xs: 2.25, sm: 3 },
+              mt: 3,
+            }}
+          >
+            <Box
+              role="img"
+              aria-label="资产币种分布图"
+              sx={{
+                width: { xs: 110, sm: 132 },
+                aspectRatio: '1',
+                borderRadius: '50%',
+                background: chartBackground,
+                display: 'grid',
+                placeItems: 'center',
+                position: 'relative',
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  inset: '19%',
+                  borderRadius: '50%',
+                  bgcolor: 'background.paper',
+                },
+              }}
+            >
+              <Box sx={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                <Typography variant="h5">{summary?.distribution.length || 0}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  币种
+                </Typography>
+              </Box>
+            </Box>
+            <Stack spacing={1.5}>
+              {loading && [0, 1, 2].map((item) => <Skeleton key={item} height={24} />)}
+              {!loading &&
+                summary?.distribution
+                  .slice(0, 6)
+                  .map((item) => <DistributionRow key={item.currency} item={item} />)}
+              {!loading && !summary?.distribution.length && (
+                <Typography variant="body2" color="text.secondary">
+                  入账后将在这里展示资产分布。
+                </Typography>
+              )}
+            </Stack>
+          </Box>
+          {summary?.valuationStatus === 'partial' && (
+            <Alert severity="warning" sx={{ mt: 2.5 }}>
+              {summary.missingRates.join('、')} 暂无有效估值汇率，未计入总资产。
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+    </Box>
+  );
+}
+
+function AssetMetric({
+  label,
+  value,
+  loading,
+}: {
+  label: string;
+  value: string;
+  loading: boolean;
+}) {
+  return (
+    <Box>
+      <Typography variant="caption" sx={{ color: '#AFCFC5' }}>
+        {label}
+      </Typography>
+      {loading ? (
+        <Skeleton width={100} sx={{ bgcolor: 'rgba(255,255,255,.12)' }} />
+      ) : (
+        <Typography variant="subtitle1" sx={{ mt: 0.35, fontWeight: 700 }}>
+          {value}
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+function DistributionRow({ item }: { item: AssetDistributionItem }) {
+  return (
+    <Stack direction="row" alignItems="center" spacing={1.25}>
+      <Box
+        sx={{
+          width: 9,
+          height: 9,
+          borderRadius: '50%',
+          bgcolor: assetColors[item.currency],
+          flexShrink: 0,
+        }}
+      />
+      <Typography variant="subtitle2" sx={{ width: 42 }}>
+        {item.currency}
+      </Typography>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+          {item.reportingValue ? money(item.reportingValue, 'USD') : '暂无汇率'}
+        </Typography>
+      </Box>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ minWidth: 38, textAlign: 'right' }}
+      >
+        {(item.shareBps / 100).toFixed(item.shareBps % 100 ? 1 : 0)}%
+      </Typography>
+    </Stack>
+  );
+}
+
 function VaRequestDialog({
   open,
   customerId,
@@ -126,7 +445,7 @@ function VaRequestDialog({
   onCreated: () => void;
 }) {
   const [currency, setCurrency] = useState<Currency>('USD');
-  const [country, setCountry] = useState('SG');
+  const [country, setCountry] = useState('HK');
   const [purpose, setPurpose] = useState('接收客户货款');
   const [error, setError] = useState('');
   const submit = async (event: React.FormEvent) => {
@@ -156,7 +475,7 @@ function VaRequestDialog({
                 value={currency}
                 onChange={(event) => setCurrency(event.target.value as Currency)}
               >
-                {(['USD', 'SGD', 'HKD', 'EUR', 'GBP'] as Currency[]).map((item) => (
+                {supportedFiatCurrencies.map((item) => (
                   <MenuItem key={item} value={item}>
                     {item}
                   </MenuItem>
@@ -179,7 +498,7 @@ function VaRequestDialog({
               minRows={2}
             />
             <Alert severity="info">
-              申请需要平台复核。批准后会在账户页显示独立账号、银行和 SWIFT 信息。
+              申请需要平台审批。批准后会在账户页显示独立账号、银行和 SWIFT 信息。
             </Alert>
           </Stack>
         </DialogContent>
@@ -194,57 +513,100 @@ function VaRequestDialog({
   );
 }
 
-function AccountCard({ account, onOpen }: { account: MoneyAccount; onOpen: () => void }) {
+function AccountListRow({
+  account,
+  onOpen,
+  divider,
+}: {
+  account: MoneyAccount;
+  onOpen: () => void;
+  divider: boolean;
+}) {
   const crypto = account.kind === 'CRYPTO_WALLET';
-  let accentColor = 'grey.300';
-  if (account.kind === 'VIRTUAL_ACCOUNT') accentColor = 'primary.main';
-  if (crypto) accentColor = 'warning.main';
   return (
-    <Card sx={{ position: 'relative', overflow: 'hidden' }}>
-      <Box
-        sx={{
-          height: 5,
-          bgcolor: accentColor,
-        }}
-      />
-      <CardContent sx={{ p: 3 }}>
-        <Stack direction="row" justifyContent="space-between">
-          <Box>
-            <Typography variant="h6">{accountLabel(account)}</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {account.name}
-            </Typography>
-          </Box>
-          <AccountKindChip account={account} />
-        </Stack>
-        <Typography variant="h4" sx={{ mt: 3 }}>
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: {
+          xs: 'minmax(0, 1fr) auto',
+          md: 'minmax(220px, 1.35fr) 140px 1fr 1fr 150px',
+        },
+        alignItems: 'center',
+        gap: { xs: 1.5, md: 2 },
+        px: { xs: 2, md: 3 },
+        py: 2,
+        borderBottom: divider ? '1px solid' : 0,
+        borderColor: 'divider',
+      }}
+    >
+      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
+        <Box
+          sx={{
+            width: 42,
+            height: 42,
+            flexShrink: 0,
+            borderRadius: '50%',
+            display: 'grid',
+            placeItems: 'center',
+            bgcolor: crypto ? '#E6F6F1' : '#EEF3F8',
+          }}
+        >
+          <AssetIcon
+            asset={account.currency}
+            network={account.network}
+            size={crypto ? 31 : 29}
+          />
+        </Box>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="subtitle2">{accountLabel(account)}</Typography>
+          <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+            {account.name}
+          </Typography>
+        </Box>
+      </Stack>
+      <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+        <AccountKindChip account={account} />
+      </Box>
+      <Box sx={{ textAlign: 'right' }}>
+        <Typography variant="subtitle2">
           {money(account.availableBalance, account.currency)}
         </Typography>
-        <Typography variant="caption" color="text.secondary">
-          可用余额
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: { xs: 'block', md: 'none' } }}
+        >
+          可用
         </Typography>
-        <Divider sx={{ my: 2.5 }} />
+        <Button
+          size="small"
+          href={crypto ? '/portal/crypto-wallet' : undefined}
+          onClick={crypto ? undefined : onOpen}
+          sx={{ display: { xs: 'inline-flex', md: 'none' }, mt: 0.5, px: 0 }}
+        >
+          {crypto ? '管理钱包' : '查看信息'}
+        </Button>
+      </Box>
+      <Typography
+        variant="body2"
+        color={Number(account.frozenBalance) > 0 ? 'warning.main' : 'text.secondary'}
+        textAlign="right"
+        sx={{ display: { xs: 'none', md: 'block' } }}
+      >
+        {money(account.frozenBalance, account.currency)}
+      </Typography>
+      <Box sx={{ display: { xs: 'none', md: 'flex' }, justifyContent: 'flex-end' }}>
         {crypto ? (
-          <Stack spacing={1.5}>
-            <Alert severity="info" icon={false}>
-              USDT 已按 TRON、BSC、Ethereum 分链展示。
-            </Alert>
-            <Button fullWidth variant="contained" href="/portal/crypto-wallet">
-              进入数字钱包
-            </Button>
-          </Stack>
+          <Button size="small" href="/portal/crypto-wallet">
+            管理钱包
+          </Button>
         ) : (
-          <Stack direction="row" spacing={1}>
-            <Button fullWidth variant="contained" onClick={onOpen}>
-              收款
-            </Button>
-            <Button fullWidth variant="outlined" href="/portal/money/transfers">
-              转账
-            </Button>
-          </Stack>
+          <Button size="small" onClick={onOpen}>
+            查看信息
+          </Button>
         )}
-      </CardContent>
-    </Card>
+      </Box>
+    </Box>
   );
 }
 
@@ -262,11 +624,11 @@ function AccountDialog({
       <DialogTitle>{isVa ? '使用专属 VA 收款' : `${account.currency} 入账信息`}</DialogTitle>
       <DialogContent>
         <Alert severity="info" sx={{ mb: 2 }}>
-          请确保汇款人名称与客户资料一致。银行到账后需运营复核，完成后余额自动更新。
+          请确保汇款人名称与客户资料一致。银行到账后需平台审批，完成后余额自动更新。
         </Alert>
         <Stack divider={<Divider flexItem />}>
           <Detail label="账户名称" value={account.name} />
-          <Detail label="银行" value={account.bankName || 'Moventra 合作银行'} />
+          <Detail label="银行" value={account.bankName || 'SCC数字银行合作银行'} />
           <Detail label="账户号码" value={account.accountNumber || '-'} mono />
           <Detail label="SWIFT / BIC" value={account.swiftBic || '-'} mono />
           <Detail label="币种" value={account.currency} />

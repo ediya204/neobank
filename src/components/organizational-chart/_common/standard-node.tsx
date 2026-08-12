@@ -43,7 +43,7 @@ export default function StandardNode({ node, onEdit, onDelete, sx }: Props) {
           onClick={popover.onOpen}
           sx={{ position: 'absolute', top: 8, right: 8 }}
         >
-          <Iconify icon="eva:more-horizontal-fill" />
+          <Iconify icon="solar:menu-dots-bold" />
         </IconButton>
 
         <Avatar

@@ -90,3 +90,36 @@ func TestCallUsesAuthenticatedRelayWithoutChangingCregisPayload(t *testing.T) {
 		}
 	}
 }
+
+func TestNewRequiresAuthenticatedRelay(t *testing.T) {
+	base := Config{
+		BaseURL:   "https://t-wsmbuuhb.cregis.io",
+		ProjectID: "1463535767997152",
+		Secret:    "cregis-test-secret",
+	}
+	for _, test := range []struct {
+		name        string
+		relayURL    string
+		relaySecret string
+	}{
+		{name: "missing relay"},
+		{name: "direct Cregis origin", relayURL: "https://t-wsmbuuhb.cregis.io", relaySecret: strings.Repeat("r", 32)},
+		{name: "http relay", relayURL: "http://relay.example.com", relaySecret: strings.Repeat("r", 32)},
+		{name: "relay path", relayURL: "https://relay.example.com/path", relaySecret: strings.Repeat("r", 32)},
+		{name: "weak relay secret", relayURL: "https://relay.example.com", relaySecret: "short"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := base
+			config.RelayURL = test.relayURL
+			config.RelaySecret = test.relaySecret
+			if _, err := New(config); err == nil {
+				t.Fatal("expected unsafe relay configuration to fail")
+			}
+		})
+	}
+	base.RelayURL = "https://relay.example.com"
+	base.RelaySecret = strings.Repeat("r", 32)
+	if _, err := New(base); err != nil {
+		t.Fatalf("expected authenticated HTTPS relay configuration to pass: %v", err)
+	}
+}

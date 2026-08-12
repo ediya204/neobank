@@ -52,6 +52,27 @@ must only be used after a successful `npm run cf:build` in the same worktree.
 GitHub push and Cloudflare deployment remain separate actions. Do not infer one
 from the other.
 
+### Isolated Neobank wallet
+
+The commands above target the default VA API Worker and must not be reused for
+the isolated Neobank deployment. Neobank production uses a compile-time route
+allowlist and an explicit Wrangler config:
+
+```bash
+npm run neobank:profile:check
+npm run neobank:typecheck
+npm run neobank:deploy:dry-run
+# After a separate manual approval:
+npm run neobank:deploy
+```
+
+`neobank:deploy:dry-run` builds with
+`REACT_APP_NEOBANK_DEPLOYMENT_MODE=isolated-wallet`; every prepared Wrangler
+command includes `--config wrangler.neobank.jsonc`. The normal local/default
+build remains the full Nest application. See
+`docs/NEOBANK_CREGIS_DEPLOYMENT.md` for the route matrix, Access session chain,
+Go/Render dependency, KYC and operations gates, and D1 migration procedure.
+
 ## Temporary worktrees and processes
 
 - Create temporary release worktrees with a unique `mktemp -d` path.

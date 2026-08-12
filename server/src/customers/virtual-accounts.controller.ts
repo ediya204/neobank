@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Query, Req } from '@nestjs/common'
 import { IsString } from 'class-validator';
 import type { Request } from 'express';
 import { currentUserId } from '../common/current-user';
+import { requireOrganizationAccess } from '../common/tenant-access';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomersService } from './customers.service';
 
@@ -14,7 +15,8 @@ export class VirtualAccountsController {
   constructor(private readonly customers: CustomersService, private readonly db: PrismaService) {}
 
   @Get()
-  list(@Query('organizationId') organizationId: string) {
+  async list(@Query('organizationId') organizationId: string, @Req() request: Request) {
+    await requireOrganizationAccess(this.db, currentUserId(request), organizationId);
     return this.db.virtualAccountRequest.findMany({
       where: { customer: { organizationId } },
       include: { customer: true, assignedAccount: true, maker: true, checker: true },

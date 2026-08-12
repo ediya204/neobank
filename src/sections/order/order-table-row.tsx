@@ -215,7 +215,7 @@ export default function OrderTableRow({
             popover.onClose();
           }}
         >
-          <Iconify icon="solar:eye-bold" />
+          <Iconify icon="solar:eye-linear" />
           View
         </MenuItem>
       </CustomPopover>

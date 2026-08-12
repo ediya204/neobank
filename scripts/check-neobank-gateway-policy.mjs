@@ -2,9 +2,11 @@ import { readFile } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
 const goSources = await Promise.all(
-  ['server-go/cmd/api/cregis_handlers.go', 'server-go/cmd/api/customer_auth.go'].map((path) =>
-    readFile(new URL(path, root), 'utf8')
-  )
+  [
+    'server-go/cmd/api/cregis_handlers.go',
+    'server-go/cmd/api/customer_auth.go',
+    'server-go/cmd/api/customer_admin.go',
+  ].map((path) => readFile(new URL(path, root), 'utf8'))
 );
 const workerSource = await readFile(new URL('worker-d1-gateway/index.ts', root), 'utf8');
 
@@ -27,7 +29,9 @@ const policyMatch = workerSource.match(
   /const ALLOWED_WRITE_SQL = new Set\(\s*\[([\s\S]*?)\]\.map\(normalizeSQL\)\s*\);/
 );
 if (!policyMatch) throw new Error('Could not locate ALLOWED_WRITE_SQL');
-const allowed = new Set(Array.from(policyMatch[1].matchAll(/`([\s\S]*?)`/g), (match) => normalize(match[1])));
+const allowed = new Set(
+  Array.from(policyMatch[1].matchAll(/`([\s\S]*?)`/g), (match) => normalize(match[1]))
+);
 
 const missing = [...writes].filter((sql) => !allowed.has(sql));
 const stale = [...allowed].filter((sql) => !writes.has(sql));

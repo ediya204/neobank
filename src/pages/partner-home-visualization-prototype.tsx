@@ -129,7 +129,11 @@ function PortalRecentList({ rows }: { rows: any[] }) {
             }}
           >
             <Iconify
-              icon={row.direction === 'credit' ? 'solar:arrow-down-bold' : 'solar:arrow-up-bold'}
+              icon={
+                row.direction === 'credit'
+                  ? 'solar:download-minimalistic-bold-duotone'
+                  : 'solar:upload-minimalistic-bold-duotone'
+              }
               width={18}
             />
           </Box>

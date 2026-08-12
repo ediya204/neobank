@@ -1,19 +1,23 @@
+import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
 import { AuthRole, AuthSessionUser } from './types';
 import { hasPortalPermission } from './permissions';
 
 export const ROLE_HOME: Record<AuthRole, string> = {
-  admin: '/dashboard/overview',
+  admin: IS_ISOLATED_WALLET_DEPLOYMENT ? '/admin/neobank-crypto' : '/dashboard/overview',
   partner: '/portal/home',
+  customer: '/portal/crypto-wallet',
 };
 
 export const ROLE_LOGIN: Record<AuthRole, string> = {
   admin: '/admin/login',
   partner: '/portal/login',
+  customer: '/customer/login',
 };
 
 export const ROLE_SETUP: Record<AuthRole, string> = {
   admin: '/admin/setup',
   partner: '/portal/setup',
+  customer: '/customer/setup',
 };
 
 export function getRoleHome(role: AuthRole | null | undefined) {
@@ -43,6 +47,14 @@ function canUsePortalTransactions(user: AuthSessionUser) {
 }
 
 export function canAccessPortalPath(user: AuthSessionUser, pathname: string) {
+  if (user.role === 'customer') {
+    return (
+      pathname === '/portal' ||
+      pathname === '/portal/crypto-wallet' ||
+      pathname.startsWith('/portal/crypto-wallet/') ||
+      pathname === '/portal/settings'
+    );
+  }
   if (user.role !== 'partner') return false;
   if (pathname === '/portal' || pathname === '/portal/settings') return true;
   if (pathname === '/portal/home') return canUsePortalOverview(user);
@@ -83,7 +95,7 @@ export function canAccessPortalPath(user: AuthSessionUser, pathname: string) {
   ) {
     return hasPortalPermission(user, 'integrations.read');
   }
-  if (pathname === '/portal/messages') {
+  if (pathname === '/portal/messages' || pathname.startsWith('/portal/messages/')) {
     return hasPortalPermission(user, 'notifications.read');
   }
   if (pathname === '/portal/team') {
@@ -95,6 +107,7 @@ export function canAccessPortalPath(user: AuthSessionUser, pathname: string) {
 export function getUserHome(user: AuthSessionUser | null | undefined) {
   if (!user) return '/';
   if (user.role === 'admin') return ROLE_HOME.admin;
+  if (user.role === 'customer') return ROLE_HOME.customer;
   if (canUsePortalOverview(user)) return '/portal/home';
   if (canUsePortalBalances(user)) return '/portal/balances';
   if (canUsePortalTransactions(user)) return '/portal/transactions';
@@ -114,8 +127,9 @@ export function getRoleSetup(role: AuthRole) {
 }
 
 export function requiredRoleForPath(pathname: string): AuthRole | null {
+  if (pathname === '/admin/neobank-crypto') return 'admin';
   if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) return 'admin';
-  if (pathname === '/portal' || pathname.startsWith('/portal/')) return 'partner';
+  if (pathname === '/portal' || pathname.startsWith('/portal/')) return null;
   return null;
 }
 
@@ -162,8 +176,23 @@ export function safeReturnTo(
 
   const requiredRole = requiredRoleForPath(canonicalUrl.pathname);
 
-  if (requiredRole !== role) return fallback;
-  if (role === 'partner' && user && !canAccessPortalPath(user, canonicalUrl.pathname)) {
+  if (requiredRole && requiredRole !== role) return fallback;
+  if (IS_ISOLATED_WALLET_DEPLOYMENT) {
+    if (role === 'admin' && canonicalUrl.pathname !== '/admin/neobank-crypto') return fallback;
+    if (
+      role === 'customer' &&
+      canonicalUrl.pathname !== '/portal/crypto-wallet' &&
+      !canonicalUrl.pathname.startsWith('/portal/crypto-wallet/')
+    ) {
+      return fallback;
+    }
+    if (role === 'partner') return fallback;
+  }
+  if (
+    (role === 'partner' || role === 'customer') &&
+    user &&
+    !canAccessPortalPath(user, canonicalUrl.pathname)
+  ) {
     return fallback;
   }
   return `${canonicalUrl.pathname}${canonicalUrl.search}${canonicalUrl.hash}`;

@@ -82,7 +82,7 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
               >
                 <Iconify
                   width={hasSelected ? 12 : 0}
-                  icon="eva:checkmark-fill"
+                  icon="solar:check-circle-bold"
                   sx={{
                     color: (theme) => theme.palette.getContrastText(color),
                     transition: (theme) =>

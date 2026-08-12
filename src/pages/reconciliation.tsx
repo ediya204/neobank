@@ -30,7 +30,7 @@ import Label from 'src/components/label';
 import { useSettingsContext } from 'src/components/settings';
 import { getLocalizedApiError } from 'src/locales/api-error';
 import { browserApiFetch } from 'src/utils/browser-api';
-import { USD_ASSET_ICON } from 'src/utils/asset-icons';
+import { USD_ASSET_ICON, USDT_ASSET_ICON } from 'src/utils/asset-icons';
 
 type Scope = 'admin' | 'portal';
 type AmountRow = {
@@ -244,7 +244,7 @@ function CurrentFundsCard({
     {
       asset: 'USDT',
       amount: usdt,
-      icon: 'cryptocurrency-color:usdt',
+      icon: USDT_ASSET_ICON,
       color: 'success.main',
     },
   ];
@@ -519,7 +519,7 @@ export default function ReconciliationPage({ scope }: { scope: Scope }) {
               />
               <Button
                 variant="outlined"
-                startIcon={<Iconify icon="solar:refresh-bold" />}
+                startIcon={<Iconify icon="solar:refresh-linear" />}
                 onClick={() => load()}
               >
                 {t('common.refresh')}
@@ -973,7 +973,7 @@ export default function ReconciliationPage({ scope }: { scope: Scope }) {
                 </Typography>
               </Box>
               <IconButton onClick={() => setSelected(null)}>
-                <Iconify icon="mingcute:close-line" />
+                <Iconify icon="solar:close-circle-linear" />
               </IconButton>
             </Stack>
             <Stack spacing={2} sx={{ p: 3 }}>

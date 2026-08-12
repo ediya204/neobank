@@ -48,7 +48,8 @@
       "admin_login": "Secure admin sign-in",
       "admin_setup": "Activate admin account",
       "portal_login": "Secure Partner Portal sign-in",
-      "portal_setup": "Activate Partner Portal account"
+      "portal_setup": "Activate Partner Portal account",
+      "registration": "Individual and business account application"
     },
     "role_entries": {
       "admin": "Operations Admin",
@@ -67,7 +68,7 @@
       "assurance_totp": "Verification codes come from your authenticator",
       "assurance_audit": "Sign-ins and sensitive actions are auditable",
       "partner": {
-        "eyebrow": "moventra partner payments workspace",
+        "eyebrow": "SCC Digital Bank partner payments workspace",
         "title": "Manage accounts, funds and payments in one place",
         "subtitle": "Open virtual accounts, review fiat and digital-asset balances, and track deposits, payouts, conversions and transaction records through the Partner Portal.",
         "assurance_session": "Account and fund data are isolated by partner permissions",
@@ -112,7 +113,114 @@
       "title": "Welcome back",
       "subtitle": "Sign in with the account your administrator provided. After your password, you’ll enter a code from your authenticator.",
       "submit": "Continue to verification",
-      "provisioned_only": "Accounts are provisioned by an administrator. Public registration is not available."
+      "provisioned_only": "Administrative accounts are provisioned by an administrator and cannot be self-registered.",
+      "new_customer": "New to SCC Digital Bank?",
+      "open_account": "Open an individual or business account",
+      "registration_helper": "KYC / KYB and Operations review are required after submission. No account is activated before approval."
+    },
+    "registration": {
+      "eyebrow": "Secure account application",
+      "progress": "Step {{current}} of {{total}}",
+      "already_have_account": "Already have an account?",
+      "sign_in": "Back to sign in",
+      "steps": {
+        "account_type": "Choose an account type",
+        "details": "Enter application details",
+        "kyc": "Prepare identity verification",
+        "review": "Review and submit"
+      },
+      "account_type": {
+        "description": "Choose the type that matches your legal status. Application details, verification scope, and review requirements adapt to your choice.",
+        "individual": {
+          "title": "Individual account",
+          "description": "For applicants who will hold and manage an account in their own name."
+        },
+        "business": {
+          "title": "Business account",
+          "description": "For companies, institutions, and registered entities. Directors and beneficial owners must be verified."
+        }
+      },
+      "details": {
+        "privacy": "This step only collects details needed for application pre-screening. Identity documents and facial verification are completed on a protected KYC page.",
+        "authorized_contact": "Authorized contact",
+        "beneficial_owner": "Beneficial owner",
+        "contact": "Contact details",
+        "email_hint": "This address is used to identify the application and for KYC follow-up."
+      },
+      "fields": {
+        "full_name": "Full legal name",
+        "date_of_birth": "Date of birth",
+        "nationality": "Nationality",
+        "legal_name": "Registered legal name",
+        "registration_number": "Company registration number",
+        "incorporation_country": "Country or region of incorporation",
+        "contact_name": "Contact name",
+        "contact_role": "Title or relationship to business",
+        "beneficial_owner_name": "Beneficial owner name",
+        "ownership": "Ownership or control (%)",
+        "email": "Email address",
+        "phone_code": "Country code",
+        "phone": "Phone number",
+        "residence_country": "Country or region of residence / operation"
+      },
+      "countries": {
+        "hk": "Hong Kong SAR, China",
+        "sg": "Singapore",
+        "cn": "Mainland China",
+        "gb": "United Kingdom",
+        "us": "United States"
+      },
+      "kyc": {
+        "provider_handoff": "After submission, Compliance reviews the KYC / KYB information manually and will contact the registered email if more documents are needed. No third-party KYC provider is connected in this flow.",
+        "item_label": "Check {{number}}",
+        "individual": {
+          "document": "Valid identity card or passport",
+          "face": "Liveness and facial verification",
+          "address": "Recent proof of address"
+        },
+        "business": {
+          "company": "Company registration and good-standing records",
+          "people": "Directors, authorized persons, and beneficial owners",
+          "ownership": "Ownership and control structure"
+        },
+        "security_title": "Manual KYC and Operations review",
+        "security_description": "Compliance records the KYC decision manually and Operations performs a separate review. KYC approval does not activate an account.",
+        "consent": "I consent to processing the submitted information for account opening, identity verification, anti-money-laundering, and sanctions screening."
+      },
+      "review": {
+        "pending_notice": "Submission only creates an application for review. Accounts, wallets, and fund functions remain disabled until KYC / KYB passes and Operations approves the application.",
+        "account_type": "Account type",
+        "applicant": "Applicant / business",
+        "email": "Contact email",
+        "phone": "Contact phone",
+        "kyc": "Identity verification",
+        "kyc_pending": "Manual KYC review pending",
+        "declaration": "I confirm that the information is true, complete, and submitted by me or with proper authority, and I agree to the applicable terms and privacy notice."
+      },
+      "validation": {
+        "required": "Complete this field.",
+        "account_type": "Choose an individual or business account.",
+        "email": "Enter a valid email address.",
+        "phone": "Enter a valid phone number.",
+        "ownership": "The percentage must be greater than 0 and no more than 100.",
+        "kyc_consent": "Confirm the identity-verification data authorization.",
+        "terms": "Confirm the declaration before submitting."
+      },
+      "actions": {
+        "back": "Back",
+        "continue": "Continue",
+        "submit": "Submit application"
+      },
+      "success": {
+        "eyebrow": "Manual identity review pending",
+        "title": "Application received",
+        "subtitle": "Your application is in pre-screening. Submission does not mean the account is open; it remains disabled until KYC / KYB and Operations review are complete.",
+        "reference": "Application reference",
+        "next_email": "Keep the application reference and watch for document follow-up.",
+        "next_kyc": "Wait for Compliance to complete the manual KYC / KYB review.",
+        "next_review": "Wait for Compliance and Operations review, then create a password and verification code setup after approval.",
+        "back_to_login": "Back to sign in"
+      }
     },
     "local_dev": {
       "badge": "Local only",

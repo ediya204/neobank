@@ -69,7 +69,7 @@ export default function NavVertical({ openNav, onCloseNav }: Props) {
             onClick={onCloseNav}
             sx={{ width: 44, height: 44 }}
           >
-            <Iconify icon="mingcute:close-line" width={24} />
+            <Iconify icon="solar:close-circle-linear" width={24} />
           </IconButton>
         )}
       </Stack>

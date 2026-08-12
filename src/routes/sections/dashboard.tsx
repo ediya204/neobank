@@ -60,7 +60,10 @@ export const dashboardRoutes = [
           { path: 'deposits', element: <FinanceWorkspace section="deposits" /> },
           { path: 'reconciliation', element: <FinanceWorkspace section="ledger" /> },
           { path: 'withdrawals', element: <FinanceWorkspace section="payouts" /> },
-          { path: 'transfers', element: <FinanceWorkspace section="transfers" /> },
+          {
+            path: 'transfers',
+            element: <Navigate to={paths.dashboard.fundOperations.transactions} replace />,
+          },
           { path: 'fx', element: <FinanceWorkspace section="fx" /> },
           { path: 'otc', element: <FinanceWorkspace section="otc" /> },
           { path: 'adjustments', element: <FinanceWorkspace section="adjustments" /> },

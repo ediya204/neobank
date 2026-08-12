@@ -398,7 +398,7 @@ export default function UsdtSweepsPage() {
   return (
     <>
       <Helmet>
-        <title>{t('usdtSweeps.pageTitle')} | moventra</title>
+        <title>{t('usdtSweeps.pageTitle')} | SCC Digital Bank</title>
       </Helmet>
 
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
@@ -422,7 +422,7 @@ export default function UsdtSweepsPage() {
           </Box>
           <Button
             color="inherit"
-            startIcon={<Iconify icon="solar:refresh-bold" />}
+            startIcon={<Iconify icon="solar:refresh-linear" />}
             onClick={load}
             disabled={loading}
             sx={{ minHeight: 44, width: { xs: 1, sm: 'auto' } }}
@@ -668,7 +668,7 @@ export default function UsdtSweepsPage() {
                 onChange={(event) => setQuery(event.target.value)}
                 InputProps={{
                   startAdornment: (
-                    <Iconify icon="solar:magnifer-linear" sx={{ mr: 1, color: 'text.disabled' }} />
+                    <Iconify icon="solar:magnifier-linear" sx={{ mr: 1, color: 'text.disabled' }} />
                   ),
                 }}
                 sx={{ mb: 2.5, maxWidth: 560 }}

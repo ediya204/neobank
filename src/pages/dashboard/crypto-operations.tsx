@@ -28,6 +28,7 @@ import {
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
+import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
 import {
   coreApi,
   CryptoTransfer,
@@ -36,34 +37,162 @@ import {
   demoUsers,
 } from 'src/features/finance/core-api';
 
+type CregisHistoryRow = {
+  id: string;
+  customer_id: string;
+  amount: string;
+  status: string;
+  address: string;
+  txid?: string;
+  maker_id?: string;
+  checker_id?: string;
+  operator_id?: string;
+  approved_at?: string;
+  submitted_at?: string;
+  completed_at?: string;
+  created_at: string;
+};
+
+type AdminCryptoTransfer = CryptoTransfer & { rawStatus?: string };
+
+type AdminCustomer = {
+  id: string;
+  email: string;
+  display_name: string;
+  status: string;
+  kyc_status: string;
+  operations_status: string;
+  kyc_reviewed_by?: string;
+  kyc_reviewed_at?: string;
+  kyc_review_note?: string;
+  activated_by?: string;
+  activated_at?: string;
+  created_at: string;
+};
+
+type AdminCustomerActivation = AdminCustomer & {
+  setup_url?: string;
+  setup_expires_at?: string;
+};
+
+function customerReadyForWallet(customer: AdminCustomer) {
+  return (
+    customer.status === 'active' &&
+    customer.kyc_status === 'approved' &&
+    customer.operations_status === 'active'
+  );
+}
+
+function normalizedCregisStatus(status: string): CryptoTransfer['status'] {
+  if (status === 'submitted') return 'SUBMITTED';
+  if (status === 'completed') return 'COMPLETED';
+  if (status === 'rejected') return 'REJECTED';
+  if (['failed', 'exception', 'cancelled'].includes(status)) return 'FAILED';
+  return 'PROCESSING';
+}
+
+function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
+  const status = normalizedCregisStatus(row.status);
+  const wallet: CryptoTransfer['wallet'] = {
+    id: 'cregis-wallet',
+    customerId: row.customer_id,
+    asset: 'USDT',
+    network: 'TRON',
+    networkLabel: 'Tron',
+    tokenStandard: 'TRC20',
+    walletAddress: '',
+    status: 'ACTIVE',
+    availableBalance: '0',
+    frozenBalance: '0',
+    minimumDeposit: '0',
+    withdrawalFee: '0',
+    confirmationsRequired: 20,
+  };
+  return {
+    id: row.id,
+    reference: row.id,
+    customerId: row.customer_id,
+    walletId: wallet.id,
+    asset: 'USDT',
+    network: 'TRON',
+    direction: 'WITHDRAWAL',
+    status,
+    rawStatus: row.status,
+    amount: row.amount,
+    feeAmount: '0',
+    netAmount: row.amount,
+    fromAddress: '',
+    toAddress: row.address,
+    txHash: row.txid,
+    confirmations: status === 'COMPLETED' ? 20 : 0,
+    createdAt: row.created_at,
+    wallet,
+    maker: row.maker_id ? { id: row.maker_id, displayName: row.maker_id } : undefined,
+    checker: row.checker_id ? { id: row.checker_id, displayName: row.checker_id } : undefined,
+    operator: row.operator_id ? { id: row.operator_id, displayName: row.operator_id } : undefined,
+    approvedAt: row.approved_at,
+    submittedAt: row.submitted_at || row.created_at,
+    completedAt: row.completed_at,
+  };
+}
+
 export default function CryptoOperationsAdmin() {
-  const [userId, setUserId] = useState('usr_checker');
-  const [rows, setRows] = useState<CryptoTransfer[]>([]);
-  const [selected, setSelected] = useState<CryptoTransfer | null>(null);
+  const [userId, setUserId] = useState('usr_admin');
+  const [rows, setRows] = useState<AdminCryptoTransfer[]>([]);
+  const [selected, setSelected] = useState<AdminCryptoTransfer | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reason, setReason] = useState('');
+  const [provisionOpen, setProvisionOpen] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [provisioning, setProvisioning] = useState(false);
+  const [customers, setCustomers] = useState<AdminCustomer[]>([]);
+  const [customerActionId, setCustomerActionId] = useState('');
+  const [kycNote, setKycNote] = useState('');
+  const [activation, setActivation] = useState<AdminCustomerActivation | null>(null);
+  const [createdWallet, setCreatedWallet] = useState<{
+    id: string;
+    address: string;
+    currency: string;
+    customerId: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setError('');
     try {
-      const customers = await coreApi<Customer[]>(
-        `/customers?organizationId=${demoOrganizationId}`,
-        { userId }
-      );
-      const batches = await Promise.all(
-        customers.map((customer) =>
-          coreApi<CryptoTransfer[]>(`/crypto-wallets/transfers?customerId=${customer.id}`, {
-            userId,
-          })
-        )
-      );
+      if (!IS_ISOLATED_WALLET_DEPLOYMENT) {
+        const localCustomers = await coreApi<Customer[]>(
+          `/customers?organizationId=${demoOrganizationId}`,
+          { userId }
+        );
+        const batches = await Promise.all(
+          localCustomers.map((customer) =>
+            coreApi<CryptoTransfer[]>(`/crypto-wallets/transfers?customerId=${customer.id}`, {
+              userId,
+            })
+          )
+        );
+        setRows(
+          batches
+            .flat()
+            .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+        );
+        setCustomers([]);
+        return;
+      }
+
+      const [history, customerPayload] = await Promise.all([
+        coreApi<{ withdrawals: CregisHistoryRow[] }>('/crypto/history', { userId }),
+        coreApi<{ data: AdminCustomer[] }>('/admin/customers', { userId }),
+      ]);
       setRows(
-        batches
-          .flat()
+        history.withdrawals
+          .map(mapCregisWithdrawal)
           .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
       );
+      setCustomers(customerPayload.data);
     } catch (value) {
       setError(value instanceof Error ? value.message : '链上指令加载失败');
     }
@@ -87,57 +216,187 @@ export default function CryptoOperationsAdmin() {
     try {
       let body: string | undefined;
       if (action === 'reject') body = JSON.stringify({ reason });
-      if (action === 'execute') {
-        const txHash = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
-          .map((byte) => byte.toString(16).padStart(2, '0'))
-          .join('')}`;
-        body = JSON.stringify({ txHash });
+
+      if (!IS_ISOLATED_WALLET_DEPLOYMENT) {
+        if (action === 'execute') {
+          const txHash = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
+            .map((byte) => byte.toString(16).padStart(2, '0'))
+            .join('')}`;
+          body = JSON.stringify({ txHash });
+        }
+        const updated = await coreApi<CryptoTransfer>(
+          `/crypto-wallets/transfers/${selected.id}/${action}`,
+          { method: 'PATCH', body, userId }
+        );
+        setSelected(updated);
+        setRejectOpen(false);
+        setReason('');
+        let localMessage = '本地链上执行已完成并生成交易哈希';
+        if (action === 'approve') localMessage = '复核通过，指令已进入本地执行队列';
+        if (action === 'reject') localMessage = '指令已拒绝，冻结余额已释放';
+        setSuccess(localMessage);
+        await load();
+        return;
       }
-      const updated = await coreApi<CryptoTransfer>(
-        `/crypto-wallets/transfers/${selected.id}/${action}`,
-        { method: 'PATCH', body, userId }
-      );
-      setSelected(updated);
+
+      await coreApi(`/crypto/withdrawals/${selected.id}/${action}`, {
+        method: 'POST',
+        body,
+        userId,
+      });
       setRejectOpen(false);
       setReason('');
-      let message = '本地链上执行已完成并生成交易哈希';
-      if (action === 'approve') message = '复核通过，指令已进入链上执行队列';
+      let message = '请求已发送至 Cregis，等待签名通知确认最终结果';
+      if (action === 'approve') message = '审批通过；尚未请求 Cregis，请继续执行提交';
       if (action === 'reject') message = '指令已拒绝，冻结余额已释放';
       setSuccess(message);
       await load();
+      setSelected(null);
     } catch (value) {
       setError(value instanceof Error ? value.message : '操作失败');
+    }
+  };
+
+  const createTestCustomer = async () => {
+    setProvisioning(true);
+    setError('');
+    try {
+      await coreApi<AdminCustomer>('/admin/customers', {
+        method: 'POST',
+        body: JSON.stringify({ email: customerEmail, display_name: customerName }),
+        userId,
+      });
+      setCustomerName('');
+      setCustomerEmail('');
+      setActivation(null);
+      setCreatedWallet(null);
+      setSuccess('客户档案已创建；请先完成 KYC 审核，再由运营激活。');
+      await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : '测试客户创建失败');
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
+  const reviewCustomerKyc = async (customer: AdminCustomer, decision: 'approve' | 'reject') => {
+    if (decision === 'reject' && !kycNote.trim()) return;
+    setCustomerActionId(customer.id);
+    setError('');
+    try {
+      await coreApi<AdminCustomer>(`/admin/customers/${customer.id}/kyc`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          decision,
+          ...(kycNote.trim() ? { note: kycNote.trim() } : {}),
+        }),
+        userId,
+      });
+      setKycNote('');
+      setSuccess(decision === 'approve' ? 'KYC 已批准；仍需运营激活。' : 'KYC 已拒绝并记录原因。');
+      await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'KYC 审核失败');
+    } finally {
+      setCustomerActionId('');
+    }
+  };
+
+  const activateCustomer = async (customer: AdminCustomer) => {
+    setCustomerActionId(customer.id);
+    setError('');
+    try {
+      const result = await coreApi<AdminCustomerActivation>(
+        `/admin/customers/${customer.id}/activate`,
+        { method: 'PATCH', body: JSON.stringify({}), userId }
+      );
+      setActivation(result);
+      setSuccess(
+        result.setup_url
+          ? '运营已激活；请通过批准的安全渠道交付一次性客户激活链接。'
+          : '现有已认证客户的运营状态已恢复；密码和 TOTP 未被重置。'
+      );
+      await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : '运营激活失败');
+    } finally {
+      setCustomerActionId('');
+    }
+  };
+
+  const createUSDTWallet = async (customer: AdminCustomer) => {
+    if (!customerReadyForWallet(customer)) return;
+    setCustomerActionId(customer.id);
+    setError('');
+    try {
+      const wallet = await coreApi<{ id: string; address: string; currency: string }>(
+        '/crypto/wallets',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            customer_id: customer.id,
+            alias: `Test ${customer.email}`,
+            idempotency_key: crypto.randomUUID(),
+          }),
+          userId,
+        }
+      );
+      setCreatedWallet({ ...wallet, customerId: customer.id });
+      setSuccess('新的 USDT-TRC20 测试地址已创建；现有钱包绑定未变更。');
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'USDT-TRC20 地址创建失败');
+    } finally {
+      setCustomerActionId('');
     }
   };
 
   return (
     <>
       <Helmet>
-        <title>数字钱包复核 | Moventra</title>
+        <title>
+          {IS_ISOLATED_WALLET_DEPLOYMENT
+            ? '数字钱包审批 | SCC Digital Bank'
+            : '数字钱包复核 | Moventra'}
+        </title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={2}>
             <Box>
-              <Typography variant="h4">数字钱包复核</Typography>
+              <Typography variant="h4">
+                {IS_ISOLATED_WALLET_DEPLOYMENT ? '数字钱包审批' : '数字钱包复核'}
+              </Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                复核 USDT 付币指令，并在通道执行后登记链上交易哈希。
+                {IS_ISOLATED_WALLET_DEPLOYMENT
+                  ? '单人审批 USDT 付币指令，并在人工执行后登记链上交易哈希。'
+                  : '复核本地 USDT 付币指令，并在模拟通道执行后登记交易哈希。'}
               </Typography>
             </Box>
-            <FormControl size="small" sx={{ minWidth: 190 }}>
-              <InputLabel>本地演示身份</InputLabel>
-              <Select
-                label="本地演示身份"
-                value={userId}
-                onChange={(event) => setUserId(event.target.value)}
+            {process.env.NODE_ENV === 'development' && !IS_ISOLATED_WALLET_DEPLOYMENT && (
+              <FormControl size="small" sx={{ minWidth: 190 }}>
+                <InputLabel>本地演示身份</InputLabel>
+                <Select
+                  label="本地演示身份"
+                  value={userId}
+                  onChange={(event) => setUserId(event.target.value)}
+                >
+                  {demoUsers.map((user) => (
+                    <MenuItem key={user.id} value={user.id}>
+                      {user.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+            {IS_ISOLATED_WALLET_DEPLOYMENT && (
+              <Button
+                variant="contained"
+                startIcon={<Iconify icon="solar:user-plus-bold-duotone" />}
+                onClick={() => setProvisionOpen(true)}
               >
-                {demoUsers.map((user) => (
-                  <MenuItem key={user.id} value={user.id}>
-                    {user.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+                客户审核与激活
+              </Button>
+            )}
           </Stack>
           {error && (
             <Alert severity="error" onClose={() => setError('')}>
@@ -150,10 +409,12 @@ export default function CryptoOperationsAdmin() {
             </Alert>
           )}
           <Alert severity="info">
-            提交人与复核人必须不同；链上执行仅为本地模拟，Cregis 接入后由适配器回填真实 TXID。
+            {IS_ISOLATED_WALLET_DEPLOYMENT
+              ? '当前为单人审批模式：审批只改变内部状态；只有再次点击“提交至 Cregis”才会发起 API 请求，最终结果与 TXID 以 Cregis 签名通知为准。'
+              : '本地完整模式保留提交人与复核人分离；执行步骤仅生成测试交易哈希，不会发起真实链上转账。'}
           </Alert>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <Metric label="待复核" value={metrics.submitted} color="warning.main" />
+            <Metric label="待审批" value={metrics.submitted} color="warning.main" />
             <Metric label="链上处理中" value={metrics.processing} color="info.main" />
             <Metric label="已完成" value={metrics.completed} color="success.main" />
           </Stack>
@@ -214,7 +475,7 @@ export default function CryptoOperationsAdmin() {
                 <Typography color="text.secondary">{selected.reference}</Typography>
               </Box>
               <IconButton onClick={() => setSelected(null)}>
-                <Iconify icon="mingcute:close-line" />
+                <Iconify icon="solar:close-circle-linear" />
               </IconButton>
             </Stack>
             <Card variant="outlined" sx={{ p: 2.5 }}>
@@ -237,16 +498,18 @@ export default function CryptoOperationsAdmin() {
                 <Button
                   fullWidth
                   variant="contained"
-                  disabled={selected.maker?.id === userId}
+                  disabled={!IS_ISOLATED_WALLET_DEPLOYMENT && selected.maker?.id === userId}
                   onClick={() => perform('approve').catch(() => undefined)}
                 >
-                  复核通过
+                  {IS_ISOLATED_WALLET_DEPLOYMENT ? '审批通过' : '复核通过'}
                 </Button>
               </Stack>
             )}
-            {selected.status === 'PROCESSING' && (
+            {(IS_ISOLATED_WALLET_DEPLOYMENT
+              ? selected.rawStatus === 'approved'
+              : selected.status === 'PROCESSING') && (
               <Button variant="contained" onClick={() => perform('execute').catch(() => undefined)}>
-                模拟通道执行并回填 TXID
+                {IS_ISOLATED_WALLET_DEPLOYMENT ? '提交至 Cregis' : '模拟通道执行并回填 TXID'}
               </Button>
             )}
           </Stack>
@@ -274,6 +537,193 @@ export default function CryptoOperationsAdmin() {
             onClick={() => perform('reject').catch(() => undefined)}
           >
             确认拒绝
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={IS_ISOLATED_WALLET_DEPLOYMENT && provisionOpen}
+        onClose={() => setProvisionOpen(false)}
+        fullWidth
+        maxWidth="lg"
+      >
+        <DialogTitle>客户 KYC、运营激活与钱包门禁</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="warning">
+              固定顺序：创建客户 → KYC 审核 → 运营激活 → 客户完成密码与 TOTP →
+              创建钱包。任何一步都不会自动发起真实转账。
+            </Alert>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
+              <TextField
+                fullWidth
+                label="客户名称"
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+              />
+              <TextField
+                fullWidth
+                label="客户登录邮箱"
+                type="email"
+                value={customerEmail}
+                onChange={(event) => setCustomerEmail(event.target.value)}
+              />
+              <Button
+                variant="contained"
+                disabled={!customerName.trim() || !customerEmail.trim() || provisioning}
+                onClick={() => createTestCustomer().catch(() => undefined)}
+                sx={{ minWidth: 150 }}
+              >
+                {provisioning ? '创建中…' : '创建客户档案'}
+              </Button>
+            </Stack>
+            <TextField
+              label="KYC 拒绝原因（仅拒绝时必填）"
+              value={kycNote}
+              onChange={(event) => setKycNote(event.target.value)}
+              multiline
+              minRows={2}
+            />
+            <TableContainer component={Card} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>客户</TableCell>
+                    <TableCell>账户</TableCell>
+                    <TableCell>KYC</TableCell>
+                    <TableCell>运营</TableCell>
+                    <TableCell align="right">下一步</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {customers.map((customer) => {
+                    const busy = customerActionId === customer.id;
+                    const ready = customerReadyForWallet(customer);
+                    return (
+                      <TableRow key={customer.id}>
+                        <TableCell>
+                          <Typography variant="subtitle2">{customer.display_name}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {customer.email}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{customer.status}</TableCell>
+                        <TableCell>{customer.kyc_status}</TableCell>
+                        <TableCell>{customer.operations_status}</TableCell>
+                        <TableCell align="right">
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            justifyContent="flex-end"
+                            flexWrap="wrap"
+                            useFlexGap
+                          >
+                            {customer.kyc_status === 'pending' && (
+                              <>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    reviewCustomerKyc(customer, 'approve').catch(() => undefined)
+                                  }
+                                >
+                                  KYC 通过
+                                </Button>
+                                <Button
+                                  size="small"
+                                  color="error"
+                                  variant="outlined"
+                                  disabled={busy || !kycNote.trim()}
+                                  onClick={() =>
+                                    reviewCustomerKyc(customer, 'reject').catch(() => undefined)
+                                  }
+                                >
+                                  KYC 拒绝
+                                </Button>
+                              </>
+                            )}
+                            {customer.kyc_status === 'approved' &&
+                              customer.operations_status === 'pending' && (
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  disabled={busy}
+                                  onClick={() => activateCustomer(customer).catch(() => undefined)}
+                                >
+                                  运营激活
+                                </Button>
+                              )}
+                            {ready && (
+                              <Button
+                                size="small"
+                                color="warning"
+                                variant="contained"
+                                disabled={busy}
+                                onClick={() => createUSDTWallet(customer).catch(() => undefined)}
+                              >
+                                创建 Cregis 钱包
+                              </Button>
+                            )}
+                            {customer.operations_status === 'active' &&
+                              customer.status === 'pending_setup' && (
+                                <Typography variant="caption" color="text.secondary">
+                                  等待客户完成密码与 TOTP
+                                </Typography>
+                              )}
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {!customers.length && (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center">
+                        暂无客户
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            {activation?.setup_url && (
+              <Stack spacing={1}>
+                <Alert severity="success">
+                  一次性链接有效至{' '}
+                  {activation.setup_expires_at
+                    ? new Date(activation.setup_expires_at).toLocaleString('zh-CN')
+                    : '服务端设定时间'}
+                  。关闭窗口后不再保留在前端。
+                </Alert>
+                <TextField
+                  label="一次性激活链接（仅通过批准的安全渠道发送）"
+                  value={activation.setup_url}
+                  multiline
+                  InputProps={{ readOnly: true }}
+                />
+              </Stack>
+            )}
+            {createdWallet && (
+              <Alert severity="success">
+                客户 {createdWallet.customerId} 的新地址：
+                <Box component="span" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                  {createdWallet.address}
+                </Box>
+              </Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setProvisionOpen(false);
+              setCustomerName('');
+              setCustomerEmail('');
+              setKycNote('');
+              setActivation(null);
+              setCreatedWallet(null);
+            }}
+          >
+            关闭
           </Button>
         </DialogActions>
       </Dialog>
@@ -310,7 +760,7 @@ function Info({ label, value, mono = false }: { label: string; value: string; mo
 }
 function StatusLabel({ status }: { status: CryptoTransfer['status'] }) {
   const names = {
-    SUBMITTED: '待复核',
+    SUBMITTED: '待审批',
     PROCESSING: '处理中',
     COMPLETED: '已完成',
     REJECTED: '已拒绝',

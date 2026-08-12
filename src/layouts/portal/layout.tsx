@@ -18,20 +18,21 @@ import {
 } from '@mui/material';
 import Logo from 'src/components/logo';
 import Iconify from 'src/components/iconify';
+import { useAuthContext } from 'src/auth/hooks';
+import { canAccessPortalPath } from 'src/auth/role-access';
+import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
+import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
 import {
   PortalCustomerProvider,
   usePortalCustomer,
 } from 'src/features/finance/portal-customer-context';
 
 const navItems = [
-  ['首页', '/portal/home'],
-  ['账户', '/portal/money/accounts'],
-  ['数字资产', '/portal/crypto-wallet'],
-  ['转账', '/portal/money/transfers'],
-  ['换汇', '/portal/money/fx'],
-  ['OTC', '/portal/money/otc'],
-  ['付款', '/portal/money/payouts'],
-  ['交易记录', '/portal/transactions'],
+  ['总览', '/portal/home', 'solar:home-2-bold-duotone'],
+  ['资产', '/portal/money/accounts', 'solar:wallet-money-bold-duotone'],
+  ['收付', '/portal/money/transfers', 'solar:transfer-horizontal-bold-duotone'],
+  ['交易记录', '/portal/transactions', 'solar:history-bold-duotone'],
+  ['收款人', '/portal/money/beneficiaries', 'solar:user-id-bold-duotone'],
 ] as const;
 
 export default function PortalLayout() {
@@ -46,9 +47,35 @@ function PortalFrame() {
   const navigate = useNavigate();
   const location = useLocation();
   const { customers, customer, selectCustomer } = usePortalCustomer();
+  const { user, logout } = useAuthContext();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const isActive = (path: string) =>
-    path === '/portal/home' ? location.pathname === path : location.pathname.startsWith(path);
+  let visibleNavItems: ReadonlyArray<readonly [string, string, string]> = [];
+  if (user?.role === 'customer') {
+    visibleNavItems = [['USDT 钱包', '/portal/crypto-wallet', 'solar:wallet-2-bold-duotone']];
+  } else if (user) {
+    visibleNavItems = navItems.filter(([, path]) => canAccessPortalPath(user, path));
+  }
+  const showAccountSettings =
+    !IS_ISOLATED_WALLET_DEPLOYMENT &&
+    Boolean(user && canAccessPortalPath(user, '/portal/settings'));
+  const isActive = (path: string) => {
+    if (path === '/portal/home') return location.pathname === path;
+    if (path === '/portal/money/accounts') {
+      return (
+        location.pathname.startsWith(path) || location.pathname.startsWith('/portal/crypto-wallet')
+      );
+    }
+    if (path === '/portal/money/transfers') {
+      return (
+        location.pathname.startsWith(path) ||
+        location.pathname.startsWith('/portal/money/deposit') ||
+        location.pathname.startsWith('/portal/money/fx') ||
+        location.pathname.startsWith('/portal/money/otc') ||
+        location.pathname.startsWith('/portal/money/payouts')
+      );
+    }
+    return location.pathname.startsWith(path);
+  };
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#F5F7FA' }}>
@@ -62,16 +89,21 @@ function PortalFrame() {
           <Toolbar disableGutters sx={{ minHeight: { xs: 64, md: 72 }, gap: 2 }}>
             <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mr: { md: 4 } }}>
               <Logo sx={{ width: 34, height: 34 }} />
-              <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-                Moventra
-              </Typography>
+              <Box sx={{ lineHeight: 1.1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+                  {APP_NAME_CN}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  {APP_NAME_EN}
+                </Typography>
+              </Box>
             </Stack>
             <Stack
               direction="row"
               spacing={0.5}
               sx={{ display: { xs: 'none', lg: 'flex' }, flex: 1 }}
             >
-              {navItems.map(([label, path]) => (
+              {visibleNavItems.map(([label, path]) => (
                 <Button
                   key={path}
                   color={isActive(path) ? 'primary' : 'inherit'}
@@ -83,27 +115,29 @@ function PortalFrame() {
               ))}
             </Stack>
             <Box sx={{ flex: { xs: 1, lg: 0 } }} />
-            {process.env.NODE_ENV === 'development' && customer && (
-              <Select
-                size="small"
-                value={customer.id}
-                onChange={(event) => selectCustomer(event.target.value)}
-                sx={{
-                  display: { xs: 'none', md: 'flex' },
-                  minWidth: 210,
-                  bgcolor: 'background.paper',
-                }}
-              >
-                {customers
-                  .filter((row) => row.id.startsWith('cus_demo_'))
-                  .map((row) => (
-                    <MenuItem key={row.id} value={row.id}>
-                      {row.type === 'BUSINESS' ? '企业 · ' : '个人 · '}
-                      {row.displayName}
-                    </MenuItem>
-                  ))}
-              </Select>
-            )}
+            {process.env.NODE_ENV === 'development' &&
+              !IS_ISOLATED_WALLET_DEPLOYMENT &&
+              customer && (
+                <Select
+                  size="small"
+                  value={customer.id}
+                  onChange={(event) => selectCustomer(event.target.value)}
+                  sx={{
+                    display: { xs: 'none', md: 'flex' },
+                    minWidth: 210,
+                    bgcolor: 'background.paper',
+                  }}
+                >
+                  {customers
+                    .filter((row) => row.id.startsWith('cus_demo_'))
+                    .map((row) => (
+                      <MenuItem key={row.id} value={row.id}>
+                        {row.type === 'BUSINESS' ? '企业 · ' : '个人 · '}
+                        {row.displayName}
+                      </MenuItem>
+                    ))}
+                </Select>
+              )}
             <IconButton onClick={(event) => setAnchor(event.currentTarget)} aria-label="账户菜单">
               <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', fontSize: 14 }}>
                 {customer?.displayName.slice(0, 1) || 'M'}
@@ -117,24 +151,38 @@ function PortalFrame() {
                 </Typography>
               </Box>
               <Divider />
-              <MenuItem
-                onClick={() => {
-                  setAnchor(null);
-                  navigate('/portal/settings');
-                }}
-              >
-                <Iconify icon="solar:settings-linear" sx={{ mr: 1.5 }} />
-                账户设置
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  setAnchor(null);
-                  window.location.assign('/dashboard/overview');
-                }}
-              >
-                <Iconify icon="solar:shield-user-linear" sx={{ mr: 1.5 }} />
-                返回运营后台
-              </MenuItem>
+              {showAccountSettings && (
+                <MenuItem
+                  onClick={() => {
+                    setAnchor(null);
+                    navigate('/portal/settings');
+                  }}
+                >
+                  <Iconify icon="solar:settings-bold-duotone" sx={{ mr: 1.5 }} />
+                  账户设置
+                </MenuItem>
+              )}
+              {user?.role === 'customer' ? (
+                <MenuItem
+                  onClick={() => {
+                    setAnchor(null);
+                    logout().finally(() => window.location.assign('/customer/login'));
+                  }}
+                >
+                  <Iconify icon="solar:logout-2-linear" sx={{ mr: 1.5 }} />
+                  退出登录
+                </MenuItem>
+              ) : (
+                <MenuItem
+                  onClick={() => {
+                    setAnchor(null);
+                    window.location.assign('/dashboard/overview');
+                  }}
+                >
+                  <Iconify icon="solar:shield-user-linear" sx={{ mr: 1.5 }} />
+                  返回运营后台
+                </MenuItem>
+              )}
             </Menu>
           </Toolbar>
         </Container>
@@ -160,7 +208,7 @@ function PortalFrame() {
       <Box
         sx={{
           display: { xs: 'grid', lg: 'none' },
-          gridTemplateColumns: 'repeat(5, 1fr)',
+          gridTemplateColumns: `repeat(${Math.max(visibleNavItems.length, 1)}, 1fr)`,
           position: 'fixed',
           left: 0,
           right: 0,
@@ -172,13 +220,7 @@ function PortalFrame() {
           pb: 'env(safe-area-inset-bottom)',
         }}
       >
-        {[
-          ['首页', '/portal/home', 'solar:home-2-bold'],
-          ['账户', '/portal/money/accounts', 'solar:wallet-bold'],
-          ['转账', '/portal/money/transfers', 'solar:transfer-horizontal-bold'],
-          ['付款', '/portal/money/payouts', 'solar:card-send-bold'],
-          ['记录', '/portal/transactions', 'solar:history-bold'],
-        ].map(([label, path, icon]) => (
+        {visibleNavItems.map(([label, path, icon]) => (
           <Button
             key={path}
             onClick={() => navigate(path)}

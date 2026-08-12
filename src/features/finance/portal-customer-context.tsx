@@ -1,5 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { coreApi, Customer, demoOrganizationId, Operation } from './core-api';
+import { useAuthContext } from 'src/auth/hooks';
+import {
+  coreApi,
+  Customer,
+  demoOrganizationId,
+  isSupportedPortalAccount,
+  Operation,
+} from './core-api';
 
 type PortalCustomerContextValue = {
   customers: Customer[];
@@ -15,6 +22,7 @@ const PortalCustomerContext = createContext<PortalCustomerContextValue | null>(n
 const STORAGE_KEY = 'moventra.portal.demo-customer';
 
 export function PortalCustomerProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuthContext();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState(
     () => localStorage.getItem(STORAGE_KEY) || 'cus_demo_business'
@@ -27,8 +35,37 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
     setLoading(true);
     setError('');
     try {
+      if (user?.role === 'customer') {
+        const profile = await coreApi<{
+          id: string;
+          email: string;
+          display_name: string;
+          status: string;
+        }>('/customer/profile');
+        const self: Customer = {
+          id: profile.id,
+          organizationId: 'self',
+          type: 'INDIVIDUAL',
+          status: profile.status.toUpperCase(),
+          kycStatus: 'APPROVED',
+          displayName: profile.display_name,
+          legalName: profile.display_name,
+          email: profile.email,
+          countryCode: '',
+          accounts: [],
+        };
+        setCustomers([self]);
+        setCustomerId(self.id);
+        setOperations([]);
+        return;
+      }
       const rows = await coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`);
-      const active = rows.filter((row) => row.status === 'ACTIVE');
+      const active = rows
+        .filter((row) => row.status === 'ACTIVE')
+        .map((row) => ({
+          ...row,
+          accounts: row.accounts.filter(isSupportedPortalAccount),
+        }));
       setCustomers(active);
       const resolvedId = active.some((row) => row.id === customerId)
         ? customerId
@@ -37,13 +74,18 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
       const operationRows = await coreApi<Operation[]>(
         `/operations?organizationId=${demoOrganizationId}`
       );
-      setOperations(operationRows.filter((row) => row.customerId === resolvedId));
+      setOperations(
+        operationRows.filter(
+          (row) =>
+            row.customerId === resolvedId && !(row.type === 'PAYOUT' && row.currency === 'USDT')
+        )
+      );
     } catch (value) {
       setError(value instanceof Error ? value.message : '账户数据加载失败');
     } finally {
       setLoading(false);
     }
-  }, [customerId]);
+  }, [customerId, user?.role]);
 
   useEffect(() => {
     refresh().catch(() => undefined);

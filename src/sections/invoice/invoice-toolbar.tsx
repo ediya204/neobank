@@ -66,7 +66,7 @@ export default function InvoiceToolbar({
 
           <Tooltip title="View">
             <IconButton onClick={view.onTrue}>
-              <Iconify icon="solar:eye-bold" />
+              <Iconify icon="solar:eye-linear" />
             </IconButton>
           </Tooltip>
 

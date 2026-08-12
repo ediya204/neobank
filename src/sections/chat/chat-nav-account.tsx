@@ -100,7 +100,7 @@ export default function ChatNavAccount() {
           </MenuItem>
 
           <MenuItem>
-            <Iconify icon="solar:user-id-bold" width={24} />
+            <Iconify icon="solar:user-id-bold-duotone" width={24} />
             Profile
           </MenuItem>
 

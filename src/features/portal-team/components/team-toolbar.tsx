@@ -51,7 +51,7 @@ export default function TeamToolbar({
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
-              <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
+          <Iconify icon="solar:magnifier-linear" sx={{ color: 'text.disabled' }} />
             </InputAdornment>
           ),
         }}

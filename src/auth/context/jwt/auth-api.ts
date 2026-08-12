@@ -60,6 +60,7 @@ function normalizeRole(value: unknown): AuthRole | null {
   const role = value.trim().toLowerCase();
   if (['admin', 'administrator', 'operator', 'operations'].includes(role)) return 'admin';
   if (['partner', 'portal', 'client'].includes(role)) return 'partner';
+  if (['customer', 'account_holder'].includes(role)) return 'customer';
   return null;
 }
 
@@ -111,7 +112,10 @@ export function normalizeAuthUser(payload: unknown): AuthSessionUser | null {
         }
       : null,
     membership:
-      membershipId && roleId && memberRoleCode && memberRoleName &&
+      membershipId &&
+      roleId &&
+      memberRoleCode &&
+      memberRoleName &&
       ['onboarding', 'active', 'suspended'].includes(membershipStatus || '')
         ? {
             id: membershipId,
@@ -179,7 +183,9 @@ function safeQrCodeDataUri(value: string | null) {
 }
 
 function scopedAuthPath(role: AuthRole, action: string) {
-  const scope = role === 'admin' ? 'admin' : 'portal';
+  let scope = 'portal';
+  if (role === 'admin') scope = 'admin';
+  if (role === 'customer') scope = 'customer';
   return `/api/auth/${scope}/${action}`;
 }
 
@@ -293,11 +299,21 @@ export async function getSession(): Promise<AuthSessionData | null> {
   }
 }
 
-export async function loginWithPassword(
-  email: string,
-  password: string,
-  expectedRole: AuthRole
-) {
+export async function getAccessAdminSession(): Promise<AuthSessionData | null> {
+  try {
+    const payload = await authRequest('/api/auth/access-admin/session', { method: 'GET' });
+    const user = normalizeAuthUser(payload);
+    if (!user || user.role !== 'admin') {
+      throw new AuthApiError(502, 'invalid_auth_response', 'Invalid Access session response');
+    }
+    return { user, csrfToken: null };
+  } catch (error) {
+    if (error instanceof AuthApiError && error.status === 401) return null;
+    throw error;
+  }
+}
+
+export async function loginWithPassword(email: string, password: string, expectedRole: AuthRole) {
   const payload = await authRequest(scopedAuthPath(expectedRole, 'login'), {
     method: 'POST',
     body: JSON.stringify({ email, password }),
@@ -316,10 +332,7 @@ export async function completeInitialSetup(input: CompleteSetupInput) {
   return normalizeAuthFlow(payload);
 }
 
-export async function beginTotpSetup(
-  expectedRole: AuthRole,
-  enrollmentToken?: string | null
-) {
+export async function beginTotpSetup(expectedRole: AuthRole, enrollmentToken?: string | null) {
   const payload = await authRequest(scopedAuthPath(expectedRole, 'totp/setup'), {
     method: 'POST',
     body: JSON.stringify({

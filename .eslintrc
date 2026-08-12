@@ -4,17 +4,8 @@
     "browser": true,
     "es2021": true
   },
-  "plugins": [
-    "unused-imports",
-    "@typescript-eslint",
-    "prettier"
-  ],
-  "extends": [
-    "airbnb",
-    "airbnb-typescript",
-    "airbnb/hooks",
-    "prettier"
-  ],
+  "plugins": ["unused-imports", "@typescript-eslint", "prettier"],
+  "extends": ["airbnb", "airbnb-typescript", "airbnb/hooks", "prettier"],
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
     "ecmaFeatures": {
@@ -22,7 +13,7 @@
     },
     "ecmaVersion": "latest",
     "sourceType": "module",
-    "project": "./tsconfig.json",
+    "project": "./tsconfig.eslint.json",
     "warnOnUnsupportedTypeScriptVersion": false
   },
   "settings": {

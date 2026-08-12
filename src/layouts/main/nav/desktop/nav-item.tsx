@@ -30,7 +30,7 @@ export const NavItem = forwardRef<HTMLDivElement, NavItemDesktopProps>(
       >
         {title}
 
-        {!!children && <Iconify width={16} icon="eva:arrow-ios-downward-fill" sx={{ ml: 1 }} />}
+        {!!children && <Iconify width={16} icon="solar:alt-arrow-down-linear" sx={{ ml: 1 }} />}
       </ListItem>
     );
 
