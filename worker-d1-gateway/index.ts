@@ -91,7 +91,7 @@ async function authorize(request: Request, rawBody: string, env: Env): Promise<b
     new TextEncoder().encode(env.GO_D1_GATEWAY_SECRET),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign']
+    ['verify']
   );
   return crypto.subtle.verify(
     'HMAC',
@@ -145,9 +145,10 @@ async function handleQuery(request: Request, env: Env, requestId: string): Promi
     return json({ error: { code: 'invalid_statements' } }, 422, requestId);
   }
 
-  const prepared = payload.statements.map((statement) =>
-    env.DB.prepare(statement.sql).bind(...(statement.params || []))
-  );
+  const prepared = payload.statements.map((statement) => {
+    const query = env.DB.prepare(statement.sql);
+    return statement.params?.length ? query.bind(...statement.params) : query;
+  });
   const results = await env.DB.batch(prepared);
   return json({ results }, 200, requestId);
 }
