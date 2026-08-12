@@ -48,6 +48,9 @@ build, then deploys the same prepared build. `npm run cf:deploy` and
 `npm run cf:deploy:dry-run` remain safe standalone commands and each performs
 its own build. The `:prepared` commands intentionally skip the React build and
 must only be used after a successful `npm run cf:build` in the same worktree.
+Both default and Neobank prepared deployments retain the previous static assets
+for 24 hours so already-open browser tabs can finish loading their versioned
+chunks while the root recovery boundary moves stale clients to the new build.
 
 GitHub push and Cloudflare deployment remain separate actions. Do not infer one
 from the other.
