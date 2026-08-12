@@ -1,0 +1,35 @@
+[Unit]
+Description=Neobank Cregis restricted egress relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=neobank-egress
+Group=neobank-egress
+EnvironmentFile=/etc/neobank-egress/relay.env
+ExecStart=/usr/local/bin/neobank-egress
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=15s
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

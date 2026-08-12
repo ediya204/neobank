@@ -41,9 +41,11 @@ func main() {
 	var cregisClient *cregis.Client
 	if cregisLive {
 		cregisClient, err = cregis.New(cregis.Config{
-			BaseURL:   envOr("CREGIS_BASE_URL", "https://t-wsmbuuhb.cregis.io"),
-			ProjectID: os.Getenv("CREGIS_PROJECT_ID"),
-			Secret:    os.Getenv("CREGIS_PROJECT_SECRET"),
+			BaseURL:     envOr("CREGIS_BASE_URL", "https://t-wsmbuuhb.cregis.io"),
+			ProjectID:   os.Getenv("CREGIS_PROJECT_ID"),
+			Secret:      os.Getenv("CREGIS_PROJECT_SECRET"),
+			RelayURL:    os.Getenv("CREGIS_RELAY_URL"),
+			RelaySecret: os.Getenv("CREGIS_RELAY_SECRET"),
 		})
 		if err != nil {
 			logger.Error("invalid Cregis configuration", "error", err)

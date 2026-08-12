@@ -3,8 +3,10 @@ package cregis
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -20,16 +22,20 @@ import (
 )
 
 type Config struct {
-	BaseURL   string
-	ProjectID string
-	Secret    string
+	BaseURL     string
+	ProjectID   string
+	Secret      string
+	RelayURL    string
+	RelaySecret string
 }
 
 type Client struct {
-	baseURL    string
-	projectID  int64
-	secret     string
-	httpClient *http.Client
+	baseURL     string
+	projectID   int64
+	secret      string
+	relayURL    string
+	relaySecret []byte
+	httpClient  *http.Client
 }
 
 type Response struct {
@@ -57,11 +63,23 @@ func New(config Config) (*Client, error) {
 	if len(config.Secret) < 16 {
 		return nil, errors.New("CREGIS_PROJECT_SECRET is required")
 	}
+	relayURL := strings.TrimRight(config.RelayURL, "/")
+	if relayURL != "" {
+		relay, err := url.Parse(relayURL)
+		if err != nil || relay.Scheme != "https" || relay.Host == "" || relay.User != nil || relay.EscapedPath() != "" || relay.RawQuery != "" || relay.Fragment != "" {
+			return nil, errors.New("CREGIS_RELAY_URL must be an https origin")
+		}
+		if len(config.RelaySecret) < 32 {
+			return nil, errors.New("CREGIS_RELAY_SECRET must contain at least 32 characters")
+		}
+	}
 	return &Client{
-		baseURL:    parsed.String(),
-		projectID:  projectID,
-		secret:     config.Secret,
-		httpClient: &http.Client{Timeout: 15 * time.Second},
+		baseURL:     parsed.String(),
+		projectID:   projectID,
+		secret:      config.Secret,
+		relayURL:    relayURL,
+		relaySecret: []byte(config.RelaySecret),
+		httpClient:  &http.Client{Timeout: 15 * time.Second},
 	}, nil
 }
 
@@ -82,11 +100,26 @@ func (c *Client) Call(ctx context.Context, path string, business map[string]any)
 	if err != nil {
 		return nil, fmt.Errorf("encode Cregis request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+	target := c.baseURL + path
+	if c.relayURL != "" {
+		target = c.relayURL + path
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create Cregis request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.relayURL != "" {
+		timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+		relayNonce := nonce(24)
+		digest := sha256.Sum256(body)
+		canonical := timestamp + "\n" + relayNonce + "\n" + http.MethodPost + "\n" + path + "\n" + hex.EncodeToString(digest[:])
+		mac := hmac.New(sha256.New, c.relaySecret)
+		_, _ = mac.Write([]byte(canonical))
+		req.Header.Set("X-Neobank-Relay-Timestamp", timestamp)
+		req.Header.Set("X-Neobank-Relay-Nonce", relayNonce)
+		req.Header.Set("X-Neobank-Relay-Signature", hex.EncodeToString(mac.Sum(nil)))
+	}
 	res, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("call Cregis: %w", err)

@@ -1,0 +1,34 @@
+[Unit]
+Description=Cloudflare Tunnel for Neobank Cregis egress relay
+After=network-online.target neobank-egress.service
+Wants=network-online.target
+Requires=neobank-egress.service
+
+[Service]
+Type=simple
+User=cloudflared-neobank
+Group=cloudflared-neobank
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate run --token-file /etc/cloudflared/neobank-cregis-egress.token
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

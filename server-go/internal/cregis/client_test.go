@@ -1,7 +1,12 @@
 package cregis
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -41,5 +46,47 @@ func TestVerifyPreservesLargeJSONNumbers(t *testing.T) {
 	payload["status"] = json.Number("7")
 	if client.Verify(payload) {
 		t.Fatal("tampered callback must not verify")
+	}
+}
+
+func TestCallUsesAuthenticatedRelayWithoutChangingCregisPayload(t *testing.T) {
+	var receivedBody []byte
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/address/create" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		for _, header := range []string{"X-Neobank-Relay-Timestamp", "X-Neobank-Relay-Nonce", "X-Neobank-Relay-Signature"} {
+			if r.Header.Get(header) == "" {
+				t.Errorf("missing relay header %s", header)
+			}
+		}
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"code":"00000","msg":"ok","data":{}}`)
+	}))
+	defer server.Close()
+
+	client, err := New(Config{
+		BaseURL:     "https://t-wsmbuuhb.cregis.io",
+		ProjectID:   "1463535767997152",
+		Secret:      "cregis-test-secret",
+		RelayURL:    server.URL,
+		RelaySecret: strings.Repeat("r", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.httpClient = server.Client()
+	if _, err := client.Call(context.Background(), "/api/v1/address/create", map[string]any{"currency": "195@195"}); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(receivedBody, &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"pid", "currency", "nonce", "timestamp", "sign"} {
+		if _, ok := payload[key]; !ok {
+			t.Fatalf("Cregis payload missing %s", key)
+		}
 	}
 }

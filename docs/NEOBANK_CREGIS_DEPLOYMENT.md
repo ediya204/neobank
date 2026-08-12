@@ -31,6 +31,14 @@ ticket, chat, log, or repository.
 | `CREGIS_ENABLED` | No | `false` until the acceptance gate passes |
 | `CREGIS_PROJECT_ID` | Sensitive | Cregis project configuration |
 | `CREGIS_PROJECT_SECRET` | Yes | Newly rotated Cregis secret |
+| `CREGIS_RELAY_URL` | No | Dedicated HTTPS origin for the Neobank-only egress relay |
+| `CREGIS_RELAY_SECRET` | Yes | Separate random HMAC secret shared only with the relay |
+
+`CREGIS_RELAY_URL` affects only the Cregis client. Do not configure a global
+`HTTP_PROXY` or `HTTPS_PROXY`, because D1 gateway traffic must remain direct.
+The relay accepts only the Cregis address-create, address-legality, and payout
+paths, authenticates the complete request body, rejects replayed nonces, and
+pins its upstream to the configured Cregis test gateway.
 
 ## Callback endpoints
 
@@ -57,8 +65,10 @@ Before changing `CREGIS_ENABLED` to `true`:
 
 1. Rotate the Cregis secret that was previously shared outside the secret
    manager and install the replacement directly in Render.
-2. Add every Render outbound address shown for the service to the Cregis IP
-   allowlist. If Cregis requires fixed individual IPs, use Render Dedicated IPs.
+2. Add the verified fixed relay IPv4 address to the Cregis IP allowlist. Confirm
+   that the address is an AWS Elastic IP before enabling Cregis; an auto-assigned
+   instance address can change after a stop/start. Render must reach Cregis only
+   through the dedicated authenticated relay.
 3. Confirm the two HTTPS callback endpoints are reachable and the Cregis
    notification categories for deposit and payout are enabled.
 4. Confirm Cloudflare Access admits only the intended Neobank operators.
