@@ -22,6 +22,17 @@ var (
 	safeIdentifier  = regexp.MustCompile(`^[A-Za-z0-9_.:@-]{1,128}$`)
 )
 
+const (
+	approveWithdrawalSQL = `UPDATE cregis_withdrawals
+    SET status='approved', checker_id=?, approved_at=?, updated_at=?
+    WHERE id=? AND tenant_id=? AND status='submitted'`
+	rejectWithdrawalSQL = `UPDATE cregis_withdrawals
+    SET status='rejected', checker_id=?, rejection_reason=?, updated_at=?
+    WHERE id=? AND tenant_id=? AND status='submitted'`
+	startWithdrawalExecutionSQL = `UPDATE cregis_withdrawals SET status='executing', operator_id=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND status='approved' AND checker_id IS NOT NULL`
+)
+
 func (app *application) routeCregis(w http.ResponseWriter, r *http.Request) bool {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/crypto/wallets":
@@ -203,9 +214,7 @@ func (app *application) approveCregisWithdrawal(w http.ResponseWriter, r *http.R
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	result, err := app.db.Batch(r.Context(), d1.Statement{SQL: `UPDATE cregis_withdrawals
-    SET status='approved', checker_id=?, approved_at=?, updated_at=?
-    WHERE id=? AND tenant_id=? AND status='submitted' AND maker_id<>?`, Params: []any{edgeUser(r), now, now, id, app.tenantID, edgeUser(r)}})
+	result, err := app.db.Batch(r.Context(), d1.Statement{SQL: approveWithdrawalSQL, Params: []any{edgeUser(r), now, now, id, app.tenantID}})
 	if err != nil {
 		databaseError(app, w, err)
 		return
@@ -229,9 +238,7 @@ func (app *application) rejectCregisWithdrawal(w http.ResponseWriter, r *http.Re
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	result, err := app.db.Batch(r.Context(), d1.Statement{SQL: `UPDATE cregis_withdrawals
-    SET status='rejected', checker_id=?, rejection_reason=?, updated_at=?
-    WHERE id=? AND tenant_id=? AND status='submitted' AND maker_id<>?`, Params: []any{edgeUser(r), input.Reason, now, id, app.tenantID, edgeUser(r)}})
+	result, err := app.db.Batch(r.Context(), d1.Statement{SQL: rejectWithdrawalSQL, Params: []any{edgeUser(r), input.Reason, now, id, app.tenantID}})
 	if err != nil {
 		databaseError(app, w, err)
 		return
@@ -253,8 +260,7 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	results, err := app.db.Batch(r.Context(),
-		d1.Statement{SQL: `UPDATE cregis_withdrawals SET status='executing', operator_id=?, updated_at=?
-      WHERE id=? AND tenant_id=? AND status='approved' AND checker_id IS NOT NULL AND checker_id<>?`, Params: []any{edgeUser(r), now, id, app.tenantID, edgeUser(r)}},
+		d1.Statement{SQL: startWithdrawalExecutionSQL, Params: []any{edgeUser(r), now, id, app.tenantID}},
 		d1.Statement{SQL: `SELECT id, third_party_id, currency, amount_text, from_address, to_address, memo, remark
       FROM cregis_withdrawals WHERE id=? AND tenant_id=?`, Params: []any{id, app.tenantID}},
 	)

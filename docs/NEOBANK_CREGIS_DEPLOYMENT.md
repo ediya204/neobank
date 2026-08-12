@@ -56,8 +56,10 @@ Keep retry notifications enabled in Cregis.
 `submitted -> approved -> executing -> submitted_to_cregis -> completed`
 
 The exception paths are `rejected`, `failed`, `exception`, and `cancelled`.
-Submission is not settlement. Approval and execution require different operator
-identities, and a Cregis callback is required for the final result.
+Submission is not settlement. Submission, approval, and execution remain
+separate explicit actions, but the same authenticated administrator may perform
+all three. The maker, checker, and operator identity and timestamp remain stored
+for audit, and a Cregis callback is required for the final result.
 
 ## Production enablement gate
 
@@ -72,7 +74,8 @@ Before changing `CREGIS_ENABLED` to `true`:
 3. Confirm the two HTTPS callback endpoints are reachable and the Cregis
    notification categories for deposit and payout are enabled.
 4. Confirm Cloudflare Access admits only the intended Neobank operators.
-5. Provide two distinct operator identities for maker/checker testing.
+5. Confirm the intended administrator can submit and then approve or reject the
+   same request, while each action remains separately audited.
 6. Create a test wallet and reconcile the callback/history records.
 7. Obtain explicit approval before any test that can create a real payout.
 
