@@ -1,0 +1,367 @@
+{
+  "page": {
+    "admin": "管理后台"
+  },
+  "sections": {
+    "deposits": {
+      "title": "入账录入",
+      "description": "根据银行或链上实际到账结果录入法币与 USDT，再确认完成写入客户账本。"
+    },
+    "withdrawals": {
+      "title": "转出审核",
+      "description": "集中处理合作方提交的银行与链上转出，补录结算参考后完成记账。"
+    },
+    "otc": {
+      "title": "OTC 兑换记录",
+      "description": "查看系统自动完成的 USD 与 USDT 账本内兑换；后台仅用于对账与审计，无需审批。"
+    },
+    "balances": {
+      "title": "客户余额",
+      "description": "按客户检查账本余额、待处理占用与当前可用余额。"
+    },
+    "transactions": {
+      "title": "交易历史",
+      "description": "统一查看法币、数字货币与 OTC 交易；仅待处理资金记录可进入运营处理。"
+    },
+    "ledger": {
+      "title": "账本明细",
+      "description": "查看不可直接编辑的账本分录；更正必须通过新的业务记录或冲正流程完成。"
+    },
+    "fees": {
+      "title": "手续费设置",
+      "description": "配置新提交转出使用的固定手续费；历史交易保留创建时的费率快照。"
+    },
+    "apiSecurity": {
+      "title": "API 安全",
+      "description": "管理机器 API 的 Access、限流与可选 IP/CIDR 白名单。"
+    },
+    "audit": {
+      "title": "审计日志",
+      "description": "追踪开户、资金、OTC、费率与 API 安全配置的关键操作。"
+    }
+  },
+  "actions": {
+    "addDeposit": "新增入账记录",
+    "adding": "添加中…",
+    "cancel": "取消",
+    "cancelRequest": "取消申请",
+    "close": "关闭",
+    "completeAndPost": "完成并记账",
+    "confirmEnable": "确认启用",
+    "confirmProcessing": "确认处理",
+    "delete": "删除",
+    "disable": "停用",
+    "disabling": "关闭中…",
+    "enable": "启用",
+    "enabling": "启用中…",
+    "loading": "读取中…",
+    "openProcessing": "进入处理",
+    "process": "处理",
+    "processing": "处理中…",
+    "refresh": "刷新",
+    "refreshConfiguration": "刷新配置",
+    "refreshStatus": "刷新状态",
+    "rejectRequest": "拒绝申请",
+    "reload": "重新读取",
+    "saveAndApply": "保存并立即生效",
+    "settle": "清算",
+    "saving": "保存中…",
+    "startProcessing": "开始处理",
+    "submitting": "提交中…",
+    "undoChanges": "撤销修改",
+    "view": "查看"
+  },
+  "status": {
+    "all": "全部状态",
+    "submitted": "已提交",
+    "processing": "处理中",
+    "completed": "已完成",
+    "rejected": "已拒绝",
+    "cancelled": "已取消",
+    "posted": "已入账",
+    "enabled": "已启用",
+    "disabled": "已停用",
+    "enforced": "已强制启用",
+    "offByDefault": "默认关闭",
+    "abnormal": "状态异常"
+  },
+  "types": {
+    "fiatDeposit": "法币转入",
+    "usdtDeposit": "USDT 转入",
+    "fiatWithdrawal": "法币转出",
+    "usdtWithdrawal": "USDT 转出",
+    "cryptoWithdrawal": "数字货币转出",
+    "otcSell": "OTC 卖出",
+    "otcBuyNet": "OTC 买入净额",
+    "fiatConversionDebit": "法币兑换扣款",
+    "cryptoConversionCredit": "数字货币兑换入账",
+    "usdtSweep": "USDT 汇集转出",
+    "balance": "余额"
+  },
+  "wallets": {
+    "fiat": "法币钱包",
+    "crypto": "数字钱包"
+  },
+  "fields": {
+    "amount": "金额",
+    "asset": "资产",
+    "bankAccount": "银行账号 / IBAN",
+    "bankAddressOptional": "银行地址（可选）",
+    "bankDepositReference": "银行入账参考号",
+    "bankName": "银行名称",
+    "bankTransactionReference": "银行流水号",
+    "beneficiaryAddress": "收款人地址",
+    "beneficiaryName": "收款人名称",
+    "category": "类别",
+    "customer": "客户",
+    "depositWalletAddressOptional": "入账钱包地址（可选）",
+    "internalReferenceOptional": "内部结算参考（可选）",
+    "name": "名称",
+    "nameOptional": "名称（可选）",
+    "network": "网络",
+    "noteOptional": "备注（可选）",
+    "operatorNoteOptional": "运营备注（可选）",
+    "reasonOrOperatorNote": "原因 / 运营备注",
+    "recipientWalletAddress": "收款钱包地址",
+    "settlementReference": "结算参考号",
+    "status": "状态",
+    "txHash": "链上交易哈希",
+    "type": "类型",
+    "wallet": "钱包"
+  },
+  "filters": {
+    "allCategories": "全部类别",
+    "allCustomers": "全部客户",
+    "allTypes": "全部类型",
+    "allWallets": "全部钱包",
+    "businessType": "业务类型",
+    "customerScope": "客户范围",
+    "endDate": "结束日期",
+    "fundCategory": "转入 / 转出",
+    "pendingOnly": "仅看待处理（{{count}}）",
+    "showAllTransactions": "查看全部交易",
+    "startDate": "开始日期"
+  },
+  "table": {
+    "actions": "操作",
+    "amountBalanceRecipient": "金额/余额与收款信息",
+    "details": "详情",
+    "feeAndNet": "手续费 {{fee}} {{asset}} · 实际到账 {{net}} {{asset}}",
+    "idAsset": "编号/资产",
+    "time": "时间",
+    "channelNetwork": "通道 / 网络",
+    "transactionId": "交易编号"
+  },
+  "loading": {
+    "customers": "正在读取可操作客户；读取完成前不会把失败结果显示为空客户列表。",
+    "fees": "正在读取当前生效的手续费配置…",
+    "operations": "正在读取当前客户的运营数据…",
+    "security": "正在读取当前 API 安全配置…"
+  },
+  "empty": {
+    "records": "暂无记录",
+    "audit": "暂无审计记录",
+    "cidrTitle": "尚未添加 CIDR",
+    "cidrDescription": "添加客户服务器的固定出口 IP 后，再启用规则与全局白名单。"
+  },
+  "messages": {
+    "allCustomersVisible": "当前显示全部客户，待处理申请不会因客户筛选而被隐藏。",
+    "allowlistDisabled": "IP 白名单已关闭。",
+    "allowlistEnabled": "机器 API 的 IP 白名单已启用。",
+    "cancelledAndReleased": "申请已取消并释放占用。",
+    "cidrAdded": "CIDR 已添加。",
+    "cidrDeleted": "CIDR 已删除。",
+    "cidrDisabled": "CIDR 已停用。",
+    "cidrEnabled": "CIDR 已启用。",
+    "completedAndPosted": "处理完成并已写入账本。",
+    "feeUpdated": "转出手续费已更新。",
+    "fundCreated": "资金记录已新增，确认实际完成后再记账。",
+    "markedProcessing": "已标记为处理中。",
+    "rejectedAndReleased": "申请已拒绝并释放占用。"
+  },
+  "errors": {
+    "addFailed": "添加失败，请重试。",
+    "allowlistRequiresEntry": "至少添加并启用一条 CIDR 后才能开启 IP 白名单。",
+    "bankReferenceRequired": "完成银行转出前必须录入银行流水号。",
+    "createFailed": "新增失败，请重试。",
+    "customersLoadFailed": "客户列表读取失败，请重试。",
+    "deleteFailed": "删除失败，请重试。",
+    "deleteLastCidr": "请先关闭 IP 白名单，再删除最后一条启用的 CIDR。",
+    "depositReferenceRequired": "完成入账前必须录入银行参考号或链上交易哈希。",
+    "disableLastCidr": "请先关闭 IP 白名单，再停用最后一条启用的 CIDR。",
+    "feeConfigIncomplete": "手续费配置不完整，请检查数据库迁移后重新读取。",
+    "feeLoadFailed": "手续费配置读取失败，请重试。",
+    "feeReadFirst": "请先成功读取当前手续费配置。",
+    "invalidCidr": "请输入有效的 IPv4、IPv6、单 IP 或 CIDR。",
+    "invalidFee": "请输入大于或等于 0 的有效手续费。",
+    "loadNotTreatedAsEmpty": "{{message}}。本次读取失败未按零余额或空记录处理。",
+    "operationsLoadFailed": "运营数据读取失败，请重试。",
+    "otcAutoSettled": "OTC 已由系统自动校验并即时记账，无需后台处理。",
+    "processFailed": "处理失败，请重试。",
+    "saveFailed": "保存失败，请重试。",
+    "securityLoadFailed": "API 安全配置读取失败，请重试。",
+    "txHashRequired": "完成链上转出前必须录入交易哈希。",
+    "updateFailed": "更新失败，请重试。"
+  },
+  "deposits": {
+    "assetFixed": "资产由交易类型固定。",
+    "confirmedOnly": "只在银行或链上确认到账后创建记录。创建后仍需在下方点击“处理”，确认完成才会写入账本。",
+    "manualFiatOnly": "当前仅支持人工确认并录入法币到账。",
+    "referenceHelper": "用于到账核验与审计追踪。"
+  },
+  "settlement": {
+    "statusLabel": "清算状态",
+    "status": {
+      "pending": "待清算",
+      "cleared": "已清算 · 自动兑换 USDT/TRON",
+      "exception": "调单处理中"
+    },
+    "clearedWarning": "确认后将按当前固定净汇率自动生成零手续费 OTC，并立即写入 USD 与 USDT/TRON 账本。该操作不可直接撤回。",
+    "messages": {
+      "cleared": "法币已清算并自动兑换为 USDT/TRON。",
+      "exception": "法币记录已标记为调单处理。",
+      "pending": "法币记录已恢复为待清算。"
+    }
+  },
+  "sectionsContent": {
+    "bankRecipient": "收款银行资料",
+    "cryptoDeposit": "链上入账资料",
+    "cryptoRecipient": "链上收款资料"
+  },
+  "validation": {
+    "swift": "8 或 11 位大写字母/数字"
+  },
+  "otc": {
+    "adminNotice": "OTC 只能由合作方通过客户门户或 Partner API 发起。系统校验 USD ↔ USDT 报价、0.5% 手续费、对应网络与余额后即时记账；管理员在此只读对账和审计。"
+  },
+  "dialogs": {
+    "businessDetails": "业务详情",
+    "internalReferenceHelper": "内部结算参考可选，不会返回给客户。",
+    "processRequest": "处理业务申请",
+    "processingResult": "处理结果",
+    "referenceRequiredHelper": "完成资金业务前必须留下可追溯的银行参考号或链上交易哈希。",
+    "terminalWarning": "确认后会立即产生账本分录，终态不可直接修改；如需更正应创建新的冲正记录。"
+  },
+  "details": {
+    "businessId": "业务编号",
+    "createdAt": "创建时间",
+    "customerNote": "客户备注：{{value}}",
+    "fiatSettlementAutoConversion": "法币清算自动兑换",
+    "feeAndNet": "手续费 / 实际到账",
+    "netBuyAmount": "买入净额",
+    "notes": "备注",
+    "operatorNote": "运营备注：{{value}}",
+    "recipientAddress": "收款地址：{{value}}",
+    "reference": "参考号：{{value}}",
+    "sellAmount": "卖出金额",
+    "settlementInformation": "结算信息",
+    "totalAmount": "总金额"
+  },
+  "fees": {
+    "cloudConfigMissing": "尚未读取到云端配置。",
+    "cryptoDescription": "适用于全部支持网络，每笔链上转出固定收取。",
+    "currentSetting": "当前生效：{{amount}} {{asset}} · 更新于 {{date}}",
+    "deductionExplanation": "客户输入的转出金额是账户总扣账金额，实际到账金额等于转出金额减去本页配置的固定手续费。",
+    "description": "新费率只用于之后提交的转出申请；已有申请保留提交时的手续费快照。",
+    "fiatDescription": "每笔银行转出固定收取，不随转出金额变化。",
+    "fixedCharge": "固定收取 · {{asset}}",
+    "perTransaction": "每笔固定手续费",
+    "title": "固定转出手续费"
+  },
+  "security": {
+    "accessToken": "Cloudflare Access 服务令牌",
+    "accessTokenDescription": "每次机器 API 请求都必须携带 Client ID 与 Client Secret。本页不会读取或展示任何密钥。",
+    "activeCidrSummary": "{{cidrs}} 条 CIDR 已启用。白名单只限制机器 API，不影响管理后台与客户门户页面访问。",
+    "addCidr": "添加 CIDR",
+    "allowlistActiveNotice": "白名单正在生效：未命中启用 CIDR 的机器 API 请求将被拒绝。",
+    "allowlistInactiveNotice": "安全默认值为关闭：当前仍由 Cloudflare Access 服务令牌保护，不限制来源 IP。",
+    "beforeEnable": "启用前请确认",
+    "cidrHelper": "支持单个 IPv4、IPv6 地址或 CIDR。",
+    "cidrRecommendation": "建议使用客户服务器的固定出口 IP，并以 /32（IPv4）或 /128（IPv6）精确授权。",
+    "cidrRules": "CIDR 规则",
+    "createdAt": "创建 {{date}}",
+    "deleteCidrDescription": "{{label}} · {{cidr}}。删除后无法恢复。",
+    "deleteCidrTitle": "删除这条 CIDR？",
+    "disableAllowlist": "关闭 IP 白名单",
+    "disableBeforeEditing": "先关闭白名单再操作",
+    "enableAllowlist": "启用 IP 白名单",
+    "enableConfirmTitle": "确认启用 IP 白名单？",
+    "enableConfirmWarning": "启用后，只有下方处于“已启用”状态的 CIDR 才能访问机器 API；其他来源即使持有 Access 服务令牌也会被拒绝。",
+    "enableRequirement": "至少启用一条 CIDR 后才可开启。",
+    "enabledRulesConfirm": "当前共有 {{rules}} 条启用规则。请确认其中至少包含客户机器 API 的实际出口 IP。",
+    "firstLayer": "第一层",
+    "ipAllowlist": "IP 白名单",
+    "machineApiDescription": "服务令牌始终是第一层认证；IP 白名单是可选的第二层来源限制。",
+    "machineApiTitle": "机器 API 访问安全",
+    "namePlaceholder": "例如 moventra 生产服务器",
+    "rateLimitDescription": "每 {{seconds}} 秒最多 {{limit}} 次请求，超限返回 HTTP 429；此项为平台级只读配置。",
+    "secondLayer": "第二层",
+    "trafficProtection": "流量保护",
+    "unnamedRule": "未命名规则",
+    "updatedAt": "更新时间"
+  },
+  "audit": {
+    "action": "操作",
+    "actionSummary": "{{resource}} · {{status}}",
+    "actionType": "操作类型",
+    "actor": "操作者",
+    "admin": "管理员",
+    "allActors": "全部操作者",
+    "operationContent": "操作内容",
+    "partner": "合作方 / API",
+    "systemConfiguration": "系统配置",
+    "time": "时间",
+    "actions": {
+      "all": "全部操作",
+      "applicationCreated": "开户申请 · 已创建",
+      "applicationProfileUpdated": "客户资料 · 已更正",
+      "kycLinkAdded": "KYC 链接 · 已录入",
+      "kycLinkUpdated": "KYC 链接 · 已更正",
+      "vaAccountActivated": "VA 账户 · 已开通",
+      "vaAccountUpdated": "VA 账户 · 已更正",
+      "fundCreated": "资金交易 · 已创建",
+      "fundProcessing": "资金交易 · 开始处理",
+      "fundCompleted": "资金交易 · 已完成",
+      "fundRejected": "资金交易 · 已拒绝",
+      "fundCancelled": "资金交易 · 已取消",
+      "otcCreated": "OTC · 已创建",
+      "otcProcessing": "OTC · 开始处理",
+      "otcCompleted": "OTC · 已完成",
+      "otcRejected": "OTC · 已拒绝",
+      "otcCancelled": "OTC · 已取消",
+      "feeUpdated": "手续费 · 已更新",
+      "allowlistToggled": "IP 白名单 · 总开关变更",
+      "allowlistCreated": "IP 白名单 · 已新增",
+      "allowlistUpdated": "IP 白名单 · 已更新",
+      "allowlistDeleted": "IP 白名单 · 已删除"
+    },
+    "resources": {
+      "apiSecurity": "API 安全",
+      "application": "客户资料",
+      "fundTransaction": "资金交易",
+      "ipAllowlist": "IP 白名单",
+      "kyc": "KYC 链接",
+      "onboardingStatus": "开户状态",
+      "otcOrder": "OTC 订单",
+      "vaAccount": "VA 账户",
+      "vaApplication": "开户申请",
+      "withdrawalFee": "转出手续费"
+    },
+    "verbs": {
+      "activated": "已开通",
+      "cancelled": "已取消",
+      "changed": "变更",
+      "completed": "已完成",
+      "created": "已创建",
+      "deleted": "已删除",
+      "disabled": "已停用",
+      "enabled": "已启用",
+      "linkAdded": "已录入",
+      "linkUpdated": "已更正",
+      "processing": "开始处理",
+      "profileUpdated": "基本资料已更正",
+      "rejected": "已拒绝",
+      "updated": "已更新"
+    }
+  }
+}

@@ -1,0 +1,74 @@
+# Cloudflare release runbook
+
+## Scope
+
+This runbook covers normal Worker and static Portal/Dashboard releases. A D1
+migration is a separate production operation and still requires the complete
+backup, checksum, restore test, manual approval, migration, and post-checks in
+`AGENTS.md` and `docs/CODEX_HANDOFF.md`.
+
+## Before building
+
+1. Inspect the current branch, working tree, upstream divergence, remote pending
+   migrations, and active Cloudflare version.
+2. Identify the exact source files intended for the release. Preserve unrelated
+   working-tree changes.
+3. In a fresh release worktree, install the lockfile with the project release
+   cache instead of relying on a possibly damaged user-level npm cache:
+
+   ```bash
+   npm run release:install
+   ```
+
+   This command also takes a worktree-specific lock. Do not bypass it with a
+   second raw `npm ci`; concurrent installs in one worktree can overwrite
+   `node_modules` and leave required binaries missing.
+
+4. Run the checks required by `AGENTS.md`. For fast iteration, lint only the
+   current diff:
+
+   ```bash
+   npm run lint:changed -- --base origin/main
+   ```
+
+   Keep `npm run lint` as the repository-wide lint gate. It is intentionally not
+   hidden inside every small edit because this repository's type-aware full scan
+   is expensive.
+
+## Build and deploy once
+
+For a production release with no D1 migration, use:
+
+```bash
+npm run cf:release
+```
+
+This performs one React production build, runs Wrangler dry-run against that
+build, then deploys the same prepared build. `npm run cf:deploy` and
+`npm run cf:deploy:dry-run` remain safe standalone commands and each performs
+its own build. The `:prepared` commands intentionally skip the React build and
+must only be used after a successful `npm run cf:build` in the same worktree.
+
+GitHub push and Cloudflare deployment remain separate actions. Do not infer one
+from the other.
+
+## Temporary worktrees and processes
+
+- Create temporary release worktrees with a unique `mktemp -d` path.
+- Record the exact path and remove only that path when the task completes.
+- Before removal, verify `git status`, preserve any unique patch, and confirm no
+  active task still owns the worktree.
+- Stop the exact Wrangler/workerd process group started by the release task.
+- Never bulk-delete `/tmp`, all Git worktrees, npm caches, production backups, or
+  another task's local preview.
+- A clean worktree whose branch is already on its configured upstream can be
+  removed without deleting the branch. A dirty worktree may be force-removed
+  only after its files are proven identical to a preserved commit or working
+  tree.
+
+## Post-deploy verification
+
+Record the deployed Worker version and confirm its traffic percentage. Recheck
+GitHub SHA and D1 migration state separately. Validate authentication, response
+shape, tenant scope, and business data where credentials and an approved manual
+session are available; transport success alone is insufficient.

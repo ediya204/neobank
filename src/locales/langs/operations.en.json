@@ -1,0 +1,367 @@
+{
+  "page": {
+    "admin": "Admin"
+  },
+  "sections": {
+    "deposits": {
+      "title": "Deposit Entry",
+      "description": "Record fiat and USDT only after the bank or blockchain receipt is confirmed, then complete the record to post it to the customer ledger."
+    },
+    "withdrawals": {
+      "title": "Withdrawal Review",
+      "description": "Review bank and on-chain withdrawals submitted by partners, record the settlement reference, and complete the ledger posting."
+    },
+    "otc": {
+      "title": "OTC Conversion Records",
+      "description": "Review automatically settled USD and USDT book conversions. Admin access is read-only for reconciliation and audit."
+    },
+    "balances": {
+      "title": "Customer Balances",
+      "description": "Review each customer's ledger balance, pending holds, and currently available balance."
+    },
+    "transactions": {
+      "title": "Transaction History",
+      "description": "Review fiat, crypto, and OTC activity in one place. Only pending fund records can be opened for Operations processing."
+    },
+    "ledger": {
+      "title": "Ledger Entries",
+      "description": "Review immutable ledger entries. Corrections must be made through a new business record or reversal workflow."
+    },
+    "fees": {
+      "title": "Withdrawal Fee Settings",
+      "description": "Configure fixed fees for newly submitted withdrawals. Existing transactions retain their fee snapshot."
+    },
+    "apiSecurity": {
+      "title": "API Security",
+      "description": "Manage Access authentication, rate limits, and the optional IP/CIDR allowlist for machine API traffic."
+    },
+    "audit": {
+      "title": "Audit Log",
+      "description": "Track key onboarding, funds, OTC, fee, and API security configuration events."
+    }
+  },
+  "actions": {
+    "addDeposit": "Add deposit record",
+    "adding": "Adding…",
+    "cancel": "Cancel",
+    "cancelRequest": "Cancel request",
+    "close": "Close",
+    "completeAndPost": "Complete and post",
+    "confirmEnable": "Confirm and enable",
+    "confirmProcessing": "Confirm action",
+    "delete": "Delete",
+    "disable": "Disable",
+    "disabling": "Disabling…",
+    "enable": "Enable",
+    "enabling": "Enabling…",
+    "loading": "Loading…",
+    "openProcessing": "Open processing",
+    "process": "Process",
+    "processing": "Processing…",
+    "refresh": "Refresh",
+    "refreshConfiguration": "Refresh configuration",
+    "refreshStatus": "Refresh status",
+    "rejectRequest": "Reject request",
+    "reload": "Reload",
+    "saveAndApply": "Save and apply now",
+    "settle": "Settle",
+    "saving": "Saving…",
+    "startProcessing": "Start processing",
+    "submitting": "Submitting…",
+    "undoChanges": "Discard changes",
+    "view": "View"
+  },
+  "status": {
+    "all": "All statuses",
+    "submitted": "Submitted",
+    "processing": "Processing",
+    "completed": "Completed",
+    "rejected": "Rejected",
+    "cancelled": "Cancelled",
+    "posted": "Posted",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "enforced": "Required",
+    "offByDefault": "Off by default",
+    "abnormal": "Attention required"
+  },
+  "types": {
+    "fiatDeposit": "Fiat deposit",
+    "usdtDeposit": "USDT deposit",
+    "fiatWithdrawal": "Fiat withdrawal",
+    "usdtWithdrawal": "USDT withdrawal",
+    "cryptoWithdrawal": "Crypto withdrawal",
+    "otcSell": "OTC sell",
+    "otcBuyNet": "OTC net purchase",
+    "fiatConversionDebit": "Fiat conversion debit",
+    "cryptoConversionCredit": "Crypto conversion credit",
+    "usdtSweep": "USDT sweep out",
+    "balance": "Balance"
+  },
+  "wallets": {
+    "fiat": "Fiat wallet",
+    "crypto": "Crypto wallet"
+  },
+  "fields": {
+    "amount": "Amount",
+    "asset": "Asset",
+    "bankAccount": "Bank account / IBAN",
+    "bankAddressOptional": "Bank address (optional)",
+    "bankDepositReference": "Bank deposit reference",
+    "bankName": "Bank name",
+    "bankTransactionReference": "Bank transaction reference",
+    "beneficiaryAddress": "Beneficiary address",
+    "beneficiaryName": "Beneficiary name",
+    "category": "Category",
+    "customer": "Customer",
+    "depositWalletAddressOptional": "Deposit wallet address (optional)",
+    "internalReferenceOptional": "Internal settlement reference (optional)",
+    "name": "Name",
+    "nameOptional": "Name (optional)",
+    "network": "Network",
+    "noteOptional": "Note (optional)",
+    "operatorNoteOptional": "Operator note (optional)",
+    "reasonOrOperatorNote": "Reason / operator note",
+    "recipientWalletAddress": "Recipient wallet address",
+    "settlementReference": "Settlement reference",
+    "status": "Status",
+    "txHash": "Transaction hash",
+    "type": "Type",
+    "wallet": "Wallet"
+  },
+  "filters": {
+    "allCategories": "All categories",
+    "allCustomers": "All customers",
+    "allTypes": "All types",
+    "allWallets": "All wallets",
+    "businessType": "Transaction type",
+    "customerScope": "Customer scope",
+    "endDate": "End date",
+    "fundCategory": "Deposits / withdrawals",
+    "pendingOnly": "Pending only ({{count}})",
+    "showAllTransactions": "Show all transactions",
+    "startDate": "Start date"
+  },
+  "table": {
+    "actions": "Actions",
+    "amountBalanceRecipient": "Amount / balance and recipient",
+    "details": "Details",
+    "feeAndNet": "Fee {{fee}} {{asset}} · Net {{net}} {{asset}}",
+    "idAsset": "ID / asset",
+    "time": "Time",
+    "channelNetwork": "Channel / network",
+    "transactionId": "Transaction ID"
+  },
+  "loading": {
+    "customers": "Loading eligible customers. A failed request will not be shown as an empty customer list.",
+    "fees": "Loading the currently active fee configuration…",
+    "operations": "Loading operational data for the current customer…",
+    "security": "Loading the current API security configuration…"
+  },
+  "empty": {
+    "records": "No records",
+    "audit": "No audit events",
+    "cidrTitle": "No CIDR rules yet",
+    "cidrDescription": "Add the customer's fixed server egress IP before enabling a rule and the global allowlist."
+  },
+  "messages": {
+    "allCustomersVisible": "All customers are currently shown, so pending requests are not hidden by a customer filter.",
+    "allowlistDisabled": "The IP allowlist has been disabled.",
+    "allowlistEnabled": "The machine API IP allowlist has been enabled.",
+    "cancelledAndReleased": "The request was cancelled and its hold was released.",
+    "cidrAdded": "CIDR added.",
+    "cidrDeleted": "CIDR deleted.",
+    "cidrDisabled": "CIDR disabled.",
+    "cidrEnabled": "CIDR enabled.",
+    "completedAndPosted": "Processing completed and the ledger was posted.",
+    "feeUpdated": "The withdrawal fee has been updated.",
+    "fundCreated": "The fund record was added. Post it only after actual completion is confirmed.",
+    "markedProcessing": "Marked as processing.",
+    "rejectedAndReleased": "The request was rejected and its hold was released."
+  },
+  "errors": {
+    "addFailed": "Unable to add the record. Please try again.",
+    "allowlistRequiresEntry": "Add and enable at least one CIDR before enabling the IP allowlist.",
+    "bankReferenceRequired": "Enter the bank transaction reference before completing the bank withdrawal.",
+    "createFailed": "Unable to create the record. Please try again.",
+    "customersLoadFailed": "Unable to load the customer list. Please try again.",
+    "deleteFailed": "Unable to delete the record. Please try again.",
+    "deleteLastCidr": "Disable the IP allowlist before deleting its last enabled CIDR.",
+    "depositReferenceRequired": "Enter a bank reference or transaction hash before completing the deposit.",
+    "disableLastCidr": "Disable the IP allowlist before disabling its last enabled CIDR.",
+    "feeConfigIncomplete": "The fee configuration is incomplete. Verify the database migrations and reload.",
+    "feeLoadFailed": "Unable to load the fee configuration. Please try again.",
+    "feeReadFirst": "Load the current fee configuration successfully before saving.",
+    "invalidCidr": "Enter a valid IPv4 address, IPv6 address, single IP, or CIDR.",
+    "invalidFee": "Enter a valid fee greater than or equal to 0.",
+    "loadNotTreatedAsEmpty": "{{message}} This failed request was not treated as a zero balance or an empty result.",
+    "operationsLoadFailed": "Unable to load operational data. Please try again.",
+    "otcAutoSettled": "OTC is validated and posted automatically; no Admin processing is required.",
+    "processFailed": "Unable to process the request. Please try again.",
+    "saveFailed": "Unable to save the changes. Please try again.",
+    "securityLoadFailed": "Unable to load the API security configuration. Please try again.",
+    "txHashRequired": "Enter the transaction hash before completing the on-chain withdrawal.",
+    "updateFailed": "Unable to update the record. Please try again."
+  },
+  "deposits": {
+    "assetFixed": "The asset is determined by the transaction type.",
+    "confirmedOnly": "Create a record only after the bank or blockchain receipt is confirmed. You must still select Process below and complete it before it is posted to the ledger.",
+    "manualFiatOnly": "Only manually confirmed fiat deposits can be recorded here.",
+    "referenceHelper": "Used for receipt verification and audit traceability."
+  },
+  "settlement": {
+    "statusLabel": "Settlement status",
+    "status": {
+      "pending": "Awaiting settlement",
+      "cleared": "Settled · Convert automatically to USDT on TRON",
+      "exception": "Under review"
+    },
+    "clearedWarning": "Confirming uses the current fixed net rate to create a zero-fee OTC conversion and immediately posts the USD and USDT-on-TRON ledger entries. This action cannot be reversed directly.",
+    "messages": {
+      "cleared": "The fiat deposit was settled and converted automatically to USDT on TRON.",
+      "exception": "The fiat deposit was marked for review.",
+      "pending": "The fiat deposit was returned to awaiting settlement."
+    }
+  },
+  "sectionsContent": {
+    "bankRecipient": "Beneficiary bank details",
+    "cryptoDeposit": "On-chain deposit details",
+    "cryptoRecipient": "On-chain recipient details"
+  },
+  "validation": {
+    "swift": "8 or 11 uppercase letters or digits"
+  },
+  "otc": {
+    "adminNotice": "OTC can only be initiated by a partner through the Portal or Partner API. The system validates the USD ↔ USDT quote, 0.5% fee, selected network, and balance, then posts immediately. Admin access is read-only for reconciliation and audit."
+  },
+  "dialogs": {
+    "businessDetails": "Transaction details",
+    "internalReferenceHelper": "The internal settlement reference is optional and is not returned to the customer.",
+    "processRequest": "Process request",
+    "processingResult": "Processing result",
+    "referenceRequiredHelper": "A traceable bank reference or transaction hash is required before completing a fund transaction.",
+    "terminalWarning": "Confirming creates ledger entries immediately. A terminal record cannot be edited directly; create a new reversal record to correct it."
+  },
+  "details": {
+    "businessId": "Transaction ID",
+    "createdAt": "Created at",
+    "customerNote": "Customer note: {{value}}",
+    "fiatSettlementAutoConversion": "Automatic fiat settlement conversion",
+    "feeAndNet": "Fee / net amount",
+    "netBuyAmount": "Net purchase amount",
+    "notes": "Notes",
+    "operatorNote": "Operator note: {{value}}",
+    "recipientAddress": "Recipient address: {{value}}",
+    "reference": "Reference: {{value}}",
+    "sellAmount": "Sell amount",
+    "settlementInformation": "Settlement information",
+    "totalAmount": "Total amount"
+  },
+  "fees": {
+    "cloudConfigMissing": "Cloud configuration has not been loaded.",
+    "cryptoDescription": "Charged once per on-chain withdrawal across all supported networks.",
+    "currentSetting": "Currently active: {{amount}} {{asset}} · Updated {{date}}",
+    "deductionExplanation": "The customer-entered withdrawal amount is the total account debit. The net amount equals the withdrawal amount minus the fixed fee configured here.",
+    "description": "New fee values apply only to withdrawals submitted after the change. Existing requests retain the fee snapshot captured at submission.",
+    "fiatDescription": "A fixed charge per bank withdrawal, independent of the withdrawal amount.",
+    "fixedCharge": "Fixed charge · {{asset}}",
+    "perTransaction": "Fixed fee per transaction",
+    "title": "Fixed withdrawal fees"
+  },
+  "security": {
+    "accessToken": "Cloudflare Access service token",
+    "accessTokenDescription": "Every machine API request must include a Client ID and Client Secret. This page never reads or displays those credentials.",
+    "activeCidrSummary": "{{cidrs}} CIDR rules are enabled. The allowlist applies only to the machine API and does not affect Admin or Portal access.",
+    "addCidr": "Add CIDR",
+    "allowlistActiveNotice": "The allowlist is active. Machine API requests that do not match an enabled CIDR will be rejected.",
+    "allowlistInactiveNotice": "The secure default is off. Cloudflare Access service tokens still protect the machine API without restricting source IPs.",
+    "beforeEnable": "Before enabling",
+    "cidrHelper": "Supports a single IPv4 address, IPv6 address, or CIDR.",
+    "cidrRecommendation": "Use the customer's fixed server egress IP and grant exact access with /32 for IPv4 or /128 for IPv6.",
+    "cidrRules": "CIDR rules",
+    "createdAt": "Created {{date}}",
+    "deleteCidrDescription": "{{label}} · {{cidr}}. This action cannot be undone.",
+    "deleteCidrTitle": "Delete this CIDR?",
+    "disableAllowlist": "Disable IP allowlist",
+    "disableBeforeEditing": "Disable the allowlist first",
+    "enableAllowlist": "Enable IP allowlist",
+    "enableConfirmTitle": "Enable the IP allowlist?",
+    "enableConfirmWarning": "After enabling, only CIDRs marked Enabled below can access the machine API. Requests from all other sources will be rejected even when they carry a valid Access service token.",
+    "enableRequirement": "Enable at least one CIDR first.",
+    "enabledRulesConfirm": "{{rules}} rules are currently enabled. Confirm that at least one contains the customer's actual machine API egress IP.",
+    "firstLayer": "First layer",
+    "ipAllowlist": "IP allowlist",
+    "machineApiDescription": "The service token is always the first authentication layer. The IP allowlist is an optional second source restriction.",
+    "machineApiTitle": "Machine API access security",
+    "namePlaceholder": "For example, moventra production server",
+    "rateLimitDescription": "Up to {{limit}} requests every {{seconds}} seconds. Excess traffic returns HTTP 429. This is a read-only platform setting.",
+    "secondLayer": "Second layer",
+    "trafficProtection": "Traffic protection",
+    "unnamedRule": "Unnamed rule",
+    "updatedAt": "Updated at"
+  },
+  "audit": {
+    "action": "Action",
+    "actionSummary": "{{resource}} · {{status}}",
+    "actionType": "Action type",
+    "actor": "Actor",
+    "admin": "Admin",
+    "allActors": "All actors",
+    "operationContent": "Operation payload",
+    "partner": "Partner / API",
+    "systemConfiguration": "System configuration",
+    "time": "Time",
+    "actions": {
+      "all": "All actions",
+      "applicationCreated": "Onboarding application · Created",
+      "applicationProfileUpdated": "Customer profile · Corrected",
+      "kycLinkAdded": "KYC link · Added",
+      "kycLinkUpdated": "KYC link · Corrected",
+      "vaAccountActivated": "VA account · Activated",
+      "vaAccountUpdated": "VA account · Corrected",
+      "fundCreated": "Fund transaction · Created",
+      "fundProcessing": "Fund transaction · Processing started",
+      "fundCompleted": "Fund transaction · Completed",
+      "fundRejected": "Fund transaction · Rejected",
+      "fundCancelled": "Fund transaction · Cancelled",
+      "otcCreated": "OTC · Created",
+      "otcProcessing": "OTC · Processing started",
+      "otcCompleted": "OTC · Completed",
+      "otcRejected": "OTC · Rejected",
+      "otcCancelled": "OTC · Cancelled",
+      "feeUpdated": "Fee · Updated",
+      "allowlistToggled": "IP allowlist · Global setting changed",
+      "allowlistCreated": "IP allowlist · Added",
+      "allowlistUpdated": "IP allowlist · Updated",
+      "allowlistDeleted": "IP allowlist · Deleted"
+    },
+    "resources": {
+      "apiSecurity": "API security",
+      "application": "Customer profile",
+      "fundTransaction": "Fund transaction",
+      "ipAllowlist": "IP allowlist",
+      "kyc": "KYC link",
+      "onboardingStatus": "Onboarding status",
+      "otcOrder": "OTC order",
+      "vaAccount": "VA account",
+      "vaApplication": "Onboarding application",
+      "withdrawalFee": "Withdrawal fee"
+    },
+    "verbs": {
+      "activated": "Activated",
+      "cancelled": "Cancelled",
+      "changed": "Changed",
+      "completed": "Completed",
+      "created": "Created",
+      "deleted": "Deleted",
+      "disabled": "Disabled",
+      "enabled": "Enabled",
+      "linkAdded": "Added",
+      "linkUpdated": "Corrected",
+      "processing": "Processing started",
+      "profileUpdated": "Profile corrected",
+      "rejected": "Rejected",
+      "updated": "Updated"
+    }
+  }
+}

@@ -1,0 +1,826 @@
+{
+  "common": {
+    "accountName": "Account name",
+    "accountNumber": "Account number",
+    "actions": "Actions",
+    "allStatuses": "All statuses",
+    "amount": "Amount",
+    "applicationId": "Application ID",
+    "availableBalance": "Available balance",
+    "bankAddress": "Bank address",
+    "bankName": "Bank name",
+    "cancel": "Cancel",
+    "contact": "Contact",
+    "copy": "Copy",
+    "copyAll": "Copy all",
+    "countryCode": "Country code",
+    "createdAt": "Created at",
+    "currency": "Currency",
+    "customer": "Customer",
+    "customerName": "Customer name",
+    "email": "Email",
+    "fiat": "Fiat",
+    "iban": "IBAN",
+    "ibanOptional": "IBAN (optional)",
+    "kycLink": "Sumsub KYC link",
+    "lastUpdated": "Last updated",
+    "ledger": "Ledger",
+    "ledgerBalance": "Ledger balance",
+    "loading": "Loading…",
+    "network": "Network",
+    "partnerCustomerId": "Partner customer ID",
+    "pendingReserved": "Pending reserve",
+    "phoneNumber": "Phone number",
+    "refresh": "Refresh",
+    "refreshData": "Refresh data",
+    "reserved": "Reserved",
+    "retry": "Try again",
+    "status": "Status",
+    "time": "Time",
+    "transaction": "Transaction",
+    "type": "Type",
+    "vaAccount": "VA account",
+    "view": "View",
+    "viewAll": "View all"
+  },
+  "navigation": {
+    "account": "Account",
+    "apiIntegration": "API integration",
+    "apiIntegrationApprovals": "API management",
+    "apiSecurity": "API security",
+    "assetManagement": "Asset management",
+    "auditLogs": "Audit logs",
+    "cryptoWallet": "Digital wallet",
+    "customerBalances": "Customer balances",
+    "customerManagement": "Customer management",
+    "customerOverview": "Customer overview",
+    "customersAndOnboarding": "Customers & onboarding",
+    "depositEntry": "Deposit entry",
+    "developer": "Developer",
+    "fees": "Fees",
+    "fiatWallet": "Fiat wallet",
+    "fundOperations": "Fund operations",
+    "ledger": "Ledger",
+    "messages": "Messages",
+    "onboardingApplications": "Onboarding applications",
+    "operationsOverview": "Operations overview",
+    "otcProcessing": "Automatic conversions",
+    "portalHome": "Home",
+    "reconciliation": "Fund reconciliation",
+    "startOnboarding": "Start onboarding",
+    "settings": "Settings",
+    "team": "Team & permissions",
+    "systemSettings": "System settings",
+    "transactionHistory": "Transaction history",
+    "withdrawalReview": "Withdrawal review",
+    "workspace": "Workspace",
+    "usdtSweepDirectory": "Treasury operations",
+    "usdtSweeps": "USDT sweeps"
+  },
+  "reconciliation": {
+    "pageTitle": "Fund reconciliation",
+    "title": "Fund reconciliation",
+    "description": {
+      "admin": "Review platform-wide deposits, automatic conversions, treasury sweeps, and current balances, then identify accounting differences quickly.",
+      "portal": "Review your partner deposits, automatic conversions, treasury sweeps, and current balances in one place."
+    },
+    "date": "Reconciliation date",
+    "records": "{{count}} completed records",
+    "pendingSweeps": "{{count}} sweep batches are still pending",
+    "emptyAmount": "No completed records for this date",
+    "balanceHelper": "Assets and networks are reconciled separately",
+    "exceptionHelper": "Pending settlement, exceptions, and unfinished sweeps",
+    "comparison": {
+      "previousDay": "record count vs. the same period yesterday",
+      "new": "New activity",
+      "unchanged": "No change",
+      "noBalanceChange": "No ledger balance change for the day"
+    },
+    "metrics": {
+      "deposits": "Deposits today",
+      "otc": "OTC today",
+      "sweeps": "Sweeps sent today",
+      "funds": "Available funds",
+      "exceptions": "Pending & exceptions"
+    },
+    "balances": {
+      "title": "Current fund position",
+      "description": "Available balance is the ledger balance less pending reserves."
+    },
+    "check": {
+      "title": "Ledger balance check",
+      "description": "Opening + credits − debits = closing, calculated separately by asset and network.",
+      "opening": "Opening",
+      "credits": "Credits",
+      "debits": "Debits",
+      "closing": "Closing",
+      "delta": "Difference",
+      "allBalanced": "All asset ledgers are balanced",
+      "hasDifference": "Ledger difference detected"
+    },
+    "charts": {
+      "flowTitle": "7-day fund movement",
+      "flowDescription": "Credits, debits, and net change. Select a day to filter the details below.",
+      "compositionTitle": "USDT network composition",
+      "compositionDescription": "Current available USDT by network. Select a segment to filter details.",
+      "asset": "Asset",
+      "allAssets": "All assets",
+      "allNetworks": "All networks",
+      "noNetwork": "No network",
+      "netChange": "Net change",
+      "empty": "No fund composition to display"
+    },
+    "movements": {
+      "title": "Daily fund movements",
+      "description": "50 records per page by default. Select a row for complete details.",
+      "empty": "No matching fund movements for this date",
+      "detail": "Fund movement details",
+      "counterAmount": "Counter amount",
+      "reference": "Business reference",
+      "settlement": "Settlement status",
+      "completedAt": "Completed at",
+      "operatorNote": "Operations note",
+      "clearFilters": "Clear filters"
+    },
+    "types": {
+      "all": "All types",
+      "fiat_deposit": "Fiat deposit",
+      "usdt_deposit": "USDT deposit",
+      "fiat_withdrawal": "Fiat withdrawal",
+      "usdt_withdrawal": "USDT withdrawal",
+      "fiat_conversion_debit": "Automatic fiat conversion debit",
+      "crypto_conversion_credit": "Automatic USDT conversion credit",
+      "usdt_sweep": "USDT treasury sweep",
+      "otc": "Automatic OTC conversion"
+    },
+    "status": {
+      "submitted": "Submitted",
+      "processing": "Processing",
+      "completed": "Completed",
+      "posted": "Posted",
+      "rejected": "Rejected",
+      "cancelled": "Canceled"
+    },
+    "errors": {
+      "read": "Unable to load fund reconciliation data"
+    }
+  },
+  "usdtSweeps": {
+    "pageTitle": "USDT treasury sweeps",
+    "eyebrow": "TRON treasury operations",
+    "title": "USDT treasury sweeps",
+    "description": "Lock customer balances, complete the on-chain treasury transfer, then post the final ledger debits. The destination address, operator, and webhook activity are recorded at every step.",
+    "loading": "Loading sweep balances, batches, and settings…",
+    "actions": {
+      "refreshing": "Refreshing…",
+      "createBatch": "Create sweep · {{amount}} USDT",
+      "enterTxHash": "Add transaction hash",
+      "confirmCompletion": "Confirm settlement",
+      "cancelBatch": "Cancel sweep batch",
+      "save": "Save rate",
+      "saving": "Saving…",
+      "updateAllowlistedAddress": "Update allowlisted address",
+      "backToReview": "Back to review",
+      "lockAndCreate": "Lock funds and create batch",
+      "processing": "Processing…"
+    },
+    "status": {
+      "locked": "Locked · Transfer pending",
+      "submitted": "Submitted · Confirmation pending",
+      "completed": "Completed",
+      "cancelled": "Canceled",
+      "unknown": "Unknown status"
+    },
+    "summary": {
+      "available": "Available to sweep",
+      "locked": "Locked for sweeps",
+      "pending": "Pending batches",
+      "completedToday": "Sent today"
+    },
+    "tabs": {
+      "label": "USDT sweep sections",
+      "workbench": "Sweep workbench",
+      "pendingBatches_one": "Pending batch ({{count}})",
+      "pendingBatches_other": "Pending batches ({{count}})",
+      "history": "Sweep history",
+      "settings": "Sweep settings"
+    },
+    "workbench": {
+      "title": "Select customer balances",
+      "description": "Selected customers default to their full available balance. You can enter a lower amount.",
+      "locked": "Locked balance",
+      "sweepAmount": "Amount to sweep",
+      "selectAllCustomers": "Select all customers available to sweep",
+      "clearAllCustomers": "Clear all customers available to sweep",
+      "selectCustomer": "Select {{customer}} for this sweep",
+      "invalidAmount": "Enter an amount greater than 0 and no more than the available balance.",
+      "emptyTitle": "No balances available to sweep",
+      "emptyDescription": "Customers appear here after a settled fiat deposit is converted to USDT."
+    },
+    "batches": {
+      "searchPlaceholder": "Search by batch ID, transaction hash, customer, or customer ID",
+      "destinationAndTransaction": "Destination {{address}} · Tx {{transaction}}",
+      "createdAt": "Created {{date}}",
+      "customerCount_one": "{{count}} customer",
+      "customerCount_other": "{{count}} customers",
+      "emptyPending": "No batches awaiting transfer",
+      "emptyHistory": "No sweep history",
+      "emptyDescription": "New sweep batches will appear here.",
+      "noSearchResults": "No matching batches",
+      "noSearchResultsDescription": "Try a different batch ID, transaction hash, customer, or customer ID."
+    },
+    "settings": {
+      "conversionEyebrow": "Automatic conversion",
+      "conversionTitle": "Fixed USD-to-USDT TRON net rate",
+      "conversionDescription": "When a fiat deposit is marked as settled, the current rate is saved with the conversion. No additional OTC fee is charged.",
+      "rateLabel": "USDT per 1 USD",
+      "currentVersion": "Version {{version}} · Updated by {{operator}}",
+      "systemOperator": "System",
+      "addressEyebrow": "Allowlisted destination",
+      "addressTitle": "moventra TRON treasury address",
+      "addressDescription": "New batches save a snapshot of this address. Changes do not affect existing batches.",
+      "addressLabel": "TRON destination address"
+    },
+    "dialog": {
+      "createTitle": "Create sweep batch?",
+      "createWarning_one": "Creating this batch will immediately lock {{amount}} USDT for {{count}} customer.",
+      "createWarning_other": "Creating this batch will immediately lock {{amount}} USDT across {{count}} customers.",
+      "batchSummary_one": "Batch {{id}} · {{amount}} USDT · {{count}} customer",
+      "batchSummary_other": "Batch {{id}} · {{amount}} USDT · {{count}} customers",
+      "txHashLabel": "TRON transaction hash",
+      "txHashHelp": "Enter the 64-character hexadecimal transaction hash.",
+      "completionWarning": "This posts an immutable debit to each customer ledger. Confirm the destination, amount, and transaction hash on-chain before continuing."
+    },
+    "actionCopy": {
+      "submit": {
+        "success": "Transaction hash submitted. Awaiting final confirmation.",
+        "title": "Submit TRON transaction",
+        "button": "Submit transaction hash"
+      },
+      "complete": {
+        "success": "Sweep completed. Customer ledger debits have been posted.",
+        "title": "Confirm settlement and post ledger debits",
+        "button": "Confirm and post debits"
+      },
+      "cancel": {
+        "success": "Sweep canceled. Locked customer balances have been released.",
+        "title": "Cancel sweep and release funds",
+        "button": "Cancel sweep"
+      }
+    },
+    "messages": {
+      "batchCreated": "Sweep batch created. The selected customer balances are now locked.",
+      "rateUpdated": "The fixed net conversion rate has been updated.",
+      "addressUpdated": "The moventra TRON allowlisted address has been updated."
+    },
+    "errors": {
+      "loadFailed": "Unable to load sweep data. Try again.",
+      "requestFailed": "Unable to complete the sweep operation. Try again."
+    }
+  },
+  "overview": {
+    "pageTitle": "Operations dashboard",
+    "title": "Operations dashboard",
+    "description": "Monitor customers, pending tasks, network-level balances, and recent transactions.",
+    "loading": "Loading the operations summary…",
+    "errors": {
+      "read": "Unable to load dashboard data",
+      "readDetail": "{{error}}. Failed reads are not displayed as zero balances."
+    },
+    "metrics": {
+      "allCustomers": "All customers",
+      "activeHelper": "{{active}} active",
+      "onboarding": "Onboarding in progress",
+      "onboardingHelper": "KYC and VA activation",
+      "pendingTransactions": "Pending transactions",
+      "pendingTransactionsHelper": "{{withdrawals}} withdrawals · {{otc}} OTC",
+      "pendingDeposits": "Deposits to confirm",
+      "pendingDepositsHelper": "Fiat and USDT deposits"
+    },
+    "fiat": {
+      "title": "Fiat summary",
+      "availableUsd": "USD available",
+      "viewBalances": "View fiat balances"
+    },
+    "crypto": {
+      "title": "USDT by network",
+      "description": "Ledger, reserved, and available balances are calculated independently for each network.",
+      "viewWallet": "View digital wallet",
+      "availableUsdt": "USDT available",
+      "balanceBreakdown": "Ledger {{ledger}} · Reserved {{reserved}}"
+    },
+    "recent": {
+      "title": "Recent transactions",
+      "description": "Latest fiat, USDT, and automatically settled OTC records",
+      "empty": "No transaction records"
+    },
+    "queue": {
+      "title": "Pending queue",
+      "deposits": "Deposits to confirm",
+      "withdrawals": "Withdrawals to process",
+      "otc": "OTC exceptions"
+    },
+    "quickActions": {
+      "title": "Quick entry",
+      "recordDeposit": "Record fiat / USDT deposit",
+      "newApplication": "Create onboarding application"
+    }
+  },
+  "customers": {
+    "pageTitle": "Customer management",
+    "title": "Customer management",
+    "description": "Review customer details, onboarding status, VA accounts, and network-level available balances in one place.",
+    "newApplication": "New application",
+    "searchPlaceholder": "Search by customer name, ID, email, phone, or VA account",
+    "empty": "No matching customers",
+    "notOpened": "Not opened",
+    "filters": {
+      "onboardingStatus": "Onboarding status"
+    },
+    "columns": {
+      "onboardingStatus": "Onboarding status",
+      "usdAvailable": "USD available",
+      "usdtByNetwork": "USDT available by network"
+    },
+    "errors": {
+      "listRead": "Unable to load the customer list",
+      "listReadDetail": "{{error}}. Check the API connection and try again.",
+      "detailsRead": "Unable to load customer details",
+      "detailsReadDetail": "{{error}}. Check the API connection and try again.",
+      "notFound": "Customer not found"
+    },
+    "details": {
+      "documentTitle": "{{name}} · Customer management",
+      "loading": "Loading customer details…",
+      "back": "Back to customer management",
+      "manageOnboarding": "Manage onboarding details",
+      "recordDeposit": "Record deposit",
+      "reviewTransactions": "Review transactions",
+      "inactiveNotice": "This customer has not completed VA onboarding. You can review their details, but funds and transactions cannot be processed until activation.",
+      "profile": {
+        "title": "Customer details",
+        "awaitingKycLink": "Waiting for operations to provide the link"
+      },
+      "vaAccount": {
+        "empty": "VA account not opened",
+        "process": "Go to onboarding processing"
+      },
+      "wallet": {
+        "title": "Wallets and available balances",
+        "description": "Available balance equals ledger balance less pending withdrawal holds. OTC is posted immediately after validation."
+      },
+      "recentFunds": {
+        "title": "Recent fund records",
+        "description": "Fiat and USDT deposits and withdrawals"
+      },
+      "recentOtc": {
+        "title": "Recent OTC",
+        "description": "Internal ledger conversion between USD and USDT"
+      }
+    },
+    "tables": {
+      "networkOrDestination": "Network / destination",
+      "feeAndNet": "Fee {{fee}} · Net {{net}}",
+      "fiatLedger": "Fiat ledger",
+      "noFunds": "No fund records",
+      "exchangeDirection": "Conversion",
+      "sell": "Sell",
+      "netBuyAndFee": "Net buy / fee",
+      "exchangeRate": "Rate {{rate}}",
+      "fee": "Fee {{fee}}",
+      "noOtc": "No OTC records"
+    }
+  },
+  "applications": {
+    "new": {
+      "pageTitle": "Create VA onboarding application",
+      "title": "Create VA onboarding application",
+      "breadcrumb": "New application",
+      "profileTitle": "Customer details",
+      "description": "The partner only needs to provide the details below. A unique application ID will be generated after submission.",
+      "partnerCustomerId": "Partner customer ID",
+      "partnerCustomerIdHelp": "Canonical lowercase UUID v4, stored as a string.",
+      "customerNamePlaceholder": "Enter customer name",
+      "submit": "Create application",
+      "countryCodes": {
+        "singapore": "Singapore  {{code}}",
+        "hongKong": "Hong Kong SAR  {{code}}",
+        "mainlandChina": "Mainland China  {{code}}",
+        "unitedKingdom": "United Kingdom  {{code}}",
+        "unitedStatesCanada": "United States / Canada  {{code}}"
+      },
+      "supportedCountryCallingCode": "Supported country / territory",
+      "noCountryMatches": "No matching country or territory",
+      "countryCodeHelp": "Select a supported country or territory. Customer and sanctions-list screening is still required.",
+      "validation": {
+        "partnerCustomerIdInvalid": "Enter a canonical lowercase UUID v4 customer ID",
+        "countryCodeRequired": "Select a supported country or territory",
+        "phoneRequired": "Enter a phone number",
+        "customerNameRequired": "Enter a customer name",
+        "emailInvalid": "Enter a valid email address"
+      },
+      "messages": {
+        "created": "Onboarding application created"
+      },
+      "errors": {
+        "createFailed": "Unable to create the onboarding application"
+      }
+    },
+    "list": {
+      "pageTitle": "VA onboarding applications",
+      "title": "VA onboarding applications",
+      "newApplication": "New application",
+      "searchPlaceholder": "Search by customer name, email, or application ID",
+      "statusFilter": "Application status",
+      "submittedAt": "Submitted at",
+      "empty": "No matching onboarding applications",
+      "metrics": {
+        "pending": "Pending applications",
+        "awaitingKyc": "Awaiting KYC",
+        "awaitingVa": "Awaiting VA activation"
+      },
+      "errors": {
+        "read": "Unable to load onboarding applications",
+        "readDetail": "{{error}}. This failed read is not displayed as “no pending applications.”"
+      }
+    },
+    "details": {
+      "documentTitle": "{{name}} · VA onboarding",
+      "loading": "Loading onboarding application…",
+      "notFound": "Onboarding application not found.",
+      "steps": {
+        "submitted": "Application submitted",
+        "kycVerification": "KYC verification",
+        "vaOpening": "VA activation",
+        "accountAvailable": "Account available"
+      },
+      "profile": {
+        "title": "Customer details",
+        "description": "Corrections do not change onboarding status, and every change is recorded in the audit log.",
+        "edit": "Correct details",
+        "partnerCustomerIdHelp": "Legacy customers may remain blank; when set, this must be a canonical lowercase UUID v4.",
+        "countryCodeHelp": "Select a supported country or territory. Customer and sanctions-list screening is still required.",
+        "phoneHelp": "Enter the phone number without the country code",
+        "save": "Save customer details"
+      },
+      "vaAccount": {
+        "title": "VA account details",
+        "description": "Available to the partner through the Portal and API",
+        "activeNotice": "The VA account is active. You can correct and save the bank details without changing the account's active status.",
+        "enterTitle": "Enter VA account",
+        "enterDescription": "Completing all fields updates the account status to “VA active.”",
+        "saveCorrection": "Save VA details correction",
+        "confirmAndShare": "Confirm activation and share account"
+      },
+      "processing": {
+        "title": "Details and status processing",
+        "description": "KYC and VA details can still be corrected after submission. Corrections do not move the onboarding status backward."
+      },
+      "review": {
+        "requestChanges": "Reject and request corrections",
+        "dialogTitle": "Reject the application and request corrections",
+        "dialogDescription": "The partner immediately receives the public reason and required corrections. Internal notes are never exposed through the Portal, Partner API, or webhook.",
+        "reasonCode": "Reason category",
+        "publicReason": "Partner-visible reason",
+        "requiredFields": "Required corrections",
+        "internalNote": "Internal note (optional)",
+        "internalNoteHelp": "Visible only to Operations and never sent to the partner.",
+        "confirm": "Reject and notify partner",
+        "waitingForResubmission": "Rejected and waiting for the partner to correct and resubmit",
+        "fields": {
+          "customer_name": "Customer name",
+          "phone_country_code": "Country calling code",
+          "phone_number": "Phone number",
+          "email": "Email address",
+          "kyc_documents": "KYC documents or verification"
+        },
+        "reasons": {
+          "customer_information_incomplete": "Customer information is incomplete",
+          "customer_information_mismatch": "Customer information does not match",
+          "phone_unverifiable": "Phone number cannot be verified",
+          "email_unverifiable": "Email address cannot be verified",
+          "kyc_documents_incomplete": "KYC documents are incomplete",
+          "kyc_documents_expired": "KYC documents have expired",
+          "kyc_retry_required": "KYC must be completed again",
+          "duplicate_customer": "Customer information may be duplicated",
+          "unsupported_customer_profile": "Customer profile is not currently supported",
+          "other": "Other reason"
+        }
+      },
+      "kyc": {
+        "title": "Sumsub / KYC link",
+        "description": "HTTPS is required. The latest saved link is immediately available through the Portal and API.",
+        "invalidUrl": "Enter a valid HTTPS link",
+        "saveAndShare": "Save and share with partner",
+        "saveCorrection": "Save link correction",
+        "availableNotice": "The KYC link is available through the Portal and API.",
+        "confirmApproved": "Confirm KYC approval"
+      },
+      "messages": {
+        "fieldCopied": "{{field}} copied",
+        "accountCopied": "All account details copied",
+        "profileUpdated": "Customer details updated",
+        "kycLinkShared": "KYC link saved and shared with the partner",
+        "kycLinkUpdated": "KYC link corrected",
+        "kycApproved": "KYC marked as approved",
+        "changesRequested": "Application rejected and returned to the partner for correction",
+        "accountUpdated": "VA account details corrected",
+        "accountOpened": "VA account activated and ready to share"
+      },
+      "errors": {
+        "updateFailed": "Unable to update the onboarding application",
+        "profileUpdateFailed": "Unable to update customer details",
+        "requestChangesFailed": "Unable to reject the application. Refresh and try again."
+      }
+    }
+  },
+  "apiIntegrationApproval": {
+    "pageTitle": "API management",
+    "title": "API management",
+    "description": "Manage access requests, API credentials, active configuration, and webhook deliveries in one place.",
+    "tabs": {
+      "requests": "Access requests",
+      "credentials": "Credentials & keys",
+      "configuration": "Active configuration",
+      "deliveries": "Webhook deliveries"
+    },
+    "metrics": {
+      "pending": "Pending approvals",
+      "pendingHelper": "Waiting for admin review",
+      "ipRules": "Active IP rules",
+      "ipRulesHelper": "Allowed egress networks",
+      "webhooks": "Webhooks",
+      "webhooksHelper": "Currently enabled endpoints",
+      "failedDeliveries": "Failed deliveries",
+      "failedDeliveriesHelper": "Failed or dead-lettered"
+    },
+    "credentials": {
+      "title": "Cloudflare Access API credentials",
+      "description": "Review credential rotation requests. Approval rotates the production service token, and the new secret is available to the partner once after TOTP verification.",
+      "configured": "Credential management configured",
+      "notConfigured": "Credential management not configured",
+      "configurationRequired": "Configure a least-privilege Cloudflare Access management token and a separate encryption key before approval.",
+      "current": "Current credential",
+      "expiresAt": "Expires",
+      "secretStatus": "Secret status",
+      "awaitingPickup": "Awaiting partner pickup",
+      "pickedUp": "Picked up / not viewable",
+      "rotationQueue": "Credential rotation requests",
+      "windowHours": "Old-secret overlap: {{hours}} hours",
+      "noRequests": "No credential rotation requests",
+      "approveTitle": "Approve and rotate the production credential?",
+      "rejectTitle": "Reject this credential rotation request?",
+      "approveWarning": "This immediately generates a new production secret. The old secret remains valid for {{hours}} hours. The new secret can be viewed once in the Portal after TOTP verification.",
+      "approved": "The credential was rotated and is ready for one-time partner pickup.",
+      "rejected": "The credential rotation request was rejected.",
+      "reviewFailed": "Unable to review the credential rotation request."
+    },
+    "webhookKeys": {
+      "title": "Webhook signing keys",
+      "description": "Approve signing-key creation and rotation. Administrators only see key IDs and lifecycle state.",
+      "current": "Managed keys",
+      "queue": "Key requests",
+      "requestSummary": "Create or rotate the Webhook signing key",
+      "windowHours": "Old-key overlap: {{hours}} hours",
+      "legacyFallback": "No managed key exists; the compatible Worker Secret remains in use.",
+      "noRequests": "No signing-key requests",
+      "approveTitle": "Approve Webhook signing-key generation?",
+      "rejectTitle": "Reject this Webhook signing-key request?",
+      "approveWarning": "Approval generates and encrypts a new key. It is not activated immediately; the Partner must retrieve it once with TOTP and activate it explicitly.",
+      "approved": "The signing key was generated and is ready for Partner pickup.",
+      "rejected": "The signing-key request was rejected.",
+      "reviewFailed": "Unable to review the signing-key request."
+    },
+    "queue": {
+      "title": "Unified request history",
+      "description": "IP, webhook configuration, and signing-key requests are shown together. Terminal records remain available for audit."
+    },
+    "filters": {
+      "type": "Request type",
+      "status": "Review status",
+      "allTypes": "All types",
+      "allStatuses": "All statuses"
+    },
+    "types": {
+      "ip_allowlist": "IP allowlist",
+      "webhook": "Webhook",
+      "webhook_signing_key": "Webhook signing key"
+    },
+    "actions": {
+      "create": "Add",
+      "update": "Change",
+      "delete": "Remove",
+      "add": "Add",
+      "remove": "Remove",
+      "upsert": "Add or update",
+      "disable": "Disable",
+      "create_or_rotate": "Create or rotate"
+    },
+    "channels": {
+      "portal": "Partner Portal",
+      "partner_api": "Partner API",
+      "api": "Partner API"
+    },
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "cancelled": "Cancelled",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "table": {
+      "type": "Type",
+      "request": "Requested change",
+      "requestedBy": "Requested by",
+      "submittedAt": "Submitted",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "buttons": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "retry": "Retry",
+      "replay": "Replay",
+      "close": "Close",
+      "processing": "Processing…",
+      "confirmApprove": "Confirm approval",
+      "confirmReject": "Confirm rejection",
+      "confirmRetry": "Confirm retry",
+      "confirmReplay": "Confirm replay"
+    },
+    "ipRules": {
+      "title": "Active IP rules",
+      "description": "Only rules currently enforced for machine API access are shown. Purpose labels do not create separate access boundaries.",
+      "egressPurpose": "Egress purpose: {{purpose}}"
+    },
+    "webhooks": {
+      "title": "Webhook configuration",
+      "description": "Review approved endpoints, subscribed events, and the most recent delivery.",
+      "noEvents": "No subscribed events",
+      "lastDelivery": "Last delivery: {{date}}"
+    },
+    "deliveries": {
+      "title": "Webhook Deliveries",
+      "description": "The list shows the event, status, and time. Open a delivery for its full payload and delivery information. Failed deliveries can still be retried or replayed.",
+      "attempts": "{{count}} attempts",
+      "resource": "Resource: {{type}} · {{id}}",
+      "application": "Customer / application: {{id}}",
+      "rowsPerPage": "Rows per page",
+      "displayedRows": "{{from}}–{{to}} of {{count}}"
+    },
+    "eventTitles": {
+      "application": { "status_changed": "Application Status Changed" },
+      "va_account": { "activated": "VA Account Activated" },
+      "fund_transaction": { "status_changed": "Fund Transaction Status Changed" },
+      "otc_order": { "status_changed": "OTC Order Status Changed" },
+      "fiat_deposit": { "cleared_and_converted": "Fiat Deposit Cleared and Converted" },
+      "usdt_sweep": {
+        "locked": "USDT Sweep Locked",
+        "completed": "USDT Sweep Completed",
+        "cancelled": "USDT Sweep Cancelled"
+      },
+      "webhook": { "test": "Webhook Test" }
+    },
+    "deliveryDetails": {
+      "title": "Webhook Delivery Details",
+      "attempts": "Attempts",
+      "createdAt": "Created",
+      "eventTime": "Event time",
+      "entityId": "Resource ID",
+      "resourceType": "Resource type",
+      "application": "Customer / application",
+      "payload": "Request payload",
+      "latestResponse": "Latest response",
+      "responseNotRecorded": "Response body was not recorded",
+      "deliveryAttempts": "Delivery attempts",
+      "attemptCount": "{{count}} attempts",
+      "latestAttempt": "Latest attempt",
+      "nextAttempt": "Next attempt: {{date}}"
+    },
+    "environments": {
+      "production": "Primary production egress",
+      "disaster_recovery": "Disaster-recovery egress",
+      "development": "Development / test egress"
+    },
+    "deliveryStatus": {
+      "pending": "Pending",
+      "delivering": "Delivering",
+      "retry_scheduled": "Retry queued",
+      "retrying": "Retry queued",
+      "delivered": "Delivered",
+      "success": "Delivered",
+      "failed": "Failed",
+      "dead_letter": "Dead letter",
+      "suppressed": "Suppressed"
+    },
+    "empty": {
+      "requests": "No API integration requests",
+      "ipRules": "No active IP rules",
+      "webhooks": "No active webhooks",
+      "deliveries": "No webhook delivery records"
+    },
+    "details": {
+      "title": "Request details",
+      "requestContent": "Requested change",
+      "change": "Requested action",
+      "overlapWindow": "Old-key overlap",
+      "requestInformation": "Request information",
+      "reviewInformation": "Review information",
+      "cidr": "IP / CIDR",
+      "label": "Rule name",
+      "environment": "Egress purpose",
+      "url": "Webhook URL",
+      "events": "Subscribed events",
+      "targetId": "Target configuration ID",
+      "channel": "Request channel",
+      "reason": "Request reason",
+      "reviewedBy": "Reviewed by",
+      "reviewedAt": "Reviewed",
+      "reviewNote": "Review note"
+    },
+    "review": {
+      "approveTitle": "Approve this integration request?",
+      "approveDescription": "Approving writes {{value}} to the active configuration. Verify the requested change first.",
+      "rejectTitle": "Reject this integration request?",
+      "rejectDescription": "Rejecting {{value}} leaves the active configuration unchanged and returns the reason to the requester.",
+      "approvalNote": "Approval note (optional)",
+      "rejectionReason": "Rejection reason",
+      "noteHelper": "The review note remains in the request history and audit record."
+    },
+    "retry": {
+      "title": "Retry this webhook delivery?",
+      "description": "Event {{event}} will be returned to the delivery queue without creating a new business event."
+    },
+    "replay": {
+      "title": "Replay webhook",
+      "warning": "A replay creates a new event ID and sends it to the currently active endpoint. The Partner should process it as a new delivery.",
+      "sourceDelivery": "Historical delivery source",
+      "eventType": "Event type",
+      "resourceId": "Resource ID",
+      "reason": "Replay reason",
+      "reasonHelper": "The reason is stored in the internal audit record and is not sent to the Partner.",
+      "reasonRequired": "Enter a replay reason.",
+      "resourceRequired": "Select an event type and enter a resource ID.",
+      "events": {
+        "application": {
+          "status_changed": "Application status changed · application.status_changed"
+        },
+        "va_account": { "activated": "VA account activated · va_account.activated" },
+        "fund_transaction": {
+          "status_changed": "Fund transaction status changed · fund_transaction.status_changed"
+        },
+        "otc_order": { "status_changed": "OTC order status changed · otc_order.status_changed" },
+        "fiat_deposit": {
+          "cleared_and_converted": "Fiat deposit cleared and converted · fiat_deposit.cleared_and_converted"
+        },
+        "usdt_sweep": {
+          "locked": "USDT sweep locked · usdt_sweep.locked",
+          "completed": "USDT sweep completed · usdt_sweep.completed",
+          "cancelled": "USDT sweep cancelled · usdt_sweep.cancelled"
+        }
+      }
+    },
+    "messages": {
+      "approved": "The integration request was approved and applied.",
+      "rejected": "The integration request was rejected.",
+      "retryQueued": "The webhook was returned to the delivery queue.",
+      "replayQueued": "The webhook replay was created and queued."
+    },
+    "errors": {
+      "load": "Unable to load API integration settings",
+      "loadDetail": "{{error}}. This failed read is not displayed as zero requests or zero failures.",
+      "staleDetail": "{{error}}. Showing the last successful data; approval and retry actions are disabled until refresh succeeds.",
+      "review": "Unable to complete the review. Please try again.",
+      "retry": "Unable to retry the webhook. Please try again.",
+      "replay": "Unable to replay the webhook. Please try again.",
+      "rejectionReasonRequired": "A rejection reason is required."
+    }
+  },
+  "status": {
+    "application": {
+      "submitted": "KYC link pending",
+      "kyc_link_ready": "KYC completion pending",
+      "kyc_approved": "KYC approved",
+      "va_processing": "VA activation in progress",
+      "active": "VA active",
+      "changes_requested": "Rejected · corrections required"
+    },
+    "transaction": {
+      "submitted": "Submitted",
+      "processing": "Processing",
+      "completed": "Completed",
+      "rejected": "Rejected",
+      "cancelled": "Cancelled"
+    }
+  },
+  "transaction": {
+    "types": {
+      "fiat_deposit": "Fiat deposit",
+      "fiat_withdrawal": "Fiat withdrawal",
+      "usdt_deposit": "USDT deposit",
+      "usdt_withdrawal": "USDT withdrawal",
+      "otc": "OTC"
+    }
+  }
+}

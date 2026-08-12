@@ -1,0 +1,445 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MAKER
+  CHECKER
+  OPERATOR
+  CUSTOMER_ADMIN
+  CUSTOMER_USER
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum CustomerStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  CHANGES_REQUESTED
+  REJECTED
+  SUSPENDED
+}
+
+enum Currency {
+  USD
+  SGD
+  HKD
+  EUR
+  GBP
+  USDT
+}
+
+enum AccountKind {
+  SYSTEM_WALLET
+  VIRTUAL_ACCOUNT
+  CRYPTO_WALLET
+  PLATFORM_CLEARING
+  FEE_REVENUE
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  FROZEN
+  CLOSED
+  DISABLED
+}
+
+enum AccountRequestStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum OperationType {
+  DEPOSIT
+  PAYOUT
+  ADJUSTMENT
+  INTERNAL_TRANSFER
+  FX
+  OTC
+}
+
+enum OperationStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum PayoutMethod {
+  VA
+  POBO
+  PLATFORM
+}
+
+enum AdjustmentDirection {
+  CREDIT
+  DEBIT
+}
+
+enum JournalSide {
+  DEBIT
+  CREDIT
+}
+
+enum RateType {
+  FX
+  OTC
+}
+
+enum ChannelType {
+  FIAT_INBOUND
+  VA_PAYOUT
+  POBO_PAYOUT
+  PLATFORM_PAYOUT
+}
+
+enum CryptoNetwork {
+  TRON
+  BSC
+  ETHEREUM
+}
+
+enum CryptoTransferDirection {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+enum CryptoTransferStatus {
+  SUBMITTED
+  PROCESSING
+  COMPLETED
+  REJECTED
+  FAILED
+}
+
+model Organization {
+  id        String           @id @default(uuid())
+  name      String
+  slug      String           @unique
+  users     User[]
+  customers Customer[]
+  channels  FundingChannel[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model FundingChannel {
+  id                  String       @id @default(uuid())
+  organizationId      String
+  organization        Organization @relation(fields: [organizationId], references: [id])
+  code                String
+  name                String
+  type                ChannelType
+  supportedCurrencies Currency[]
+  active              Boolean      @default(true)
+  settlementBankName  String?
+  settlementAccount   String?
+  swiftBic            String?
+  instructions        Json?
+  operations          Operation[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, type, active])
+}
+
+model User {
+  id                       String                  @id @default(uuid())
+  organizationId           String?
+  organization             Organization?           @relation(fields: [organizationId], references: [id])
+  email                    String                  @unique
+  displayName              String
+  role                     UserRole
+  active                   Boolean                 @default(true)
+  submittedOperations      Operation[]             @relation("OperationMaker")
+  approvedOperations       Operation[]             @relation("OperationChecker")
+  executedOperations       Operation[]             @relation("OperationOperator")
+  createdCustomers         Customer[]              @relation("CustomerCreator")
+  reviewedCustomers        Customer[]              @relation("CustomerReviewer")
+  submittedVaRequests      VirtualAccountRequest[] @relation("VaRequestMaker")
+  reviewedVaRequests       VirtualAccountRequest[] @relation("VaRequestChecker")
+  submittedCryptoTransfers CryptoTransfer[]        @relation("CryptoTransferMaker")
+  reviewedCryptoTransfers  CryptoTransfer[]        @relation("CryptoTransferChecker")
+  executedCryptoTransfers  CryptoTransfer[]        @relation("CryptoTransferOperator")
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+}
+
+model Customer {
+  id              String                  @id @default(uuid())
+  organizationId  String
+  organization    Organization            @relation(fields: [organizationId], references: [id])
+  externalId      String?
+  type            CustomerType
+  status          CustomerStatus          @default(DRAFT)
+  displayName     String
+  legalName       String
+  email           String
+  phone           String?
+  countryCode     String
+  creatorId       String
+  creator         User                    @relation("CustomerCreator", fields: [creatorId], references: [id])
+  reviewerId      String?
+  reviewer        User?                   @relation("CustomerReviewer", fields: [reviewerId], references: [id])
+  reviewedAt      DateTime?
+  reviewNote      String?
+  registrationNo  String?
+  dateOfBirth     DateTime?
+  metadata        Json?
+  accounts        Account[]
+  beneficiaries   Beneficiary[]
+  operations      Operation[]
+  vaRequests      VirtualAccountRequest[]
+  cryptoWallets   CryptoWallet[]
+  cryptoTransfers CryptoTransfer[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, status])
+}
+
+model CryptoWallet {
+  id                    String           @id @default(uuid())
+  customerId            String
+  customer              Customer         @relation(fields: [customerId], references: [id])
+  asset                 Currency         @default(USDT)
+  network               CryptoNetwork
+  networkLabel          String
+  tokenStandard         String
+  walletAddress         String
+  status                AccountStatus    @default(ACTIVE)
+  availableBalance      Decimal          @default(0) @db.Decimal(36, 8)
+  frozenBalance         Decimal          @default(0) @db.Decimal(36, 8)
+  minimumDeposit        Decimal          @default(1) @db.Decimal(36, 8)
+  withdrawalFee         Decimal          @default(0) @db.Decimal(36, 8)
+  confirmationsRequired Int              @default(12)
+  version               Int              @default(0)
+  transfers             CryptoTransfer[]
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@unique([customerId, asset, network])
+  @@unique([network, walletAddress])
+  @@index([customerId, status])
+}
+
+model CryptoTransfer {
+  id              String                  @id @default(uuid())
+  reference       String                  @unique
+  idempotencyKey  String?
+  customerId      String
+  customer        Customer                @relation(fields: [customerId], references: [id])
+  walletId        String
+  wallet          CryptoWallet            @relation(fields: [walletId], references: [id])
+  asset           Currency                @default(USDT)
+  network         CryptoNetwork
+  direction       CryptoTransferDirection
+  status          CryptoTransferStatus    @default(SUBMITTED)
+  amount          Decimal                 @db.Decimal(36, 8)
+  feeAmount       Decimal                 @default(0) @db.Decimal(36, 8)
+  netAmount       Decimal                 @db.Decimal(36, 8)
+  fromAddress     String
+  toAddress       String
+  txHash          String?
+  confirmations   Int                     @default(0)
+  makerId         String
+  maker           User                    @relation("CryptoTransferMaker", fields: [makerId], references: [id])
+  checkerId       String?
+  checker         User?                   @relation("CryptoTransferChecker", fields: [checkerId], references: [id])
+  operatorId      String?
+  operator        User?                   @relation("CryptoTransferOperator", fields: [operatorId], references: [id])
+  rejectionReason String?
+  submittedAt     DateTime                @default(now())
+  approvedAt      DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@unique([customerId, idempotencyKey])
+  @@index([customerId, direction, status, createdAt])
+  @@index([status, createdAt])
+}
+
+model VirtualAccountRequest {
+  id                String               @id @default(uuid())
+  customerId        String
+  customer          Customer             @relation(fields: [customerId], references: [id])
+  currency          Currency
+  status            AccountRequestStatus @default(SUBMITTED)
+  preferredCountry  String
+  purpose           String
+  makerId           String
+  maker             User                 @relation("VaRequestMaker", fields: [makerId], references: [id])
+  checkerId         String?
+  checker           User?                @relation("VaRequestChecker", fields: [checkerId], references: [id])
+  rejectionReason   String?
+  assignedAccountId String?              @unique
+  assignedAccount   Account?             @relation(fields: [assignedAccountId], references: [id])
+  reviewedAt        DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([customerId, status])
+}
+
+model Account {
+  id               String                 @id @default(uuid())
+  customerId       String?
+  customer         Customer?              @relation(fields: [customerId], references: [id])
+  kind             AccountKind
+  status           AccountStatus          @default(PENDING)
+  currency         Currency
+  name             String
+  accountNumber    String?                @unique
+  bankName         String?
+  bankAddress      String?
+  swiftBic         String?
+  iban             String?
+  walletAddress    String?
+  network          String?
+  availableBalance Decimal                @default(0) @db.Decimal(36, 8)
+  frozenBalance    Decimal                @default(0) @db.Decimal(36, 8)
+  version          Int                    @default(0)
+  sourceOperations Operation[]            @relation("OperationSource")
+  targetOperations Operation[]            @relation("OperationTarget")
+  journalLines     JournalLine[]
+  vaRequest        VirtualAccountRequest?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([customerId, kind, currency])
+}
+
+model Beneficiary {
+  id            String      @id @default(uuid())
+  customerId    String
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  name          String
+  currency      Currency
+  bankName      String
+  accountNumber String
+  swiftBic      String?
+  iban          String?
+  bankAddress   String?
+  countryCode   String
+  active        Boolean     @default(true)
+  operations    Operation[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([customerId, active])
+}
+
+model Operation {
+  id                  String               @id @default(uuid())
+  reference           String               @unique
+  idempotencyKey      String?
+  customerId          String
+  customer            Customer             @relation(fields: [customerId], references: [id])
+  channelId           String?
+  channel             FundingChannel?      @relation(fields: [channelId], references: [id])
+  type                OperationType
+  status              OperationStatus      @default(DRAFT)
+  currency            Currency
+  amount              Decimal              @db.Decimal(36, 8)
+  feeAmount           Decimal              @default(0) @db.Decimal(36, 8)
+  sourceAccountId     String?
+  sourceAccount       Account?             @relation("OperationSource", fields: [sourceAccountId], references: [id])
+  targetAccountId     String?
+  targetAccount       Account?             @relation("OperationTarget", fields: [targetAccountId], references: [id])
+  beneficiaryId       String?
+  beneficiary         Beneficiary?         @relation(fields: [beneficiaryId], references: [id])
+  payoutMethod        PayoutMethod?
+  adjustmentDirection AdjustmentDirection?
+  quoteCurrency       Currency?
+  quoteAmount         Decimal?             @db.Decimal(36, 8)
+  rate                Decimal?             @db.Decimal(24, 12)
+  rateVersionId       String?
+  rateVersion         RateVersion?         @relation(fields: [rateVersionId], references: [id])
+  makerId             String
+  maker               User                 @relation("OperationMaker", fields: [makerId], references: [id])
+  checkerId           String?
+  checker             User?                @relation("OperationChecker", fields: [checkerId], references: [id])
+  operatorId          String?
+  operator            User?                @relation("OperationOperator", fields: [operatorId], references: [id])
+  rejectionReason     String?
+  externalReference   String?
+  remitterName        String?
+  remitterBank        String?
+  remittanceReference String?
+  receivedAt          DateTime?
+  proofUrl            String?
+  narrative           String?
+  metadata            Json?
+  submittedAt         DateTime?
+  approvedAt          DateTime?
+  executedAt          DateTime?
+  journals            JournalEntry[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@unique([customerId, idempotencyKey])
+  @@index([customerId, status, createdAt])
+  @@index([status, type, createdAt])
+}
+
+model JournalEntry {
+  id          String        @id @default(uuid())
+  reference   String        @unique
+  operationId String
+  operation   Operation     @relation(fields: [operationId], references: [id])
+  description String
+  postedAt    DateTime      @default(now())
+  lines       JournalLine[]
+
+  @@index([operationId])
+}
+
+model JournalLine {
+  id             String       @id @default(uuid())
+  journalEntryId String
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id])
+  accountId      String
+  account        Account      @relation(fields: [accountId], references: [id])
+  side           JournalSide
+  currency       Currency
+  amount         Decimal      @db.Decimal(36, 8)
+  createdAt      DateTime     @default(now())
+
+  @@index([accountId, createdAt])
+}
+
+model RateVersion {
+  id             String      @id @default(uuid())
+  type           RateType
+  baseCurrency   Currency
+  quoteCurrency  Currency
+  buyRate        Decimal     @db.Decimal(24, 12)
+  sellRate       Decimal     @db.Decimal(24, 12)
+  feeBps         Int         @default(0)
+  effectiveFrom  DateTime
+  effectiveUntil DateTime?
+  active         Boolean     @default(true)
+  operations     Operation[]
+  createdAt      DateTime    @default(now())
+
+  @@index([type, baseCurrency, quoteCurrency, active, effectiveFrom])
+}

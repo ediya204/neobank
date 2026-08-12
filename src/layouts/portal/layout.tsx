@@ -1,0 +1,195 @@
+import { useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import {
+  AppBar,
+  Avatar,
+  Box,
+  Button,
+  Chip,
+  Container,
+  Divider,
+  IconButton,
+  Menu,
+  MenuItem,
+  Select,
+  Stack,
+  Toolbar,
+  Typography,
+} from '@mui/material';
+import Logo from 'src/components/logo';
+import Iconify from 'src/components/iconify';
+import {
+  PortalCustomerProvider,
+  usePortalCustomer,
+} from 'src/features/finance/portal-customer-context';
+
+const navItems = [
+  ['首页', '/portal/home'],
+  ['账户', '/portal/money/accounts'],
+  ['数字资产', '/portal/crypto-wallet'],
+  ['转账', '/portal/money/transfers'],
+  ['换汇', '/portal/money/fx'],
+  ['OTC', '/portal/money/otc'],
+  ['付款', '/portal/money/payouts'],
+  ['交易记录', '/portal/transactions'],
+] as const;
+
+export default function PortalLayout() {
+  return (
+    <PortalCustomerProvider>
+      <PortalFrame />
+    </PortalCustomerProvider>
+  );
+}
+
+function PortalFrame() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { customers, customer, selectCustomer } = usePortalCustomer();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const isActive = (path: string) =>
+    path === '/portal/home' ? location.pathname === path : location.pathname.startsWith(path);
+
+  return (
+    <Box sx={{ minHeight: '100vh', bgcolor: '#F5F7FA' }}>
+      <AppBar
+        position="sticky"
+        elevation={0}
+        color="inherit"
+        sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'rgba(255,255,255,.94)' }}
+      >
+        <Container maxWidth="xl">
+          <Toolbar disableGutters sx={{ minHeight: { xs: 64, md: 72 }, gap: 2 }}>
+            <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mr: { md: 4 } }}>
+              <Logo sx={{ width: 34, height: 34 }} />
+              <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+                Moventra
+              </Typography>
+            </Stack>
+            <Stack
+              direction="row"
+              spacing={0.5}
+              sx={{ display: { xs: 'none', lg: 'flex' }, flex: 1 }}
+            >
+              {navItems.map(([label, path]) => (
+                <Button
+                  key={path}
+                  color={isActive(path) ? 'primary' : 'inherit'}
+                  onClick={() => navigate(path)}
+                  sx={{ fontWeight: isActive(path) ? 700 : 500, px: 1.5 }}
+                >
+                  {label}
+                </Button>
+              ))}
+            </Stack>
+            <Box sx={{ flex: { xs: 1, lg: 0 } }} />
+            {process.env.NODE_ENV === 'development' && customer && (
+              <Select
+                size="small"
+                value={customer.id}
+                onChange={(event) => selectCustomer(event.target.value)}
+                sx={{
+                  display: { xs: 'none', md: 'flex' },
+                  minWidth: 210,
+                  bgcolor: 'background.paper',
+                }}
+              >
+                {customers
+                  .filter((row) => row.id.startsWith('cus_demo_'))
+                  .map((row) => (
+                    <MenuItem key={row.id} value={row.id}>
+                      {row.type === 'BUSINESS' ? '企业 · ' : '个人 · '}
+                      {row.displayName}
+                    </MenuItem>
+                  ))}
+              </Select>
+            )}
+            <IconButton onClick={(event) => setAnchor(event.currentTarget)} aria-label="账户菜单">
+              <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', fontSize: 14 }}>
+                {customer?.displayName.slice(0, 1) || 'M'}
+              </Avatar>
+            </IconButton>
+            <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+              <Box sx={{ px: 2, py: 1, minWidth: 220 }}>
+                <Typography variant="subtitle2">{customer?.displayName || '客户账户'}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {customer?.email}
+                </Typography>
+              </Box>
+              <Divider />
+              <MenuItem
+                onClick={() => {
+                  setAnchor(null);
+                  navigate('/portal/settings');
+                }}
+              >
+                <Iconify icon="solar:settings-linear" sx={{ mr: 1.5 }} />
+                账户设置
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setAnchor(null);
+                  window.location.assign('/dashboard/overview');
+                }}
+              >
+                <Iconify icon="solar:shield-user-linear" sx={{ mr: 1.5 }} />
+                返回运营后台
+              </MenuItem>
+            </Menu>
+          </Toolbar>
+        </Container>
+      </AppBar>
+
+      <Box component="main" sx={{ py: { xs: 3, md: 5 }, pb: { xs: 11, lg: 6 } }}>
+        {customer && (
+          <Container maxWidth="xl" sx={{ mb: 2, display: { xs: 'block', md: 'none' } }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  当前账户
+                </Typography>
+                <Typography variant="subtitle2">{customer.displayName}</Typography>
+              </Box>
+              <Chip size="small" label={customer.type === 'BUSINESS' ? '企业账户' : '个人账户'} />
+            </Stack>
+          </Container>
+        )}
+        <Outlet />
+      </Box>
+
+      <Box
+        sx={{
+          display: { xs: 'grid', lg: 'none' },
+          gridTemplateColumns: 'repeat(5, 1fr)',
+          position: 'fixed',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 1200,
+          bgcolor: 'background.paper',
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          pb: 'env(safe-area-inset-bottom)',
+        }}
+      >
+        {[
+          ['首页', '/portal/home', 'solar:home-2-bold'],
+          ['账户', '/portal/money/accounts', 'solar:wallet-bold'],
+          ['转账', '/portal/money/transfers', 'solar:transfer-horizontal-bold'],
+          ['付款', '/portal/money/payouts', 'solar:card-send-bold'],
+          ['记录', '/portal/transactions', 'solar:history-bold'],
+        ].map(([label, path, icon]) => (
+          <Button
+            key={path}
+            onClick={() => navigate(path)}
+            color={isActive(path) ? 'primary' : 'inherit'}
+            sx={{ minWidth: 0, py: 1, flexDirection: 'column', gap: 0.25, fontSize: 11 }}
+          >
+            <Iconify icon={icon} width={21} />
+            {label}
+          </Button>
+        ))}
+      </Box>
+    </Box>
+  );
+}

@@ -1,0 +1,78 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "va-api-dashboard",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-07-29",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./build",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "va-api-db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "vars": {
+    "AUTH_ADMIN_EMAIL": "admin@example.com,security-admin@example.com",
+    "AUTH_PARTNER_EMAIL": "partner@example.com",
+    "AUTH_LOCAL_BYPASS": "false",
+    "CLOUDFLARE_ACCOUNT_ID": "00000000000000000000000000000000",
+    "PARTNER_ACCESS_SERVICE_TOKEN_ID": "00000000-0000-0000-0000-000000000000",
+    "PARTNER_ACCESS_ROTATION_OVERLAP_HOURS": "48"
+  },
+  "secrets": {
+    "required": [
+      "API_CREDENTIAL_ENCRYPTION_KEY",
+      "PARTNER_WEBHOOK_SIGNING_SECRET",
+      "AUTH_BOOTSTRAP_SECRET",
+      "AUTH_TOTP_ENCRYPTION_KEY",
+      "AUTH_PASSWORD_PEPPER",
+      "AUTH_RECOVERY_CODE_PEPPER",
+      "AUTH_SESSION_SECRET",
+      "CLOUDFLARE_ACCESS_MANAGEMENT_API_TOKEN"
+    ]
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "ratelimits": [
+    {
+      "name": "PARTNER_API_RATE_LIMITER",
+      "namespace_id": "2026072901",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    },
+    {
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "2026072902",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "routes": [
+    {
+      "pattern": "moventra.xyz",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.moventra.xyz",
+      "custom_domain": true
+    }
+  ]
+}
