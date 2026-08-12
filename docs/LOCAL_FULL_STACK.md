@@ -16,6 +16,21 @@ npm run local:core:bootstrap
 npm run dev
 ```
 
+如果需要在终端或 Codex 任务结束后继续保持本地预览，使用：
+
+```bash
+npm run dev:background
+```
+
+该命令会在启动前检查 Web 与 API，使用独立后台进程运行整套本地服务，并将日志写入
+`/tmp/neobook-local-full-stack.log`。重复执行时，已就绪的服务不会再次启动。
+
+需要重装依赖或结束预览时，先完整停止后台进程组：
+
+```bash
+npm run dev:stop
+```
+
 前端开发环境启用本地演示身份。访问 `/dashboard/overview` 使用管理员界面；访问
 `/portal/home` 使用合作方界面。资金页面右上角可以切换普通用户和管理员，
 用于验证单人审批与角色隔离规则。

@@ -11,6 +11,8 @@
   },
   "scripts": {
     "dev": "node scripts/dev-local.mjs",
+    "dev:background": "node scripts/start-local-background.mjs",
+    "dev:stop": "node scripts/stop-local-background.mjs",
     "api:dev": "DATABASE_URL=${DATABASE_URL:-postgresql://va_payment:va_payment_local@localhost:5432/va_payment?schema=public} REDIS_URL=${REDIS_URL:-redis://localhost:6379} WEB_ORIGIN=${WEB_ORIGIN:-http://localhost:3002,http://localhost:8787,http://127.0.0.1:8787} npm --prefix server run start:dev",
     "api:build": "npm --prefix server run build",
     "api:test": "npm --prefix server run test",
