@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "neobank-web",
+  "main": "./worker-web/index.ts",
+  "compatibility_date": "2026-07-29",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./build",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "vars": {
+    "CF_ACCESS_TEAM_DOMAIN": "access-not-configured.invalid",
+    "CF_ACCESS_AUD": "pending",
+    "NEOBANK_ADMIN_EMAILS": "pending@example.invalid",
+    "GO_API_BASE_URL": "https://neobank.onrender.com"
+  },
+  "secrets": {
+    "required": ["GO_EDGE_SHARED_SECRET"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}

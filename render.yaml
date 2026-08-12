@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: neobank
+    runtime: go
+    rootDir: server-go
+    region: singapore
+    plan: starter
+    buildCommand: go build -trimpath -ldflags="-s -w" -o bin/neobank ./cmd/api
+    startCommand: ./bin/neobank
+    healthCheckPath: /healthz
+    autoDeployTrigger: off
+    envVars:
+      - key: D1_GATEWAY_URL
+        sync: false
+      - key: D1_GATEWAY_SECRET
+        sync: false
+      - key: EDGE_SHARED_SECRET
+        sync: false
+      - key: CREGIS_BASE_URL
+        value: https://t-wsmbuuhb.cregis.io
+      - key: CREGIS_ENABLED
+        value: "false"
+      - key: CREGIS_PROJECT_ID
+        sync: false
+      - key: CREGIS_PROJECT_SECRET
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: TENANT_ID
+        value: neobank

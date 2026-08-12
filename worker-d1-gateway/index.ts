@@ -1,0 +1,178 @@
+type D1Value = string | number | null;
+
+type StatementRequest = {
+  sql: string;
+  params?: D1Value[];
+};
+
+type GatewayRequest = {
+  statements: StatementRequest[];
+};
+
+const MAX_CLOCK_SKEW_SECONDS = 60;
+const MAX_BODY_BYTES = 128 * 1024;
+const MAX_STATEMENTS = 64;
+const MAX_SQL_BYTES = 32 * 1024;
+
+function normalizeSQL(sql: string): string {
+  return sql.trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+const ALLOWED_WRITE_SQL = new Set(
+  [
+    `INSERT OR IGNORE INTO cregis_wallets
+      (id, tenant_id, customer_id, idempotency_key, chain_id, token_id, currency, alias, status, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?)`,
+    `UPDATE cregis_wallets SET status='error', updated_at=? WHERE id=? AND status='creating'`,
+    `UPDATE cregis_wallets SET address=?, status='active', updated_at=?
+      WHERE id=? AND tenant_id=? AND status='creating'`,
+    `INSERT OR IGNORE INTO cregis_withdrawals
+      (id, tenant_id, customer_id, wallet_id, idempotency_key, third_party_id, currency, amount_text, from_address,
+       to_address, memo, remark, status, maker_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?)`,
+    `UPDATE cregis_withdrawals
+      SET status='approved', checker_id=?, approved_at=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND status='submitted' AND maker_id<>?`,
+    `UPDATE cregis_withdrawals
+      SET status='rejected', checker_id=?, rejection_reason=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND status='submitted' AND maker_id<>?`,
+    `UPDATE cregis_withdrawals SET status='executing', operator_id=?, updated_at=?
+      WHERE id=? AND tenant_id=? AND status='approved' AND checker_id IS NOT NULL AND checker_id<>?`,
+    `UPDATE cregis_withdrawals SET status='failed', updated_at=? WHERE id=? AND status='executing'`,
+    `UPDATE cregis_withdrawals SET status='exception', updated_at=? WHERE id=? AND status='executing'`,
+    `UPDATE cregis_withdrawals
+      SET status='submitted_to_cregis', cregis_cid=?, submitted_at=?, updated_at=?
+      WHERE id=? AND status='executing'`,
+    `INSERT OR IGNORE INTO cregis_callback_events
+      (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'deposit', ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO cregis_deposits
+      (id, tenant_id, wallet_id, cregis_cid, chain_id, token_id, currency, address, amount_text,
+       status, txid, block_height, block_time, received_at, raw_sha256)
+      VALUES (?, ?, (SELECT id FROM cregis_wallets WHERE tenant_id=? AND address=? LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO cregis_callback_events
+      (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'payout', ?, ?, ?, ?)`,
+    `UPDATE cregis_withdrawals SET status='submitted_to_cregis', cregis_cid=?, submitted_at=COALESCE(submitted_at, ?), updated_at=?
+      WHERE tenant_id=? AND third_party_id=? AND status IN ('executing', 'exception')`,
+    `UPDATE cregis_withdrawals SET status=?, cregis_cid=?, txid=?, block_height=?, block_time=?, completed_at=?, updated_at=?
+      WHERE tenant_id=? AND third_party_id=? AND status='submitted_to_cregis'`,
+  ].map(normalizeSQL)
+);
+
+function json(data: unknown, status = 200, requestId?: string): Response {
+  return Response.json(data, {
+    status,
+    headers: {
+      'cache-control': 'no-store',
+      ...(requestId ? { 'x-request-id': requestId } : {}),
+    },
+  });
+}
+
+function parseHex(value: string): Uint8Array | null {
+  if (!/^[0-9a-f]{64}$/i.test(value)) return null;
+  const bytes = new Uint8Array(32);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+async function authorize(request: Request, rawBody: string, env: Env): Promise<boolean> {
+  const timestampValue = request.headers.get('x-neobank-timestamp')?.trim() || '';
+  const signatureValue = request.headers.get('x-neobank-signature')?.trim() || '';
+  const timestamp = Number(timestampValue);
+  const signature = parseHex(signatureValue);
+  if (!Number.isInteger(timestamp) || !signature) return false;
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - timestamp) > MAX_CLOCK_SKEW_SECONDS) return false;
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(env.GO_D1_GATEWAY_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  return crypto.subtle.verify(
+    'HMAC',
+    key,
+    signature,
+    new TextEncoder().encode(`${timestampValue}.${rawBody}`)
+  );
+}
+
+function validStatement(statement: StatementRequest): boolean {
+  const sql = statement.sql.trim();
+  if (!sql || new TextEncoder().encode(sql).byteLength > MAX_SQL_BYTES) return false;
+  if (sql.includes(';')) return false;
+  if (!/^(SELECT|INSERT|UPDATE|WITH)\b/i.test(sql)) return false;
+  if (/\b(PRAGMA|ATTACH|DETACH|VACUUM|CREATE|ALTER|DROP|REINDEX)\b/i.test(sql)) return false;
+  const normalized = normalizeSQL(sql);
+  if (/^(INSERT|UPDATE)\b/.test(normalized) && !ALLOWED_WRITE_SQL.has(normalized)) return false;
+  if (/^WITH\b/.test(normalized) && /\b(INSERT|UPDATE|DELETE|REPLACE)\b/.test(normalized)) {
+    return false;
+  }
+  return (statement.params || []).every(
+    (value) => value === null || typeof value === 'string' || typeof value === 'number'
+  );
+}
+
+async function handleQuery(request: Request, env: Env, requestId: string): Promise<Response> {
+  const contentLength = Number(request.headers.get('content-length') || '0');
+  if (contentLength > MAX_BODY_BYTES) {
+    return json({ error: { code: 'payload_too_large' } }, 413, requestId);
+  }
+  const rawBody = await request.text();
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) {
+    return json({ error: { code: 'payload_too_large' } }, 413, requestId);
+  }
+  if (!(await authorize(request, rawBody, env))) {
+    return json({ error: { code: 'unauthorized' } }, 401, requestId);
+  }
+
+  let payload: GatewayRequest;
+  try {
+    payload = JSON.parse(rawBody) as GatewayRequest;
+  } catch {
+    return json({ error: { code: 'invalid_json' } }, 400, requestId);
+  }
+  if (
+    !Array.isArray(payload.statements) ||
+    payload.statements.length < 1 ||
+    payload.statements.length > MAX_STATEMENTS ||
+    !payload.statements.every(validStatement)
+  ) {
+    return json({ error: { code: 'invalid_statements' } }, 422, requestId);
+  }
+
+  const prepared = payload.statements.map((statement) =>
+    env.DB.prepare(statement.sql).bind(...(statement.params || []))
+  );
+  const results = await env.DB.batch(prepared);
+  return json({ results }, 200, requestId);
+}
+
+export default {
+  async fetch(request, env): Promise<Response> {
+    const requestId = crypto.randomUUID();
+    const url = new URL(request.url);
+    try {
+      if (url.pathname === '/healthz' && request.method === 'GET') {
+        return json({ status: 'ok', service: 'neobank-d1-gateway' }, 200, requestId);
+      }
+      if (url.pathname === '/internal/d1/query' && request.method === 'POST') {
+        return await handleQuery(request, env, requestId);
+      }
+      return json({ error: { code: 'not_found' } }, 404, requestId);
+    } catch (caught) {
+      console.error(
+        JSON.stringify({
+          event: 'd1_gateway_error',
+          request_id: requestId,
+          message: caught instanceof Error ? caught.message : 'unknown_error',
+        })
+      );
+      return json({ error: { code: 'internal_error' } }, 500, requestId);
+    }
+  },
+} satisfies ExportedHandler<Env>;

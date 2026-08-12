@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "neobank-d1-gateway",
+  "main": "./worker-d1-gateway/index.ts",
+  "compatibility_date": "2026-07-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "neobank-core-v1",
+      "database_id": "c6127eb2-22b7-4477-bafb-e9e506dc058a",
+      "migrations_dir": "./migrations-core"
+    }
+  ],
+  "secrets": {
+    "required": ["GO_D1_GATEWAY_SECRET"]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+  }
+}
