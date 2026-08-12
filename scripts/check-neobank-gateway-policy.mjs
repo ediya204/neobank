@@ -7,6 +7,9 @@ const workerSource = await readFile(new URL('worker-d1-gateway/index.ts', root),
 const normalize = (sql) => sql.trim().replace(/\s+/g, ' ').toUpperCase();
 const writes = new Set();
 
+for (const match of goSource.matchAll(/\b[A-Za-z0-9_]+SQL\s*=\s*`([\s\S]*?)`/g)) {
+  if (/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(match[1].trim())) writes.add(normalize(match[1]));
+}
 for (const match of goSource.matchAll(/SQL:\s*`([\s\S]*?)`/g)) {
   if (/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(match[1].trim())) writes.add(normalize(match[1]));
 }

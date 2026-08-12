@@ -32,12 +32,12 @@ const ALLOWED_WRITE_SQL = new Set(
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?)`,
     `UPDATE cregis_withdrawals
       SET status='approved', checker_id=?, approved_at=?, updated_at=?
-      WHERE id=? AND tenant_id=? AND status='submitted' AND maker_id<>?`,
+      WHERE id=? AND tenant_id=? AND status='submitted'`,
     `UPDATE cregis_withdrawals
       SET status='rejected', checker_id=?, rejection_reason=?, updated_at=?
-      WHERE id=? AND tenant_id=? AND status='submitted' AND maker_id<>?`,
+      WHERE id=? AND tenant_id=? AND status='submitted'`,
     `UPDATE cregis_withdrawals SET status='executing', operator_id=?, updated_at=?
-      WHERE id=? AND tenant_id=? AND status='approved' AND checker_id IS NOT NULL AND checker_id<>?`,
+      WHERE id=? AND tenant_id=? AND status='approved' AND checker_id IS NOT NULL`,
     `UPDATE cregis_withdrawals SET status='failed', updated_at=? WHERE id=? AND status='executing'`,
     `UPDATE cregis_withdrawals SET status='exception', updated_at=? WHERE id=? AND status='executing'`,
     `UPDATE cregis_withdrawals
