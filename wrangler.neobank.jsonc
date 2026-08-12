@@ -13,10 +13,10 @@
     "run_worker_first": true
   },
   "vars": {
-    "CF_ACCESS_TEAM_DOMAIN": "access-not-configured.invalid",
-    "CF_ACCESS_AUD": "pending",
-    "NEOBANK_ADMIN_EMAILS": "pending@example.invalid",
-    "GO_API_BASE_URL": "https://neobank.onrender.com"
+    "CF_ACCESS_TEAM_DOMAIN": "fidere.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "71dd34ee6e3265b40b465881dc409d80915dc651b372623aec425f2e21d24da3",
+    "NEOBANK_ADMIN_EMAILS": "edi@fideretrust.com",
+    "GO_API_BASE_URL": "https://neobank-78pr.onrender.com"
   },
   "secrets": {
     "required": ["GO_EDGE_SHARED_SECRET"]
