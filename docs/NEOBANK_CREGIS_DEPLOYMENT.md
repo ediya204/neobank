@@ -69,6 +69,7 @@ ticket, chat, log, or repository.
 | `CUSTOMER_PASSWORD_PEPPER` | Yes       | Separate random value of at least 32 bytes               |
 | `CUSTOMER_TOTP_KEY`        | Yes       | Random 32-byte AES key encoded as hex or Base64          |
 | `CUSTOMER_RECOVERY_PEPPER` | Yes       | Separate random value of at least 32 bytes               |
+| `FASTFOREX_API_KEY`        | Yes       | Rotated FastForex key; configure directly in Render      |
 | `CREGIS_BASE_URL`          | No        | Test gateway while commissioning                         |
 | `CREGIS_ENABLED`           | No        | `false` until the acceptance gate passes                 |
 | `CREGIS_PROJECT_ID`        | Sensitive | Cregis project configuration                             |
@@ -82,6 +83,14 @@ The relay accepts only the Cregis address-create, address-ownership,
 address-legality, and payout
 paths, authenticates the complete request body, rejects replayed nonces, and
 pins its upstream to the configured Cregis test gateway.
+
+`GET /api/v1/admin/market-rate?base=USD&quote=HKD` and the customer-session
+equivalent `GET /api/v1/customer/market-rate` read FastForex midpoint spot
+reference rates through the Render service. The endpoints are restricted to
+the product's USD, HKD, and USDT pairs, use a short server-side cache, and do
+not update settlement settings, create a rate version, or write a ledger entry.
+Configure `FASTFOREX_API_KEY` only as a Render secret; never put its value in
+`render.yaml`, a frontend variable, a URL query parameter, or a Worker variable.
 
 ## Callback endpoints
 
