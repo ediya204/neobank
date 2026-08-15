@@ -21,7 +21,6 @@ const PortalSettings = lazy(() => import('src/pages/portal-settings'));
 const PortalTeam = lazy(() => import('src/pages/portal-team'));
 const PortalMessages = lazy(() => import('src/pages/portal-messages'));
 const PortalWebhookDeliveries = lazy(() => import('src/pages/portal-webhook-deliveries'));
-const PartnerApiIntegration = lazy(() => import('src/pages/partner-api-integration'));
 const CryptoWalletPage = lazy(() => import('src/pages/portal/crypto-wallet'));
 const FundsHub = lazy(() => import('src/pages/portal/funds-hub'));
 const FiatDepositPage = lazy(() => import('src/pages/portal/fiat-deposit'));
@@ -160,11 +159,11 @@ const fullApplicationRoutes = [
       },
       {
         path: 'api',
-        element: permissionRoute('integrations.read', <PartnerApiIntegration />),
+        element: <Navigate to="/portal/settings" replace />,
       },
       {
         path: 'api-guide',
-        element: permissionRoute('integrations.read', <PartnerApiIntegration />),
+        element: <Navigate to="/portal/settings" replace />,
       },
       {
         path: 'messages',

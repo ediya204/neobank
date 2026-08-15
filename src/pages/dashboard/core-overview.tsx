@@ -27,10 +27,16 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
   }, []);
   const metrics = useMemo(() => {
     const accounts = customers.flatMap((customer) => customer.accounts || []);
+    const accountProductCount = (kind: 'SYSTEM_WALLET' | 'VIRTUAL_ACCOUNT') =>
+      new Set(
+        accounts
+          .filter((account) => account.kind === kind && account.customerId)
+          .map((account) => account.customerId)
+      ).size;
     return {
       customers: customers.filter((customer) => customer.status === 'ACTIVE').length,
-      wallets: accounts.filter((account) => account.kind === 'SYSTEM_WALLET').length,
-      va: accounts.filter((account) => account.kind === 'VIRTUAL_ACCOUNT').length,
+      wallets: accountProductCount('SYSTEM_WALLET'),
+      va: accountProductCount('VIRTUAL_ACCOUNT'),
       approvals: operations.filter((operation) => operation.status === 'SUBMITTED').length,
       processing: operations.filter((operation) => operation.status === 'PROCESSING').length,
     };
@@ -59,7 +65,7 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
           <Box>
             <Typography variant="h4">业务总览</Typography>
             <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-              客户开户、USD/HKD 账户、独立 VA、USDT-TRON 与资金审批的本地实时数据。
+              客户开户、系统多货币法币账户、VA 账户、USDT-TRON 与资金审批的本地实时数据。
             </Typography>
           </Box>
           {error && <Alert severity="error">{error}</Alert>}
@@ -71,8 +77,8 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
             }}
           >
             <Metric title="有效客户" value={metrics.customers} />
-            <Metric title="法币钱包" value={metrics.wallets} />
-            <Metric title="独立 VA" value={metrics.va} />
+            <Metric title="多货币法币账户" value={metrics.wallets} />
+            <Metric title="VA 账户" value={metrics.va} />
             <Metric title="待审批" value={metrics.approvals} highlight />
             <Metric title="执行中出款" value={metrics.processing} highlight />
           </Box>

@@ -10,24 +10,33 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
-import { Currency } from '@prisma/client';
+import { BeneficiaryType, CryptoNetwork, Currency, Prisma } from '@prisma/client';
 import type { Request } from 'express';
 import { IsBoolean, IsEnum, IsOptional, IsString, Length } from 'class-validator';
 import { currentUserId } from '../common/current-user';
 import { requireActiveUser, requireCustomerAccess } from '../common/tenant-access';
+import { isValidTronAddress } from '../crypto-wallets/tron-address';
 import { PrismaService } from '../prisma/prisma.service';
-import { isSupportedFiatCurrency, supportedFiatCurrencies } from '../supported-assets';
+import {
+  isSupportedFiatCurrency,
+  supportedCryptoAsset,
+  supportedCryptoNetwork,
+  supportedFiatCurrencies,
+} from '../supported-assets';
 
 class CreateBeneficiaryDto {
   @IsString() customerId!: string;
+  @IsOptional() @IsEnum(BeneficiaryType) type?: BeneficiaryType;
   @IsString() name!: string;
   @IsEnum(Currency) currency!: Currency;
-  @IsString() bankName!: string;
-  @IsString() accountNumber!: string;
+  @IsOptional() @IsString() bankName?: string;
+  @IsOptional() @IsString() accountNumber?: string;
   @IsOptional() @IsString() swiftBic?: string;
   @IsOptional() @IsString() iban?: string;
   @IsOptional() @IsString() bankAddress?: string;
-  @IsString() @Length(2, 2) countryCode!: string;
+  @IsOptional() @IsString() @Length(2, 2) countryCode?: string;
+  @IsOptional() @IsString() walletAddress?: string;
+  @IsOptional() @IsEnum(CryptoNetwork) network?: CryptoNetwork;
 }
 
 class UpdateBeneficiaryDto {
@@ -47,7 +56,17 @@ export class BeneficiariesController {
   async list(@Query('customerId') customerId: string, @Req() request: Request) {
     await requireCustomerAccess(this.db, currentUserId(request), customerId);
     return this.db.beneficiary.findMany({
-      where: { customerId, currency: { in: supportedFiatCurrencies } },
+      where: {
+        customerId,
+        OR: [
+          { type: BeneficiaryType.BANK, currency: { in: supportedFiatCurrencies } },
+          {
+            type: BeneficiaryType.CRYPTO,
+            currency: supportedCryptoAsset,
+            network: supportedCryptoNetwork,
+          },
+        ],
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -55,10 +74,63 @@ export class BeneficiariesController {
   @Post()
   async create(@Body() dto: CreateBeneficiaryDto, @Req() request: Request) {
     await requireCustomerAccess(this.db, currentUserId(request), dto.customerId);
-    if (!isSupportedFiatCurrency(dto.currency)) {
-      throw new BadRequestException('unsupported_fiat_currency');
+    const type = dto.type || BeneficiaryType.BANK;
+    const name = dto.name.trim();
+    if (!name) throw new BadRequestException('beneficiary_name_required');
+
+    let data: Prisma.BeneficiaryUncheckedCreateInput;
+    if (type === BeneficiaryType.BANK) {
+      if (!isSupportedFiatCurrency(dto.currency)) {
+        throw new BadRequestException('unsupported_fiat_currency');
+      }
+      const bankName = dto.bankName?.trim();
+      const accountNumber = dto.accountNumber?.trim();
+      const countryCode = dto.countryCode?.trim().toUpperCase();
+      if (!bankName || !accountNumber || !countryCode) {
+        throw new BadRequestException('bank_beneficiary_details_required');
+      }
+      data = {
+        customerId: dto.customerId,
+        type,
+        name,
+        currency: dto.currency,
+        bankName,
+        accountNumber,
+        swiftBic: dto.swiftBic?.trim().toUpperCase() || null,
+        iban: dto.iban?.trim().toUpperCase() || null,
+        bankAddress: dto.bankAddress?.trim() || null,
+        countryCode,
+      };
+    } else {
+      const walletAddress = dto.walletAddress?.trim();
+      if (
+        dto.currency !== supportedCryptoAsset ||
+        dto.network !== supportedCryptoNetwork ||
+        !walletAddress
+      ) {
+        throw new BadRequestException('unsupported_crypto_beneficiary');
+      }
+      if (!isValidTronAddress(walletAddress)) {
+        throw new BadRequestException('invalid_tron_address');
+      }
+      data = {
+        customerId: dto.customerId,
+        type,
+        name,
+        currency: supportedCryptoAsset,
+        network: supportedCryptoNetwork,
+        walletAddress,
+      };
     }
-    return this.db.beneficiary.create({ data: dto });
+
+    try {
+      return await this.db.beneficiary.create({ data });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new BadRequestException('beneficiary_already_exists');
+      }
+      throw error;
+    }
   }
 
   @Patch(':id')

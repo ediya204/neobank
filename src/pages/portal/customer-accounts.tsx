@@ -33,6 +33,7 @@ import {
   AssetSummary,
   coreApi,
   Currency,
+  MarketQuote,
   MoneyAccount,
   supportedFiatCurrencies,
   VirtualAccountRequest,
@@ -49,6 +50,8 @@ export default function CustomerAccounts() {
   const [summary, setSummary] = useState<AssetSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState('');
+  const [marketQuotes, setMarketQuotes] = useState<MarketQuote[]>([]);
+  const [marketLoading, setMarketLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -79,6 +82,53 @@ export default function CustomerAccounts() {
     };
   }, [customer?.id]);
 
+  useEffect(() => {
+    let active = true;
+    if (!customer?.id) {
+      setMarketQuotes([]);
+      setMarketLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    setMarketLoading(true);
+    Promise.allSettled(
+      (['HKD', 'USDT'] as const).map((currency) =>
+        coreApi<MarketQuote>(`/customer/market-rate?base=${currency}&quote=USD`)
+      )
+    )
+      .then((results) => {
+        if (!active) return;
+        setMarketQuotes(
+          results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+        );
+      })
+      .finally(() => {
+        if (active) setMarketLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [customer?.id]);
+
+  const usdRates = useMemo(() => {
+    const rates = new Map<Currency, UsdRate>();
+    rates.set('USD', { rate: 1, source: 'parity' });
+    summary?.distribution.forEach((item) => {
+      const rate = Number(item.reportingRate);
+      if (Number.isFinite(rate) && rate > 0) rates.set(item.currency, { rate, source: 'book' });
+    });
+    marketQuotes.forEach((quote) => {
+      const rate = Number(quote.rate);
+      if (quote.quoteCurrency === 'USD' && Number.isFinite(rate) && rate > 0) {
+        rates.set(quote.baseCurrency, { rate, source: 'market' });
+      }
+    });
+    return rates;
+  }, [marketQuotes, summary]);
+
   const accounts = (customer?.accounts || []).filter((row) => {
     if (tab === 'wallet') return row.kind === 'SYSTEM_WALLET';
     if (tab === 'va') return row.kind === 'VIRTUAL_ACCOUNT';
@@ -101,7 +151,7 @@ export default function CustomerAccounts() {
                 startIcon={<Iconify icon="solar:add-circle-linear" />}
                 onClick={() => setVaOpen(true)}
               >
-                申请新的 VA
+                申请 VA 账户
               </Button>
             }
           />
@@ -120,8 +170,8 @@ export default function CustomerAccounts() {
               sx={{ px: 2 }}
             >
               <Tab value="all" label="全部" />
-              <Tab value="wallet" label="余额账户" />
-              <Tab value="va" label="收款账户 / VA" />
+              <Tab value="wallet" label="多货币法币账户" />
+              <Tab value="va" label="VA 账户" />
               <Tab value="crypto" label="数字钱包" />
             </Tabs>
           </Card>
@@ -129,7 +179,8 @@ export default function CustomerAccounts() {
             <Box
               sx={{
                 display: { xs: 'none', md: 'grid' },
-                gridTemplateColumns: 'minmax(220px, 1.35fr) 140px 1fr 1fr 150px',
+                gridTemplateColumns:
+                  'minmax(210px, 1.35fr) 120px minmax(118px, 1fr) minmax(118px, 1fr) minmax(132px, 1fr) 120px',
                 gap: 2,
                 px: 3,
                 py: 1.5,
@@ -150,6 +201,14 @@ export default function CustomerAccounts() {
               <Typography variant="caption" color="text.secondary" textAlign="right">
                 冻结余额
               </Typography>
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  美金价值
+                </Typography>
+                <Typography variant="caption" color="text.disabled">
+                  含冻结
+                </Typography>
+              </Box>
               <Typography variant="caption" color="text.secondary" textAlign="right">
                 操作
               </Typography>
@@ -158,6 +217,8 @@ export default function CustomerAccounts() {
               <AccountListRow
                 key={account.id}
                 account={account}
+                usdValuation={accountUsdValuation(account, usdRates)}
+                valuationLoading={summaryLoading || marketLoading}
                 divider={index < accounts.length - 1}
                 onOpen={() => setSelected(account)}
               />
@@ -182,6 +243,26 @@ export default function CustomerAccounts() {
       />
     </>
   );
+}
+
+type UsdRate = {
+  rate: number;
+  source: 'market' | 'book' | 'parity';
+};
+
+type UsdValuation = {
+  value: number;
+  source: UsdRate['source'];
+};
+
+function accountUsdValuation(
+  account: MoneyAccount,
+  rates: Map<Currency, UsdRate>
+): UsdValuation | null {
+  const rate = rates.get(account.currency);
+  const balance = Number(account.availableBalance) + Number(account.frozenBalance);
+  if (!rate || !Number.isFinite(balance)) return null;
+  return { value: balance * rate.rate, source: rate.source };
 }
 
 const assetColors: Record<Currency, string> = {
@@ -464,7 +545,7 @@ function VaRequestDialog({
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <Box component="form" onSubmit={submit}>
-        <DialogTitle>申请新的专属收款账户</DialogTitle>
+        <DialogTitle>申请 VA 账户</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
@@ -515,21 +596,30 @@ function VaRequestDialog({
 
 function AccountListRow({
   account,
+  usdValuation,
+  valuationLoading,
   onOpen,
   divider,
 }: {
   account: MoneyAccount;
+  usdValuation: UsdValuation | null;
+  valuationLoading: boolean;
   onOpen: () => void;
   divider: boolean;
 }) {
   const crypto = account.kind === 'CRYPTO_WALLET';
+  let mobileValuationLabel = '美金价值暂无估值';
+  if (valuationLoading) mobileValuationLabel = '美金价值计算中…';
+  else if (usdValuation) {
+    mobileValuationLabel = `${money(usdValuation.value, 'USD')} 美金价值`;
+  }
   return (
     <Box
       sx={{
         display: 'grid',
         gridTemplateColumns: {
           xs: 'minmax(0, 1fr) auto',
-          md: 'minmax(220px, 1.35fr) 140px 1fr 1fr 150px',
+          md: 'minmax(210px, 1.35fr) 120px minmax(118px, 1fr) minmax(118px, 1fr) minmax(132px, 1fr) 120px',
         },
         alignItems: 'center',
         gap: { xs: 1.5, md: 2 },
@@ -574,6 +664,13 @@ function AccountListRow({
         >
           可用
         </Typography>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: { xs: 'block', md: 'none' }, mt: 0.25 }}
+        >
+          {mobileValuationLabel}
+        </Typography>
         <Button
           size="small"
           href={crypto ? '/portal/crypto-wallet' : undefined}
@@ -591,6 +688,20 @@ function AccountListRow({
       >
         {money(account.frozenBalance, account.currency)}
       </Typography>
+      <Box sx={{ display: { xs: 'none', md: 'block' }, textAlign: 'right' }}>
+        {valuationLoading ? (
+          <Skeleton width={88} sx={{ ml: 'auto' }} />
+        ) : (
+          <>
+            <Typography variant="subtitle2">
+              {usdValuation ? money(usdValuation.value, 'USD') : '暂无估值'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {usdValuation?.source === 'market' ? '行情估算' : '账面估算'}
+            </Typography>
+          </>
+        )}
+      </Box>
       <Box sx={{ display: { xs: 'none', md: 'flex' }, justifyContent: 'flex-end' }}>
         {crypto ? (
           <Button size="small" href="/portal/crypto-wallet">

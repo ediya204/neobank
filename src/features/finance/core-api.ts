@@ -37,6 +37,17 @@ export type MoneyAccount = {
 export const supportedFiatCurrencies: Currency[] = ['USD', 'HKD'];
 export const supportedCryptoNetwork: CryptoNetwork = 'TRON';
 
+export function accountProductName(account: MoneyAccount) {
+  if (account.kind === 'SYSTEM_WALLET') return '系统法币账户（多货币）';
+  if (account.kind === 'VIRTUAL_ACCOUNT') return 'VA 账户';
+  if (account.kind === 'CRYPTO_WALLET') return '数字钱包';
+  return account.name;
+}
+
+export function accountBalanceLabel(account: MoneyAccount) {
+  return `${accountProductName(account)} · ${account.currency}`;
+}
+
 export function isSupportedPortalAccount(account: MoneyAccount) {
   if (supportedFiatCurrencies.includes(account.currency)) return true;
   return account.currency === 'USDT' && account.network === supportedCryptoNetwork;
@@ -121,11 +132,18 @@ export type VirtualAccountRequest = {
 export type Beneficiary = {
   id: string;
   customerId: string;
+  type: 'BANK' | 'CRYPTO';
   name: string;
   currency: Currency;
-  bankName: string;
-  accountNumber: string;
+  bankName?: string;
+  accountNumber?: string;
   swiftBic?: string;
+  iban?: string;
+  bankAddress?: string;
+  countryCode?: string;
+  walletAddress?: string;
+  network?: CryptoNetwork;
+  active: boolean;
 };
 
 export type FundingChannel = {
@@ -191,6 +209,17 @@ export type RateVersion = {
   effectiveFrom: string;
   effectiveUntil?: string;
   active: boolean;
+};
+
+export type MarketQuote = {
+  provider: 'fastforex';
+  baseCurrency: Currency;
+  quoteCurrency: Currency;
+  rate: string;
+  updatedAt: string;
+  fetchedAt: string;
+  priceType: 'midpoint_spot';
+  referenceOnly: true;
 };
 
 export type JournalEntry = {

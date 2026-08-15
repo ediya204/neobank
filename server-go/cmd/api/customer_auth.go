@@ -27,21 +27,42 @@ import (
 	"time"
 
 	"github.com/ediya204/neobank/server-go/internal/d1"
+	"golang.org/x/crypto/argon2"
 )
 
 const (
-	customerPasswordIterations = 210_000
-	customerSessionDuration    = 12 * time.Hour
-	customerSetupDuration      = 30 * time.Minute
-	customerChallengeDuration  = 5 * time.Minute
-	customerEnrollmentDuration = 10 * time.Minute
-	customerLockDuration       = 15 * time.Minute
-	customerSessionCookie      = "__Host-neobank_customer"
-	customerCSRFCookie         = "__Host-neobank_csrf"
-	recoveryCustomerSessionSQL = `INSERT INTO customer_sessions
-    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, created_at, last_seen_at)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?
-    WHERE EXISTS (SELECT 1 FROM customer_recovery_codes WHERE id=? AND customer_id=? AND used_at=?)`
+	customerLegacyPasswordIterations = 210_000
+	customerPasswordAlgorithm        = "argon2id-v1"
+	customerArgonMemoryKiB           = 19 * 1024
+	customerArgonTimeCost            = 2
+	customerArgonParallelism         = 1
+	customerSessionDuration          = 12 * time.Hour
+	customerSessionIdleDuration      = time.Hour
+	customerSetupDuration            = 30 * time.Minute
+	customerChallengeDuration        = 5 * time.Minute
+	customerEnrollmentDuration       = 10 * time.Minute
+	customerLockDuration             = 15 * time.Minute
+	customerMaxChallengeAttempts     = 8
+	customerSessionCookie            = "__Host-neobank_customer"
+	customerCSRFCookie               = "__Host-neobank_csrf"
+	recoveryCustomerSessionSQL       = `INSERT INTO customer_sessions
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
+	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+	    WHERE EXISTS (SELECT 1 FROM customer_recovery_codes WHERE id=? AND customer_id=? AND used_at=?)
+	      AND EXISTS (SELECT 1 FROM customer_login_challenges WHERE id=? AND customer_id=? AND consumed_at=?)
+	      AND EXISTS (SELECT 1 FROM customer_credentials WHERE customer_id=? AND credential_version=?)`
+	totpCustomerSessionSQL = `INSERT INTO customer_sessions
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
+	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+	    WHERE EXISTS (SELECT 1 FROM customer_login_challenges WHERE id=? AND customer_id=? AND consumed_at=?)
+	      AND EXISTS (SELECT 1 FROM customer_credentials
+	        WHERE customer_id=? AND credential_version=? AND totp_last_counter=?)`
+	enrollmentCustomerSessionSQL = `INSERT INTO customer_sessions
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
+	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+	    WHERE EXISTS (SELECT 1 FROM customer_credentials
+	      WHERE customer_id=? AND credential_version=? AND enrollment_token_hash IS NULL
+	        AND updated_at=? AND totp_last_counter=?)`
 )
 
 var customerPasswordPattern = regexp.MustCompile(`^[\x20-\x7e]{14,128}$`)
@@ -55,6 +76,7 @@ type customerSession struct {
 	CSRFHash          string
 	CredentialVersion int64
 	ExpiresAt         time.Time
+	IdleExpiresAt     time.Time
 }
 
 func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request) bool {
@@ -67,6 +89,8 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 		app.customerTOTPSetup(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/totp/verify":
 		app.verifyCustomerTOTP(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/password/change":
+		app.changeCustomerPassword(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/me":
 		app.customerSessionInfo(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/logout":
@@ -180,11 +204,7 @@ func (app *application) completeCustomerSetup(w http.ResponseWriter, r *http.Req
 	}
 	customerID := text(rows[0]["id"])
 	salt := randomBytes(16)
-	passwordHash, err := app.deriveCustomerPassword(input.Password, salt)
-	if err != nil {
-		databaseError(app, w, err)
-		return
-	}
+	passwordHash := app.deriveCustomerArgon2id(input.Password, salt)
 	totpSecret := randomTOTPSecret()
 	encryptedSecret, err := app.encryptCustomerTOTP(totpSecret)
 	if err != nil {
@@ -195,10 +215,13 @@ func (app *application) completeCustomerSetup(w http.ResponseWriter, r *http.Req
 	nowText := databaseTimestamp(now)
 	result, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: `UPDATE customer_credentials
-      SET password_salt=?, password_hash=?, password_iterations=?, totp_secret_ciphertext=?,
-          setup_consumed_at=?, enrollment_token_hash=?, enrollment_expires_at=?, updated_at=?
-      WHERE customer_id=? AND setup_token_hash=? AND setup_consumed_at IS NULL AND setup_expires_at>?`, Params: []any{
-			hex.EncodeToString(salt), hex.EncodeToString(passwordHash), customerPasswordIterations, encryptedSecret,
+	      SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=0,
+	          password_memory_kib=?, password_time_cost=?, password_parallelism=?,
+	          password_changed_at=?, totp_secret_ciphertext=?, totp_last_counter=-1,
+	          setup_consumed_at=?, enrollment_token_hash=?, enrollment_expires_at=?, updated_at=?
+	      WHERE customer_id=? AND setup_token_hash=? AND setup_consumed_at IS NULL AND setup_expires_at>?`, Params: []any{
+			hex.EncodeToString(salt), hex.EncodeToString(passwordHash), customerPasswordAlgorithm,
+			customerArgonMemoryKiB, customerArgonTimeCost, customerArgonParallelism, nowText, encryptedSecret,
 			nowText, tokenHash(enrollmentToken), databaseTimestamp(now.Add(customerEnrollmentDuration)), nowText,
 			customerID, setupHash, nowText,
 		}},
@@ -266,33 +289,33 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	email := normalizeCustomerEmail(input.Email)
 	rows, err := app.db.Query(r.Context(), `SELECT c.id, c.status, cc.password_salt, cc.password_hash,
-      cc.password_iterations, cc.failed_attempts, cc.locked_until
-    FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
-	    WHERE c.tenant_id=? AND c.email=? AND c.kyc_status='approved' AND c.operations_status='active'`, app.tenantID, email)
+	      cc.password_algorithm, cc.password_iterations, cc.password_memory_kib, cc.password_time_cost,
+	      cc.password_parallelism, cc.credential_version, cc.failed_attempts, cc.locked_until
+	    FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
+		    WHERE c.tenant_id=? AND c.email=? AND c.kyc_status='approved' AND c.operations_status='active'`, app.tenantID, email)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
 	now := time.Now().UTC()
 	valid := false
+	upgradePassword := false
 	customerID := ""
 	failedAttempts := int64(0)
+	credentialVersion := int64(0)
 	if len(rows) == 1 && text(rows[0]["status"]) == "active" {
 		customerID = text(rows[0]["id"])
 		failedAttempts = integer(rows[0]["failed_attempts"])
+		credentialVersion = integer(rows[0]["credential_version"])
 		lockedUntil, _ := time.Parse(time.RFC3339Nano, text(rows[0]["locked_until"]))
 		if lockedUntil.IsZero() || !lockedUntil.After(now) {
-			salt, saltErr := hex.DecodeString(text(rows[0]["password_salt"]))
-			expected, hashErr := hex.DecodeString(text(rows[0]["password_hash"]))
-			iterations := int(integer(rows[0]["password_iterations"]))
-			if saltErr == nil && hashErr == nil && iterations == customerPasswordIterations {
-				actual, deriveErr := app.deriveCustomerPassword(input.Password, salt)
-				valid = deriveErr == nil && subtle.ConstantTimeCompare(actual, expected) == 1
-			}
+			valid, upgradePassword = app.verifyCustomerPassword(input.Password, rows[0])
 		}
 	}
 	if !valid {
-		_, _ = app.deriveCustomerPassword(input.Password, make([]byte, 16))
+		if len(rows) != 1 {
+			_ = app.deriveCustomerArgon2id(input.Password, make([]byte, 16))
+		}
 		if customerID != "" {
 			failedAttempts++
 			lockedUntil := any(nil)
@@ -313,16 +336,36 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	challengeToken := randomToken(32)
 	nowText := databaseTimestamp(now)
-	_, err = app.db.Batch(r.Context(),
+	statements := []d1.Statement{}
+	if upgradePassword {
+		salt := randomBytes(16)
+		passwordHash := app.deriveCustomerArgon2id(input.Password, salt)
+		statements = append(statements, d1.Statement{SQL: `UPDATE customer_credentials
+	      SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=0,
+	          password_memory_kib=?, password_time_cost=?, password_parallelism=?, updated_at=?
+	      WHERE customer_id=? AND credential_version=? AND password_algorithm='pbkdf2-sha256-v1'`, Params: []any{
+			hex.EncodeToString(salt), hex.EncodeToString(passwordHash), customerPasswordAlgorithm,
+			customerArgonMemoryKiB, customerArgonTimeCost, customerArgonParallelism, nowText,
+			customerID, credentialVersion,
+		}})
+	}
+	statements = append(statements,
 		d1.Statement{SQL: `UPDATE customer_credentials SET failed_attempts=0, locked_until=NULL, updated_at=?
-      WHERE customer_id=?`, Params: []any{nowText, customerID}},
+	      WHERE customer_id=? AND credential_version=?`, Params: []any{nowText, customerID, credentialVersion}},
 		d1.Statement{SQL: `INSERT INTO customer_login_challenges
-      (id, customer_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)`, Params: []any{
-			randomID("challenge"), customerID, tokenHash(challengeToken), databaseTimestamp(now.Add(customerChallengeDuration)), nowText,
+	      (id, customer_id, token_hash, expires_at, credential_version, created_at) VALUES (?, ?, ?, ?, ?, ?)`, Params: []any{
+			randomID("challenge"), customerID, tokenHash(challengeToken), databaseTimestamp(now.Add(customerChallengeDuration)),
+			credentialVersion, nowText,
 		}},
 	)
+	results, err := app.db.Batch(r.Context(), statements...)
 	if err != nil {
 		databaseError(app, w, err)
+		return
+	}
+	if len(results) != len(statements) || resultChanges(results[len(results)-2:len(results)-1]) != 1 ||
+		resultChanges(results[len(results)-1:]) != 1 {
+		conflict(w, "authentication_state_changed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"next_step": "totp_required", "challenge_id": challengeToken})
@@ -343,19 +386,44 @@ func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Reques
 	var rows []map[string]any
 	var err error
 	enrollment := input.EnrollmentToken != ""
+	if enrollment && input.RecoveryCode != "" || !enrollment && input.ChallengeID == "" ||
+		(input.Code == "") == (input.RecoveryCode == "") {
+		validationError(w)
+		return
+	}
 	if enrollment {
-		rows, err = app.db.Query(r.Context(), `SELECT c.id, c.email, c.display_name, cc.totp_secret_ciphertext, cc.credential_version
+		rows, err = app.db.Query(r.Context(), `SELECT c.id, c.email, c.display_name, cc.totp_secret_ciphertext,
+		  cc.totp_last_counter, cc.credential_version
       FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
 		      WHERE c.tenant_id=? AND c.status='pending_setup' AND c.kyc_status='approved' AND c.operations_status='active' AND cc.enrollment_token_hash=?
         AND cc.enrollment_expires_at>?`, app.tenantID, tokenHash(input.EnrollmentToken), nowText)
 	} else {
-		rows, err = app.db.Query(r.Context(), `SELECT c.id, c.email, c.display_name, cc.totp_secret_ciphertext, cc.credential_version,
-        lc.id AS challenge_row_id
+		attemptResults, attemptErr := app.db.Batch(r.Context(),
+			d1.Statement{SQL: `UPDATE customer_login_challenges SET attempts=attempts+1
+		      WHERE token_hash=? AND consumed_at IS NULL AND expires_at>? AND attempts<?`, Params: []any{
+				tokenHash(input.ChallengeID), nowText, customerMaxChallengeAttempts,
+			}},
+			d1.Statement{SQL: `SELECT c.id, c.email, c.display_name, cc.totp_secret_ciphertext,
+		  cc.totp_last_counter, cc.credential_version, lc.id AS challenge_row_id
       FROM customer_login_challenges lc JOIN customers c ON c.id=lc.customer_id
       JOIN customer_credentials cc ON cc.customer_id=c.id
 	      WHERE c.tenant_id=? AND c.status='active' AND c.kyc_status='approved' AND c.operations_status='active'
-	        AND lc.token_hash=? AND lc.consumed_at IS NULL AND lc.expires_at>?`,
-			app.tenantID, tokenHash(input.ChallengeID), nowText)
+	        AND lc.token_hash=? AND lc.consumed_at IS NULL AND lc.expires_at>? AND lc.attempts BETWEEN 1 AND ?
+	        AND lc.credential_version=cc.credential_version`, Params: []any{
+				app.tenantID, tokenHash(input.ChallengeID), nowText, customerMaxChallengeAttempts,
+			}},
+		)
+		if attemptErr != nil {
+			databaseError(app, w, attemptErr)
+			return
+		}
+		if len(attemptResults) != 2 || resultChanges(attemptResults[:1]) != 1 || len(attemptResults[1].Results) != 1 {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_challenge"}})
+			return
+		}
+		rows = attemptResults[1].Results
+		// Increment and lookup share one D1 batch, so racing requests cannot
+		// cross the maximum through independent read/update operations.
 	}
 	if err != nil {
 		databaseError(app, w, err)
@@ -367,7 +435,13 @@ func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Reques
 	}
 	secret, err := app.decryptCustomerTOTP(text(rows[0]["totp_secret_ciphertext"]))
 	recoveryID := ""
-	validAuthentication := err == nil && verifyTOTPCode(secret, input.Code, now)
+	totpCounter, validAuthentication := verifyTOTPCode(
+		secret,
+		input.Code,
+		now,
+		integer(rows[0]["totp_last_counter"]),
+	)
+	validAuthentication = err == nil && validAuthentication
 	if !enrollment && input.RecoveryCode != "" {
 		recoveryRows, recoveryErr := app.db.Query(r.Context(), `SELECT id FROM customer_recovery_codes
       WHERE customer_id=? AND code_hash=? AND used_at IS NULL`, text(rows[0]["id"]), app.recoveryCodeHash(input.RecoveryCode))
@@ -398,8 +472,11 @@ func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Reques
 			d1.Statement{SQL: `UPDATE customers SET status='active', updated_at=?
 	        WHERE id=? AND tenant_id=? AND status='pending_setup' AND kyc_status='approved' AND operations_status='active'`, Params: []any{nowText, customerID, app.tenantID}},
 			d1.Statement{SQL: `UPDATE customer_credentials
-        SET setup_token_hash=NULL, setup_expires_at=NULL, enrollment_token_hash=NULL, enrollment_expires_at=NULL, updated_at=?
-        WHERE customer_id=? AND enrollment_token_hash=?`, Params: []any{nowText, customerID, tokenHash(input.EnrollmentToken)}},
+		SET setup_token_hash=NULL, setup_expires_at=NULL, enrollment_token_hash=NULL, enrollment_expires_at=NULL,
+		    totp_last_counter=?, updated_at=?
+		WHERE customer_id=? AND enrollment_token_hash=? AND credential_version=? AND totp_last_counter<?`, Params: []any{
+				totpCounter, nowText, customerID, tokenHash(input.EnrollmentToken), credentialVersion, totpCounter,
+			}},
 		)
 		for index := 0; index < 10; index++ {
 			code := strings.ToUpper(randomToken(8))
@@ -409,17 +486,58 @@ func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Reques
 				randomID("recovery"), customerID, app.recoveryCodeHash(code), nowText,
 			}})
 		}
+		sessionStatement.SQL = enrollmentCustomerSessionSQL
+		sessionStatement.Params = append(
+			sessionStatement.Params,
+			customerID,
+			credentialVersion,
+			nowText,
+			totpCounter,
+		)
 	} else {
 		statements = append(statements, d1.Statement{SQL: `UPDATE customer_login_challenges SET consumed_at=?
-      WHERE id=? AND consumed_at IS NULL`, Params: []any{nowText, text(rows[0]["challenge_row_id"])}})
+	  WHERE id=? AND customer_id=? AND credential_version=? AND consumed_at IS NULL
+	    AND EXISTS (SELECT 1 FROM customer_credentials
+	      WHERE customer_id=? AND credential_version=?)`, Params: []any{
+			nowText, text(rows[0]["challenge_row_id"]), customerID, credentialVersion,
+			customerID, credentialVersion,
+		}})
 		if recoveryID != "" {
 			statements = append(statements, d1.Statement{SQL: `UPDATE customer_recovery_codes SET used_at=?
-      WHERE id=? AND customer_id=? AND used_at IS NULL`, Params: []any{nowText, recoveryID, customerID}})
+	  WHERE id=? AND customer_id=? AND used_at IS NULL
+	    AND EXISTS (SELECT 1 FROM customer_login_challenges
+	      WHERE id=? AND customer_id=? AND consumed_at=?)`, Params: []any{
+				nowText, recoveryID, customerID, text(rows[0]["challenge_row_id"]), customerID, nowText,
+			}})
 			sessionStatement.SQL = recoveryCustomerSessionSQL
-			sessionStatement.Params = append(sessionStatement.Params, recoveryID, customerID, nowText)
+			sessionStatement.Params = append(
+				sessionStatement.Params,
+				recoveryID,
+				customerID,
+				nowText,
+				text(rows[0]["challenge_row_id"]),
+				customerID,
+				nowText,
+				customerID,
+				credentialVersion,
+			)
+		} else {
+			statements = append(statements, d1.Statement{SQL: `UPDATE customer_credentials SET totp_last_counter=?, updated_at=?
+	  WHERE customer_id=? AND credential_version=? AND totp_last_counter<?`, Params: []any{
+				totpCounter, nowText, customerID, credentialVersion, totpCounter,
+			}})
+			sessionStatement.SQL = totpCustomerSessionSQL
+			sessionStatement.Params = append(
+				sessionStatement.Params,
+				text(rows[0]["challenge_row_id"]),
+				customerID,
+				nowText,
+				customerID,
+				credentialVersion,
+				totpCounter,
+			)
 		}
 	}
-	sessionIndex := len(statements)
 	statements = append(statements, sessionStatement, d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
     (id, customer_id, event_type, actor, metadata_json, created_at)
     SELECT ?, ?, 'auth.login_succeeded', ?, ?, ?
@@ -431,9 +549,15 @@ func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Reques
 		databaseError(app, w, err)
 		return
 	}
-	if len(results) <= sessionIndex || resultChanges(results[:1]) != 1 || resultChanges(results[sessionIndex:sessionIndex+1]) != 1 {
+	if len(results) != len(statements) {
 		conflict(w, "authentication_state_changed")
 		return
+	}
+	for index := range results {
+		if resultChanges(results[index:index+1]) != 1 {
+			conflict(w, "authentication_state_changed")
+			return
+		}
 	}
 	app.setCustomerSessionCookies(w, sessionToken, csrfToken, now.Add(customerSessionDuration))
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -475,6 +599,109 @@ func (app *application) customerLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	app.clearCustomerSessionCookies(w)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (app *application) changeCustomerPassword(w http.ResponseWriter, r *http.Request) {
+	session, _, err := app.requireCustomerMutation(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "session_expired"}})
+		return
+	}
+	var input struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+		TOTPCode        string `json:"totp_code"`
+	}
+	if !decodeJSON(w, r, &input) || !validCustomerPassword(input.NewPassword) || len(input.TOTPCode) != 6 {
+		validationError(w)
+		return
+	}
+	if hmac.Equal([]byte(input.CurrentPassword), []byte(input.NewPassword)) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "password_unchanged"}})
+		return
+	}
+	rows, err := app.db.Query(r.Context(), `SELECT password_salt, password_hash, password_algorithm,
+	    password_iterations, password_memory_kib, password_time_cost, password_parallelism,
+	    totp_secret_ciphertext, totp_last_counter, credential_version
+	  FROM customer_credentials WHERE customer_id=?`, session.CustomerID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(rows) != 1 {
+		conflict(w, "password_change_unavailable")
+		return
+	}
+	validPassword, _ := app.verifyCustomerPassword(input.CurrentPassword, rows[0])
+	if !validPassword {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_current_password"}})
+		return
+	}
+	secret, err := app.decryptCustomerTOTP(text(rows[0]["totp_secret_ciphertext"]))
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	now := time.Now().UTC()
+	totpCounter, validTOTP := verifyTOTPCode(secret, input.TOTPCode, now, integer(rows[0]["totp_last_counter"]))
+	if !validTOTP {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_totp_code"}})
+		return
+	}
+	nowText := databaseTimestamp(now)
+	newCredentialVersion := integer(rows[0]["credential_version"]) + 1
+	salt := randomBytes(16)
+	passwordHash := app.deriveCustomerArgon2id(input.NewPassword, salt)
+	nextIdleExpiry := now.Add(customerSessionIdleDuration)
+	if nextIdleExpiry.After(session.ExpiresAt) {
+		nextIdleExpiry = session.ExpiresAt
+	}
+	results, err := app.db.Batch(r.Context(),
+		d1.Statement{SQL: `UPDATE customer_credentials
+	  SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=0,
+	      password_memory_kib=?, password_time_cost=?, password_parallelism=?,
+	      password_changed_at=?, credential_version=?, totp_last_counter=?,
+	      failed_attempts=0, locked_until=NULL, updated_at=?
+	  WHERE customer_id=? AND credential_version=? AND totp_last_counter<?`, Params: []any{
+			hex.EncodeToString(salt), hex.EncodeToString(passwordHash), customerPasswordAlgorithm,
+			customerArgonMemoryKiB, customerArgonTimeCost, customerArgonParallelism,
+			nowText, newCredentialVersion, totpCounter, nowText, session.CustomerID,
+			session.CredentialVersion, totpCounter,
+		}},
+		d1.Statement{SQL: `UPDATE customer_sessions SET revoked_at=?, last_seen_at=?
+	  WHERE customer_id=? AND id<>? AND revoked_at IS NULL`, Params: []any{
+			nowText, nowText, session.CustomerID, session.ID,
+		}},
+		d1.Statement{SQL: `UPDATE customer_sessions
+	  SET credential_version=?, last_seen_at=?, idle_expires_at=?
+	  WHERE id=? AND customer_id=? AND revoked_at IS NULL AND credential_version=?`, Params: []any{
+			newCredentialVersion, nowText, databaseTimestamp(nextIdleExpiry), session.ID,
+			session.CustomerID, session.CredentialVersion,
+		}},
+		d1.Statement{SQL: `UPDATE customer_login_challenges SET consumed_at=?
+	  WHERE customer_id=? AND consumed_at IS NULL`, Params: []any{nowText, session.CustomerID}},
+		d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
+	  (id, customer_id, event_type, actor, metadata_json, created_at)
+	  SELECT ?, ?, 'auth.password_changed', ?, '{}', ?
+	  WHERE EXISTS (SELECT 1 FROM customer_sessions
+	    WHERE id=? AND customer_id=? AND credential_version=? AND revoked_at IS NULL)`, Params: []any{
+			randomID("audit"), session.CustomerID, session.CustomerID, nowText,
+			session.ID, session.CustomerID, newCredentialVersion,
+		}},
+	)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != 5 || resultChanges(results[:1]) != 1 ||
+		resultChanges(results[2:3]) != 1 || resultChanges(results[4:5]) != 1 {
+		conflict(w, "password_change_conflict")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"password_changed_at":    nowText,
+		"other_sessions_revoked": true,
+	})
 }
 
 func (app *application) getCustomerProfile(w http.ResponseWriter, r *http.Request) {
@@ -602,13 +829,15 @@ func (app *application) loadCustomerSession(r *http.Request) (*customerSession, 
 		return nil, "", errors.New("session cookie missing")
 	}
 	now := time.Now().UTC()
-	rows, err := app.db.Query(r.Context(), `SELECT s.id, s.customer_id, s.csrf_hash, s.credential_version, s.expires_at,
-      c.email, c.display_name, c.status, cc.credential_version AS current_credential_version
-    FROM customer_sessions s JOIN customers c ON c.id=s.customer_id
-    JOIN customer_credentials cc ON cc.customer_id=c.id
-	    WHERE c.tenant_id=? AND s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND c.status='active'
-	      AND c.kyc_status='approved' AND c.operations_status='active'`,
-		app.tenantID, tokenHash(cookie.Value), databaseTimestamp(now))
+	rows, err := app.db.Query(r.Context(), `SELECT s.id, s.customer_id, s.csrf_hash, s.credential_version,
+	      s.expires_at, s.idle_expires_at,
+	      c.email, c.display_name, c.status, cc.credential_version AS current_credential_version
+	    FROM customer_sessions s JOIN customers c ON c.id=s.customer_id
+	    JOIN customer_credentials cc ON cc.customer_id=c.id
+		    WHERE c.tenant_id=? AND s.token_hash=? AND s.revoked_at IS NULL
+		      AND s.expires_at>? AND s.idle_expires_at>? AND c.status='active'
+		      AND c.kyc_status='approved' AND c.operations_status='active'`,
+		app.tenantID, tokenHash(cookie.Value), databaseTimestamp(now), databaseTimestamp(now))
 	if err != nil || len(rows) != 1 {
 		return nil, "", errors.New("session invalid")
 	}
@@ -619,14 +848,31 @@ func (app *application) loadCustomerSession(r *http.Request) (*customerSession, 
 	if err != nil {
 		return nil, "", err
 	}
+	idleExpiresAt, err := time.Parse(time.RFC3339Nano, text(rows[0]["idle_expires_at"]))
+	if err != nil {
+		return nil, "", err
+	}
 	csrfCookie, err := r.Cookie(app.customerCSRFCookieName())
 	if err != nil || csrfCookie.Value == "" || subtle.ConstantTimeCompare([]byte(tokenHash(csrfCookie.Value)), []byte(text(rows[0]["csrf_hash"]))) != 1 {
 		return nil, "", errors.New("csrf cookie invalid")
 	}
+	nextIdleExpiry := now.Add(customerSessionIdleDuration)
+	if nextIdleExpiry.After(expiresAt) {
+		nextIdleExpiry = expiresAt
+	}
+	touchResults, err := app.db.Batch(r.Context(), d1.Statement{SQL: `UPDATE customer_sessions
+	  SET last_seen_at=?, idle_expires_at=?
+	  WHERE id=? AND revoked_at IS NULL AND expires_at>? AND idle_expires_at>?`, Params: []any{
+		databaseTimestamp(now), databaseTimestamp(nextIdleExpiry), text(rows[0]["id"]),
+		databaseTimestamp(now), databaseTimestamp(now),
+	}})
+	if err != nil || len(touchResults) != 1 || resultChanges(touchResults) != 1 {
+		return nil, "", errors.New("session touch failed")
+	}
 	return &customerSession{
 		ID: text(rows[0]["id"]), CustomerID: text(rows[0]["customer_id"]), Email: text(rows[0]["email"]),
 		DisplayName: text(rows[0]["display_name"]), Status: text(rows[0]["status"]), CSRFHash: text(rows[0]["csrf_hash"]),
-		CredentialVersion: integer(rows[0]["credential_version"]), ExpiresAt: expiresAt,
+		CredentialVersion: integer(rows[0]["credential_version"]), ExpiresAt: expiresAt, IdleExpiresAt: idleExpiresAt,
 	}, csrfCookie.Value, nil
 }
 
@@ -654,10 +900,66 @@ func (app *application) validCustomerOrigin(raw string) bool {
 	return err == nil && actual.Scheme == expected.Scheme && actual.Host == expected.Host
 }
 
-func (app *application) deriveCustomerPassword(password string, salt []byte) ([]byte, error) {
+func (app *application) passwordPrehash(password string) []byte {
 	mac := hmac.New(sha256.New, app.customerPasswordPepper)
 	_, _ = mac.Write([]byte("neobank-customer-password-v1\x00" + password))
-	return pbkdf2.Key(sha256.New, hex.EncodeToString(mac.Sum(nil)), salt, customerPasswordIterations, 32)
+	return mac.Sum(nil)
+}
+
+func (app *application) deriveLegacyCustomerPassword(password string, salt []byte) ([]byte, error) {
+	return pbkdf2.Key(
+		sha256.New,
+		hex.EncodeToString(app.passwordPrehash(password)),
+		salt,
+		customerLegacyPasswordIterations,
+		32,
+	)
+}
+
+func (app *application) deriveCustomerArgon2id(password string, salt []byte) []byte {
+	return argon2.IDKey(
+		app.passwordPrehash(password),
+		salt,
+		customerArgonTimeCost,
+		customerArgonMemoryKiB,
+		customerArgonParallelism,
+		32,
+	)
+}
+
+func (app *application) verifyCustomerPassword(password string, row map[string]any) (bool, bool) {
+	salt, saltErr := hex.DecodeString(text(row["password_salt"]))
+	expected, hashErr := hex.DecodeString(text(row["password_hash"]))
+	if saltErr != nil || hashErr != nil || len(salt) != 16 || len(expected) != 32 {
+		_ = app.deriveCustomerArgon2id(password, make([]byte, 16))
+		return false, false
+	}
+
+	switch text(row["password_algorithm"]) {
+	case customerPasswordAlgorithm:
+		if integer(row["password_memory_kib"]) != customerArgonMemoryKiB ||
+			integer(row["password_time_cost"]) != customerArgonTimeCost ||
+			integer(row["password_parallelism"]) != customerArgonParallelism {
+			_ = app.deriveCustomerArgon2id(password, make([]byte, 16))
+			return false, false
+		}
+		actual := app.deriveCustomerArgon2id(password, salt)
+		return subtle.ConstantTimeCompare(actual, expected) == 1, false
+	case "pbkdf2-sha256-v1":
+		if integer(row["password_iterations"]) != customerLegacyPasswordIterations {
+			_ = app.deriveCustomerArgon2id(password, make([]byte, 16))
+			return false, false
+		}
+		actual, err := app.deriveLegacyCustomerPassword(password, salt)
+		if err != nil || subtle.ConstantTimeCompare(actual, expected) != 1 {
+			_ = app.deriveCustomerArgon2id(password, make([]byte, 16))
+			return false, false
+		}
+		return true, true
+	default:
+		_ = app.deriveCustomerArgon2id(password, make([]byte, 16))
+		return false, false
+	}
 }
 
 func validCustomerPassword(password string) bool {
@@ -711,16 +1013,20 @@ func (app *application) decryptCustomerTOTP(encoded string) (string, error) {
 	return string(plaintext), err
 }
 
-func verifyTOTPCode(secret, code string, now time.Time) bool {
+func verifyTOTPCode(secret, code string, now time.Time, minimumCounter int64) (int64, bool) {
 	if len(code) != 6 {
-		return false
+		return 0, false
 	}
 	decoded, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(secret))
 	if err != nil {
-		return false
+		return 0, false
 	}
 	for offset := int64(-1); offset <= 1; offset++ {
-		counter := uint64(now.Unix()/30 + offset)
+		counterValue := now.Unix()/30 + offset
+		if counterValue <= minimumCounter || counterValue < 0 {
+			continue
+		}
+		counter := uint64(counterValue)
 		message := make([]byte, 8)
 		for index := 7; index >= 0; index-- {
 			message[index] = byte(counter)
@@ -733,10 +1039,10 @@ func verifyTOTPCode(secret, code string, now time.Time) bool {
 		value := (uint32(digest[position])&0x7f)<<24 | uint32(digest[position+1])<<16 | uint32(digest[position+2])<<8 | uint32(digest[position+3])
 		expected := fmt.Sprintf("%06d", value%1_000_000)
 		if subtle.ConstantTimeCompare([]byte(expected), []byte(code)) == 1 {
-			return true
+			return counterValue, true
 		}
 	}
-	return false
+	return 0, false
 }
 
 func newCustomerSession(customerID string, credentialVersion int64, now time.Time) (string, string, string, d1.Statement) {
@@ -744,10 +1050,11 @@ func newCustomerSession(customerID string, credentialVersion int64, now time.Tim
 	sessionToken := randomToken(32)
 	csrfToken := randomToken(32)
 	return sessionID, sessionToken, csrfToken, d1.Statement{SQL: `INSERT INTO customer_sessions
-    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, created_at, last_seen_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, Params: []any{
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, Params: []any{
 		sessionID, customerID, tokenHash(sessionToken), tokenHash(csrfToken), credentialVersion,
-		databaseTimestamp(now.Add(customerSessionDuration)), databaseTimestamp(now), databaseTimestamp(now),
+		databaseTimestamp(now.Add(customerSessionDuration)), databaseTimestamp(now.Add(customerSessionIdleDuration)),
+		databaseTimestamp(now), databaseTimestamp(now),
 	}}
 }
 

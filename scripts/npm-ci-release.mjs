@@ -55,30 +55,54 @@ function releaseInstallLock() {
 
 acquireInstallLock();
 
-console.log(`Installing locked dependencies with cache: ${cachePath}`);
-const child = spawn('npm', ['ci', ...process.argv.slice(2)], {
-  env: {
-    ...process.env,
-    npm_config_cache: cachePath,
-  },
-  stdio: 'inherit',
-});
+const installArgs = ['ci', ...process.argv.slice(2)];
+let activeChild;
+let terminationSignal;
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.once(signal, () => child.kill(signal));
+function installLockedDependencies(label, cwd) {
+  console.log(`Installing ${label} locked dependencies with cache: ${cachePath}`);
+  return new Promise((resolve, reject) => {
+    const child = spawn('npm', installArgs, {
+      cwd,
+      env: {
+        ...process.env,
+        npm_config_cache: cachePath,
+      },
+      stdio: 'inherit',
+    });
+    activeChild = child;
+    child.once('error', reject);
+    child.once('exit', (code, signal) => {
+      activeChild = undefined;
+      if (signal) {
+        reject(Object.assign(new Error(`${label} dependency install stopped by ${signal}`), { signal }));
+        return;
+      }
+      if (code !== 0) {
+        reject(Object.assign(new Error(`${label} dependency install exited with code ${code}`), { code }));
+        return;
+      }
+      resolve();
+    });
+  });
 }
 
-child.once('error', (error) => {
-  releaseInstallLock();
-  console.error(error.message);
-  process.exit(1);
-});
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    terminationSignal = signal;
+    activeChild?.kill(signal);
+  });
+}
 
-child.once('exit', (code, signal) => {
+try {
+  const workspaceRoot = process.cwd();
+  await installLockedDependencies('workspace', workspaceRoot);
+  await installLockedDependencies('Core API', join(workspaceRoot, 'server'));
+} catch (error) {
+  console.error(error.message);
+  process.exitCode = error.code || 1;
+} finally {
   releaseInstallLock();
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
-  }
-  process.exit(code ?? 1);
-});
+}
+
+if (terminationSignal) process.kill(process.pid, terminationSignal);

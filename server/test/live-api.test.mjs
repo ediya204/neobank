@@ -45,6 +45,43 @@ test('customer-facing assets are limited to USD, HKD and USDT-TRON', async () =>
   }
 });
 
+test('beneficiaries expose only supported bank or USDT-TRON destinations', async () => {
+  const { response, body } = await request(`/customers/${customerId}`);
+  assert.equal(response.status, 200);
+  assert.ok(body.beneficiaries.length > 0);
+  for (const beneficiary of body.beneficiaries) {
+    const supportedBank =
+      beneficiary.type === 'BANK' && ['USD', 'HKD'].includes(beneficiary.currency);
+    const supportedCrypto =
+      beneficiary.type === 'CRYPTO' &&
+      beneficiary.currency === 'USDT' &&
+      beneficiary.network === 'TRON';
+    assert.ok(supportedBank || supportedCrypto, `unsupported beneficiary exposed: ${beneficiary.id}`);
+  }
+});
+
+test('crypto beneficiary creation rejects an invalid TRON address without writing a record', async () => {
+  const before = await request(`/beneficiaries?customerId=${customerId}`);
+  assert.equal(before.response.status, 200);
+  const created = await request('/beneficiaries', 'usr_admin', {
+    method: 'POST',
+    body: JSON.stringify({
+      customerId,
+      type: 'CRYPTO',
+      name: `${marker} invalid address`,
+      currency: 'USDT',
+      network: 'TRON',
+      walletAddress: 'T111111111111111111111111111111111',
+    }),
+  });
+  assert.equal(created.response.status, 400);
+  assert.equal(created.body.message, 'invalid_tron_address');
+
+  const after = await request(`/beneficiaries?customerId=${customerId}`);
+  assert.equal(after.response.status, 200);
+  assert.equal(after.body.length, before.body.length);
+});
+
 test('legacy wallets cannot expose a deposit address before Cregis ownership verification', async () => {
   const wallets = await request(`/crypto-wallets?customerId=${customerId}`);
   assert.equal(wallets.response.status, 200);

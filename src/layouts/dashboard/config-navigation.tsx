@@ -139,20 +139,6 @@ export function useNavData() {
               ],
             },
             {
-              subheader: t('navigation.developer'),
-              items: [
-                ...(hasPortalPermission(user, 'integrations.read')
-                  ? [
-                      {
-                        title: t('navigation.apiIntegration'),
-                        path: '/portal/api',
-                        icon: <Iconify icon="solar:code-square-bold-duotone" />,
-                      },
-                    ]
-                  : []),
-              ],
-            },
-            {
               subheader: t('navigation.account'),
               items: [
                 ...(hasPortalPermission(user, 'team.read')
@@ -301,19 +287,9 @@ export function useNavData() {
               subheader: t('navigation.systemSettings'),
               items: [
                 {
-                  title: t('navigation.apiIntegrationApprovals'),
-                  path: paths.dashboard.settings.apiIntegration,
-                  icon: <Iconify icon="solar:code-square-bold-duotone" />,
-                },
-                {
                   title: '汇率与报价',
                   path: paths.dashboard.settings.rates,
                   icon: <Iconify icon="solar:graph-new-up-bold-duotone" />,
-                },
-                {
-                  title: t('navigation.apiSecurity'),
-                  path: paths.dashboard.settings.apiSecurity,
-                  icon: <Iconify icon="solar:shield-keyhole-bold-duotone" />,
                 },
                 {
                   title: t('navigation.auditLogs'),

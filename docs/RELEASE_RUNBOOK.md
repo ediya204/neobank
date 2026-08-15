@@ -75,6 +75,9 @@ command includes `--config wrangler.neobank.jsonc`. The normal local/default
 build remains the full Nest application. See
 `docs/NEOBANK_CREGIS_DEPLOYMENT.md` for the route matrix, Access session chain,
 Go/Render dependency, KYC and operations gates, and D1 migration procedure.
+The whole-core D1 to Render PostgreSQL procedure is separately gated in
+`docs/NEOBANK_POSTGRES_CUTOVER.md`; a normal Neobank web release must not change
+`DATABASE_BACKEND`, copy database data, or open PostgreSQL ingress.
 
 ## Temporary worktrees and processes
 

@@ -135,6 +135,45 @@ async function hmacHex(secret: string, value: string): Promise<string> {
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+async function rateLimitKey(value: string): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  );
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function enforceCustomerAuthRateLimit(
+  request: Request,
+  env: Env,
+  pathname: string,
+  body: ArrayBuffer
+): Promise<Response | null> {
+  if (request.method !== 'POST' || !pathname.startsWith('/api/auth/customer/')) return null;
+  const source = request.headers.get('cf-connecting-ip')?.trim() || 'unknown-source';
+  const sourceResult = await env.CUSTOMER_AUTH_RATE_LIMITER.limit({
+    key: await rateLimitKey(`source\0${source}\0${pathname}`),
+  });
+  if (!sourceResult.success) return json({ error: { code: 'auth_rate_limited' } }, 429);
+
+  if (pathname === '/api/auth/customer/login') {
+    let email = '';
+    try {
+      const payload = JSON.parse(new TextDecoder().decode(body)) as { email?: unknown };
+      email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+    } catch {
+      // The Go API returns the canonical invalid-JSON response. The source
+      // bucket above still limits malformed credential-stuffing traffic.
+    }
+    if (email) {
+      const identityResult = await env.CUSTOMER_AUTH_RATE_LIMITER.limit({
+        key: await rateLimitKey(`identity\0${email}`),
+      });
+      if (!identityResult.success) return json({ error: { code: 'auth_rate_limited' } }, 429);
+    }
+  }
+  return null;
+}
+
 async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<Response> {
   const contentLength = Number(request.headers.get('content-length') || '0');
   if (contentLength > MAX_BODY_BYTES) return json({ error: { code: 'payload_too_large' } }, 413);
@@ -142,6 +181,8 @@ async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<R
   if (body.byteLength > MAX_BODY_BYTES) return json({ error: { code: 'payload_too_large' } }, 413);
 
   const incoming = new URL(request.url);
+  const rateLimited = await enforceCustomerAuthRateLimit(request, env, incoming.pathname, body);
+  if (rateLimited) return rateLimited;
   const upstreamOrigin = new URL(env.GO_API_BASE_URL);
   if (upstreamOrigin.protocol !== 'https:' || upstreamOrigin.pathname !== '/') {
     throw new Error('GO_API_BASE_URL must be an HTTPS origin');
@@ -201,6 +242,10 @@ function isPublicCustomerAPI(pathname: string) {
   );
 }
 
+function customerAPIInMaintenance(env: Env): boolean {
+  return env.CUSTOMER_AUTH_MAINTENANCE.trim().toLowerCase() === 'true';
+}
+
 function isAdminPage(pathname: string) {
   return (
     pathname === '/admin' ||
@@ -231,6 +276,9 @@ export default {
     }
     try {
       if (isPublicCustomerAPI(url.pathname)) {
+        if (customerAPIInMaintenance(env)) {
+          return json({ error: { code: 'customer_auth_maintenance' } }, 503);
+        }
         return await proxyAPI(request, env, 'public-customer-edge');
       }
       const claims = await verifyAccess(request, env);

@@ -18,6 +18,7 @@ import {
   InputLabel,
   MenuItem,
   Select,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -30,7 +31,11 @@ import {
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
+import BeneficiaryDialog from 'src/features/finance/beneficiary-dialog';
+import { ACTION_ICONS, UI_ICONS } from 'src/theme/iconography';
 import {
+  accountBalanceLabel,
+  accountProductName,
   Beneficiary,
   coreApi,
   Currency,
@@ -39,6 +44,7 @@ import {
   demoUsers,
   FundingChannel,
   JournalEntry,
+  MarketQuote,
   MoneyAccount,
   Operation,
   OperationType,
@@ -65,11 +71,14 @@ const sectionCopy: Record<
   FinanceSection,
   { title: string; description: string; type?: OperationType }
 > = {
-  accounts: { title: '账户与钱包', description: '查看客户法币钱包、独立 VA 余额和数字钱包状态。' },
+  accounts: {
+    title: '账户与钱包',
+    description: '查看客户的 VA 账户、系统多货币法币账户和数字钱包状态。',
+  },
   channels: { title: '资金通道', description: '查看法币入账、VA 出款、POBO 和平台代付通道。' },
   beneficiaries: {
     title: '收款人管理',
-    description: '维护客户银行收款人，并在出款时复用已验证资料。',
+    description: '维护客户银行账户和 USDT-TRON 地址，并在付款时复用已核对资料。',
   },
   rates: { title: '汇率与报价', description: '维护 FX 与 OTC 的版本化汇率和费率快照。' },
   ledger: { title: '复式总账', description: '查询不可修改的借贷流水；更正必须通过补偿调账完成。' },
@@ -157,6 +166,9 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [rates, setRates] = useState<RateVersion[]>([]);
+  const [marketQuotes, setMarketQuotes] = useState<MarketQuote[]>([]);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketError, setMarketError] = useState('');
   const [journals, setJournals] = useState<JournalEntry[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selected, setSelected] = useState<Operation | null>(null);
@@ -214,6 +226,44 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   useEffect(() => {
     load().catch(() => undefined);
   }, [load]);
+
+  const loadMarketQuotes = useCallback(async () => {
+    if (section !== 'rates' && section !== 'accounts') return;
+    setMarketLoading(true);
+    setMarketError('');
+    setMarketQuotes([]);
+    try {
+      const pairs: ReadonlyArray<readonly [Currency, Currency]> =
+        section === 'accounts'
+          ? supportedFiatCurrencies
+              .filter((currency) => currency !== 'USD')
+              .map((currency) => [currency, 'USD'] as const)
+          : [
+              ['USD', 'HKD'],
+              ['USD', 'USDT'],
+            ];
+      const quotes = await Promise.all(
+        pairs.map(([base, quote]) =>
+          coreApi<MarketQuote>(`/admin/market-rate?base=${base}&quote=${quote}`, { userId })
+        )
+      );
+      setMarketQuotes(quotes);
+    } catch (value) {
+      let message = '参考行情暂时不可用';
+      if (section === 'accounts') message = 'USD 折算行情暂不可用，请稍后重试';
+      else if (value instanceof Error) {
+        const { message: errorMessage } = value;
+        message = errorMessage;
+      }
+      setMarketError(message);
+    } finally {
+      setMarketLoading(false);
+    }
+  }, [section, userId]);
+
+  useEffect(() => {
+    loadMarketQuotes().catch(() => undefined);
+  }, [loadMarketQuotes]);
 
   useEffect(() => {
     const detailCustomerId = section === 'beneficiaries' ? selectedCustomerId : form.customerId;
@@ -384,6 +434,10 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         selectedCustomerId={selectedCustomer?.id || ''}
         onCustomerChange={setSelectedCustomerId}
         accounts={displayAccounts}
+        marketQuotes={marketQuotes}
+        marketLoading={marketLoading}
+        marketError={marketError}
+        onRefreshMarket={loadMarketQuotes}
       />
     );
   }
@@ -399,7 +453,16 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     );
   }
   if (section === 'rates') {
-    workspaceContent = <RateWorkspace rows={rates} onCreate={() => setRateOpen(true)} />;
+    workspaceContent = (
+      <RateWorkspace
+        rows={rates}
+        marketQuotes={marketQuotes}
+        marketLoading={marketLoading}
+        marketError={marketError}
+        onRefreshMarket={loadMarketQuotes}
+        onCreate={() => setRateOpen(true)}
+      />
+    );
   }
   if (section === 'ledger')
     workspaceContent = <LedgerWorkspace rows={journals} loading={loading} />;
@@ -595,20 +658,30 @@ function BeneficiaryWorkspace({
             <TableHead>
               <TableRow>
                 <TableCell>收款人</TableCell>
+                <TableCell>类型</TableCell>
                 <TableCell>币种</TableCell>
-                <TableCell>银行</TableCell>
-                <TableCell>账号 / IBAN</TableCell>
-                <TableCell>SWIFT</TableCell>
+                <TableCell>机构 / 网络</TableCell>
+                <TableCell>收款信息</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{row.name}</TableCell>
+                  <TableCell>
+                    <Label color={row.type === 'CRYPTO' ? 'success' : 'info'}>
+                      {row.type === 'CRYPTO' ? '数字货币' : '银行账户'}
+                    </Label>
+                  </TableCell>
                   <TableCell>{row.currency}</TableCell>
-                  <TableCell>{row.bankName}</TableCell>
-                  <TableCell>{row.accountNumber}</TableCell>
-                  <TableCell>{row.swiftBic || '-'}</TableCell>
+                  <TableCell>
+                    {row.type === 'CRYPTO' ? `${row.network} (TRC20)` : row.bankName}
+                  </TableCell>
+                  <TableCell>
+                    {row.type === 'CRYPTO'
+                      ? `${row.walletAddress?.slice(0, 7)}…${row.walletAddress?.slice(-6)}`
+                      : `${row.accountNumber}${row.swiftBic ? ` · ${row.swiftBic}` : ''}`}
+                  </TableCell>
                 </TableRow>
               ))}
               {!rows.length && (
@@ -626,55 +699,125 @@ function BeneficiaryWorkspace({
   );
 }
 
-function RateWorkspace({ rows, onCreate }: { rows: RateVersion[]; onCreate: () => void }) {
+function RateWorkspace({
+  rows,
+  marketQuotes,
+  marketLoading,
+  marketError,
+  onRefreshMarket,
+  onCreate,
+}: {
+  rows: RateVersion[];
+  marketQuotes: MarketQuote[];
+  marketLoading: boolean;
+  marketError: string;
+  onRefreshMarket: () => Promise<void>;
+  onCreate: () => void;
+}) {
   return (
-    <Card>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ p: 2.5 }}>
-        <Box>
-          <Typography variant="h6">当前与历史汇率</Typography>
-          <Typography variant="body2" color="text.secondary">
-            新建版本不会覆盖历史交易使用的汇率快照。
-          </Typography>
+    <Stack spacing={2}>
+      <Card sx={{ p: 2.5 }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          justifyContent="space-between"
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
+          gap={2}
+        >
+          <Box>
+            <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+              <Typography variant="h6">FastForex 参考行情</Typography>
+              <Chip size="small" label="中间价 · 仅供参考" color="info" variant="outlined" />
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              行情由 Render 服务端安全获取，不会自动修改结算价或历史成交快照。
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            disabled={marketLoading}
+            onClick={() => onRefreshMarket().catch(() => undefined)}
+            startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
+          >
+            {marketLoading ? '刷新中…' : '刷新行情'}
+          </Button>
+        </Stack>
+        {marketError && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            {marketError}
+          </Alert>
+        )}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+            gap: 2,
+            mt: 2,
+          }}
+        >
+          {marketQuotes.map((quote) => (
+            <Box key={`${quote.baseCurrency}/${quote.quoteCurrency}`}>
+              <Typography variant="caption" color="text.secondary">
+                1 {quote.baseCurrency} =
+              </Typography>
+              <Typography variant="h4">
+                {quote.rate} {quote.quoteCurrency}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                数据时间：{new Date(quote.updatedAt).toLocaleString('zh-CN')}
+              </Typography>
+            </Box>
+          ))}
         </Box>
-        <Button variant="contained" onClick={onCreate}>
-          新建汇率版本
-        </Button>
-      </Stack>
-      <TableContainer>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>类型</TableCell>
-              <TableCell>币对</TableCell>
-              <TableCell>买入价</TableCell>
-              <TableCell>卖出价</TableCell>
-              <TableCell>费率</TableCell>
-              <TableCell>生效时间</TableCell>
-              <TableCell>状态</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>{row.type}</TableCell>
-                <TableCell>
-                  {row.baseCurrency}/{row.quoteCurrency}
-                </TableCell>
-                <TableCell>{row.buyRate}</TableCell>
-                <TableCell>{row.sellRate}</TableCell>
-                <TableCell>{row.feeBps} bps</TableCell>
-                <TableCell>{new Date(row.effectiveFrom).toLocaleString('zh-CN')}</TableCell>
-                <TableCell>
-                  <Label color={row.active ? 'success' : 'default'}>
-                    {row.active ? '生效中' : '历史'}
-                  </Label>
-                </TableCell>
+      </Card>
+
+      <Card>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ p: 2.5 }}>
+          <Box>
+            <Typography variant="h6">当前与历史汇率</Typography>
+            <Typography variant="body2" color="text.secondary">
+              新建版本不会覆盖历史交易使用的汇率快照。
+            </Typography>
+          </Box>
+          <Button variant="contained" onClick={onCreate}>
+            新建汇率版本
+          </Button>
+        </Stack>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>类型</TableCell>
+                <TableCell>币对</TableCell>
+                <TableCell>买入价</TableCell>
+                <TableCell>卖出价</TableCell>
+                <TableCell>费率</TableCell>
+                <TableCell>生效时间</TableCell>
+                <TableCell>状态</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Card>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>{row.type}</TableCell>
+                  <TableCell>
+                    {row.baseCurrency}/{row.quoteCurrency}
+                  </TableCell>
+                  <TableCell>{row.buyRate}</TableCell>
+                  <TableCell>{row.sellRate}</TableCell>
+                  <TableCell>{row.feeBps} bps</TableCell>
+                  <TableCell>{new Date(row.effectiveFrom).toLocaleString('zh-CN')}</TableCell>
+                  <TableCell>
+                    <Label color={row.active ? 'success' : 'default'}>
+                      {row.active ? '生效中' : '历史'}
+                    </Label>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
+    </Stack>
   );
 }
 
@@ -722,115 +865,6 @@ function LedgerWorkspace({ rows, loading }: { rows: JournalEntry[]; loading: boo
         </Table>
       </TableContainer>
     </Card>
-  );
-}
-
-function BeneficiaryDialog({
-  open,
-  customerId,
-  userId,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  customerId: string;
-  userId: string;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [name, setName] = useState('');
-  const [currency, setCurrency] = useState<Currency>('USD');
-  const [bankName, setBankName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [swiftBic, setSwiftBic] = useState('');
-  const [countryCode, setCountryCode] = useState('SG');
-  const [error, setError] = useState('');
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    try {
-      await coreApi('/beneficiaries', {
-        method: 'POST',
-        userId,
-        body: JSON.stringify({
-          customerId,
-          name,
-          currency,
-          bankName,
-          accountNumber,
-          swiftBic: swiftBic || undefined,
-          countryCode,
-        }),
-      });
-      onCreated();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : '新增失败');
-    }
-  };
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <Box component="form" onSubmit={submit}>
-        <DialogTitle>新增银行收款人</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {error && <Alert severity="error">{error}</Alert>}
-            <TextField
-              required
-              label="收款人名称"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-            <FormControl fullWidth>
-              <InputLabel>币种</InputLabel>
-              <Select
-                label="币种"
-                value={currency}
-                onChange={(event) => setCurrency(event.target.value as Currency)}
-              >
-                {currencies.map((item) => (
-                  <MenuItem key={item} value={item}>
-                    {item}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              required
-              label="银行名称"
-              value={bankName}
-              onChange={(event) => setBankName(event.target.value)}
-            />
-            <TextField
-              required
-              label="银行账号 / IBAN"
-              value={accountNumber}
-              onChange={(event) => setAccountNumber(event.target.value)}
-            />
-            <Stack direction="row" spacing={2}>
-              <TextField
-                fullWidth
-                label="SWIFT/BIC"
-                value={swiftBic}
-                onChange={(event) => setSwiftBic(event.target.value.toUpperCase())}
-              />
-              <TextField
-                required
-                fullWidth
-                label="国家代码"
-                value={countryCode}
-                onChange={(event) => setCountryCode(event.target.value.toUpperCase())}
-                inputProps={{ maxLength: 2 }}
-              />
-            </Stack>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="submit" variant="contained">
-            保存收款人
-          </Button>
-        </DialogActions>
-      </Box>
-    </Dialog>
   );
 }
 
@@ -1004,7 +1038,7 @@ function Metric({
 function ChannelGrid({ channels }: { channels: FundingChannel[] }) {
   const descriptions: Record<FundingChannel['type'], string> = {
     FIAT_INBOUND: '接收银行汇款，匹配客户与目标 VA/钱包，管理员审批后入账。',
-    VA_PAYOUT: '从指定独立 VA 余额扣款，以该 VA 持有人信息作为付款人。',
+    VA_PAYOUT: '从指定 VA 账户的币种余额扣款，以该 VA 持有人信息作为付款人。',
     POBO_PAYOUT: '从系统钱包扣款，由通道以客户名义执行 POBO 付款。',
     PLATFORM_PAYOUT: '从系统钱包扣款，以平台母账户作为银行付款人。',
   };
@@ -1051,12 +1085,30 @@ function AccountWorkspace({
   selectedCustomerId,
   onCustomerChange,
   accounts,
+  marketQuotes,
+  marketLoading,
+  marketError,
+  onRefreshMarket,
 }: {
   customers: Customer[];
   selectedCustomerId: string;
   onCustomerChange: (id: string) => void;
   accounts: MoneyAccount[];
+  marketQuotes: MarketQuote[];
+  marketLoading: boolean;
+  marketError: string;
+  onRefreshMarket: () => Promise<void>;
 }) {
+  const [selectedFiatKind, setSelectedFiatKind] = useState<
+    'VIRTUAL_ACCOUNT' | 'SYSTEM_WALLET' | null
+  >(null);
+  const fiatAccountGroups = (['VIRTUAL_ACCOUNT', 'SYSTEM_WALLET'] as const)
+    .map((kind) => ({ kind, balances: accounts.filter((account) => account.kind === kind) }))
+    .filter((group) => group.balances.length > 0);
+  const digitalWallets = accounts.filter((account) => account.kind === 'CRYPTO_WALLET');
+  const selectedFiatBalances =
+    fiatAccountGroups.find((group) => group.kind === selectedFiatKind)?.balances || [];
+
   return (
     <Stack spacing={2}>
       <Card sx={{ p: 2.5 }}>
@@ -1082,35 +1134,344 @@ function AccountWorkspace({
           gap: 2,
         }}
       >
-        {accounts.map((account) => (
-          <Card key={account.id}>
-            <CardContent>
-              <Stack direction="row" justifyContent="space-between">
-                <Box>
-                  <Typography variant="subtitle1">{account.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {account.accountNumber}
-                  </Typography>
-                </Box>
-                <Label
-                  color={account.kind !== 'CRYPTO_WALLET' && account.status === 'ACTIVE' ? 'success' : 'default'}
-                >
-                  {account.kind === 'CRYPTO_WALLET' ? '等待 Cregis' : account.status}
-                </Label>
-              </Stack>
-              <Typography variant="h4" sx={{ mt: 2 }}>
-                {formatMoney(account.availableBalance, account.currency)}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                冻结：{formatMoney(account.frozenBalance, account.currency)}
-              </Typography>
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="body2">{accountDescription(account)}</Typography>
-            </CardContent>
-          </Card>
+        {fiatAccountGroups.map((group) => (
+          <FiatAccountProductCard
+            key={group.kind}
+            balances={group.balances}
+            marketQuotes={marketQuotes}
+            marketLoading={marketLoading}
+            marketError={marketError}
+            onOpen={() => setSelectedFiatKind(group.kind)}
+          />
+        ))}
+        {digitalWallets.map((account) => (
+          <DigitalWalletCard key={account.id} account={account} />
         ))}
       </Box>
+      <FiatAccountDetailDrawer
+        balances={selectedFiatBalances}
+        marketQuotes={marketQuotes}
+        marketLoading={marketLoading}
+        marketError={marketError}
+        onRefreshMarket={onRefreshMarket}
+        onClose={() => setSelectedFiatKind(null)}
+      />
     </Stack>
+  );
+}
+
+function FiatAccountProductCard({
+  balances,
+  marketQuotes,
+  marketLoading,
+  marketError,
+  onOpen,
+}: {
+  balances: MoneyAccount[];
+  marketQuotes: MarketQuote[];
+  marketLoading: boolean;
+  marketError: string;
+  onOpen: () => void;
+}) {
+  const product = balances[0];
+  const balanceCurrencies = balances.map((account) => account.currency).join(' / ');
+  const allActive = balances.every((account) => account.status === 'ACTIVE');
+  const valuation = fiatUsdValuation(balances, marketQuotes);
+  return (
+    <Card sx={{ height: '100%' }}>
+      <Box
+        component="button"
+        type="button"
+        onClick={onOpen}
+        aria-label={`查看${accountProductName(product)}折算详情`}
+        sx={{
+          width: 1,
+          height: 1,
+          p: 0,
+          border: 0,
+          bgcolor: 'transparent',
+          color: 'inherit',
+          textAlign: 'left',
+          cursor: 'pointer',
+          transition: (theme) =>
+            theme.transitions.create(['background-color', 'transform'], {
+              duration: theme.transitions.duration.shortest,
+            }),
+          '&:hover': { bgcolor: 'action.hover' },
+          '&:active': { transform: 'translateY(1px)' },
+          '&:focus-visible': {
+            outline: '2px solid',
+            outlineColor: 'primary.main',
+            outlineOffset: -2,
+          },
+        }}
+      >
+        <CardContent sx={{ height: 1 }}>
+          <Stack direction="row" justifyContent="space-between" gap={2}>
+            <Box>
+              <Typography variant="subtitle1">{accountProductName(product)}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {balanceCurrencies} · USD 折算余额
+              </Typography>
+            </Box>
+            <Label color={allActive ? 'success' : 'default'}>
+              {allActive ? 'ACTIVE' : '部分可用'}
+            </Label>
+          </Stack>
+          <Box sx={{ mt: 2.5, mb: 2 }}>
+            {marketLoading ? (
+              <Skeleton width="72%" height={46} />
+            ) : (
+              <Typography variant="h4">
+                {valuation.complete ? formatUsdValue(valuation.availableUsd) : '暂不可用'}
+              </Typography>
+            )}
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {valuation.complete
+                ? `冻结折算：${formatUsdValue(valuation.frozenUsd)}`
+                : marketError || `缺少 ${valuation.missingCurrencies.join(' / ')} 对 USD 参考行情`}
+            </Typography>
+          </Box>
+          <Divider />
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{ pt: 1.5 }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              查看币种、汇率与折算明细
+            </Typography>
+            <Iconify icon="solar:alt-arrow-right-linear" width={18} />
+          </Stack>
+        </CardContent>
+      </Box>
+    </Card>
+  );
+}
+
+function FiatAccountDetailDrawer({
+  balances,
+  marketQuotes,
+  marketLoading,
+  marketError,
+  onRefreshMarket,
+  onClose,
+}: {
+  balances: MoneyAccount[];
+  marketQuotes: MarketQuote[];
+  marketLoading: boolean;
+  marketError: string;
+  onRefreshMarket: () => Promise<void>;
+  onClose: () => void;
+}) {
+  if (!balances.length) return null;
+  const product = balances[0];
+  const valuation = fiatUsdValuation(balances, marketQuotes);
+  return (
+    <Drawer
+      anchor="right"
+      open
+      onClose={onClose}
+      PaperProps={{ sx: { width: { xs: 1, sm: 540 }, p: { xs: 2.5, sm: 3 } } }}
+    >
+      <Stack spacing={3}>
+        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
+          <Box>
+            <Typography variant="h5">{accountProductName(product)}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              原币余额与 FastForex USD 参考折算
+            </Typography>
+          </Box>
+          <Button color="inherit" onClick={onClose} sx={{ minWidth: 44 }} aria-label="关闭账户详情">
+            <Iconify icon={UI_ICONS.close} />
+          </Button>
+        </Stack>
+
+        <Box
+          sx={{
+            py: 2.5,
+            borderTop: '1px solid',
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Typography variant="overline" color="text.secondary">
+            可用余额 · USD 折算
+          </Typography>
+          {marketLoading ? (
+            <Skeleton width="72%" height={58} />
+          ) : (
+            <Typography variant="h3" sx={{ mt: 0.5 }}>
+              {valuation.complete ? formatUsdValue(valuation.availableUsd) : '暂不可用'}
+            </Typography>
+          )}
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+            {valuation.complete
+              ? `冻结折算：${formatUsdValue(valuation.frozenUsd)}`
+              : marketError || `缺少 ${valuation.missingCurrencies.join(' / ')} 对 USD 参考行情`}
+          </Typography>
+        </Box>
+
+        {!valuation.complete && marketError && (
+          <Alert
+            severity="warning"
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                disabled={marketLoading}
+                onClick={() => onRefreshMarket().catch(() => undefined)}
+              >
+                重试
+              </Button>
+            }
+          >
+            {marketError}
+          </Alert>
+        )}
+
+        <Stack divider={<Divider flexItem />}>
+          {valuation.lines.map((line) => (
+            <Box key={line.currency} sx={{ py: 2 }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
+                <Box>
+                  <Typography variant="subtitle1">{line.currency}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {line.rate === null
+                      ? '参考汇率暂不可用'
+                      : `1 ${line.currency} = ${formatRate(line.rate)} USD`}
+                  </Typography>
+                </Box>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="h6">
+                    {formatMoney(String(line.available), line.currency)}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {line.availableUsd === null
+                      ? 'USD 折算暂不可用'
+                      : `约 ${formatUsdValue(line.availableUsd)}`}
+                  </Typography>
+                </Box>
+              </Stack>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                justifyContent="space-between"
+                gap={0.5}
+                sx={{ mt: 1 }}
+              >
+                <Typography variant="caption" color="text.secondary">
+                  冻结：{formatMoney(String(line.frozen), line.currency)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {fiatBalanceDescription(line.accounts[0])}
+                </Typography>
+              </Stack>
+              {line.updatedAt && (
+                <Typography
+                  variant="caption"
+                  color="text.disabled"
+                  sx={{ display: 'block', mt: 0.75 }}
+                >
+                  行情时间：{new Date(line.updatedAt).toLocaleString('zh-CN')}
+                </Typography>
+              )}
+            </Box>
+          ))}
+        </Stack>
+
+        <Alert severity="info">
+          USD 折算使用 FastForex 中间参考价，仅用于账户概览；不会改变账本、结算价或历史成交快照。
+        </Alert>
+      </Stack>
+    </Drawer>
+  );
+}
+
+type FiatUsdValuationLine = {
+  currency: Currency;
+  available: number;
+  frozen: number;
+  rate: number | null;
+  availableUsd: number | null;
+  frozenUsd: number | null;
+  updatedAt: string | null;
+  accounts: MoneyAccount[];
+};
+
+function fiatUsdValuation(balances: MoneyAccount[], marketQuotes: MarketQuote[]) {
+  const groupedBalances = balances.reduce((groups, account) => {
+    groups.set(account.currency, [...(groups.get(account.currency) || []), account]);
+    return groups;
+  }, new Map<Currency, MoneyAccount[]>());
+  const lines: FiatUsdValuationLine[] = Array.from(groupedBalances.entries()).map(
+    ([currency, accounts]) => {
+      const quote = marketQuotes.find(
+        (item) => item.baseCurrency === currency && item.quoteCurrency === 'USD'
+      );
+      const parsedRate = currency === 'USD' ? 1 : Number(quote?.rate);
+      const rate = Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : null;
+      const available = accounts.reduce(
+        (total, account) => total + Number(account.availableBalance),
+        0
+      );
+      const frozen = accounts.reduce((total, account) => total + Number(account.frozenBalance), 0);
+      return {
+        currency,
+        available,
+        frozen,
+        rate,
+        availableUsd: rate === null ? null : available * rate,
+        frozenUsd: rate === null ? null : frozen * rate,
+        updatedAt: currency === 'USD' ? null : quote?.updatedAt || null,
+        accounts,
+      };
+    }
+  );
+  const missingCurrencies = lines.filter((line) => line.rate === null).map((line) => line.currency);
+  return {
+    lines,
+    missingCurrencies,
+    complete: missingCurrencies.length === 0,
+    availableUsd: lines.reduce((total, line) => total + (line.availableUsd || 0), 0),
+    frozenUsd: lines.reduce((total, line) => total + (line.frozenUsd || 0), 0),
+  };
+}
+
+function formatUsdValue(value: number) {
+  return formatMoney(String(value), 'USD');
+}
+
+function formatRate(value: number) {
+  return new Intl.NumberFormat('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(value);
+}
+
+function DigitalWalletCard({ account }: { account: MoneyAccount }) {
+  return (
+    <Card>
+      <CardContent>
+        <Stack direction="row" justifyContent="space-between">
+          <Box>
+            <Typography variant="subtitle1">{accountProductName(account)}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {account.currency} 余额{account.accountNumber ? ` · ${account.accountNumber}` : ''}
+            </Typography>
+          </Box>
+          <Label color="default">等待 Cregis</Label>
+        </Stack>
+        <Typography variant="h4" sx={{ mt: 2 }}>
+          {formatMoney(account.availableBalance, account.currency)}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          冻结：{formatMoney(account.frozenBalance, account.currency)}
+        </Typography>
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="body2">{accountDescription(account)}</Typography>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1224,7 +1585,7 @@ function OperationDialog({
   );
   const dialogNotice =
     type === 'DEPOSIT'
-      ? '提交后进入待审批；授权管理员确认到账后记入目标钱包或 VA。'
+      ? '法币账户只有 VA 账户和系统多货币法币账户；提交后进入待审批，确认到账后记入对应币种余额。'
       : '提交后将冻结相关余额并进入待审批；授权管理员可直接完成审批。';
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
@@ -1450,7 +1811,7 @@ function AccountSelect({
       <Select label={label} value={value} onChange={(e) => onChange(e.target.value)}>
         {accounts.map((account) => (
           <MenuItem key={account.id} value={account.id}>
-            {account.name} · {account.currency} · 可用 {account.availableBalance}
+            {accountBalanceLabel(account)} · 可用 {account.availableBalance}
           </MenuItem>
         ))}
       </Select>
@@ -1590,9 +1951,14 @@ function StatusLabel({ status }: { status: Operation['status'] }) {
   return <Label color={color}>{labels[status]}</Label>;
 }
 function accountDescription(account: MoneyAccount) {
-  if (account.kind === 'VIRTUAL_ACCOUNT') return `${account.bankName || '-'} · 独立余额`;
   if (account.kind === 'CRYPTO_WALLET') return `${account.network || 'TRON'} · 操作已禁用`;
-  return '系统法币钱包';
+  return accountProductName(account);
+}
+function fiatBalanceDescription(account: MoneyAccount) {
+  if (account.kind === 'VIRTUAL_ACCOUNT') {
+    return `${account.bankName || '待分配银行'} · ${account.accountNumber || '待分配账号'}`;
+  }
+  return '系统自动分配';
 }
 function operationTypeText(type: OperationType) {
   return (

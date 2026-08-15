@@ -134,6 +134,11 @@ enum CryptoTransferStatus {
   FAILED
 }
 
+enum BeneficiaryType {
+  BANK
+  CRYPTO
+}
+
 model Organization {
   id        String           @id @default(uuid())
   name      String
@@ -347,22 +352,26 @@ model Account {
 }
 
 model Beneficiary {
-  id            String      @id @default(uuid())
+  id            String          @id @default(uuid())
   customerId    String
-  customer      Customer    @relation(fields: [customerId], references: [id])
+  customer      Customer        @relation(fields: [customerId], references: [id])
+  type          BeneficiaryType @default(BANK)
   name          String
   currency      Currency
-  bankName      String
-  accountNumber String
+  bankName      String?
+  accountNumber String?
   swiftBic      String?
   iban          String?
   bankAddress   String?
-  countryCode   String
-  active        Boolean     @default(true)
+  countryCode   String?
+  walletAddress String?
+  network       CryptoNetwork?
+  active        Boolean         @default(true)
   operations    Operation[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
+  @@unique([customerId, network, walletAddress])
   @@index([customerId, active])
 }
 

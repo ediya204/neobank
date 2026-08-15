@@ -9,6 +9,7 @@ import {
   AccountKind,
   AccountStatus,
   AdjustmentDirection,
+  BeneficiaryType,
   ChannelType,
   Currency,
   JournalSide,
@@ -384,7 +385,12 @@ export class OperationsService {
       network: string | null;
     } | null,
     channel: { type: ChannelType; supportedCurrencies: Currency[]; active: boolean } | null,
-    beneficiary: { customerId: string; currency: Currency; active: boolean } | null
+    beneficiary: {
+      customerId: string;
+      type: BeneficiaryType;
+      currency: Currency;
+      active: boolean;
+    } | null
   ) {
     if (input.currency === 'USDT' && input.type !== 'OTC') {
       throw new BadRequestException('crypto_wallet_operations_disabled_until_cregis');
@@ -439,6 +445,7 @@ export class OperationsService {
         source.customerId !== input.customerId ||
         !beneficiary ||
         !beneficiary.active ||
+        beneficiary.type !== BeneficiaryType.BANK ||
         beneficiary.customerId !== input.customerId ||
         beneficiary.currency !== input.currency
       ) {

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"github.com/ediya204/neobank/server-go/internal/cregis"
 	"github.com/ediya204/neobank/server-go/internal/d1"
 	"github.com/ediya204/neobank/server-go/internal/fastforex"
+	postgresdb "github.com/ediya204/neobank/server-go/internal/postgres"
 )
 
 type application struct {
@@ -33,6 +35,7 @@ type application struct {
 	publicURL              string
 	portalURL              string
 	tenantID               string
+	databaseBackend        string
 	marketData             marketDataClient
 	logger                 *slog.Logger
 }
@@ -44,11 +47,29 @@ type databaseClient interface {
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	db, err := d1.New(os.Getenv("D1_GATEWAY_URL"), os.Getenv("D1_GATEWAY_SECRET"))
-	if err != nil {
-		logger.Error("invalid configuration", "error", err)
+	databaseBackend := strings.ToLower(envOr("DATABASE_BACKEND", "d1"))
+	var db databaseClient
+	var closeDatabase func()
+	var err error
+	switch databaseBackend {
+	case "d1":
+		db, err = d1.New(os.Getenv("D1_GATEWAY_URL"), os.Getenv("D1_GATEWAY_SECRET"))
+		closeDatabase = func() {}
+	case "postgres":
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		db, err = postgresdb.New(ctx, os.Getenv("DATABASE_URL"))
+		cancel()
+		if postgresClient, ok := db.(*postgresdb.Client); ok {
+			closeDatabase = postgresClient.Close
+		}
+	default:
+		err = fmt.Errorf("DATABASE_BACKEND must be d1 or postgres")
+	}
+	if err != nil || db == nil || closeDatabase == nil {
+		logger.Error("invalid database configuration", "backend", databaseBackend, "error", err)
 		os.Exit(1)
 	}
+	defer closeDatabase()
 	cregisLive := strings.EqualFold(os.Getenv("CREGIS_ENABLED"), "true")
 	var cregisClient *cregis.Client
 	if cregisLive {
@@ -108,7 +129,7 @@ func main() {
 		db: db, cregis: cregisClient, cregisLive: cregisLive, edgeSecret: []byte(edgeSecret),
 		customerPasswordPepper: passwordPepper, customerTOTPKey: totpKey, customerRecoveryPepper: recoveryPepper,
 		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"),
-		marketData: marketData, logger: logger,
+		databaseBackend: databaseBackend, marketData: marketData, logger: logger,
 	}
 
 	mux := http.NewServeMux()
@@ -159,7 +180,7 @@ func (app *application) health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok", "service": "neobank-go-api", "database": "d1",
+		"status": "ok", "service": "neobank-go-api", "database": app.databaseBackend,
 		"cregis": map[bool]string{true: "enabled", false: "disabled"}[app.cregisLive],
 	})
 }
