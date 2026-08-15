@@ -93,6 +93,8 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 		app.listCustomerWallets(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/history":
 		app.listCustomerHistory(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/market-rate":
+		app.customerMarketRate(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/customer/withdrawals":
 		app.createCustomerWithdrawal(w, r)
 	default:

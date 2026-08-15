@@ -22,6 +22,8 @@ services:
         sync: false
       - key: CUSTOMER_RECOVERY_PEPPER
         sync: false
+      - key: FASTFOREX_API_KEY
+        sync: false
       - key: CREGIS_BASE_URL
         value: https://t-wsmbuuhb.cregis.io
       - key: CREGIS_ENABLED

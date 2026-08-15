@@ -19,6 +19,7 @@ import (
 
 	"github.com/ediya204/neobank/server-go/internal/cregis"
 	"github.com/ediya204/neobank/server-go/internal/d1"
+	"github.com/ediya204/neobank/server-go/internal/fastforex"
 )
 
 type application struct {
@@ -32,6 +33,7 @@ type application struct {
 	publicURL              string
 	portalURL              string
 	tenantID               string
+	marketData             marketDataClient
 	logger                 *slog.Logger
 }
 
@@ -92,10 +94,21 @@ func main() {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
+	var marketData marketDataClient
+	if fastForexKey := strings.TrimSpace(os.Getenv("FASTFOREX_API_KEY")); fastForexKey != "" {
+		marketData, err = fastforex.New(fastforex.Config{APIKey: fastForexKey})
+		if err != nil {
+			logger.Error("invalid FastForex configuration", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		logger.Warn("FastForex market data is disabled because FASTFOREX_API_KEY is not configured")
+	}
 	app := &application{
 		db: db, cregis: cregisClient, cregisLive: cregisLive, edgeSecret: []byte(edgeSecret),
 		customerPasswordPepper: passwordPepper, customerTOTPKey: totpKey, customerRecoveryPepper: recoveryPepper,
-		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"), logger: logger,
+		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"),
+		marketData: marketData, logger: logger,
 	}
 
 	mux := http.NewServeMux()
@@ -154,6 +167,10 @@ func (app *application) health(w http.ResponseWriter, r *http.Request) {
 func (app *application) api(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/v1/health" && r.Method == http.MethodGet {
 		app.health(w, r)
+		return
+	}
+	if r.URL.Path == "/api/v1/admin/market-rate" && r.Method == http.MethodGet {
+		app.marketRate(w, r)
 		return
 	}
 	if app.routeCustomerAPI(w, r) {
