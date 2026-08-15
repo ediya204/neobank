@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  BeneficiaryType,
   CryptoNetwork,
   CryptoTransferDirection,
   CryptoTransferStatus,
@@ -16,6 +17,7 @@ import {
 import { randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { supportedCryptoAsset, supportedCryptoNetwork } from '../supported-assets';
+import { isValidTronAddress } from './tron-address';
 
 type CreateWithdrawalInput = {
   customerId: string;
@@ -23,6 +25,7 @@ type CreateWithdrawalInput = {
   network: CryptoNetwork;
   amount: string;
   toAddress: string;
+  beneficiaryId?: string;
   idempotencyKey: string;
 };
 
@@ -115,11 +118,14 @@ export class CryptoWalletsService {
           where: { customerId: input.customerId, idempotencyKey: input.idempotencyKey },
         });
         if (existing) return existing;
-        const [wallet, customer, maker, mirrorAccount] = await Promise.all([
+        const [wallet, customer, maker, mirrorAccount, beneficiary] = await Promise.all([
           tx.cryptoWallet.findUnique({ where: { id: input.walletId } }),
           tx.customer.findUnique({ where: { id: input.customerId } }),
           tx.user.findUnique({ where: { id: makerId } }),
           this.mirrorAccount(tx, input.customerId),
+          input.beneficiaryId
+            ? tx.beneficiary.findUnique({ where: { id: input.beneficiaryId } })
+            : null,
         ]);
         if (
           !wallet ||
@@ -140,6 +146,18 @@ export class CryptoWalletsService {
           throw new ForbiddenException('cross_tenant_crypto_operation');
         }
         if (!mirrorAccount) throw new ConflictException('crypto_account_mirror_not_configured');
+        if (
+          input.beneficiaryId &&
+          (!beneficiary ||
+            !beneficiary.active ||
+            beneficiary.customerId !== input.customerId ||
+            beneficiary.type !== BeneficiaryType.CRYPTO ||
+            beneficiary.currency !== supportedCryptoAsset ||
+            beneficiary.network !== input.network ||
+            beneficiary.walletAddress !== input.toAddress)
+        ) {
+          throw new BadRequestException('crypto_beneficiary_mismatch');
+        }
         if (amount.lte(wallet.withdrawalFee)) {
           throw new BadRequestException('amount_must_exceed_network_fee');
         }
@@ -202,6 +220,7 @@ export class CryptoWalletsService {
             amount: netAmount,
             feeAmount: wallet.withdrawalFee,
             sourceAccountId: mirrorAccount.id,
+            beneficiaryId: input.beneficiaryId,
             makerId,
             narrative: `USDT TRON withdrawal ${reference}`,
             submittedAt: new Date(),
@@ -415,7 +434,7 @@ export class CryptoWalletsService {
   private validateAddress(network: CryptoNetwork, address: string) {
     const valid =
       network === 'TRON'
-        ? /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)
+        ? isValidTronAddress(address)
         : /^0x[a-fA-F0-9]{40}$/.test(address);
     if (!valid) throw new BadRequestException('invalid_destination_address');
   }

@@ -82,7 +82,7 @@ export const dashboardRoutes = [
         path: 'settings',
         children: [
           {
-            element: <Navigate to={paths.dashboard.settings.apiIntegration} replace />,
+            element: <Navigate to={paths.dashboard.settings.rates} replace />,
             index: true,
           },
           {
@@ -91,11 +91,11 @@ export const dashboardRoutes = [
           },
           {
             path: 'api-integration',
-            element: <Navigate to={paths.dashboard.fundingChannels} replace />,
+            element: <Navigate to={paths.dashboard.settings.rates} replace />,
           },
           {
             path: 'api-security',
-            element: <Navigate to={paths.dashboard.fundingChannels} replace />,
+            element: <Navigate to={paths.dashboard.settings.rates} replace />,
           },
           { path: 'rates', element: <FinanceWorkspace section="rates" /> },
         ],

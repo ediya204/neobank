@@ -60,6 +60,8 @@ ticket, chat, log, or repository.
 
 | Name                       | Secret    | Initial value or source                                  |
 | -------------------------- | --------- | -------------------------------------------------------- |
+| `DATABASE_BACKEND`         | No        | `d1` until the PostgreSQL cutover gate passes            |
+| `DATABASE_URL`             | Yes       | Render PostgreSQL internal connection; staged unused     |
 | `D1_GATEWAY_URL`           | No        | URL of `neobank-d1-gateway`                              |
 | `D1_GATEWAY_SECRET`        | Yes       | Same random value as the Worker secret                   |
 | `EDGE_SHARED_SECRET`       | Yes       | Same random value as the web Worker secret               |
@@ -126,8 +128,9 @@ for audit, and a Cregis callback is required for the final result.
 ## Customer test-account boundary
 
 Customer identity, credential metadata, sessions, wallet ownership, and audit
-events are stored in the isolated D1 database. Passwords are never stored:
-the API stores only a random salt and a peppered PBKDF2-HMAC-SHA-256 result.
+events are currently stored in the isolated D1 database. Passwords are never
+stored: new records use a random salt and a peppered Argon2id result. A valid
+legacy peppered PBKDF2 login is upgraded transactionally to versioned Argon2id.
 TOTP secrets are encrypted with the dedicated AES key. Session tokens, CSRF
 tokens, setup tokens, and login challenges are stored only as hashes.
 
@@ -162,7 +165,8 @@ The rollout order is mandatory:
    into an isolated database.
 2. Apply `migrations-core/0002_customer_auth.sql`,
    `migrations-core/0003_cregis_wallet_deposit_gate.sql`, and
-   `migrations-core/0004_customer_kyc_atomic_funds.sql` to the isolated restore,
+   `migrations-core/0004_customer_kyc_atomic_funds.sql`, followed by
+   `migrations-core/0005_customer_auth_hardening.sql` to the isolated restore,
    then run `PRAGMA foreign_key_check`. Migration `0004` intentionally leaves
    existing customers at KYC pending and operations pending; do not backfill
    approval without a real review.
@@ -214,3 +218,9 @@ Before changing `CREGIS_ENABLED` to `true`:
 Keep separate evidence for source validation, Cloudflare deployment, Render
 deployment, D1 migration/restore, callback verification, and business-state
 assertions. A successful HTTP response alone is not wallet acceptance.
+
+The medium-term move from D1 to Render PostgreSQL is a whole-core migration,
+not a password-table split. Follow
+[`NEOBANK_POSTGRES_CUTOVER.md`](./NEOBANK_POSTGRES_CUTOVER.md); GitHub push,
+Cloudflare deploy, PostgreSQL schema initialization, data copy, and Render
+backend switch remain separately approved operations.

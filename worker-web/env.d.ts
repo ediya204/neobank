@@ -5,6 +5,12 @@ interface Env {
   NEOBANK_ADMIN_EMAILS: string;
   GO_API_BASE_URL: string;
   GO_EDGE_SHARED_SECRET: string;
+  CUSTOMER_AUTH_MAINTENANCE: string;
+  CUSTOMER_AUTH_RATE_LIMITER: RateLimit;
+}
+
+interface RateLimit {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
 interface Fetcher {

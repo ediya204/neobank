@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base32"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,7 +12,13 @@ import (
 )
 
 func TestRecoverySessionRequiresFreshlyConsumedCode(t *testing.T) {
-	for _, required := range []string{"SELECT ?, ?, ?, ?, ?, ?, ?, ?", "customer_recovery_codes", "used_at=?"} {
+	for _, required := range []string{
+		"SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?",
+		"customer_recovery_codes",
+		"customer_login_challenges",
+		"credential_version=?",
+		"used_at=?",
+	} {
 		if !strings.Contains(recoveryCustomerSessionSQL, required) {
 			t.Fatalf("recovery session SQL must contain %q", required)
 		}
@@ -51,18 +58,53 @@ func TestCustomerPasswordPolicy(t *testing.T) {
 	}
 }
 
-func TestCustomerPasswordDerivationUsesPepperAndSalt(t *testing.T) {
+func TestCustomerArgonPasswordDerivationUsesPepperAndSalt(t *testing.T) {
 	app := &application{customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef")}
-	first, err := app.deriveCustomerPassword("Correct-Horse-7-Battery", []byte("0123456789abcdef"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := app.deriveCustomerPassword("Correct-Horse-7-Battery", []byte("fedcba9876543210"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	first := app.deriveCustomerArgon2id("Correct-Horse-7-Battery", []byte("0123456789abcdef"))
+	second := app.deriveCustomerArgon2id("Correct-Horse-7-Battery", []byte("fedcba9876543210"))
 	if hmac.Equal(first, second) {
 		t.Fatal("different salts must produce different hashes")
+	}
+}
+
+func TestLegacyPasswordVerificationRequestsArgonUpgrade(t *testing.T) {
+	app := &application{customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef")}
+	salt := []byte("0123456789abcdef")
+	hash, err := app.deriveLegacyCustomerPassword("Correct-Horse-7-Battery", salt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, upgrade := app.verifyCustomerPassword("Correct-Horse-7-Battery", map[string]any{
+		"password_salt":       hex.EncodeToString(salt),
+		"password_hash":       hex.EncodeToString(hash),
+		"password_algorithm":  "pbkdf2-sha256-v1",
+		"password_iterations": int64(customerLegacyPasswordIterations),
+	})
+	if !valid || !upgrade {
+		t.Fatal("valid legacy password must authenticate and request an Argon2id upgrade")
+	}
+}
+
+func TestArgonPasswordVerificationRejectsWrongParameters(t *testing.T) {
+	app := &application{customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef")}
+	salt := []byte("0123456789abcdef")
+	hash := app.deriveCustomerArgon2id("Correct-Horse-7-Battery", salt)
+	row := map[string]any{
+		"password_salt":        hex.EncodeToString(salt),
+		"password_hash":        hex.EncodeToString(hash),
+		"password_algorithm":   customerPasswordAlgorithm,
+		"password_memory_kib":  int64(customerArgonMemoryKiB),
+		"password_time_cost":   int64(customerArgonTimeCost),
+		"password_parallelism": int64(customerArgonParallelism),
+	}
+	valid, upgrade := app.verifyCustomerPassword("Correct-Horse-7-Battery", row)
+	if !valid || upgrade {
+		t.Fatal("current Argon2id record must authenticate without an upgrade")
+	}
+	row["password_memory_kib"] = int64(1)
+	valid, _ = app.verifyCustomerPassword("Correct-Horse-7-Battery", row)
+	if valid {
+		t.Fatal("unsupported Argon2id parameters must fail closed")
 	}
 }
 
@@ -92,11 +134,28 @@ func TestVerifyCustomerTOTPCode(t *testing.T) {
 	secret := "JBSWY3DPEHPK3PXP"
 	now := time.Unix(1_800_000_000, 0)
 	code := totpCodeForTest(t, secret, now)
-	if !verifyTOTPCode(secret, code, now) {
+	counter, valid := verifyTOTPCode(secret, code, now, -1)
+	if !valid {
 		t.Fatal("expected current TOTP code to verify")
 	}
-	if verifyTOTPCode(secret, "000000", now) && code != "000000" {
+	if _, replayed := verifyTOTPCode(secret, code, now, counter); replayed {
+		t.Fatal("accepted TOTP counter must not be reusable")
+	}
+	if _, accepted := verifyTOTPCode(secret, "000000", now, -1); accepted && code != "000000" {
 		t.Fatal("unexpected invalid TOTP acceptance")
+	}
+}
+
+func TestChallengeSessionsRequireAtomicSecurityState(t *testing.T) {
+	for name, sql := range map[string]string{
+		"totp":       totpCustomerSessionSQL,
+		"enrollment": enrollmentCustomerSessionSQL,
+	} {
+		for _, required := range []string{"credential_version=?", "totp_last_counter=?"} {
+			if !strings.Contains(sql, required) {
+				t.Fatalf("%s session SQL must contain %q", name, required)
+			}
+		}
 	}
 }
 

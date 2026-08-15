@@ -47,7 +47,6 @@ import { hasPortalPermission } from 'src/auth/permissions';
 import CountryCallingCodeAutocomplete from 'src/components/country-calling-code-autocomplete';
 import i18nInstance from 'src/locales/i18n';
 import { getLocalizedApiError } from 'src/locales/api-error';
-import PartnerApiIntegration from 'src/pages/partner-api-integration';
 import PortalMessages from 'src/pages/portal-messages';
 import PortalSettings from 'src/pages/portal-settings';
 import portalEn from 'src/locales/langs/portal.en.json';
@@ -122,7 +121,6 @@ const VIEWS = [
   'fiat-wallet',
   'crypto-wallet',
   'transactions',
-  'api',
   'messages',
   'settings',
 ];
@@ -155,10 +153,6 @@ const VIEW_COPY: Record<string, { title: string; description: string }> = {
   transactions: {
     title: '交易历史',
     description: '统一查询所有客户的转入、转出和 OTC 交易。',
-  },
-  api: {
-    title: 'API 接入',
-    description: '使用机器 API 完成 Portal 中的全部合作方操作。',
   },
   messages: {
     title: '消息',
@@ -1181,7 +1175,6 @@ export default function PartnerPortalPage() {
               customers={customers}
               transactions={records}
               canCreateCustomers={hasPortalPermission(user, 'customers.create')}
-              canViewIntegrations={hasPortalPermission(user, 'integrations.read')}
               onOpenCustomer={(id) => navigate(`/portal/customers/${id}`)}
               onNavigate={navigate}
             />
@@ -2065,7 +2058,6 @@ export default function PartnerPortalPage() {
           </Stack>
         )}
 
-        {tab === 'api' && <PartnerApiIntegration />}
       </Container>
       <ConfirmDialog
         open={otcConfirmOpen}
@@ -2198,14 +2190,12 @@ function PortalDashboard({
   customers,
   transactions,
   canCreateCustomers,
-  canViewIntegrations,
   onOpenCustomer,
   onNavigate,
 }: {
   customers: any[];
   transactions: any[];
   canCreateCustomers: boolean;
-  canViewIntegrations: boolean;
   onOpenCustomer: (id: string) => void;
   onNavigate: (path: string) => void;
 }) {
@@ -2447,11 +2437,6 @@ function PortalDashboard({
           {canCreateCustomers && (
             <Button variant="contained" onClick={() => onNavigate('/portal/applications')}>
               {portalText('发起开户')}
-            </Button>
-          )}
-          {canViewIntegrations && (
-            <Button variant="outlined" onClick={() => onNavigate('/portal/api')}>
-              {portalText('API 接入')}
             </Button>
           )}
         </Stack>

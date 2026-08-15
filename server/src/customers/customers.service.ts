@@ -5,12 +5,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Currency, CustomerStatus, CustomerType, Prisma } from '@prisma/client';
+import {
+  BeneficiaryType,
+  Currency,
+  CustomerStatus,
+  CustomerType,
+  Prisma,
+} from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { requireCustomerAccess, requireOrganizationAccess } from '../common/tenant-access';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   isSupportedFiatCurrency,
+  supportedCryptoAsset,
+  supportedCryptoNetwork,
   supportedCustomerAccountWhere,
   supportedFiatCurrencies,
 } from '../supported-assets';
@@ -52,7 +60,19 @@ export class CustomersService {
       where: { id },
       include: {
         accounts: { where: supportedCustomerAccountWhere },
-        beneficiaries: { where: { currency: { in: supportedFiatCurrencies } } },
+        beneficiaries: {
+          where: {
+            OR: [
+              { type: BeneficiaryType.BANK, currency: { in: supportedFiatCurrencies } },
+              {
+                type: BeneficiaryType.CRYPTO,
+                currency: supportedCryptoAsset,
+                network: supportedCryptoNetwork,
+              },
+            ],
+          },
+          orderBy: { createdAt: 'desc' },
+        },
         operations: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
     });

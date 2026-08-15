@@ -142,7 +142,7 @@ func (app *application) activateCustomerOperations(w http.ResponseWriter, r *htt
 		token := randomToken(32)
 		expiresAt := databaseTimestamp(time.Now().Add(customerSetupDuration))
 		statements = append(statements, d1.Statement{SQL: issueCustomerSetupCredentialSQL, Params: []any{
-			id, customerPasswordIterations, tokenHash(token), expiresAt, now,
+			id, customerLegacyPasswordIterations, tokenHash(token), expiresAt, now,
 			id, app.tenantID, actor, now,
 		}})
 		setup = map[string]string{

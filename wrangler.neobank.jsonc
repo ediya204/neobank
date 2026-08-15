@@ -6,6 +6,12 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": true,
   "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "portal.sscdigitalbank.com",
+      "custom_domain": true
+    }
+  ],
   "assets": {
     "binding": "ASSETS",
     "directory": "./build",
@@ -16,11 +22,22 @@
     "CF_ACCESS_TEAM_DOMAIN": "fidere.cloudflareaccess.com",
     "CF_ACCESS_AUD": "71dd34ee6e3265b40b465881dc409d80915dc651b372623aec425f2e21d24da3",
     "NEOBANK_ADMIN_EMAILS": "edi@fideretrust.com",
-    "GO_API_BASE_URL": "https://neobank-78pr.onrender.com"
+    "GO_API_BASE_URL": "https://neobank-78pr.onrender.com",
+    "CUSTOMER_AUTH_MAINTENANCE": "false"
   },
   "secrets": {
     "required": ["GO_EDGE_SHARED_SECRET"]
   },
+  "ratelimits": [
+    {
+      "name": "CUSTOMER_AUTH_RATE_LIMITER",
+      "namespace_id": "2026081401",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

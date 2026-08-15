@@ -9,10 +9,6 @@ import {
   Card,
   CardContent,
   Container,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
   FormControl,
   InputLabel,
@@ -22,16 +18,18 @@ import {
   Step,
   StepLabel,
   Stepper,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import CustomBreadcrumbs from 'src/components/custom-breadcrumbs';
 import Label from 'src/components/label';
+import BeneficiaryDialog from 'src/features/finance/beneficiary-dialog';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 import {
   coreApi,
-  Currency,
   Customer,
   FundingChannel,
   isSupportedPortalAccount,
@@ -150,7 +148,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
     if (action === 'otc') return (source.currency === 'USDT') !== (row.currency === 'USDT');
     return false;
   });
-  const beneficiaries = detail?.beneficiaries || [];
+  const beneficiaries = (detail?.beneficiaries || []).filter((row) => row.type === 'BANK');
   const selectedBeneficiary = beneficiaries.find((row) => row.id === beneficiaryId);
   const payoutAccounts = accounts.filter((row) => {
     if (!selectedBeneficiary) return false;
@@ -399,7 +397,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                                 <Typography variant="subtitle2">{row.name}</Typography>
                                 <Typography variant="caption" color="text.secondary">
                                   {row.bankName} · {row.currency} · ••••
-                                  {row.accountNumber.slice(-4)}
+                                  {row.accountNumber?.slice(-4)}
                                 </Typography>
                               </Stack>
                             </MenuItem>
@@ -432,7 +430,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                                 </Typography>
                                 <Typography variant="subtitle2">
                                   {selectedBeneficiary.currency} · ••••
-                                  {selectedBeneficiary.accountNumber.slice(-4)}
+                                  {selectedBeneficiary.accountNumber?.slice(-4)}
                                 </Typography>
                               </Stack>
                               <Stack direction="row" justifyContent="space-between" gap={2}>
@@ -595,6 +593,10 @@ function BeneficiaryPage({
   setDialogOpen: (open: boolean) => void;
 }) {
   const rows = customer?.beneficiaries || [];
+  const [filter, setFilter] = useState<'ALL' | 'BANK' | 'CRYPTO'>('ALL');
+  const visibleRows = rows.filter((row) => filter === 'ALL' || row.type === filter);
+  const bankCount = rows.filter((row) => row.type === 'BANK').length;
+  const cryptoCount = rows.filter((row) => row.type === 'CRYPTO').length;
   return (
     <>
       <Helmet>
@@ -606,7 +608,7 @@ function BeneficiaryPage({
             <Box>
               <Typography variant="h4">第三方收款人</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                保存常用的个人或企业银行账户，付款时直接选择。
+                统一管理银行账户和数字货币地址，付款时直接选择并再次核对。
               </Typography>
             </Box>
             <Button
@@ -617,59 +619,105 @@ function BeneficiaryPage({
               新增收款人
             </Button>
           </Stack>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
-              gap: 2,
-            }}
-          >
-            {rows.map((row) => (
-              <Card key={row.id}>
-                <CardContent sx={{ p: 3 }}>
-                  <Stack direction="row" spacing={2}>
+          <Card>
+            <Tabs
+              value={filter}
+              onChange={(_, value) => setFilter(value)}
+              sx={{ px: { xs: 1, sm: 2 }, borderBottom: '1px solid', borderColor: 'divider' }}
+            >
+              <Tab value="ALL" label={`全部 ${rows.length}`} />
+              <Tab value="BANK" label={`银行账户 ${bankCount}`} />
+              <Tab value="CRYPTO" label={`数字货币 ${cryptoCount}`} />
+            </Tabs>
+            <Stack divider={<Divider flexItem />}>
+              {visibleRows.map((row) => {
+                const cryptoRecipient = row.type === 'CRYPTO';
+                const address = row.walletAddress || '';
+                const maskedDestination = cryptoRecipient
+                  ? `${address.slice(0, 7)}…${address.slice(-6)}`
+                  : `•••• ${(row.accountNumber || '').slice(-4)}`;
+                return (
+                  <Stack
+                    key={row.id}
+                    direction={{ xs: 'column', sm: 'row' }}
+                    alignItems={{ sm: 'center' }}
+                    spacing={2}
+                    sx={{ px: { xs: 2, sm: 2.5 }, py: 2.25 }}
+                  >
                     <Box
                       sx={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: '50%',
-                        bgcolor: 'primary.lighter',
+                        width: 44,
+                        height: 44,
+                        borderRadius: 1.5,
+                        bgcolor: cryptoRecipient ? 'success.lighter' : 'primary.lighter',
                         display: 'grid',
                         placeItems: 'center',
+                        flexShrink: 0,
                       }}
                     >
-                      <Iconify icon="solar:bank-bold-duotone" color="primary.main" />
+                      <Iconify
+                        icon={
+                          cryptoRecipient
+                            ? 'solar:wallet-money-bold-duotone'
+                            : 'solar:bank-bold-duotone'
+                        }
+                        color={cryptoRecipient ? 'success.main' : 'primary.main'}
+                        width={24}
+                      />
                     </Box>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="h6">{row.name}</Typography>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                        <Typography variant="subtitle1">{row.name}</Typography>
+                        <Label color={cryptoRecipient ? 'success' : 'info'}>
+                          {cryptoRecipient ? '数字货币' : '银行账户'}
+                        </Label>
+                      </Stack>
                       <Typography variant="body2" color="text.secondary">
-                        {row.bankName}
+                        {cryptoRecipient
+                          ? `USDT · TRON (TRC20) · ${maskedDestination}`
+                          : `${row.bankName} · ${row.currency} · ${maskedDestination}`}
                       </Typography>
                     </Box>
-                    <Typography variant="subtitle2">{row.currency}</Typography>
+                    <Button
+                      href={
+                        cryptoRecipient
+                          ? '/portal/crypto-wallet/withdraw'
+                          : '/portal/money/payouts'
+                      }
+                      endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}
+                      sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, flexShrink: 0 }}
+                    >
+                      {cryptoRecipient ? '用于付币' : '用于付款'}
+                    </Button>
                   </Stack>
-                  <Divider sx={{ my: 2 }} />
-                  <Typography variant="body2">
-                    账号 / IBAN · •••• {row.accountNumber.slice(-4)}
+                );
+              })}
+              {!visibleRows.length && (
+                <Stack alignItems="center" sx={{ py: 7, px: 2 }}>
+                  <Iconify
+                    icon={
+                      filter === 'CRYPTO'
+                        ? 'solar:wallet-money-bold-duotone'
+                        : 'solar:user-id-bold-duotone'
+                    }
+                    width={38}
+                    color="text.disabled"
+                  />
+                  <Typography variant="subtitle1" sx={{ mt: 1.5 }}>
+                    {filter === 'CRYPTO' ? '还没有数字货币收款人' : '还没有第三方收款人'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    SWIFT · {row.swiftBic || '—'}
+                    {filter === 'CRYPTO'
+                      ? '添加经过核对的 USDT · TRON (TRC20) 地址。'
+                      : '添加银行账户或数字货币地址后，可在付款页面直接选择。'}
                   </Typography>
-                  <Button href="/portal/money/payouts" sx={{ mt: 2, px: 0 }}>
-                    向此收款人付款
+                  <Button onClick={onCreate} sx={{ mt: 1.5 }}>
+                    立即添加
                   </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </Box>
-          {!rows.length && (
-            <Card sx={{ py: 8, textAlign: 'center' }}>
-              <Typography color="text.secondary">还没有第三方收款人</Typography>
-              <Button onClick={onCreate} sx={{ mt: 1 }}>
-                立即添加
-              </Button>
-            </Card>
-          )}
+                </Stack>
+              )}
+            </Stack>
+          </Card>
         </Stack>
       </Container>
       <BeneficiaryDialog
@@ -682,112 +730,5 @@ function BeneficiaryPage({
         }}
       />
     </>
-  );
-}
-
-function BeneficiaryDialog({
-  open,
-  customerId,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  customerId: string;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [name, setName] = useState('');
-  const [currency, setCurrency] = useState<Currency>('USD');
-  const [bankName, setBankName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [swiftBic, setSwiftBic] = useState('');
-  const [countryCode, setCountryCode] = useState('SG');
-  const [error, setError] = useState('');
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError('');
-    try {
-      await coreApi('/beneficiaries', {
-        method: 'POST',
-        body: JSON.stringify({
-          customerId,
-          name,
-          currency,
-          bankName,
-          accountNumber,
-          swiftBic: swiftBic || undefined,
-          countryCode,
-        }),
-      });
-      onCreated();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : '保存失败');
-    }
-  };
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <Box component="form" onSubmit={submit}>
-        <DialogTitle>新增第三方收款人</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {error && <Alert severity="error">{error}</Alert>}
-            <TextField
-              required
-              label="收款人姓名 / 企业名称"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <Stack direction="row" spacing={2}>
-              <TextField
-                required
-                fullWidth
-                label="国家/地区代码"
-                value={countryCode}
-                onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
-                inputProps={{ maxLength: 2 }}
-              />
-              <FormControl fullWidth>
-                <InputLabel>收款币种</InputLabel>
-                <Select
-                  label="收款币种"
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value as Currency)}
-                >
-                  {supportedFiatCurrencies.map((item) => (
-                    <MenuItem key={item} value={item}>
-                      {item}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Stack>
-            <TextField
-              required
-              label="收款银行"
-              value={bankName}
-              onChange={(e) => setBankName(e.target.value)}
-            />
-            <TextField
-              required
-              label="银行账号 / IBAN"
-              value={accountNumber}
-              onChange={(e) => setAccountNumber(e.target.value)}
-            />
-            <TextField
-              label="SWIFT / BIC"
-              value={swiftBic}
-              onChange={(e) => setSwiftBic(e.target.value.toUpperCase())}
-            />
-            <Alert severity="info">付款前请仔细核对第三方资料。保存后可在付款页面直接选择。</Alert>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="submit" variant="contained">
-            保存收款人
-          </Button>
-        </DialogActions>
-      </Box>
-    </Dialog>
   );
 }

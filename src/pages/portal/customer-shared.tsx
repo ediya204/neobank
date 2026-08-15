@@ -1,6 +1,11 @@
 import { Chip, Stack, Typography } from '@mui/material';
 import Label from 'src/components/label';
-import { Currency, MoneyAccount, Operation } from 'src/features/finance/core-api';
+import {
+  accountBalanceLabel,
+  Currency,
+  MoneyAccount,
+  Operation,
+} from 'src/features/finance/core-api';
 
 export const currencySymbols: Record<Currency, string> = {
   USD: '$',
@@ -19,9 +24,7 @@ export function money(value: string | number, currency: Currency) {
 }
 
 export function accountLabel(account: MoneyAccount) {
-  if (account.kind === 'VIRTUAL_ACCOUNT') return `${account.currency} 收款账户`;
-  if (account.kind === 'CRYPTO_WALLET') return 'USDT 数字钱包';
-  return `${account.currency} 余额账户`;
+  return accountBalanceLabel(account);
 }
 
 const typeNames: Record<Operation['type'], string> = {
@@ -64,8 +67,8 @@ export function OperationStatus({ status }: { status: Operation['status'] }) {
 }
 
 export function AccountKindChip({ account }: { account: MoneyAccount }) {
-  let label = '法币';
-  if (account.kind === 'VIRTUAL_ACCOUNT') label = '独立 VA';
+  let label = '多货币法币';
+  if (account.kind === 'VIRTUAL_ACCOUNT') label = 'VA 账户';
   if (account.kind === 'CRYPTO_WALLET') label = '数字资产';
   return (
     <Chip

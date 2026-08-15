@@ -10,7 +10,16 @@ describe('isChunkLoadError', () => {
     expect(isChunkLoadError(error)).toBe(true);
   });
 
+  it('recognizes a stale webpack module factory without masking ordinary call errors', () => {
+    const error = new TypeError("Cannot read properties of undefined (reading 'call')");
+    error.stack = `${error.name}: ${error.message}\n    at options.factory (bundle.js:242742:31)\n    at __webpack_require__ (bundle.js:242135:33)`;
+
+    expect(isChunkLoadError(error)).toBe(true);
+  });
+
   it('does not hide ordinary application errors', () => {
-    expect(isChunkLoadError(new Error('Cannot read properties of undefined'))).toBe(false);
+    expect(
+      isChunkLoadError(new TypeError("Cannot read properties of undefined (reading 'call')"))
+    ).toBe(false);
   });
 });

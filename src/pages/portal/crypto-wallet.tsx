@@ -41,6 +41,7 @@ import Label from 'src/components/label';
 import { useAuthContext } from 'src/auth/hooks';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 import {
+  Beneficiary,
   coreApi,
   CryptoNetwork,
   CryptoTransfer,
@@ -181,6 +182,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
   const { customer } = usePortalCustomer();
   const [wallets, setWallets] = useState<CryptoWallet[]>([]);
   const [transfers, setTransfers] = useState<CryptoTransfer[]>([]);
+  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedTransfer, setSelectedTransfer] = useState<CryptoTransfer | null>(null);
@@ -206,11 +208,13 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
         setWallets(customerWallets);
         setTransfers(customerTransfers);
+        setBeneficiaries([]);
         return;
       }
-      const [walletRows, transferRows] = await Promise.all([
+      const [walletRows, transferRows, customerDetail] = await Promise.all([
         coreApi<CryptoWallet[]>(`/crypto-wallets?customerId=${customer.id}`),
         coreApi<CryptoTransfer[]>(`/crypto-wallets/transfers?customerId=${customer.id}`),
+        coreApi<{ beneficiaries?: Beneficiary[] }>(`/customers/${customer.id}`),
       ]);
       setWallets(
         walletRows
@@ -218,6 +222,15 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
           .map((row) => ({ ...row, status: normalizeCryptoWalletStatus(row.status) }))
       );
       setTransfers(transferRows.filter((row) => row.network === supportedCryptoNetwork));
+      setBeneficiaries(
+        (customerDetail.beneficiaries || []).filter(
+          (row) =>
+            row.active &&
+            row.type === 'CRYPTO' &&
+            row.currency === 'USDT' &&
+            row.network === supportedCryptoNetwork
+        )
+      );
     } catch (value) {
       setError(value instanceof Error ? value.message : '数字钱包加载失败');
     } finally {
@@ -315,6 +328,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
               onOpenTransfer={setSelectedTransfer}
               onCreated={load}
               customerSession={user?.role === 'customer'}
+              beneficiaries={beneficiaries}
             />
           )}
         </Stack>
@@ -670,6 +684,7 @@ function WithdrawView({
   onOpenTransfer,
   onCreated,
   customerSession,
+  beneficiaries,
 }: {
   wallets: CryptoWallet[];
   transfers: CryptoTransfer[];
@@ -678,8 +693,11 @@ function WithdrawView({
   onOpenTransfer: (transfer: CryptoTransfer) => void;
   onCreated: () => Promise<void>;
   customerSession: boolean;
+  beneficiaries: Beneficiary[];
 }) {
+  const navigate = useNavigate();
   const [network, setNetwork] = useState<CryptoNetwork>('TRON');
+  const [beneficiaryId, setBeneficiaryId] = useState('');
   const [address, setAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -688,6 +706,8 @@ function WithdrawView({
   const [submitting, setSubmitting] = useState(false);
   const withdrawalWallets = wallets.filter(isWithdrawalReady);
   const wallet = withdrawalWallets.find((row) => row.network === network) || withdrawalWallets[0];
+  const savedBeneficiaries = beneficiaries.filter((row) => row.network === network);
+  const selectedBeneficiary = savedBeneficiaries.find((row) => row.id === beneficiaryId);
   const fee = Number(wallet?.withdrawalFee || 0);
   const net = Math.max(0, Number(amount || 0) - fee);
 
@@ -741,6 +761,7 @@ function WithdrawView({
                 network: wallet.network,
                 amount,
                 toAddress: address,
+                beneficiaryId: selectedBeneficiary?.id,
                 idempotencyKey: crypto.randomUUID(),
               }
         ),
@@ -748,6 +769,7 @@ function WithdrawView({
       setConfirmOpen(false);
       setAmount('');
       setAddress('');
+      setBeneficiaryId('');
       setSuccess('付币申请已提交，平台管理员审批后进入人工链上执行。');
       await onCreated();
     } catch (value) {
@@ -806,7 +828,11 @@ function WithdrawView({
                   <Select
                     label="发送网络"
                     value={withdrawalWallets.some((row) => row.network === network) ? network : ''}
-                    onChange={(event) => setNetwork(event.target.value as CryptoNetwork)}
+                    onChange={(event) => {
+                      setNetwork(event.target.value as CryptoNetwork);
+                      setBeneficiaryId('');
+                      setAddress('');
+                    }}
                   >
                     {withdrawalWallets.map((row) => (
                       <MenuItem key={row.id} value={row.network}>
@@ -816,13 +842,51 @@ function WithdrawView({
                     ))}
                   </Select>
                 </FormControl>
+                {!customerSession && (
+                  <FormControl fullWidth disabled={!wallet}>
+                    <InputLabel>已保存的收款人（可选）</InputLabel>
+                    <Select
+                      label="已保存的收款人（可选）"
+                      value={beneficiaryId}
+                      onChange={(event) => {
+                        const nextId = event.target.value;
+                        const beneficiary = savedBeneficiaries.find((row) => row.id === nextId);
+                        setBeneficiaryId(nextId);
+                        setAddress(beneficiary?.walletAddress || '');
+                      }}
+                    >
+                      <MenuItem value="">
+                        <em>手动输入新地址</em>
+                      </MenuItem>
+                      {savedBeneficiaries.map((row) => (
+                        <MenuItem key={row.id} value={row.id}>
+                          {row.name} · {row.walletAddress?.slice(0, 7)}…
+                          {row.walletAddress?.slice(-6)}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                    {!savedBeneficiaries.length && (
+                      <Button
+                        size="small"
+                        onClick={() => navigate('/portal/money/beneficiaries')}
+                        sx={{ mt: 0.75, alignSelf: 'flex-start', px: 0 }}
+                      >
+                        添加数字货币收款人
+                      </Button>
+                    )}
+                  </FormControl>
+                )}
                 <TextField
                   required
                   disabled={!wallet}
                   label="收币地址"
                   placeholder={network === 'TRON' ? 'T...' : '0x...'}
                   value={address}
-                  onChange={(event) => setAddress(event.target.value.trim())}
+                  onChange={(event) => {
+                    const nextAddress = event.target.value.trim();
+                    setAddress(nextAddress);
+                    if (selectedBeneficiary?.walletAddress !== nextAddress) setBeneficiaryId('');
+                  }}
                   helperText={`只接受 ${networkMeta[network].standard} 地址`}
                 />
                 <TextField

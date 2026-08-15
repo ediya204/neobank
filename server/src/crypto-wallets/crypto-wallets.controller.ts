@@ -11,6 +11,7 @@ class CreateWithdrawalDto {
   @IsEnum(CryptoNetwork) network!: CryptoNetwork;
   @IsNumberString() amount!: string;
   @IsString() toAddress!: string;
+  @IsOptional() @IsString() beneficiaryId?: string;
   @IsString() idempotencyKey!: string;
 }
 

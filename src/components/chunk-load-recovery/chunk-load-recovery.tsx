@@ -20,18 +20,24 @@ type ReloadMarker = {
 };
 
 function errorText(value: unknown) {
-  if (value instanceof Error) return `${value.name}: ${value.message}`;
+  if (value instanceof Error) {
+    return `${value.name}: ${value.message}\n${value.stack || ''}`;
+  }
   return String(value || '');
 }
 
 export function isChunkLoadError(value: unknown) {
   const text = errorText(value);
+  const isWebpackModuleFactoryMismatch =
+    /Cannot read properties of undefined \(reading ['"]call['"]\)/i.test(text) &&
+    /(?:options\.factory|__webpack_require__)/i.test(text);
 
   return (
     /ChunkLoadError/i.test(text) ||
     /Loading chunk .+ failed/i.test(text) ||
     /Failed to fetch dynamically imported module/i.test(text) ||
-    /Importing a module script failed/i.test(text)
+    /Importing a module script failed/i.test(text) ||
+    isWebpackModuleFactoryMismatch
   );
 }
 

@@ -83,10 +83,6 @@ const ALLOWED_WRITE_SQL = new Set(
       (id, customer_id, event_type, actor, metadata_json, created_at)
       SELECT ?, ?, 'customer.created', ?, '{}', ?
       WHERE EXISTS (SELECT 1 FROM customers WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending')`,
-    `UPDATE customer_credentials
-      SET password_salt=?, password_hash=?, password_iterations=?, totp_secret_ciphertext=?,
-          setup_consumed_at=?, enrollment_token_hash=?, enrollment_expires_at=?, updated_at=?
-      WHERE customer_id=? AND setup_token_hash=? AND setup_consumed_at IS NULL AND setup_expires_at>?`,
     `INSERT INTO customer_auth_audit_events
       (id, customer_id, event_type, actor, metadata_json, created_at)
       SELECT ?, ?, 'auth.password_enrolled', ?, '{}', ?
@@ -95,25 +91,10 @@ const ALLOWED_WRITE_SQL = new Set(
       WHERE customer_id=?`,
     `INSERT INTO customer_auth_audit_events
       (id, customer_id, event_type, actor, metadata_json, created_at) VALUES (?, ?, 'auth.login_failed', ?, '{}', ?)`,
-    `UPDATE customer_credentials SET failed_attempts=0, locked_until=NULL, updated_at=?
-      WHERE customer_id=?`,
-    `INSERT INTO customer_login_challenges
-      (id, customer_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)`,
     `UPDATE customers SET status='active', updated_at=?
       WHERE id=? AND tenant_id=? AND status='pending_setup' AND kyc_status='approved' AND operations_status='active'`,
-    `UPDATE customer_credentials
-      SET setup_token_hash=NULL, setup_expires_at=NULL, enrollment_token_hash=NULL, enrollment_expires_at=NULL, updated_at=?
-      WHERE customer_id=? AND enrollment_token_hash=?`,
     `INSERT INTO customer_recovery_codes
       (id, customer_id, code_hash, created_at) VALUES (?, ?, ?, ?)`,
-    `UPDATE customer_login_challenges SET consumed_at=?
-      WHERE id=? AND consumed_at IS NULL`,
-    `UPDATE customer_recovery_codes SET used_at=?
-      WHERE id=? AND customer_id=? AND used_at IS NULL`,
-    `INSERT INTO customer_sessions
-      (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, created_at, last_seen_at)
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?
-      WHERE EXISTS (SELECT 1 FROM customer_recovery_codes WHERE id=? AND customer_id=? AND used_at=?)`,
     `INSERT INTO customer_auth_audit_events
       (id, customer_id, event_type, actor, metadata_json, created_at)
       SELECT ?, ?, 'auth.login_succeeded', ?, ?, ?
@@ -122,9 +103,6 @@ const ALLOWED_WRITE_SQL = new Set(
       WHERE id=? AND revoked_at IS NULL`,
     `INSERT INTO customer_auth_audit_events
       (id, customer_id, event_type, actor, metadata_json, created_at) VALUES (?, ?, 'auth.logout', ?, '{}', ?)`,
-    `INSERT INTO customer_sessions
-      (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, created_at, last_seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     `UPDATE customers
       SET kyc_status=?, kyc_reviewed_by=?, kyc_reviewed_at=?, kyc_review_note=?, updated_at=?
       WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending'`,
@@ -156,6 +134,78 @@ const ALLOWED_WRITE_SQL = new Set(
       SELECT ?, ?, 'customer.operations_activated', ?, ?, ?
       WHERE EXISTS (SELECT 1 FROM customers
         WHERE id=? AND tenant_id=? AND operations_status='active' AND activated_by=? AND activated_at=?)`,
+    `UPDATE customer_credentials
+      SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=0,
+          password_memory_kib=?, password_time_cost=?, password_parallelism=?,
+          password_changed_at=?, totp_secret_ciphertext=?, totp_last_counter=-1,
+          setup_consumed_at=?, enrollment_token_hash=?, enrollment_expires_at=?, updated_at=?
+      WHERE customer_id=? AND setup_token_hash=? AND setup_consumed_at IS NULL AND setup_expires_at>?`,
+    `UPDATE customer_credentials
+      SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=0,
+          password_memory_kib=?, password_time_cost=?, password_parallelism=?, updated_at=?
+      WHERE customer_id=? AND credential_version=? AND password_algorithm='pbkdf2-sha256-v1'`,
+    `UPDATE customer_credentials SET failed_attempts=0, locked_until=NULL, updated_at=?
+      WHERE customer_id=? AND credential_version=?`,
+    `INSERT INTO customer_login_challenges
+      (id, customer_id, token_hash, expires_at, credential_version, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    `UPDATE customer_login_challenges SET attempts=attempts+1
+      WHERE token_hash=? AND consumed_at IS NULL AND expires_at>? AND attempts<?`,
+    `UPDATE customer_credentials
+      SET setup_token_hash=NULL, setup_expires_at=NULL, enrollment_token_hash=NULL, enrollment_expires_at=NULL,
+          totp_last_counter=?, updated_at=?
+      WHERE customer_id=? AND enrollment_token_hash=? AND credential_version=? AND totp_last_counter<?`,
+    `UPDATE customer_login_challenges SET consumed_at=?
+      WHERE id=? AND customer_id=? AND credential_version=? AND consumed_at IS NULL
+        AND EXISTS (SELECT 1 FROM customer_credentials
+          WHERE customer_id=? AND credential_version=?)`,
+    `UPDATE customer_recovery_codes SET used_at=?
+      WHERE id=? AND customer_id=? AND used_at IS NULL
+        AND EXISTS (SELECT 1 FROM customer_login_challenges
+          WHERE id=? AND customer_id=? AND consumed_at=?)`,
+    `UPDATE customer_credentials SET totp_last_counter=?, updated_at=?
+      WHERE customer_id=? AND credential_version=? AND totp_last_counter<?`,
+    `INSERT INTO customer_sessions
+      (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM customer_recovery_codes WHERE id=? AND customer_id=? AND used_at=?)
+        AND EXISTS (SELECT 1 FROM customer_login_challenges WHERE id=? AND customer_id=? AND consumed_at=?)
+        AND EXISTS (SELECT 1 FROM customer_credentials WHERE customer_id=? AND credential_version=?)`,
+    `INSERT INTO customer_sessions
+      (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM customer_login_challenges WHERE id=? AND customer_id=? AND consumed_at=?)
+        AND EXISTS (SELECT 1 FROM customer_credentials
+          WHERE customer_id=? AND credential_version=? AND totp_last_counter=?)`,
+    `INSERT INTO customer_sessions
+      (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM customer_credentials
+        WHERE customer_id=? AND credential_version=? AND enrollment_token_hash IS NULL
+          AND updated_at=? AND totp_last_counter=?)`,
+    `INSERT INTO customer_sessions
+      (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `UPDATE customer_sessions
+      SET last_seen_at=?, idle_expires_at=?
+      WHERE id=? AND revoked_at IS NULL AND expires_at>? AND idle_expires_at>?`,
+    `UPDATE customer_credentials
+      SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=0,
+          password_memory_kib=?, password_time_cost=?, password_parallelism=?,
+          password_changed_at=?, credential_version=?, totp_last_counter=?,
+          failed_attempts=0, locked_until=NULL, updated_at=?
+      WHERE customer_id=? AND credential_version=? AND totp_last_counter<?`,
+    `UPDATE customer_sessions SET revoked_at=?, last_seen_at=?
+      WHERE customer_id=? AND id<>? AND revoked_at IS NULL`,
+    `UPDATE customer_sessions
+      SET credential_version=?, last_seen_at=?, idle_expires_at=?
+      WHERE id=? AND customer_id=? AND revoked_at IS NULL AND credential_version=?`,
+    `UPDATE customer_login_challenges SET consumed_at=?
+      WHERE customer_id=? AND consumed_at IS NULL`,
+    `INSERT INTO customer_auth_audit_events
+      (id, customer_id, event_type, actor, metadata_json, created_at)
+      SELECT ?, ?, 'auth.password_changed', ?, '{}', ?
+      WHERE EXISTS (SELECT 1 FROM customer_sessions
+        WHERE id=? AND customer_id=? AND credential_version=? AND revoked_at IS NULL)`,
   ].map(normalizeSQL)
 );
 
