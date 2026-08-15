@@ -19,7 +19,7 @@ type PortalCustomerContextValue = {
 };
 
 const PortalCustomerContext = createContext<PortalCustomerContextValue | null>(null);
-const STORAGE_KEY = 'moventra.portal.demo-customer';
+const STORAGE_KEY = 'scc-digital-bank.portal.demo-customer';
 
 export function PortalCustomerProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuthContext();

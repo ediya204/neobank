@@ -4,20 +4,38 @@ import { readFile } from 'node:fs/promises';
 const root = new URL('../', import.meta.url);
 const read = (relativePath) => readFile(new URL(relativePath, root), 'utf8');
 
-const [packageSource, router, authRoutes, provider, roleAccess, deploymentMode, adminPage, worker] =
-  await Promise.all([
-    read('package.json'),
-    read('src/routes/sections/index.tsx'),
-    read('src/routes/sections/auth.tsx'),
-    read('src/auth/context/jwt/auth-provider.tsx'),
-    read('src/auth/role-access.ts'),
-    read('src/config/deployment-mode.ts'),
-    read('src/pages/dashboard/crypto-operations.tsx'),
-    read('worker-web/index.ts'),
-  ]);
+const [
+  packageSource,
+  neobankWrangler,
+  gatewayWrangler,
+  router,
+  authRoutes,
+  provider,
+  roleAccess,
+  deploymentMode,
+  adminPage,
+  worker,
+] = await Promise.all([
+  read('package.json'),
+  read('wrangler.neobank.jsonc'),
+  read('wrangler.gateway.jsonc'),
+  read('src/routes/sections/index.tsx'),
+  read('src/routes/sections/auth.tsx'),
+  read('src/auth/context/jwt/auth-provider.tsx'),
+  read('src/auth/role-access.ts'),
+  read('src/config/deployment-mode.ts'),
+  read('src/pages/dashboard/crypto-operations.tsx'),
+  read('worker-web/index.ts'),
+]);
 
 const packageJson = JSON.parse(packageSource);
 const scripts = packageJson.scripts || {};
+
+assert.match(neobankWrangler, /"name": "neobank-web"/);
+assert.match(neobankWrangler, /"pattern": "portal\.sscdigitalbank\.com"/);
+assert.match(gatewayWrangler, /"name": "neobank-d1-gateway"/);
+assert.match(gatewayWrangler, /"database_name": "neobank-core-v1"/);
+assert.match(gatewayWrangler, /"database_id": "c6127eb2-22b7-4477-bafb-e9e506dc058a"/);
 
 assert.match(
   scripts['neobank:build'] || '',

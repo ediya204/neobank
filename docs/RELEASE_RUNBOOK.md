@@ -37,7 +37,9 @@ backup, checksum, restore test, manual approval, migration, and post-checks in
 
 ## Build and deploy once
 
-For a production release with no D1 migration, use:
+The default VA profile is not the currently bound Neobank production Worker.
+Do not run its release command unless that separate target has been provisioned
+and manually approved:
 
 ```bash
 npm run cf:release
@@ -57,9 +59,10 @@ from the other.
 
 ### Isolated Neobank wallet
 
-The commands above target the default VA API Worker and must not be reused for
-the isolated Neobank deployment. Neobank production uses a compile-time route
-allowlist and an explicit Wrangler config:
+The commands above target the separate default VA API profile and must not be
+reused for the isolated Neobank deployment. The currently deployed and bound
+Neobank Worker is `neobank-web`; it uses a compile-time route allowlist and an
+explicit Wrangler config:
 
 ```bash
 npm run neobank:profile:check

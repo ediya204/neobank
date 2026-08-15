@@ -2,27 +2,26 @@
 
 ## 入口
 
-- 管理员登录：`https://moventra.xyz/admin/login`
-- 管理员后台：`https://moventra.xyz/dashboard/va-applications`
+- 管理员登录：`https://your-va-portal.example/admin/login`
+- 管理员后台：`https://your-va-portal.example/dashboard/va-applications`
   - 登录邮箱：`admin@example.com`
-- Ethan 登录：`https://moventra.xyz/portal/login`
-- Ethan Portal：`https://moventra.xyz/portal/customers`
+- Ethan 登录：`https://your-va-portal.example/portal/login`
+- Ethan Portal：`https://your-va-portal.example/portal/customers`
   - 登录邮箱：`partner@example.com`
-- 机器 API：`https://moventra.xyz/api/v1`
-- OpenAPI（Portal 登录后）：`https://moventra.xyz/api/browser/v1/portal/openapi.yaml`
+- 机器 API：`https://your-va-api.example/api/v1`
+- OpenAPI（Portal 登录后）：`https://your-va-portal.example/api/browser/v1/portal/openapi.yaml`
 
 人类网页登录使用应用自有密码 + TOTP，并按 Admin/Partner URL 隔离；机器 API
 继续使用 Cloudflare Access Service Token。没有默认密码，真实密码、TOTP、
 恢复码、setup token 和 Service Token Secret 均不写入仓库或本文档。
 
-## 生产发布基线（部署与只读验收：2026-07-29）
+## 独立生产发布基线
 
-- Worker：`va-api-dashboard`
-- 当前生产版本：`d55f21f1-8851-4cfd-93cf-339884975db0`
-- Git 发布提交：`f83b22859f28d47fe2532c858db0fffa45391250`
-- 自定义域名：`moventra.xyz`
-- 当前生产 D1 已应用 migration `0001`–`0013`
-- `0013` 的 13 个账务完整性触发器已在生产 D1 只读确认存在
+- 本清单描述默认 VA Profile；不把它声明为当前线上 Worker
+- 当前已部署并绑定的 Neobank Worker：`neobank-web`（使用 `wrangler.neobank.jsonc`）
+- 自定义域名：部署前为本项目单独分配；不得复用其他项目域名
+- Worker 版本、Git 发布提交和 D1 migration 状态必须在本项目独立环境实时核对
+- `0013` 的 13 个账务完整性触发器必须在本项目生产 D1 只读确认存在
 - 隔离 D1 已验证：13 个 migration、6 个客户、11 笔资金记录、2 笔 OTC，
   append-only Seed 连续运行两次结果不重复
 - Cloudflare Access：
@@ -35,12 +34,10 @@
   - 静态资源公开，业务数据 API 仍要求角色会话或机器凭证
 - IP 白名单能力已上线但总开关保持关闭；收到 Ethan 的固定生产/灾备 CIDR 后再启用，避免误锁死机器 API。
 
-2026-07-29 已完成 Worker V1.1.1 与 D1 `0013` 的生产发布。线上只读检查确认：
-根路径、Partner API Guide、Admin 登录和 Portal 登录返回 `200`；未登录访问
-Admin/Portal 浏览器业务 API 返回 `401`；不带 Service Token 访问机器 API 返回
-Cloudflare Access `403`。当前发布终端未持有既有 Service Token Secret，因此未执行
-带机器凭证的生产 `v1-smoke.sh`，也没有为测试新建凭据或放宽 Access；凭证持有人仍须
-补做该项只读回归，才能把机器 API 标记为完整生产验收。
+不得从其他项目的历史发布记录推断本项目已经上线。发布后必须重新确认：根路径、
+Partner API Guide、Admin 登录和 Portal 登录返回预期响应；未登录访问 Admin/Portal
+浏览器业务 API 返回 `401`；不带 Service Token 访问机器 API 返回 Cloudflare Access
+`403`；凭证持有人还必须执行带机器凭证的只读 `v1-smoke.sh`。
 
 Admin 运营闭环及 API 管理所需的 `0010_admin_operations.sql` 与
 `0011_partner_api_integrations.sql`、自定义网页登录所需的
@@ -81,8 +78,8 @@ GROUP BY type, COALESCE(network, ''), normalized_reference
 HAVING COUNT(*) > 1;
 ```
 
-2026-07-29 正式发布前已再次对生产 D1 执行上述两项只读预检，结果均为空；
-Cloudflare 返回 `rows_written = 0`、`changed_db = false`。
+本项目正式发布前必须对目标 D1 执行上述两项只读预检，并记录结果；预期结果为空，
+且 Cloudflare 应返回 `rows_written = 0`、`changed_db = false`。
 
 任一查询返回记录时不得自动改账。Edi 应逐笔核对原始银行/链上凭证：旧 OTC 只能在
 人工确认后取消并按新费率重建；历史重复入账需保留原记录和审计，由后续反向调整流程
@@ -93,7 +90,7 @@ Partner API `1.1.1` Worker → 立即应用 `0013` → 执行只读 smoke 与角
 两步之间不应进行人工资金操作；如无法控制写入窗口，则先暂停资金写入再执行 migration
 与 Worker 切换。只有 Worker 和 D1 均完成后才可把候选状态改为生产已验收。
 
-本次生产发布已按上述顺序完成；D1 migration list 返回无待应用项。
+只有实际完成上述顺序并核对 D1 migration list 无待应用项后，才能记录为生产完成。
 
 ## Demo 数据
 
@@ -150,7 +147,7 @@ VA_API_BASE_URL=http://localhost:8787/api/v1 scripts/v1-smoke.sh
 # 远端
 CF_ACCESS_CLIENT_ID=... \
 CF_ACCESS_CLIENT_SECRET=... \
-VA_API_BASE_URL=https://moventra.xyz/api/v1 \
+VA_API_BASE_URL=https://your-va-api.example/api/v1 \
   scripts/v1-smoke.sh
 ```
 

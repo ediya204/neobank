@@ -46,9 +46,10 @@ npm run neobank:deploy:dry-run
 npm run neobank:deploy
 ```
 
-Every Wrangler command above names `wrangler.neobank.jsonc`; none defaults to
-the `va-api-dashboard` configuration. `npm run cf:release` belongs to the VA API
-deployment and is not a Neobank release command.
+Every Wrangler command above names `wrangler.neobank.jsonc` and therefore targets
+the deployed `neobank-web` Worker bound to `portal.sscdigitalbank.com`. None uses
+the separate default VA configuration in `wrangler.jsonc`; `npm run cf:release`
+is not a Neobank release command and must not be used for this deployment.
 
 The web Worker derives an administrator session only from
 `CF-Access-Jwt-Assertion`. It validates the RS256 signature against the team

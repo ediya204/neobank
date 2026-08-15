@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "va-api-dashboard",
+  "name": "va-api-local-profile",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -15,7 +15,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "va-api-db",
+      "database_name": "va-api-local-db",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "./migrations"
     }
@@ -46,7 +46,7 @@
   "ratelimits": [
     {
       "name": "PARTNER_API_RATE_LIMITER",
-      "namespace_id": "2026072901",
+      "namespace_id": "2026081501",
       "simple": {
         "limit": 120,
         "period": 60
@@ -54,7 +54,7 @@
     },
     {
       "name": "AUTH_RATE_LIMITER",
-      "namespace_id": "2026072902",
+      "namespace_id": "2026081502",
       "simple": {
         "limit": 30,
         "period": 60
@@ -64,15 +64,5 @@
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
-  },
-  "routes": [
-    {
-      "pattern": "moventra.xyz",
-      "custom_domain": true
-    },
-    {
-      "pattern": "www.moventra.xyz",
-      "custom_domain": true
-    }
-  ]
+  }
 }

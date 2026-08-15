@@ -366,7 +366,7 @@
         <article data-language-panel="en"><h1 id="en-partner-api-guide"><a class="heading-anchor" href="#en-partner-api-guide">Partner API Guide</a></h1>
 <p>Version: V1.7.0&lt;br&gt;
 Last updated: 2 August 2026&lt;br&gt;
-API root: <code>https://moventra.xyz/api/v1</code>&lt;br&gt;
+API root: <code>https://your-va-api.example/api/v1</code>&lt;br&gt;
 Audience: Partner server-side integration teams</p>
 <h2 id="en-1-scope"><a class="heading-anchor" href="#en-1-scope">1. Scope</a></h2>
 <p>The Partner API supports two business purposes:</p>
@@ -438,7 +438,7 @@ be encrypted at rest and access-controlled as sensitive financial data.</p>
 <li>HTTP 200 alone is not acceptance: validate the JSON structure and business fields.</li>
 </ul>
 <p>Example environment:</p>
-<pre><code class="language-bash">export VA_API_BASE_URL=&quot;https://moventra.xyz/api/v1&quot;
+<pre><code class="language-bash">export VA_API_BASE_URL=&quot;https://your-va-api.example/api/v1&quot;
 export VA_CF_ACCESS_CLIENT_ID=&quot;&lt;service-token-client-id&gt;&quot;
 export VA_CF_ACCESS_CLIENT_SECRET=&quot;&lt;service-token-client-secret&gt;&quot;
 </code></pre>
@@ -552,7 +552,7 @@ public final class VaApiClient {
 </code></pre>
 <p>Example business calls:</p>
 <pre><code class="language-java">VaApiClient api = new VaApiClient(
-    System.getenv().getOrDefault(&quot;VA_API_BASE_URL&quot;, &quot;https://moventra.xyz/api/v1&quot;),
+    System.getenv().getOrDefault(&quot;VA_API_BASE_URL&quot;, &quot;https://your-va-api.example/api/v1&quot;),
     System.getenv(&quot;VA_CF_ACCESS_CLIENT_ID&quot;),
     System.getenv(&quot;VA_CF_ACCESS_CLIENT_SECRET&quot;));
 
@@ -1202,7 +1202,7 @@ blockchain, settlement, sweep, or conversion operation.</p></article>
         <article data-language-panel="zh" lang="zh-CN" hidden><h1 id="zh-partner-api-中文指南"><a class="heading-anchor" href="#zh-partner-api-中文指南">Partner API 中文指南</a></h1>
 <p>版本：V1.7.0&lt;br&gt;
 最后更新：2026 年 8 月 2 日&lt;br&gt;
-API 根地址：<code>https://moventra.xyz/api/v1</code>&lt;br&gt;
+API 根地址：<code>https://your-va-api.example/api/v1</code>&lt;br&gt;
 适用对象：合作伙伴服务端集成团队</p>
 <h2 id="zh-1-文档范围"><a class="heading-anchor" href="#zh-1-文档范围">1. 文档范围</a></h2>
 <p>Partner API 只服务于两类业务用途：</p>
@@ -1265,7 +1265,7 @@ Partner 应加密保存并限制访问。</p>
 <li>HTTP 200 本身不代表业务验收通过，必须校验 JSON 结构和业务字段。</li>
 </ul>
 <p>环境变量示例：</p>
-<pre><code class="language-bash">export VA_API_BASE_URL=&quot;https://moventra.xyz/api/v1&quot;
+<pre><code class="language-bash">export VA_API_BASE_URL=&quot;https://your-va-api.example/api/v1&quot;
 export VA_CF_ACCESS_CLIENT_ID=&quot;&lt;service-token-client-id&gt;&quot;
 export VA_CF_ACCESS_CLIENT_SECRET=&quot;&lt;service-token-client-secret&gt;&quot;
 </code></pre>
@@ -1379,7 +1379,7 @@ public final class VaApiClient {
 </code></pre>
 <p>业务调用示例：</p>
 <pre><code class="language-java">VaApiClient api = new VaApiClient(
-    System.getenv().getOrDefault(&quot;VA_API_BASE_URL&quot;, &quot;https://moventra.xyz/api/v1&quot;),
+    System.getenv().getOrDefault(&quot;VA_API_BASE_URL&quot;, &quot;https://your-va-api.example/api/v1&quot;),
     System.getenv(&quot;VA_CF_ACCESS_CLIENT_ID&quot;),
     System.getenv(&quot;VA_CF_ACCESS_CLIENT_SECRET&quot;));
 

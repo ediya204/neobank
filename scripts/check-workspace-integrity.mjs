@@ -117,10 +117,28 @@ function scanCriticalInstallLinks() {
   }
 }
 
+function scanForeignProjectReferences() {
+  const foreignProjectName = ['moven', 'tra'].join('');
+
+  try {
+    const output = execFileSync('git', ['grep', '-n', '-I', '-i', foreignProjectName, '--', '.'], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+    });
+    for (const match of output.split('\n').filter(Boolean)) {
+      addFinding(`发现其他项目的名称、域名或配置引用: ${match}`);
+    }
+  } catch (error) {
+    if (error.status === 1) return;
+    addFinding(`无法检查其他项目引用: ${error.message}`);
+  }
+}
+
 scanConflictCopies();
 scanDatalessSources();
 scanFileProviderLocation();
 scanCriticalInstallLinks();
+scanForeignProjectReferences();
 
 if (findings.length) {
   console.error('Workspace integrity check failed.');

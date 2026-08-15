@@ -73,12 +73,12 @@ function localDemoUser(): AuthSessionUser | null {
   const partner = window.location.pathname.startsWith('/portal');
   let role: AuthRole = 'admin';
   let id = 'usr_admin';
-  let email = 'admin@moventra.local';
+  let email = 'admin@scc-digital-bank.local';
   let displayName = '本地管理员';
   if (partner) {
     role = 'partner';
     id = 'usr_maker';
-    email = 'partner@moventra.local';
+    email = 'partner@scc-digital-bank.local';
     displayName = '本地合作方';
   }
   return {
@@ -87,7 +87,11 @@ function localDemoUser(): AuthSessionUser | null {
     displayName,
     role,
     organization: partner
-      ? { id: 'org_demo', name: 'SCC Digital Bank Demo Partner', partnerKey: 'moventra-demo' }
+      ? {
+          id: 'org_demo',
+          name: 'SCC Digital Bank Demo Partner',
+          partnerKey: 'scc-digital-bank-demo',
+        }
       : null,
     membership: partner
       ? {

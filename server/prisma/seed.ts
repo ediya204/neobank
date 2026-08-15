@@ -14,21 +14,25 @@ const currencies: Currency[] = ['USD', 'HKD'];
 
 async function main() {
   const organization = await db.organization.upsert({
-    where: { slug: 'moventra-demo' },
-    update: { name: 'Moventra Demo Partner' },
-    create: { id: 'org_demo', slug: 'moventra-demo', name: 'Moventra Demo Partner' },
+    where: { id: 'org_demo' },
+    update: { slug: 'scc-digital-bank-demo', name: 'SCC Digital Bank Demo Partner' },
+    create: {
+      id: 'org_demo',
+      slug: 'scc-digital-bank-demo',
+      name: 'SCC Digital Bank Demo Partner',
+    },
   });
 
   const users: Array<[string, string, string, UserRole]> = [
-    ['usr_maker', 'maker@moventra.local', '提交人 Maker', 'MAKER'],
-    ['usr_checker', 'checker@moventra.local', '复核人 Checker', 'CHECKER'],
-    ['usr_operator', 'operator@moventra.local', '出款操作员', 'OPERATOR'],
-    ['usr_admin', 'admin@moventra.local', '平台管理员', 'ADMIN'],
+    ['usr_maker', 'maker@scc-digital-bank.local', '提交人 Maker', 'MAKER'],
+    ['usr_checker', 'checker@scc-digital-bank.local', '复核人 Checker', 'CHECKER'],
+    ['usr_operator', 'operator@scc-digital-bank.local', '出款操作员', 'OPERATOR'],
+    ['usr_admin', 'admin@scc-digital-bank.local', '平台管理员', 'ADMIN'],
   ];
   for (const [id, email, displayName, role] of users) {
     await db.user.upsert({
-      where: { email },
-      update: { displayName, role, organizationId: organization.id },
+      where: { id },
+      update: { email, displayName, role, organizationId: organization.id },
       create: { id, email, displayName, role, organizationId: organization.id },
     });
   }

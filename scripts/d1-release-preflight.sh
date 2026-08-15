@@ -4,7 +4,7 @@ set -euo pipefail
 set +x
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-database_name="${VA_D1_DATABASE:-va-api-db}"
+database_name="${VA_D1_DATABASE:-va-api-local-db}"
 wrangler_bin="${repo_dir}/node_modules/.bin/wrangler"
 
 if [[ ! "$database_name" =~ ^[A-Za-z0-9_-]+$ ]]; then
