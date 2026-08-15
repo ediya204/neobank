@@ -68,6 +68,24 @@ type AdminCustomer = {
   activated_by?: string;
   activated_at?: string;
   created_at: string;
+  application_reference?: string;
+  account_type?: 'individual' | 'business';
+  phone_country_code?: string;
+  phone?: string;
+  residence_country?: string;
+  full_name?: string;
+  date_of_birth?: string;
+  nationality?: string;
+  legal_name?: string;
+  registration_number?: string;
+  incorporation_country?: string;
+  contact_name?: string;
+  contact_role?: string;
+  beneficial_owner_name?: string;
+  beneficial_owner_ownership?: string;
+  kyc_consent_at?: string;
+  terms_accepted_at?: string;
+  application_submitted_at?: string;
 };
 
 type AdminCustomerActivation = AdminCustomer & {
@@ -149,6 +167,7 @@ export default function CryptoOperationsAdmin() {
   const [customerEmail, setCustomerEmail] = useState('');
   const [provisioning, setProvisioning] = useState(false);
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
+  const [applicationReview, setApplicationReview] = useState<AdminCustomer | null>(null);
   const [customerActionId, setCustomerActionId] = useState('');
   const [kycNote, setKycNote] = useState('');
   const [activation, setActivation] = useState<AdminCustomerActivation | null>(null);
@@ -356,7 +375,7 @@ export default function CryptoOperationsAdmin() {
         <title>
           {IS_ISOLATED_WALLET_DEPLOYMENT
             ? '数字钱包审批 | SCC Digital Bank'
-            : '数字钱包复核 | Moventra'}
+            : '数字钱包复核 | SCC Digital Bank'}
         </title>
       </Helmet>
       <Container maxWidth="xl">
@@ -619,6 +638,15 @@ export default function CryptoOperationsAdmin() {
                           >
                             {customer.kyc_status === 'pending' && (
                               <>
+                                {customer.application_reference && (
+                                  <Button
+                                    size="small"
+                                    color="inherit"
+                                    onClick={() => setApplicationReview(customer)}
+                                  >
+                                    查看申请
+                                  </Button>
+                                )}
                                 <Button
                                   size="small"
                                   variant="outlined"
@@ -725,6 +753,69 @@ export default function CryptoOperationsAdmin() {
           >
             关闭
           </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={Boolean(applicationReview)}
+        onClose={() => setApplicationReview(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>开户申请资料</DialogTitle>
+        <DialogContent dividers>
+          {applicationReview && (
+            <Stack spacing={0.5}>
+              <Alert severity="warning" sx={{ mb: 1.5 }}>
+                本页资料仅用于人工 KYC / KYB 审核。查看资料不代表审核通过，KYC
+                结论与运营激活仍需分别执行。
+              </Alert>
+              <Info label="申请编号" value={applicationReview.application_reference || '-'} mono />
+              <Info
+                label="申请类型"
+                value={applicationReview.account_type === 'business' ? '企业账户' : '个人账户'}
+              />
+              <Info label="申请人 / 企业" value={applicationReview.display_name} />
+              <Info label="联系邮箱" value={applicationReview.email} />
+              <Info
+                label="联系电话"
+                value={
+                  `${applicationReview.phone_country_code || ''} ${
+                    applicationReview.phone || ''
+                  }`.trim() || '-'
+                }
+              />
+              <Info label="常住 / 营业地区" value={applicationReview.residence_country || '-'} />
+              {applicationReview.account_type === 'individual' ? (
+                <>
+                  <Info label="出生日期" value={applicationReview.date_of_birth || '-'} />
+                  <Info label="国籍" value={applicationReview.nationality || '-'} />
+                </>
+              ) : (
+                <>
+                  <Info label="企业注册编号" value={applicationReview.registration_number || '-'} />
+                  <Info label="注册地区" value={applicationReview.incorporation_country || '-'} />
+                  <Info
+                    label="授权联系人"
+                    value={`${applicationReview.contact_name || '-'} / ${
+                      applicationReview.contact_role || '-'
+                    }`}
+                  />
+                  <Info
+                    label="最终受益人"
+                    value={`${applicationReview.beneficial_owner_name || '-'} / ${
+                      applicationReview.beneficial_owner_ownership || '-'
+                    }%`}
+                  />
+                </>
+              )}
+              <Info label="资料处理授权" value={applicationReview.kyc_consent_at || '-'} />
+              <Info label="条款确认" value={applicationReview.terms_accepted_at || '-'} />
+              <Info label="提交时间" value={applicationReview.application_submitted_at || '-'} />
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setApplicationReview(null)}>关闭</Button>
         </DialogActions>
       </Dialog>
     </>

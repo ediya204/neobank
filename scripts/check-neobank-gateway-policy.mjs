@@ -6,6 +6,7 @@ const goSources = await Promise.all(
     'server-go/cmd/api/cregis_handlers.go',
     'server-go/cmd/api/customer_auth.go',
     'server-go/cmd/api/customer_admin.go',
+    'server-go/cmd/api/customer_registration.go',
   ].map((path) => readFile(new URL(path, root), 'utf8'))
 );
 const workerSource = await readFile(new URL('worker-d1-gateway/index.ts', root), 'utf8');

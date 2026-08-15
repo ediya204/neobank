@@ -16,8 +16,23 @@ var (
 )
 
 const (
-	adminCustomerFields = `id, email, display_name, status, kyc_status, operations_status,
-    kyc_reviewed_by, kyc_reviewed_at, kyc_review_note, activated_by, activated_at, created_at`
+	adminCustomerFields = `c.id AS id, c.email AS email, c.display_name AS display_name,
+	    c.status AS status, c.kyc_status AS kyc_status, c.operations_status AS operations_status,
+	    c.kyc_reviewed_by AS kyc_reviewed_by, c.kyc_reviewed_at AS kyc_reviewed_at,
+	    c.kyc_review_note AS kyc_review_note, c.activated_by AS activated_by,
+	    c.activated_at AS activated_at, c.created_at AS created_at,
+	    ca.application_reference AS application_reference, ca.account_type AS account_type,
+	    ca.phone_country_code AS phone_country_code, ca.phone AS phone,
+	    ca.residence_country AS residence_country, ca.full_name AS full_name,
+	    ca.date_of_birth AS date_of_birth, ca.nationality AS nationality,
+	    ca.legal_name AS legal_name, ca.registration_number AS registration_number,
+	    ca.incorporation_country AS incorporation_country, ca.contact_name AS contact_name,
+	    ca.contact_role AS contact_role, ca.beneficial_owner_name AS beneficial_owner_name,
+	    ca.beneficial_owner_ownership AS beneficial_owner_ownership,
+	    ca.kyc_consent_at AS kyc_consent_at, ca.terms_accepted_at AS terms_accepted_at,
+	    ca.submitted_at AS application_submitted_at`
+	adminCustomerFrom = ` FROM customers c LEFT JOIN customer_applications ca
+	    ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id`
 	reviewCustomerKYCSQL = `UPDATE customers
     SET kyc_status=?, kyc_reviewed_by=?, kyc_reviewed_at=?, kyc_review_note=?, updated_at=?
     WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending'`
@@ -57,7 +72,7 @@ func adminCustomerRouteID(path, suffix string) string {
 
 func (app *application) listAdminCustomers(w http.ResponseWriter, r *http.Request) {
 	rows, err := app.db.Query(r.Context(), `SELECT `+adminCustomerFields+`
-    FROM customers WHERE tenant_id=? ORDER BY created_at DESC LIMIT 200`, app.tenantID)
+	    `+adminCustomerFrom+` WHERE c.tenant_id=? ORDER BY c.created_at DESC LIMIT 200`, app.tenantID)
 	if err != nil {
 		databaseError(app, w, err)
 		return
@@ -114,7 +129,7 @@ func (app *application) activateCustomerOperations(w http.ResponseWriter, r *htt
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `SELECT `+adminCustomerFields+`
-    FROM customers WHERE id=? AND tenant_id=?`, id, app.tenantID)
+	    `+adminCustomerFrom+` WHERE c.id=? AND c.tenant_id=?`, id, app.tenantID)
 	if err != nil {
 		databaseError(app, w, err)
 		return
@@ -174,7 +189,7 @@ func (app *application) activateCustomerOperations(w http.ResponseWriter, r *htt
 
 func (app *application) writeAdminCustomer(w http.ResponseWriter, r *http.Request, id string, extra map[string]string) {
 	rows, err := app.db.Query(r.Context(), `SELECT `+adminCustomerFields+`
-    FROM customers WHERE id=? AND tenant_id=?`, id, app.tenantID)
+	    `+adminCustomerFrom+` WHERE c.id=? AND c.tenant_id=?`, id, app.tenantID)
 	if err != nil || len(rows) != 1 {
 		if err == nil {
 			err = errCustomerStateRead

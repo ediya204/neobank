@@ -155,7 +155,7 @@ async function enforceCustomerAuthRateLimit(
   });
   if (!sourceResult.success) return json({ error: { code: 'auth_rate_limited' } }, 429);
 
-  if (pathname === '/api/auth/customer/login') {
+  if (pathname === '/api/auth/customer/login' || pathname === '/api/auth/customer/register') {
     let email = '';
     try {
       const payload = JSON.parse(new TextDecoder().decode(body)) as { email?: unknown };
@@ -210,6 +210,8 @@ async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<R
   if (origin) headers.set('origin', origin);
   const csrfToken = request.headers.get('x-csrf-token');
   if (csrfToken) headers.set('x-csrf-token', csrfToken);
+  const idempotencyKey = request.headers.get('idempotency-key');
+  if (idempotencyKey) headers.set('idempotency-key', idempotencyKey);
   headers.set('accept', 'application/json');
   headers.set('x-neobank-user', edgeUser);
   headers.set('x-neobank-edge-timestamp', timestamp);
@@ -278,6 +280,9 @@ export default {
       if (isPublicCustomerAPI(url.pathname)) {
         if (customerAPIInMaintenance(env)) {
           return json({ error: { code: 'customer_auth_maintenance' } }, 503);
+        }
+        if (!hasValidMutationOrigin(request)) {
+          return json({ error: { code: 'invalid_origin' } }, 403);
         }
         return await proxyAPI(request, env, 'public-customer-edge');
       }

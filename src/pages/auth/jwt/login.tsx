@@ -15,12 +15,14 @@ export default function LoginPage({ expectedRole }: Props) {
   const { t } = useTranslation('common');
   let title = t('auth.page_titles.portal_login');
   if (expectedRole === 'admin') title = t('auth.page_titles.admin_login');
-  if (expectedRole === 'customer') title = '客户安全登录';
+  if (expectedRole === 'customer') title = t('auth.page_titles.customer_login');
 
   return (
     <>
       <Helmet>
-        <title>{title} | {APP_DISPLAY_NAME}</title>
+        <title>
+          {title} | {APP_DISPLAY_NAME}
+        </title>
       </Helmet>
 
       <JwtLoginView expectedRole={expectedRole} />

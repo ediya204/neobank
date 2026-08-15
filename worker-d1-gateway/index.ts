@@ -83,6 +83,21 @@ const ALLOWED_WRITE_SQL = new Set(
       (id, customer_id, event_type, actor, metadata_json, created_at)
       SELECT ?, ?, 'customer.created', ?, '{}', ?
       WHERE EXISTS (SELECT 1 FROM customers WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending')`,
+    `INSERT OR IGNORE INTO customer_applications
+      (id, tenant_id, customer_id, application_reference, idempotency_key, request_fingerprint,
+       account_type, phone_country_code, phone, residence_country, full_name, date_of_birth,
+       nationality, legal_name, registration_number, incorporation_country, contact_name,
+       contact_role, beneficial_owner_name, beneficial_owner_ownership, kyc_consent_at,
+       terms_accepted_at, submitted_at, updated_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM customers
+        WHERE id=? AND tenant_id=? AND status='pending_setup' AND kyc_status='pending'
+          AND operations_status='pending')`,
+    `INSERT INTO customer_auth_audit_events
+      (id, customer_id, event_type, actor, metadata_json, created_at)
+      SELECT ?, ?, 'customer.registration_submitted', 'public_registration', ?, ?
+      WHERE EXISTS (SELECT 1 FROM customer_applications
+        WHERE id=? AND customer_id=? AND tenant_id=?)`,
     `INSERT INTO customer_auth_audit_events
       (id, customer_id, event_type, actor, metadata_json, created_at)
       SELECT ?, ?, 'auth.password_enrolled', ?, '{}', ?

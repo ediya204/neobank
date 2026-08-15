@@ -6,16 +6,22 @@ import { JwtRegisterView } from 'src/sections/auth/jwt';
 
 // ----------------------------------------------------------------------
 
-export default function RegisterPage() {
+type Props = {
+  loginPath: string;
+};
+
+export default function RegisterPage({ loginPath }: Props) {
   const { t } = useTranslation('common');
 
   return (
     <>
       <Helmet>
-        <title>{t('auth.page_titles.registration')} | {APP_DISPLAY_NAME}</title>
+        <title>
+          {t('auth.page_titles.registration')} | {APP_DISPLAY_NAME}
+        </title>
       </Helmet>
 
-      <JwtRegisterView />
+      <JwtRegisterView loginPath={loginPath} />
     </>
   );
 }

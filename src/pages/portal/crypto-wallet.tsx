@@ -249,7 +249,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
 
   useEffect(() => {
     if (view === 'withdraw' && !loading && !hasActiveWallet) {
-      navigate('/portal/crypto-wallet', { replace: true });
+      navigate('/portal/home', { replace: true });
     }
   }, [hasActiveWallet, loading, navigate, view]);
 
@@ -264,10 +264,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
             <Box>
               <Stack direction="row" alignItems="center" spacing={1.25}>
                 {view !== 'overview' && (
-                  <IconButton
-                    onClick={() => navigate('/portal/crypto-wallet')}
-                    aria-label="返回数字钱包"
-                  >
+                  <IconButton onClick={() => navigate('/portal/home')} aria-label="返回数字钱包">
                     <Iconify icon="solar:alt-arrow-left-linear" />
                   </IconButton>
                 )}

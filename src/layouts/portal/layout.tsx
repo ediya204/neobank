@@ -51,7 +51,7 @@ function PortalFrame() {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   let visibleNavItems: ReadonlyArray<readonly [string, string, string]> = [];
   if (user?.role === 'customer') {
-    visibleNavItems = [['USDT 钱包', '/portal/crypto-wallet', 'solar:wallet-2-bold-duotone']];
+    visibleNavItems = [['USDT 钱包', '/portal/home', 'solar:wallet-2-bold-duotone']];
   } else if (user) {
     visibleNavItems = navItems.filter(([, path]) => canAccessPortalPath(user, path));
   }
@@ -59,7 +59,12 @@ function PortalFrame() {
     !IS_ISOLATED_WALLET_DEPLOYMENT &&
     Boolean(user && canAccessPortalPath(user, '/portal/settings'));
   const isActive = (path: string) => {
-    if (path === '/portal/home') return location.pathname === path;
+    if (path === '/portal/home') {
+      return (
+        location.pathname === path ||
+        (user?.role === 'customer' && location.pathname.startsWith('/portal/crypto-wallet'))
+      );
+    }
     if (path === '/portal/money/accounts') {
       return (
         location.pathname.startsWith(path) || location.pathname.startsWith('/portal/crypto-wallet')

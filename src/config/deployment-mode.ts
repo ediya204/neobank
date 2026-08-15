@@ -5,6 +5,8 @@ export const IS_ISOLATED_WALLET_DEPLOYMENT = NEOBANK_DEPLOYMENT_MODE === 'isolat
 export function isIsolatedAccessAdminPath(pathname: string) {
   return (
     IS_ISOLATED_WALLET_DEPLOYMENT &&
-    (pathname === '/admin/neobank-crypto' || pathname.startsWith('/admin/neobank-crypto/'))
+    (pathname === '/admin' ||
+      pathname === '/admin/neobank-crypto' ||
+      pathname.startsWith('/admin/neobank-crypto/'))
   );
 }

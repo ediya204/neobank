@@ -416,11 +416,16 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     router.replace(getRoleLogin(expectedRole));
   };
 
+  const signInCopyScope = expectedRole === 'customer' ? 'auth.sign_in.customer' : 'auth.sign_in';
+  let emailFieldLabel = t('auth.fields.email');
+  if (expectedRole === 'customer') emailFieldLabel = t('auth.fields.customer_email');
+  if (localPortalBypass) emailFieldLabel = t('auth.fields.local_account');
+
   const stageCopy: Record<Stage, { eyebrow: string; title: string; subtitle: string }> = {
     credentials: {
-      eyebrow: localPortalBypass ? t('auth.local_dev.eyebrow') : t('auth.sign_in.eyebrow'),
-      title: localPortalBypass ? t('auth.local_dev.title') : t('auth.sign_in.title'),
-      subtitle: localPortalBypass ? t('auth.local_dev.subtitle') : t('auth.sign_in.subtitle'),
+      eyebrow: localPortalBypass ? t('auth.local_dev.eyebrow') : t(`${signInCopyScope}.eyebrow`),
+      title: localPortalBypass ? t('auth.local_dev.title') : t(`${signInCopyScope}.title`),
+      subtitle: localPortalBypass ? t('auth.local_dev.subtitle') : t(`${signInCopyScope}.subtitle`),
     },
     setup: {
       eyebrow: t('auth.setup.eyebrow'),
@@ -452,7 +457,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   }
   if (expectedRole === 'customer') {
     roleEntryIcon = 'solar:user-circle-bold-duotone';
-    roleEntryLabel = '客户账户';
+    roleEntryLabel = t('auth.role_entries.customer');
   }
 
   const renderHead = (
@@ -502,6 +507,72 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     </Alert>
   ) : null;
 
+  let credentialsFooter = (
+    <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+      {t('auth.sign_in.provisioned_only')}
+    </Typography>
+  );
+
+  if (expectedRole === 'customer') {
+    credentialsFooter = (
+      <>
+        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+          {t('auth.sign_in.customer.activated_only')}
+        </Typography>
+        <Divider>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            {t('auth.sign_in.customer.new_customer')}
+          </Typography>
+        </Divider>
+        <Button
+          fullWidth
+          component={RouterLink}
+          href={paths.auth.customer.register}
+          size="large"
+          variant="outlined"
+          color="inherit"
+          startIcon={<Iconify icon="solar:user-plus-bold-duotone" />}
+        >
+          {t('auth.sign_in.customer.register')}
+        </Button>
+        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+          {t('auth.sign_in.customer.registration_helper')}
+        </Typography>
+      </>
+    );
+  }
+
+  if (expectedRole === 'partner') {
+    credentialsFooter = (
+      <>
+        {localPortalBypass && (
+          <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+            {t('auth.local_dev.helper')}
+          </Typography>
+        )}
+        <Divider>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            {t('auth.sign_in.new_customer')}
+          </Typography>
+        </Divider>
+        <Button
+          fullWidth
+          component={RouterLink}
+          href={paths.auth.portal.register}
+          size="large"
+          variant="outlined"
+          color="inherit"
+          startIcon={<Iconify icon="solar:user-plus-bold-duotone" />}
+        >
+          {t('auth.sign_in.open_account')}
+        </Button>
+        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+          {t('auth.sign_in.registration_helper')}
+        </Typography>
+      </>
+    );
+  }
+
   const renderCredentials = (
     <FormProvider methods={loginMethods} onSubmit={handleCredentials}>
       <Stack spacing={2.5}>
@@ -513,7 +584,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
         )}
         <RHFTextField
           name="email"
-          label={localPortalBypass ? t('auth.fields.local_account') : t('auth.fields.email')}
+          label={emailFieldLabel}
           autoComplete={localPortalBypass ? 'off' : 'username'}
           inputProps={{ maxLength: 254 }}
         />
@@ -549,40 +620,9 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
           variant="contained"
           loading={loginMethods.formState.isSubmitting || preparingTotp}
         >
-          {localPortalBypass ? t('auth.local_dev.submit') : t('auth.sign_in.submit')}
+          {localPortalBypass ? t('auth.local_dev.submit') : t(`${signInCopyScope}.submit`)}
         </LoadingButton>
-        {expectedRole === 'partner' ? (
-          <>
-            {localPortalBypass && (
-              <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-                {t('auth.local_dev.helper')}
-              </Typography>
-            )}
-            <Divider>
-              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                {t('auth.sign_in.new_customer')}
-              </Typography>
-            </Divider>
-            <Button
-              fullWidth
-              component={RouterLink}
-              href={paths.auth.portal.register}
-              size="large"
-              variant="outlined"
-              color="inherit"
-              startIcon={<Iconify icon="solar:user-plus-bold-duotone" />}
-            >
-              {t('auth.sign_in.open_account')}
-            </Button>
-            <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-              {t('auth.sign_in.registration_helper')}
-            </Typography>
-          </>
-        ) : (
-          <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-            {t('auth.sign_in.provisioned_only')}
-          </Typography>
-        )}
+        {credentialsFooter}
       </Stack>
     </FormProvider>
   );

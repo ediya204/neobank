@@ -12,6 +12,11 @@ export const paths = {
       login: '/admin/login',
       setup: '/admin/setup',
     },
+    customer: {
+      login: '/customer/login',
+      setup: '/customer/setup',
+      register: '/customer/register',
+    },
     portal: {
       login: '/portal/login',
       setup: '/portal/setup',

@@ -21,7 +21,9 @@ export default function AuthClassicLayout({ children, image, workspaceRole, titl
   const { t } = useTranslation('common');
   const theme = useTheme();
   const mdUp = useResponsive('up', 'md');
-  const copyScope = workspaceRole === 'partner' ? 'auth.layout.partner' : 'auth.layout';
+  let copyScope = 'auth.layout';
+  if (workspaceRole === 'partner') copyScope = 'auth.layout.partner';
+  if (workspaceRole === 'customer') copyScope = 'auth.layout.customer';
 
   const renderHeader = (
     <Stack

@@ -20,14 +20,18 @@ Cloudflare Access application for this deployment.
 The production web build is an explicit allowlist, selected at compile time with
 `REACT_APP_NEOBANK_DEPLOYMENT_MODE=isolated-wallet`. It exposes only:
 
-| Audience      | Browser routes                                          | Authentication source                              |
-| ------------- | ------------------------------------------------------- | -------------------------------------------------- |
-| Customer      | `/customer/login`, `/customer/setup`                    | Go customer session, CSRF token, password and TOTP |
-| Customer      | `/portal/crypto-wallet` plus `/deposit` and `/withdraw` | Same validated customer session                    |
-| Administrator | `/admin/neobank-crypto`                                 | Cloudflare Access JWT plus `NEOBANK_ADMIN_EMAILS`  |
+| Audience      | Browser routes                                                        | Authentication source                             |
+| ------------- | --------------------------------------------------------------------- | ------------------------------------------------- |
+| Customer      | `/customer/register`, `/customer/login`, `/customer/setup`            | Public application, then Go session/password/TOTP |
+| Customer      | `/portal/home`; wallet actions remain under `/portal/crypto-wallet/*` | Same validated customer session                   |
+| Administrator | `/admin`                                                              | Cloudflare Access JWT plus `NEOBANK_ADMIN_EMAILS` |
 
-All Partner Portal, general Dashboard, admin password-login, registration, and
-other Nest-only routes render the safe 404 page in this profile. The default
+For compatibility with saved links, `/portal/crypto-wallet` redirects to
+`/portal/home`, and `/admin/neobank-crypto` redirects to `/admin`. These aliases
+do not change the authentication boundary.
+
+All Partner Portal, general Dashboard, admin password-login, and other
+Nest-only routes render the safe 404 page in this profile. The default
 local build remains the complete Nest application and must not be used as the
 Neobank production artifact.
 
@@ -166,7 +170,8 @@ The rollout order is mandatory:
 2. Apply `migrations-core/0002_customer_auth.sql`,
    `migrations-core/0003_cregis_wallet_deposit_gate.sql`, and
    `migrations-core/0004_customer_kyc_atomic_funds.sql`, followed by
-   `migrations-core/0005_customer_auth_hardening.sql` to the isolated restore,
+   `migrations-core/0005_customer_auth_hardening.sql` and
+   `migrations-core/0006_customer_applications.sql` to the isolated restore,
    then run `PRAGMA foreign_key_check`. Migration `0004` intentionally leaves
    existing customers at KYC pending and operations pending; do not backfill
    approval without a real review.
@@ -174,8 +179,10 @@ The rollout order is mandatory:
    `CUSTOMER_PORTAL_BASE_URL` without exposing their values.
 4. Deploy the D1 gateway allowlist, Go API, and web Worker separately; assert
    the response body and customer data scope at each boundary.
-5. Create a pending customer through `POST /api/v1/admin/customers`. Creation
-   does not issue credentials or a setup URL.
+5. Submit a public application through `POST /api/auth/customer/register`, or
+   create a pending customer through `POST /api/v1/admin/customers`. Neither
+   route issues credentials or a setup URL. Public registration requires a
+   same-origin request and an `Idempotency-Key` header.
 6. Review the customer with `PATCH /api/v1/admin/customers/:id/kyc`, recording a
    reason for rejection, then separately activate an approved customer with
    `PATCH /api/v1/admin/customers/:id/activate`.

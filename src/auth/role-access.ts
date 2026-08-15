@@ -3,9 +3,9 @@ import { AuthRole, AuthSessionUser } from './types';
 import { hasPortalPermission } from './permissions';
 
 export const ROLE_HOME: Record<AuthRole, string> = {
-  admin: IS_ISOLATED_WALLET_DEPLOYMENT ? '/admin/neobank-crypto' : '/dashboard/overview',
+  admin: IS_ISOLATED_WALLET_DEPLOYMENT ? '/admin' : '/dashboard/overview',
   partner: '/portal/home',
-  customer: '/portal/crypto-wallet',
+  customer: '/portal/home',
 };
 
 export const ROLE_LOGIN: Record<AuthRole, string> = {
@@ -50,6 +50,7 @@ export function canAccessPortalPath(user: AuthSessionUser, pathname: string) {
   if (user.role === 'customer') {
     return (
       pathname === '/portal' ||
+      pathname === '/portal/home' ||
       pathname === '/portal/crypto-wallet' ||
       pathname.startsWith('/portal/crypto-wallet/') ||
       pathname === '/portal/settings'
@@ -127,7 +128,7 @@ export function getRoleSetup(role: AuthRole) {
 }
 
 export function requiredRoleForPath(pathname: string): AuthRole | null {
-  if (pathname === '/admin/neobank-crypto') return 'admin';
+  if (pathname === '/admin' || pathname === '/admin/neobank-crypto') return 'admin';
   if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) return 'admin';
   if (pathname === '/portal' || pathname.startsWith('/portal/')) return null;
   return null;
@@ -178,9 +179,16 @@ export function safeReturnTo(
 
   if (requiredRole && requiredRole !== role) return fallback;
   if (IS_ISOLATED_WALLET_DEPLOYMENT) {
-    if (role === 'admin' && canonicalUrl.pathname !== '/admin/neobank-crypto') return fallback;
+    if (
+      role === 'admin' &&
+      canonicalUrl.pathname !== '/admin' &&
+      canonicalUrl.pathname !== '/admin/neobank-crypto'
+    ) {
+      return fallback;
+    }
     if (
       role === 'customer' &&
+      canonicalUrl.pathname !== '/portal/home' &&
       canonicalUrl.pathname !== '/portal/crypto-wallet' &&
       !canonicalUrl.pathname.startsWith('/portal/crypto-wallet/')
     ) {

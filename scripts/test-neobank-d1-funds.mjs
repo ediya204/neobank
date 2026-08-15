@@ -14,6 +14,7 @@ const baseMigrations = await Promise.all([
 ]);
 const fundsMigration = await migration('0004_customer_kyc_atomic_funds.sql');
 const authHardeningMigration = await migration('0005_customer_auth_hardening.sql');
+const applicationMigration = await migration('0006_customer_applications.sql');
 const goSource = await readFile(new URL('server-go/cmd/api/cregis_handlers.go', root), 'utf8');
 const adminGoSource = await readFile(new URL('server-go/cmd/api/customer_admin.go', root), 'utf8');
 
@@ -100,7 +101,12 @@ test('0004 backfills micro-units with exact string arithmetic and fails closed',
 
 test('two concurrent idempotency keys cannot reserve more than the wallet balance', async () => {
   const db = await mf.getD1Database('FUNDS');
-  await apply(db, [...baseMigrations, fundsMigration, authHardeningMigration]);
+  await apply(db, [
+    ...baseMigrations,
+    fundsMigration,
+    authHardeningMigration,
+    applicationMigration,
+  ]);
   await execSQL(
     db,
     `
@@ -204,7 +210,12 @@ test('two concurrent idempotency keys cannot reserve more than the wallet balanc
 
 test('existing active customer can pass manual gates without credential reset', async () => {
   const db = await mf.getD1Database('ADMIN_GATES');
-  await apply(db, [...baseMigrations, fundsMigration, authHardeningMigration]);
+  await apply(db, [
+    ...baseMigrations,
+    fundsMigration,
+    authHardeningMigration,
+    applicationMigration,
+  ]);
   await execSQL(
     db,
     `

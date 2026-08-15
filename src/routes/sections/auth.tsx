@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { GuestGuard } from 'src/auth/guard';
 import AuthClassicLayout from 'src/layouts/auth/classic';
 import { SplashScreen } from 'src/components/loading-screen';
+import { paths } from 'src/routes/paths';
 
 const LoginPage = lazy(() => import('src/pages/auth/jwt/login'));
 const SetupPage = lazy(() => import('src/pages/auth/jwt/setup'));
@@ -40,7 +41,7 @@ export const customerAuthRoutes = [
     element: (
       <Suspense fallback={<SplashScreen />}>
         <GuestGuard>
-          <AuthClassicLayout workspaceRole="partner">
+          <AuthClassicLayout workspaceRole="customer">
             <LoginPage expectedRole="customer" />
           </AuthClassicLayout>
         </GuestGuard>
@@ -51,9 +52,21 @@ export const customerAuthRoutes = [
     path: 'customer/setup',
     element: (
       <Suspense fallback={<SplashScreen />}>
-        <AuthClassicLayout workspaceRole="partner">
+        <AuthClassicLayout workspaceRole="customer">
           <SetupPage expectedRole="customer" />
         </AuthClassicLayout>
+      </Suspense>
+    ),
+  },
+  {
+    path: 'customer/register',
+    element: (
+      <Suspense fallback={<SplashScreen />}>
+        <GuestGuard>
+          <AuthClassicLayout workspaceRole="customer">
+            <RegisterPage loginPath={paths.auth.customer.login} />
+          </AuthClassicLayout>
+        </GuestGuard>
       </Suspense>
     ),
   },
@@ -88,7 +101,7 @@ const partnerAuthRoutes = [
       <Suspense fallback={<SplashScreen />}>
         <GuestGuard>
           <AuthClassicLayout workspaceRole="partner">
-            <RegisterPage />
+            <RegisterPage loginPath={paths.auth.portal.login} />
           </AuthClassicLayout>
         </GuestGuard>
       </Suspense>

@@ -81,6 +81,8 @@ type customerSession struct {
 
 func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request) bool {
 	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/register":
+		app.registerCustomer(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/login":
 		app.customerLogin(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/setup/complete":

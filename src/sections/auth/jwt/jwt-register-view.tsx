@@ -1,4 +1,4 @@
-import { ChangeEvent, useMemo, useState } from 'react';
+import { ChangeEvent, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -15,7 +15,6 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
-import { paths } from 'src/routes/paths';
 import { RouterLink } from 'src/routes/components';
 import Iconify from 'src/components/iconify';
 
@@ -74,17 +73,19 @@ const COUNTRIES = [
 
 const PHONE_CODES = ['+852', '+65', '+86', '+44', '+1'];
 
-function applicationReference() {
-  const date = new Date().toISOString().slice(0, 10).replaceAll('-', '');
-  return `SCC-${date}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-}
+type Props = {
+  loginPath: string;
+};
 
-export default function JwtRegisterView() {
+export default function JwtRegisterView({ loginPath }: Props) {
   const { t } = useTranslation('common');
   const [activeStep, setActiveStep] = useState(0);
   const [form, setForm] = useState<ApplicationForm>(INITIAL_FORM);
   const [errors, setErrors] = useState<Errors>({});
   const [submittedReference, setSubmittedReference] = useState('');
+  const [submissionError, setSubmissionError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const idempotencyKey = useRef(crypto.randomUUID());
 
   const steps = useMemo(
     () => [
@@ -99,6 +100,8 @@ export default function JwtRegisterView() {
   const updateField = (field: FieldName, value: string | boolean) => {
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
+    setSubmissionError('');
+    idempotencyKey.current = crypto.randomUUID();
   };
 
   const handleTextChange =
@@ -133,6 +136,14 @@ export default function JwtRegisterView() {
         required('fullName');
         required('dateOfBirth');
         required('nationality');
+        if (form.dateOfBirth) {
+          const birthDate = new Date(`${form.dateOfBirth}T00:00:00Z`);
+          const adultCutoff = new Date();
+          adultCutoff.setUTCFullYear(adultCutoff.getUTCFullYear() - 18);
+          if (Number.isNaN(birthDate.getTime()) || birthDate > adultCutoff) {
+            nextErrors.dateOfBirth = t('auth.registration.validation.adult');
+          }
+        }
       } else {
         required('legalName');
         required('registrationNumber');
@@ -170,9 +181,58 @@ export default function JwtRegisterView() {
     setActiveStep((step) => Math.max(step - 1, 0));
   };
 
-  const submitApplication = () => {
+  const submitApplication = async () => {
     if (!validateStep()) return;
-    setSubmittedReference(applicationReference());
+    setSubmitting(true);
+    setSubmissionError('');
+    try {
+      const response = await fetch('/api/auth/customer/register', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey.current,
+        },
+        body: JSON.stringify({
+          account_type: form.accountType,
+          email: form.email,
+          phone_country_code: form.phoneCountryCode,
+          phone: form.phone,
+          residence_country: form.residenceCountry,
+          full_name: form.fullName,
+          date_of_birth: form.dateOfBirth,
+          nationality: form.nationality,
+          legal_name: form.legalName,
+          registration_number: form.registrationNumber,
+          incorporation_country: form.incorporationCountry,
+          contact_name: form.contactName,
+          contact_role: form.contactRole,
+          beneficial_owner_name: form.beneficialOwnerName,
+          beneficial_owner_ownership: form.beneficialOwnerOwnership,
+          kyc_consent: form.kycConsent,
+          terms_accepted: form.termsAccepted,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        application_reference?: string;
+        error?: { code?: string };
+      } | null;
+      if (!response.ok || !payload?.application_reference) {
+        const duplicate = payload?.error?.code === 'application_already_exists';
+        throw new Error(
+          duplicate
+            ? t('auth.registration.errors.already_exists')
+            : t('auth.registration.errors.submit')
+        );
+      }
+      setSubmittedReference(payload.application_reference);
+    } catch (caught) {
+      setSubmissionError(
+        caught instanceof Error ? caught.message : t('auth.registration.errors.submit')
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const accountTypeCard = (type: AccountType, icon: string, title: string, description: string) => {
@@ -617,7 +677,7 @@ export default function JwtRegisterView() {
         <Button
           fullWidth
           component={RouterLink}
-          href={paths.auth.portal.login}
+          href={loginPath}
           variant="contained"
           color="inherit"
           size="large"
@@ -626,6 +686,13 @@ export default function JwtRegisterView() {
         </Button>
       </Stack>
     );
+  }
+
+  let primaryActionLabel = t('auth.registration.actions.continue');
+  if (activeStep === steps.length - 1) {
+    primaryActionLabel = submitting
+      ? t('auth.registration.actions.submitting')
+      : t('auth.registration.actions.submit');
   }
 
   return (
@@ -659,7 +726,7 @@ export default function JwtRegisterView() {
           </Typography>
           <Typography
             component={RouterLink}
-            href={paths.auth.portal.login}
+            href={loginPath}
             variant="subtitle2"
             sx={{ color: 'primary.main', textDecoration: 'none' }}
           >
@@ -673,6 +740,12 @@ export default function JwtRegisterView() {
       {activeStep === 2 && renderKyc}
       {activeStep === 3 && renderReview}
 
+      {submissionError && (
+        <Alert severity="error" sx={{ mt: 2.5 }}>
+          {submissionError}
+        </Alert>
+      )}
+
       <Stack direction="row" spacing={1.5} sx={{ mt: 4 }}>
         {activeStep > 0 && (
           <Button fullWidth variant="outlined" color="inherit" size="large" onClick={previousStep}>
@@ -684,7 +757,12 @@ export default function JwtRegisterView() {
           variant="contained"
           color="inherit"
           size="large"
-          onClick={activeStep === steps.length - 1 ? submitApplication : nextStep}
+          disabled={submitting}
+          onClick={
+            activeStep === steps.length - 1
+              ? () => submitApplication().catch(() => undefined)
+              : nextStep
+          }
           endIcon={
             activeStep === steps.length - 1 ? (
               <Iconify icon="solar:plain-2-bold-duotone" />
@@ -693,9 +771,7 @@ export default function JwtRegisterView() {
             )
           }
         >
-          {activeStep === steps.length - 1
-            ? t('auth.registration.actions.submit')
-            : t('auth.registration.actions.continue')}
+          {primaryActionLabel}
         </Button>
       </Stack>
     </Box>

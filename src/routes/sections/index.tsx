@@ -80,8 +80,9 @@ const isolatedWalletRoutes = [
       </AuthGuard>
     ),
     children: [
-      { index: true, element: <Navigate to="/portal/crypto-wallet" replace /> },
-      { path: 'crypto-wallet', element: <CryptoWalletPage /> },
+      { index: true, element: <Navigate to="/portal/home" replace /> },
+      { path: 'home', element: <CryptoWalletPage /> },
+      { path: 'crypto-wallet', element: <Navigate to="/portal/home" replace /> },
       { path: 'crypto-wallet/deposit', element: <CryptoWalletPage view="deposit" /> },
       { path: 'crypto-wallet/withdraw', element: <CryptoWalletPage view="withdraw" /> },
       { path: '*', element: <Page404 /> },
@@ -89,7 +90,7 @@ const isolatedWalletRoutes = [
   },
   ...customerAuthRoutes,
   {
-    path: '/admin/neobank-crypto',
+    path: '/admin',
     element: (
       <AccessAdminBoundary>
         <Suspense fallback={<LoadingScreen />}>
@@ -98,6 +99,7 @@ const isolatedWalletRoutes = [
       </AccessAdminBoundary>
     ),
   },
+  { path: '/admin/neobank-crypto', element: <Navigate to="/admin" replace /> },
   { path: '*', element: <Page404 /> },
 ];
 

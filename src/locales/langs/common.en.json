@@ -49,11 +49,13 @@
       "admin_setup": "Activate admin account",
       "portal_login": "Secure Partner Portal sign-in",
       "portal_setup": "Activate Partner Portal account",
+      "customer_login": "Customer online banking sign-in",
       "registration": "Individual and business account application"
     },
     "role_entries": {
       "admin": "Operations Admin",
-      "portal": "Partner Portal"
+      "portal": "Partner Portal",
+      "customer": "Online Banking"
     },
     "invalid_entry": {
       "page_title": "Invalid sign-in link",
@@ -74,11 +76,20 @@
         "assurance_session": "Account and fund data are isolated by partner permissions",
         "assurance_totp": "Authenticator verification protects sign-ins and sensitive actions",
         "assurance_audit": "Key actions and fund records remain fully traceable"
+      },
+      "customer": {
+        "eyebrow": "SCC Digital Bank customer banking",
+        "title": "Secure access to your bank accounts",
+        "subtitle": "Sign in to review balances, transactions and account activity, and manage the banking services available to you.",
+        "assurance_session": "Secure session controls protect your signed-in access",
+        "assurance_totp": "Your password and authenticator code provide two-step verification",
+        "assurance_audit": "Sign-ins and account activity are recorded for security review"
       }
     },
     "secure_verification": "Secure verification",
     "fields": {
       "email": "Sign-in email",
+      "customer_email": "Account email",
       "local_account": "Test account",
       "password": "Password",
       "new_password": "Create password",
@@ -116,7 +127,17 @@
       "provisioned_only": "Administrative accounts are provisioned by an administrator and cannot be self-registered.",
       "new_customer": "New to SCC Digital Bank?",
       "open_account": "Open an individual or business account",
-      "registration_helper": "KYC / KYB and Operations review are required after submission. No account is activated before approval."
+      "registration_helper": "KYC / KYB and Operations review are required after submission. No account is activated before approval.",
+      "customer": {
+        "eyebrow": "Customer sign-in",
+        "title": "Sign in to Online Banking",
+        "subtitle": "Enter your account email and password. After your password is verified, you will be asked for a code from your authenticator.",
+        "submit": "Secure sign in",
+        "activated_only": "For customers who have completed account opening and activated Online Banking. If you cannot sign in, contact your relationship manager or bank support team.",
+        "new_customer": "New to SCC Digital Bank?",
+        "register": "Apply for an account",
+        "registration_helper": "Apply for an individual or business account. KYC / KYB and Operations review are still required, and no account is opened before approval."
+      }
     },
     "registration": {
       "eyebrow": "Secure account application",
@@ -202,6 +223,7 @@
         "account_type": "Choose an individual or business account.",
         "email": "Enter a valid email address.",
         "phone": "Enter a valid phone number.",
+        "adult": "Individual account applicants must be at least 18 years old.",
         "ownership": "The percentage must be greater than 0 and no more than 100.",
         "kyc_consent": "Confirm the identity-verification data authorization.",
         "terms": "Confirm the declaration before submitting."
@@ -209,7 +231,12 @@
       "actions": {
         "back": "Back",
         "continue": "Continue",
-        "submit": "Submit application"
+        "submit": "Submit application",
+        "submitting": "Submitting securely…"
+      },
+      "errors": {
+        "submit": "The application cannot be submitted right now. Please try again later. No account will be activated automatically.",
+        "already_exists": "An application or account already exists for this email. Contact customer support to confirm its status."
       },
       "success": {
         "eyebrow": "Manual identity review pending",
