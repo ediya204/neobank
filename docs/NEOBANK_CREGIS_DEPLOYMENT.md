@@ -63,26 +63,29 @@ Browser headers, query parameters, the local identity selector, and
 Set values in the Render dashboard. Never commit or paste secret values into a
 ticket, chat, log, or repository.
 
-| Name                       | Secret    | Initial value or source                                  |
-| -------------------------- | --------- | -------------------------------------------------------- |
-| `DATABASE_BACKEND`         | No        | `d1` until the PostgreSQL cutover gate passes            |
-| `DATABASE_URL`             | Yes       | Render PostgreSQL internal connection; staged unused     |
-| `D1_GATEWAY_URL`           | No        | URL of `neobank-d1-gateway`                              |
-| `D1_GATEWAY_SECRET`        | Yes       | Same random value as the Worker secret                   |
-| `EDGE_SHARED_SECRET`       | Yes       | Same random value as the web Worker secret               |
-| `PUBLIC_BASE_URL`          | No        | Render service origin, without a trailing slash          |
-| `CUSTOMER_PORTAL_BASE_URL` | No        | Public customer Portal origin, without a trailing slash  |
-| `TENANT_ID`                | No        | `neobank`                                                |
-| `CUSTOMER_PASSWORD_PEPPER` | Yes       | Separate random value of at least 32 bytes               |
-| `CUSTOMER_TOTP_KEY`        | Yes       | Random 32-byte AES key encoded as hex or Base64          |
-| `CUSTOMER_RECOVERY_PEPPER` | Yes       | Separate random value of at least 32 bytes               |
-| `FASTFOREX_API_KEY`        | Yes       | Rotated FastForex key; configure directly in Render      |
-| `CREGIS_BASE_URL`          | No        | Test gateway while commissioning                         |
-| `CREGIS_ENABLED`           | No        | `false` until the acceptance gate passes                 |
-| `CREGIS_PROJECT_ID`        | Sensitive | Cregis project configuration                             |
-| `CREGIS_PROJECT_SECRET`    | Yes       | Newly rotated Cregis secret                              |
-| `CREGIS_RELAY_URL`         | No        | Dedicated HTTPS origin for the Neobank-only egress relay |
-| `CREGIS_RELAY_SECRET`      | Yes       | Separate random HMAC secret shared only with the relay   |
+| Name                             | Secret    | Initial value or source                                  |
+| -------------------------------- | --------- | -------------------------------------------------------- |
+| `DATABASE_BACKEND`               | No        | `d1` until the PostgreSQL cutover gate passes            |
+| `DATABASE_URL`                   | Yes       | Render PostgreSQL internal connection; staged unused     |
+| `DATABASE_CUTOVER_COPY`          | No        | `false`; one-time approved startup copy only             |
+| `DATABASE_CUTOVER_APPROVED`      | No        | Unset except during the dated cutover window             |
+| `DATABASE_CUTOVER_BACKUP_SHA256` | No        | Unset except for the verified final D1 snapshot          |
+| `D1_GATEWAY_URL`                 | No        | URL of `neobank-d1-gateway`                              |
+| `D1_GATEWAY_SECRET`              | Yes       | Same random value as the Worker secret                   |
+| `EDGE_SHARED_SECRET`             | Yes       | Same random value as the web Worker secret               |
+| `PUBLIC_BASE_URL`                | No        | Render service origin, without a trailing slash          |
+| `CUSTOMER_PORTAL_BASE_URL`       | No        | Public customer Portal origin, without a trailing slash  |
+| `TENANT_ID`                      | No        | `neobank`                                                |
+| `CUSTOMER_PASSWORD_PEPPER`       | Yes       | Separate random value of at least 32 bytes               |
+| `CUSTOMER_TOTP_KEY`              | Yes       | Random 32-byte AES key encoded as hex or Base64          |
+| `CUSTOMER_RECOVERY_PEPPER`       | Yes       | Separate random value of at least 32 bytes               |
+| `FASTFOREX_API_KEY`              | Yes       | Rotated FastForex key; configure directly in Render      |
+| `CREGIS_BASE_URL`                | No        | Test gateway while commissioning                         |
+| `CREGIS_ENABLED`                 | No        | `false` until the acceptance gate passes                 |
+| `CREGIS_PROJECT_ID`              | Sensitive | Cregis project configuration                             |
+| `CREGIS_PROJECT_SECRET`          | Yes       | Newly rotated Cregis secret                              |
+| `CREGIS_RELAY_URL`               | No        | Dedicated HTTPS origin for the Neobank-only egress relay |
+| `CREGIS_RELAY_SECRET`            | Yes       | Separate random HMAC secret shared only with the relay   |
 
 `CREGIS_RELAY_URL` affects only the Cregis client. Do not configure a global
 `HTTP_PROXY` or `HTTPS_PROXY`, because D1 gateway traffic must remain direct.
