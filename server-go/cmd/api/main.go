@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ediya204/neobank/server-go/internal/coremigrate"
 	"github.com/ediya204/neobank/server-go/internal/cregis"
 	"github.com/ediya204/neobank/server-go/internal/d1"
 	"github.com/ediya204/neobank/server-go/internal/fastforex"
@@ -48,6 +49,35 @@ type databaseClient interface {
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	databaseBackend := strings.ToLower(envOr("DATABASE_BACKEND", "d1"))
+	if strings.EqualFold(os.Getenv("DATABASE_CUTOVER_COPY"), "true") {
+		backupSHA256 := strings.ToLower(strings.TrimSpace(os.Getenv("DATABASE_CUTOVER_BACKUP_SHA256")))
+		backupChecksum, checksumErr := hex.DecodeString(backupSHA256)
+		if databaseBackend != "d1" || strings.EqualFold(os.Getenv("CREGIS_ENABLED"), "true") ||
+			os.Getenv("DATABASE_CUTOVER_APPROVED") != "render-postgres-2026-08-16" ||
+			checksumErr != nil || len(backupChecksum) != sha256.Size {
+			logger.Error("database cutover copy refused", "error", "D1 must remain authoritative, Cregis must be disabled, and the dated approval gate must match")
+			os.Exit(1)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		result, cutoverErr := coremigrate.RunFromEnvironment(ctx)
+		cancel()
+		if cutoverErr != nil {
+			logger.Error("database cutover copy failed", "error", cutoverErr)
+			os.Exit(1)
+		}
+		manifestJSON, marshalErr := json.Marshal(result)
+		if marshalErr != nil {
+			logger.Error("database cutover manifest failed", "error", marshalErr)
+			os.Exit(1)
+		}
+		manifestHash := sha256.Sum256(manifestJSON)
+		logger.Info("database cutover snapshot verified",
+			"copied", result.Copied,
+			"backup_sha256", backupSHA256,
+			"manifest_sha256", hex.EncodeToString(manifestHash[:]),
+			"manifest_json", string(manifestJSON),
+		)
+	}
 	var db databaseClient
 	var closeDatabase func()
 	var err error

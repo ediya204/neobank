@@ -15,8 +15,9 @@ As of 2026-08-15:
 - PostgreSQL schema `0001_neobank_core` is applied. The remote verification
   found 11 public tables, 37 indexes, 9 foreign keys, no missing leading
   foreign-key index, and zero business rows.
-- Render PostgreSQL has no inbound IP rules. A new external TLS connection was
-  confirmed to fail after initialization.
+- Render PostgreSQL has no inbound IP rules. Keep it private during cutover;
+  the approved startup-copy mode uses the Render internal connection and does
+  not require a temporary public `/32`.
 - A complete production D1 export was checksummed and restored into isolated
   local D1 state. The restored row counts matched production, SQLite integrity
   returned `ok`, foreign keys passed, negative wallet funds were zero, and
@@ -69,10 +70,31 @@ healthy in production.
    and SHA-256. Restore it to a separate isolated D1 database and verify the
    checksum before using it as the migration source.
 4. Run foreign-key and negative-funds preflights on the isolated restore.
-5. Temporarily allowlist only the operator's current public IPv4 `/32` on the
-   Render database. Never use `0.0.0.0/0` for the copy.
-6. Set the following only in the operator's current shell. Do not paste values
-   into chat, tickets, source files, or shell history:
+5. Disable Cregis on the Render service so signed callbacks return a retryable
+   maintenance response instead of writing during the snapshot. Confirm the
+   health response says `cregis=disabled`.
+6. Prefer the no-public-ingress startup-copy mode. Set these Render environment
+   variables while `DATABASE_BACKEND=d1` remains authoritative, then deploy the
+   Go service once:
+
+   - `CREGIS_ENABLED=false`
+   - `DATABASE_CUTOVER_COPY=true`
+   - `DATABASE_CUTOVER_APPROVED=render-postgres-2026-08-16`
+   - `DATABASE_CUTOVER_BACKUP_SHA256=<the verified final backup checksum>`
+
+   Startup refuses the copy unless D1 remains authoritative, Cregis is disabled,
+   the dated approval gate matches, and the checksum is valid. It copies all
+   eleven business tables in one serializable transaction. If PostgreSQL is
+   already populated, startup succeeds only when every table and SHA-256 exactly
+   matches the D1 maintenance snapshot; a partial or stale target fails closed.
+
+   The restricted Render log entry `database cutover snapshot verified` is the
+   migration manifest evidence. Preserve its JSON and checksum outside the
+   repository.
+
+   The external operator path remains available only as a fallback. Temporarily
+   allowlist the operator's current public IPv4 `/32`; never use `0.0.0.0/0`.
+   Set the following only in the operator's current shell:
 
    ```bash
    export D1_BACKUP_FILE='<complete export path>'
@@ -93,14 +115,16 @@ healthy in production.
 
 The command refuses an unverified backup, a manifest path inside the repository,
 an unencrypted PostgreSQL connection, a missing restored source, or a nonempty
-target. It copies all ten business tables in one serializable transaction and
-compares row counts plus per-table SHA-256 values. Integer money and version
-fields cross the D1 JSON boundary as decimal text before strict `int64` parsing,
-so values above JavaScript's exact-integer range cannot silently round.
+or mismatched target. It copies all eleven business tables in one serializable
+transaction and compares row counts plus per-table SHA-256 values. Integer money
+and version fields cross the D1 JSON boundary as decimal text before strict
+`int64` parsing, so values above JavaScript's exact-integer range cannot silently
+round.
 
 7. Store the manifest and its checksum as restricted migration evidence.
-8. Remove the temporary Render `/32`, reload the networking page, and prove a
-   new external connection fails. Keep only the Render private network.
+8. If the external fallback was used, remove the temporary Render `/32`, reload
+   the networking page, and prove a new external connection fails. Keep only the
+   Render private network.
 
 ## Stage 3: switch without dual writes
 
@@ -108,8 +132,10 @@ This stage needs a separate production approval after the manifest is reviewed.
 
 1. Confirm Render `DATABASE_URL` resolves through the internal connection and
    `DATABASE_BACKEND` is still `d1`.
-2. Change only `DATABASE_BACKEND` to `postgres` and deploy/restart the Go
-   service. Do not deploy Cloudflare or apply another migration implicitly.
+2. Change `DATABASE_BACKEND` to `postgres`, set `DATABASE_CUTOVER_COPY=false`,
+   clear the two cutover evidence variables, restore `CREGIS_ENABLED=true`, and
+   deploy/restart the Go service. Do not deploy Cloudflare or apply another
+   migration implicitly.
 3. Verify `/healthz` returns `database=postgres` and assert the JSON body; HTTP
    200 alone is insufficient.
 4. While customer maintenance remains enabled, run read-only acceptance for:
