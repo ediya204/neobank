@@ -4,6 +4,10 @@ import { Controller, Get } from '@nestjs/common';
 export class HealthController {
   @Get()
   health() {
-    return { status: 'ok', service: 'moventra-core-api', timestamp: new Date().toISOString() };
+    return {
+      status: 'ok',
+      service: 'scc-digital-bank-core-api',
+      timestamp: new Date().toISOString(),
+    };
   }
 }

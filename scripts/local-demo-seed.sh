@@ -9,7 +9,7 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd "${script_dir}/.." && pwd)"
-database_name="va-api-db"
+database_name="va-api-local-db"
 
 seed_files=(
   "${script_dir}/demo-seed.sql"

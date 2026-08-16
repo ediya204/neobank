@@ -318,7 +318,7 @@ Changes the password for the role-matching signed-in account. Send the active
 session Cookie together with the exact same-origin CSRF headers:
 
 ```http
-Origin: https://moventra.xyz
+Origin: https://your-va-portal.example
 X-CSRF-Token: <csrf_token returned by login verification or /api/auth/me>
 Content-Type: application/json
 ```
@@ -382,7 +382,7 @@ Operation-specific errors:
 With a valid session, send both:
 
 ```http
-Origin: https://moventra.xyz
+Origin: https://your-va-portal.example
 X-CSRF-Token: <csrf_token returned by login verification or /api/auth/me>
 ```
 

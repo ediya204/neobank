@@ -70,7 +70,7 @@ elif [[ "$confirm_remote" -eq 1 ]]; then
   exit 2
 fi
 
-database_name="${VA_D1_DATABASE:-va-api-db}"
+database_name="${VA_D1_DATABASE:-va-api-local-db}"
 if [[ ! "$database_name" =~ ^[A-Za-z0-9_-]+$ ]]; then
   printf 'Unsafe D1 database name: %s\n' "$database_name" >&2
   exit 2

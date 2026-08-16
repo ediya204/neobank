@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -39,6 +40,7 @@ func validIndividualRegistration() string {
 	return `{
 		"account_type":"individual",
 		"email":"Applicant@Example.test",
+		"password":"Correct-Horse-7-Battery!",
 		"phone_country_code":"+852",
 		"phone":"6123 4567",
 		"residence_country":"hk",
@@ -57,27 +59,33 @@ func validIndividualRegistration() string {
 	}`
 }
 
-func TestCustomerRegistrationPersistsOnlyPendingApplication(t *testing.T) {
+func TestCustomerRegistrationPersistsPendingApplicationAndPasswordCredential(t *testing.T) {
 	db := &registrationDatabase{results: []d1.Result{
+		{Meta: map[string]any{"changes": float64(1)}},
 		{Meta: map[string]any{"changes": float64(1)}},
 		{Meta: map[string]any{"changes": float64(1)}},
 		{Meta: map[string]any{"changes": float64(1)}},
 	}}
 	app := &application{
 		db: db, tenantID: "tenant_test",
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef"),
+		logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	response := httptest.NewRecorder()
 	app.registerCustomer(response, registrationRequest(validIndividualRegistration()))
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body=%q", response.Code, response.Body.String())
 	}
-	if len(db.statements) != 3 {
-		t.Fatalf("statements = %d; want 3", len(db.statements))
+	if len(db.statements) != 4 {
+		t.Fatalf("statements = %d; want 4", len(db.statements))
 	}
-	combined := strings.ToLower(db.statements[0].SQL + db.statements[1].SQL + db.statements[2].SQL)
-	if strings.Contains(combined, "customer_credentials") || strings.Contains(combined, "cregis_") {
-		t.Fatal("public registration must not create credentials or invoke wallet settlement tables")
+	combined := strings.ToLower(db.statements[0].SQL + db.statements[1].SQL + db.statements[2].SQL + db.statements[3].SQL)
+	if !strings.Contains(combined, "customer_credentials") || strings.Contains(combined, "cregis_") {
+		t.Fatal("public registration must create only the pending password credential and no wallet data")
+	}
+	credentialParams := db.statements[1].Params
+	if strings.Contains(strings.Join(anyStrings(credentialParams), " "), "Correct-Horse") {
+		t.Fatal("plaintext registration password must never be sent to storage")
 	}
 	if !strings.Contains(response.Body.String(), `"status":"pending_review"`) {
 		t.Fatalf("response did not preserve pending state: %q", response.Body.String())
@@ -88,16 +96,19 @@ func TestCustomerRegistrationIsIdempotent(t *testing.T) {
 	input := customerRegistrationInput{
 		AccountType: "individual", Email: "applicant@example.test", PhoneCountryCode: "+852",
 		Phone: "61234567", ResidenceCountry: "HK", FullName: "Test Applicant",
-		DateOfBirth: "1990-01-02", Nationality: "HK", KYCConsent: true, TermsAccepted: true,
+		DateOfBirth: "1990-01-02", Nationality: "HK", Password: "Correct-Horse-7-Battery!",
+		KYCConsent: true, TermsAccepted: true,
+	}
+	app := &application{
+		tenantID:               "tenant_test",
+		customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef"),
+		logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	db := &registrationDatabase{rows: []map[string]any{{
 		"application_reference": "SCC-20260815-ABC123",
-		"request_fingerprint":   registrationFingerprint(input),
+		"request_fingerprint":   app.registrationFingerprint(input),
 	}}}
-	app := &application{
-		db: db, tenantID: "tenant_test",
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
+	app.db = db
 	response := httptest.NewRecorder()
 	app.registerCustomer(response, registrationRequest(validIndividualRegistration()))
 	if response.Code != http.StatusAccepted || len(db.statements) != 0 {
@@ -112,7 +123,8 @@ func TestCustomerRegistrationRejectsUnderageApplicant(t *testing.T) {
 	db := &registrationDatabase{}
 	app := &application{
 		db: db, tenantID: "tenant_test",
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef"),
+		logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	response := httptest.NewRecorder()
 	body := strings.Replace(validIndividualRegistration(), "1990-01-02", "2020-01-02", 1)
@@ -120,4 +132,12 @@ func TestCustomerRegistrationRejectsUnderageApplicant(t *testing.T) {
 	if response.Code != http.StatusUnprocessableEntity || len(db.statements) != 0 {
 		t.Fatalf("status=%d statements=%d body=%q", response.Code, len(db.statements), response.Body.String())
 	}
+}
+
+func anyStrings(values []any) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, fmt.Sprint(value))
+	}
+	return result
 }

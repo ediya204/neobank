@@ -2241,7 +2241,7 @@ function PortalDashboard({
         <DashboardMetric
           label={portalText('全部客户')}
           value={String(customers.length)}
-          helper={portalText('moventra 管理的客户')}
+          helper={portalText('SCC数字银行管理的客户')}
           icon="solar:users-group-rounded-bold-duotone"
           color="primary"
         />

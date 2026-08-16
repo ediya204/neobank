@@ -14,17 +14,13 @@ import {
   getCsrfToken,
   setCsrfToken,
 } from 'src/auth/csrf-token';
-import {
-  IS_ISOLATED_WALLET_DEPLOYMENT,
-  isIsolatedAccessAdminPath,
-} from 'src/config/deployment-mode';
+import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
 import { AuthContext } from './auth-context';
 import {
   AuthApiError,
   beginTotpSetup,
   changeCurrentPassword,
   completeInitialSetup,
-  getAccessAdminSession,
   getSession,
   loginWithPassword,
   logoutSession,
@@ -73,12 +69,12 @@ function localDemoUser(): AuthSessionUser | null {
   const partner = window.location.pathname.startsWith('/portal');
   let role: AuthRole = 'admin';
   let id = 'usr_admin';
-  let email = 'admin@moventra.local';
+  let email = 'admin@scc-digital-bank.local';
   let displayName = '本地管理员';
   if (partner) {
     role = 'partner';
     id = 'usr_maker';
-    email = 'partner@moventra.local';
+    email = 'partner@scc-digital-bank.local';
     displayName = '本地合作方';
   }
   return {
@@ -87,7 +83,11 @@ function localDemoUser(): AuthSessionUser | null {
     displayName,
     role,
     organization: partner
-      ? { id: 'org_demo', name: 'SCC Digital Bank Demo Partner', partnerKey: 'moventra-demo' }
+      ? {
+          id: 'org_demo',
+          name: 'SCC Digital Bank Demo Partner',
+          partnerKey: 'scc-digital-bank-demo',
+        }
       : null,
     membership: partner
       ? {
@@ -155,9 +155,7 @@ export function AuthProvider({ children }: Props) {
       dispatch({ type: Types.INITIAL, payload: { user: demoUser, sessionError: null } });
       return demoUser;
     }
-    const session = isIsolatedAccessAdminPath(window.location.pathname)
-      ? await getAccessAdminSession()
-      : await getSession();
+    const session = await getSession();
     setCsrfToken(session?.csrfToken);
     dispatch({
       type: Types.INITIAL,
@@ -247,18 +245,13 @@ export function AuthProvider({ children }: Props) {
       dispatch({ type: Types.LOGOUT });
       return;
     }
-    if (isIsolatedAccessAdminPath(window.location.pathname) && state.user?.role === 'admin') {
-      clearCsrfToken();
-      dispatch({ type: Types.LOGOUT });
-      return;
-    }
     try {
       await logoutSession(getCsrfToken());
     } finally {
       clearCsrfToken();
       dispatch({ type: Types.LOGOUT });
     }
-  }, [state.user?.role]);
+  }, []);
 
   const changePassword = useCallback(
     async (input: ChangePasswordInput) => {

@@ -119,8 +119,8 @@ endpoints.
    `POST /api/auth/setup-token` bootstrap operation, including the configured
    identity role. Omit `purpose` or send `"purpose": "initial_setup"`.
 2. Deliver only the role-specific fragment link:
-   - Admin: `https://moventra.xyz/admin/setup#setup_token=...`
-   - Partner Portal: `https://moventra.xyz/portal/setup#setup_token=...`
+   - Admin: `https://your-va-portal.example/admin/setup#setup_token=...`
+   - Partner Portal: `https://your-va-portal.example/portal/setup#setup_token=...`
 3. The user creates a 14–128 character password containing uppercase,
    lowercase, number, and symbol.
 4. The user adds the displayed TOTP key to an authenticator and confirms the

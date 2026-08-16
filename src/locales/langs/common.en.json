@@ -131,7 +131,7 @@
       "customer": {
         "eyebrow": "Customer sign-in",
         "title": "Sign in to Online Banking",
-        "subtitle": "Enter your account email and password. After your password is verified, you will be asked for a code from your authenticator.",
+        "subtitle": "Enter the email and password you chose when applying. Sign-in becomes available after KYC / KYB and Operations approval.",
         "submit": "Secure sign in",
         "activated_only": "For customers who have completed account opening and activated Online Banking. If you cannot sign in, contact your relationship manager or bank support team.",
         "new_customer": "New to SCC Digital Bank?",
@@ -166,7 +166,8 @@
         "authorized_contact": "Authorized contact",
         "beneficial_owner": "Beneficial owner",
         "contact": "Contact details",
-        "email_hint": "This address is used to identify the application and for KYC follow-up."
+        "email_hint": "This address identifies your application and becomes your sign-in email after approval.",
+        "password_hint": "Use 14–128 characters with uppercase, lowercase, number, and symbol. Your password is securely hashed and cannot be used before approval."
       },
       "fields": {
         "full_name": "Full legal name",
@@ -180,6 +181,8 @@
         "beneficial_owner_name": "Beneficial owner name",
         "ownership": "Ownership or control (%)",
         "email": "Email address",
+        "password": "Create password",
+        "confirm_password": "Confirm password",
         "phone_code": "Country code",
         "phone": "Phone number",
         "residence_country": "Country or region of residence / operation"
@@ -222,6 +225,8 @@
         "required": "Complete this field.",
         "account_type": "Choose an individual or business account.",
         "email": "Enter a valid email address.",
+        "password": "Use 14–128 characters including uppercase, lowercase, number, and symbol.",
+        "passwords_mismatch": "The passwords do not match.",
         "phone": "Enter a valid phone number.",
         "adult": "Individual account applicants must be at least 18 years old.",
         "ownership": "The percentage must be greater than 0 and no more than 100.",
@@ -245,7 +250,7 @@
         "reference": "Application reference",
         "next_email": "Keep the application reference and watch for document follow-up.",
         "next_kyc": "Wait for Compliance to complete the manual KYC / KYB review.",
-        "next_review": "Wait for Compliance and Operations review, then create a password and verification code setup after approval.",
+        "next_review": "Wait for Compliance and Operations approval. Once approved, sign in directly with this email and password.",
         "back_to_login": "Back to sign in"
       }
     },

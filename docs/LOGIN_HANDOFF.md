@@ -7,28 +7,38 @@
 
 ## 1. 登录方式
 
-网页端使用应用自有认证，不使用 Cloudflare 账户登录：
+网页端使用应用自有认证，不使用 Cloudflare 账户登录。Admin / Partner 使用密码与
+TOTP；通过公开开户注册的客户使用申请时设置的邮箱与密码：
+
+Admin / Partner：
 
 1. 输入指定账户邮箱和本人设置的密码。
 2. 输入验证器生成的 6 位 TOTP 动态验证码。
 3. 认证成功后，系统签发安全的 HttpOnly 会话 Cookie。
 
+公开开户注册客户：
+
+1. KYC / KYB 与运营审核通过后，输入申请时设置的邮箱和密码。
+2. 认证成功后，系统直接签发安全的 HttpOnly 会话 Cookie。
+
 系统没有可直接创建已认证 Admin / Partner 身份的公开注册，也没有可通用的默认
-密码。客户可在 `/customer/register` 提交个人或企业开户申请；公开 API 只保存
-待审核档案，既不签发凭证，也不创建钱包或自动启用资金功能。V1 仍未接入邮箱验证
-与第三方 KYC 服务商，补件和 KYC / KYB 结论由后台人工处理。
+密码。客户可在 `/customer/register` 输入邮箱、密码并提交个人或企业开户申请；
+公开 API 只保存待审核档案和安全哈希后的密码，不创建钱包，也不会在审核前允许
+登录或启用资金功能。V1 仍未接入邮箱验证与第三方 KYC 服务商，补件和 KYC / KYB
+结论由后台人工处理。
 
 预期流程为：提交开户申请 → 生成 KYC 安全链接 → KYC / KYB 通过 → 运营审核 →
-账户启用。KYC 完成不等于开户完成；运营审核通过后，仍使用一次性激活链接设置
-密码并绑定 TOTP。
+账户启用。KYC 完成不等于开户完成；运营审核通过后，公开申请客户可直接使用申请
+邮箱和密码登录。仅后台创建且尚未设置密码的旧式客户继续使用一次性激活链接与
+TOTP 流程。
 
 ## 2. 初始账户与指定入口
 
-| 角色 | 初始账户邮箱 | 唯一登录入口 | 登录后的工作区 | 初始密码 |
-|---|---|---|---|---|
-| Admin / 运营后台 | `admin@example.com` | [Admin 登录](https://moventra.xyz/admin/login) | `/dashboard` | **无默认密码**；首次激活时由本人设置 |
-| Admin / 运营后台 | `security-admin@example.com` | [Admin 登录](https://moventra.xyz/admin/login) | `/dashboard` | **无默认密码**；首次激活时由本人设置 |
-| Partner / Ethan Portal | `partner@example.com` | [Partner 登录](https://moventra.xyz/portal/login) | `/portal` | **无默认密码**；首次激活时由本人设置 |
+| 角色                   | 初始账户邮箱                 | 唯一登录入口                                                | 登录后的工作区 | 初始密码                             |
+| ---------------------- | ---------------------------- | ----------------------------------------------------------- | -------------- | ------------------------------------ |
+| Admin / 运营后台       | `admin@example.com`          | [Admin 登录](https://your-va-portal.example/admin/login)    | `/dashboard`   | **无默认密码**；首次激活时由本人设置 |
+| Admin / 运营后台       | `security-admin@example.com` | [Admin 登录](https://your-va-portal.example/admin/login)    | `/dashboard`   | **无默认密码**；首次激活时由本人设置 |
+| Partner / Ethan Portal | `partner@example.com`        | [Partner 登录](https://your-va-portal.example/portal/login) | `/portal`      | **无默认密码**；首次激活时由本人设置 |
 
 “无默认密码”是安全设计，不是配置缺失。任何初始密码都不应由开发人员生成后写入
 仓库、聊天记录或工单。
@@ -49,8 +59,8 @@
    `POST /api/auth/setup-token` bootstrap 流程签发一次性激活链接。首次激活请求
    省略 `purpose` 或显式使用 `purpose: "initial_setup"`。
 2. 链接只通过安全渠道发送给对应账户本人，有效期为 30 分钟，且只能使用一次：
-   - Admin：`https://moventra.xyz/admin/setup#setup_token=...`
-   - Partner：`https://moventra.xyz/portal/setup#setup_token=...`
+   - Admin：`https://your-va-portal.example/admin/setup#setup_token=...`
+   - Partner：`https://your-va-portal.example/portal/setup#setup_token=...`
 3. 本人设置 14–128 位密码，必须同时包含大写字母、小写字母、数字和符号。
 4. 本人使用验证器扫描 TOTP 信息，并输入当前 6 位验证码完成绑定。
 5. 本人把系统生成的 10 个一次性恢复码保存到密码管理器。
@@ -63,14 +73,14 @@
 
 ### Admin
 
-1. 打开 `https://moventra.xyz/admin/login`。
+1. 打开 `https://your-va-portal.example/admin/login`。
 2. 输入 `admin@example.com` 和本人密码。
 3. 输入 TOTP 验证码。
 4. 进入 `/dashboard`。
 
 ### Partner
 
-1. 打开 `https://moventra.xyz/portal/login`。
+1. 打开 `https://your-va-portal.example/portal/login`。
 2. 输入 `partner@example.com` 和本人密码。
 3. 输入 TOTP 验证码。
 4. 进入 `/portal`。
@@ -137,9 +147,9 @@ Partner 网页账户与 Partner 机器 API 是两套独立凭证：
 ## English quick handoff
 
 - Admin account: `admin@example.com`
-- Admin sign-in: `https://moventra.xyz/admin/login`
+- Admin sign-in: `https://your-va-portal.example/admin/login`
 - Partner account: `partner@example.com`
-- Partner sign-in: `https://moventra.xyz/portal/login`
+- Partner sign-in: `https://your-va-portal.example/portal/login`
 - Authentication: account password followed by a six-digit TOTP code.
 - There is **no default password**. Each user creates their own password through
   a 30-minute, one-time activation link delivered through a secure channel.

@@ -299,20 +299,6 @@ export async function getSession(): Promise<AuthSessionData | null> {
   }
 }
 
-export async function getAccessAdminSession(): Promise<AuthSessionData | null> {
-  try {
-    const payload = await authRequest('/api/auth/access-admin/session', { method: 'GET' });
-    const user = normalizeAuthUser(payload);
-    if (!user || user.role !== 'admin') {
-      throw new AuthApiError(502, 'invalid_auth_response', 'Invalid Access session response');
-    }
-    return { user, csrfToken: null };
-  } catch (error) {
-    if (error instanceof AuthApiError && error.status === 401) return null;
-    throw error;
-  }
-}
-
 export async function loginWithPassword(email: string, password: string, expectedRole: AuthRole) {
   const payload = await authRequest(scopedAuthPath(expectedRole, 'login'), {
     method: 'POST',

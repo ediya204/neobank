@@ -2,7 +2,7 @@
 
 Version: V1.7.0<br>
 Last updated: 2 August 2026<br>
-API root: `https://moventra.xyz/api/v1`<br>
+API root: `https://your-va-api.example/api/v1`<br>
 Audience: Partner server-side integration teams
 
 ## 1. Scope
@@ -92,7 +92,7 @@ Additional controls:
 Example environment:
 
 ```bash
-export VA_API_BASE_URL="https://moventra.xyz/api/v1"
+export VA_API_BASE_URL="https://your-va-api.example/api/v1"
 export VA_CF_ACCESS_CLIENT_ID="<service-token-client-id>"
 export VA_CF_ACCESS_CLIENT_SECRET="<service-token-client-secret>"
 ```
@@ -218,7 +218,7 @@ Example business calls:
 
 ```java
 VaApiClient api = new VaApiClient(
-    System.getenv().getOrDefault("VA_API_BASE_URL", "https://moventra.xyz/api/v1"),
+    System.getenv().getOrDefault("VA_API_BASE_URL", "https://your-va-api.example/api/v1"),
     System.getenv("VA_CF_ACCESS_CLIENT_ID"),
     System.getenv("VA_CF_ACCESS_CLIENT_SECRET"));
 

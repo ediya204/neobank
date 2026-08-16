@@ -63,6 +63,14 @@ const (
 	    WHERE EXISTS (SELECT 1 FROM customer_credentials
 	      WHERE customer_id=? AND credential_version=? AND enrollment_token_hash IS NULL
 	        AND updated_at=? AND totp_last_counter=?)`
+	passwordCustomerSessionSQL = `INSERT INTO customer_sessions
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
+	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+	    WHERE EXISTS (SELECT 1 FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
+	      WHERE c.id=? AND c.tenant_id=? AND c.status='active' AND c.kyc_status='approved'
+	        AND c.operations_status='active' AND cc.credential_version=?
+	        AND cc.password_salt IS NOT NULL AND cc.password_hash IS NOT NULL
+	        AND cc.totp_secret_ciphertext IS NULL)`
 )
 
 var customerPasswordPattern = regexp.MustCompile(`^[\x20-\x7e]{14,128}$`)
@@ -290,7 +298,8 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := normalizeCustomerEmail(input.Email)
-	rows, err := app.db.Query(r.Context(), `SELECT c.id, c.status, cc.password_salt, cc.password_hash,
+	rows, err := app.db.Query(r.Context(), `SELECT c.id, c.email, c.display_name, c.status,
+	      cc.password_salt, cc.password_hash, cc.totp_secret_ciphertext,
 	      cc.password_algorithm, cc.password_iterations, cc.password_memory_kib, cc.password_time_cost,
 	      cc.password_parallelism, cc.credential_version, cc.failed_attempts, cc.locked_until
 	    FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
@@ -336,7 +345,6 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_email_or_password"}})
 		return
 	}
-	challengeToken := randomToken(32)
 	nowText := databaseTimestamp(now)
 	statements := []d1.Statement{}
 	if upgradePassword {
@@ -351,6 +359,45 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 			customerID, credentialVersion,
 		}})
 	}
+	if text(rows[0]["totp_secret_ciphertext"]) == "" {
+		sessionID, sessionToken, csrfToken, sessionStatement := newCustomerSession(customerID, credentialVersion, now)
+		sessionStatement.SQL = passwordCustomerSessionSQL
+		sessionStatement.Params = append(sessionStatement.Params, customerID, app.tenantID, credentialVersion)
+		statements = append(statements,
+			d1.Statement{SQL: `UPDATE customer_credentials SET failed_attempts=0, locked_until=NULL, updated_at=?
+		      WHERE customer_id=? AND credential_version=?`, Params: []any{nowText, customerID, credentialVersion}},
+			sessionStatement,
+			d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
+		      (id, customer_id, event_type, actor, metadata_json, created_at)
+		      SELECT ?, ?, 'auth.login_succeeded', ?, ?, ?
+		      WHERE EXISTS (SELECT 1 FROM customer_sessions WHERE id=? AND customer_id=?)`, Params: []any{
+				randomID("audit"), customerID, customerID,
+				mustJSON(map[string]string{"session_id": sessionID, "method": "password"}),
+				nowText, sessionID, customerID,
+			}},
+		)
+		results, batchErr := app.db.Batch(r.Context(), statements...)
+		if batchErr != nil {
+			databaseError(app, w, batchErr)
+			return
+		}
+		if len(results) != len(statements) {
+			conflict(w, "authentication_state_changed")
+			return
+		}
+		for index := range results {
+			if resultChanges(results[index:index+1]) != 1 {
+				conflict(w, "authentication_state_changed")
+				return
+			}
+		}
+		app.setCustomerSessionCookies(w, sessionToken, csrfToken, now.Add(customerSessionDuration))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"next_step": "authenticated", "csrf_token": csrfToken, "user": customerUser(rows[0]),
+		})
+		return
+	}
+	challengeToken := randomToken(32)
 	statements = append(statements,
 		d1.Statement{SQL: `UPDATE customer_credentials SET failed_attempts=0, locked_until=NULL, updated_at=?
 	      WHERE customer_id=? AND credential_version=?`, Params: []any{nowText, customerID, credentialVersion}},
@@ -424,7 +471,7 @@ func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		rows = attemptResults[1].Results
-		// Increment and lookup share one D1 batch, so racing requests cannot
+		// Increment and lookup share one serializable database batch, so racing requests cannot
 		// cross the maximum through independent read/update operations.
 	}
 	if err != nil {

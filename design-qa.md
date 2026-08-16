@@ -14,7 +14,7 @@
 
 - The implementation preserves the reference's three-step receive flow, network selector, address/copy action, QR code, right-side notices, and recent-deposit history.
 - At the narrower responsive breakpoint, the notice card moves below the receive card and the history table becomes horizontally scrollable. This is an intentional responsive adaptation rather than missing content.
-- The page keeps the existing Moventra customer-portal navigation, typography, radii, shadows, and neutral/blue token system rather than copying the reference's unrelated admin chrome.
+- The page keeps the existing SCC Digital Bank customer-portal navigation, typography, radii, shadows, and neutral/blue token system rather than copying the reference's unrelated admin chrome.
 
 **Focused region comparison evidence**
 

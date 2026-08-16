@@ -33,7 +33,7 @@ import { getLocalizedApiError } from 'src/locales/api-error';
 import { browserApiFetch } from 'src/utils/browser-api';
 
 const PORTAL_API_BASE = '/api/browser/v1/portal';
-const PARTNER_API_BASE_URL = 'https://moventra.xyz/api/v1';
+const PARTNER_API_BASE_URL = '/api/v1';
 
 export const WEBHOOK_EVENTS = [
   {
@@ -1268,7 +1268,7 @@ export default function PartnerApiIntegration() {
               {translate('提交申请不会立即改变访问权限；只有后台审批通过后，新规则才会生效。')}
               <br />
               {translate(
-                '出口用途仅用于区分主出口、灾备或测试来源；所有已批准且启用的规则均作用于当前 moventra.xyz 生产 API。'
+                '出口用途仅用于区分主出口、灾备或测试来源；所有已批准且启用的规则均作用于当前站点的生产 API。'
               )}
             </Alert>
 

@@ -48,7 +48,7 @@
    `POST /api/v1/api-integration/ip-allowlist-requests`
    提交生产和灾备出口的固定公网 IP/CIDR、标签和变更原因。
    申请中的 `environment` 仅用于标记出口用途，**不是独立的访问边界**；当前所有
-   已批准且启用的规则都会作用于 `moventra.xyz` 这一套生产 API。
+   已批准且启用的规则都会作用于当前部署站点的生产 API。
    服务端只接受全球公网单播地址，IPv4 不得宽于 `/8`、IPv6 不得宽于 `/32`，
    并拒绝私网、保留、文档示例和其他 IANA 特殊用途网段。
 2. Edi 在 `API 管理 → 接入申请` 核对后批准；批准前规则不进入运行时白名单。
@@ -73,21 +73,20 @@
 
 ## Access 域名覆盖
 
-生产 Worker 同时绑定 `moventra.xyz` 与 `www.moventra.xyz`。两个主机都必须分别
+本仓库不预设或绑定生产自定义域名。为本项目分配独立的 API 主机后，该主机必须
 配置以下两类 Cloudflare Access self-hosted 应用，并使用同一个 Partner Service
 Token 的 `Service Auth`（API decision 为 `non_identity`）策略：
 
 - 精确根路径：`<host>/api/v1`
 - 通配子路径：`<host>/api/v1/*`
 
-不能只保护 apex；Access 应用按主机名匹配，`moventra.xyz/api/v1/*` 不会自动覆盖
-`www.moventra.xyz/api/v1/*`。新增 Worker 自定义域或 API 主机时，必须先建立等价
-Access 应用再开放流量。
+Access 应用按主机名匹配；如果同时开放 apex、`www` 或其他 API 主机，每个主机都
+必须建立等价 Access 应用后再开放流量，不能假定一个主机的策略会覆盖另一个主机。
 
 每次 Access 或域名变更后，至少执行以下匿名验收，且不得读取或保存业务响应体：
 
-- 两个主机的 `/api/v1`、`/api/v1/health` 与只读业务列表均返回 Access `403`；
-- `www.moventra.xyz/` 仍返回正常静态站点；
+- 每个已配置主机的 `/api/v1`、`/api/v1/health` 与只读业务列表均返回 Access `403`；
+- 每个公开 UI 主机的根路径仍返回预期静态站点；
 - 使用当前有效 Service Token 从已批准出口执行认证业务验收，验证响应结构、
   Partner 范围和状态语义，不能只看 HTTP 状态。
 

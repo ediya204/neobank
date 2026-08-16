@@ -2,7 +2,7 @@
 
 版本：V1.7.0<br>
 最后更新：2026 年 8 月 2 日<br>
-API 根地址：`https://moventra.xyz/api/v1`<br>
+API 根地址：`https://your-va-api.example/api/v1`<br>
 适用对象：合作伙伴服务端集成团队
 
 ## 1. 文档范围
@@ -83,7 +83,7 @@ Partner 应加密保存并限制访问。
 环境变量示例：
 
 ```bash
-export VA_API_BASE_URL="https://moventra.xyz/api/v1"
+export VA_API_BASE_URL="https://your-va-api.example/api/v1"
 export VA_CF_ACCESS_CLIENT_ID="<service-token-client-id>"
 export VA_CF_ACCESS_CLIENT_SECRET="<service-token-client-secret>"
 ```
@@ -209,7 +209,7 @@ public final class VaApiClient {
 
 ```java
 VaApiClient api = new VaApiClient(
-    System.getenv().getOrDefault("VA_API_BASE_URL", "https://moventra.xyz/api/v1"),
+    System.getenv().getOrDefault("VA_API_BASE_URL", "https://your-va-api.example/api/v1"),
     System.getenv("VA_CF_ACCESS_CLIENT_ID"),
     System.getenv("VA_CF_ACCESS_CLIENT_SECRET"));
 

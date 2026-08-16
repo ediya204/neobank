@@ -23,6 +23,8 @@ type AccountType = 'individual' | 'business';
 type ApplicationForm = {
   accountType: AccountType | '';
   email: string;
+  password: string;
+  confirmPassword: string;
   phoneCountryCode: string;
   phone: string;
   residenceCountry: string;
@@ -46,6 +48,8 @@ type Errors = Partial<Record<FieldName, string>>;
 const INITIAL_FORM: ApplicationForm = {
   accountType: '',
   email: '',
+  password: '',
+  confirmPassword: '',
   phoneCountryCode: '+852',
   phone: '',
   residenceCountry: '',
@@ -123,10 +127,26 @@ export default function JwtRegisterView({ loginPath }: Props) {
 
     if (activeStep === 1) {
       required('email');
+      required('password');
+      required('confirmPassword');
       required('phone');
       required('residenceCountry');
       if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) {
         nextErrors.email = t('auth.registration.validation.email');
+      }
+      if (
+        form.password &&
+        (form.password.length < 14 ||
+          form.password.length > 128 ||
+          !/[a-z]/.test(form.password) ||
+          !/[A-Z]/.test(form.password) ||
+          !/\d/.test(form.password) ||
+          !/[^A-Za-z0-9]/.test(form.password))
+      ) {
+        nextErrors.password = t('auth.registration.validation.password');
+      }
+      if (form.confirmPassword && form.confirmPassword !== form.password) {
+        nextErrors.confirmPassword = t('auth.registration.validation.passwords_mismatch');
       }
       if (form.phone && form.phone.replace(/\D/g, '').length < 6) {
         nextErrors.phone = t('auth.registration.validation.phone');
@@ -196,6 +216,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
         body: JSON.stringify({
           account_type: form.accountType,
           email: form.email,
+          password: form.password,
           phone_country_code: form.phoneCountryCode,
           phone: form.phone,
           residence_country: form.residenceCountry,
@@ -226,6 +247,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
         );
       }
       setSubmittedReference(payload.application_reference);
+      setForm((current) => ({ ...current, password: '', confirmPassword: '' }));
     } catch (caught) {
       setSubmissionError(
         caught instanceof Error ? caught.message : t('auth.registration.errors.submit')
@@ -446,6 +468,30 @@ export default function JwtRegisterView({ loginPath }: Props) {
         helperText={errors.email || t('auth.registration.details.email_hint')}
         autoComplete="email"
       />
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+        <TextField
+          fullWidth
+          type="password"
+          label={t('auth.registration.fields.password')}
+          value={form.password}
+          onChange={handleTextChange('password')}
+          error={Boolean(errors.password)}
+          helperText={errors.password || t('auth.registration.details.password_hint')}
+          autoComplete="new-password"
+          inputProps={{ minLength: 14, maxLength: 128 }}
+        />
+        <TextField
+          fullWidth
+          type="password"
+          label={t('auth.registration.fields.confirm_password')}
+          value={form.confirmPassword}
+          onChange={handleTextChange('confirmPassword')}
+          error={Boolean(errors.confirmPassword)}
+          helperText={errors.confirmPassword}
+          autoComplete="new-password"
+          inputProps={{ minLength: 14, maxLength: 128 }}
+        />
+      </Stack>
       <Stack direction="row" spacing={2}>
         <TextField
           select

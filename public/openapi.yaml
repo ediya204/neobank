@@ -52,7 +52,7 @@ info:
 
     This document describes the Partner API only.
 servers:
-  - url: https://moventra.xyz/api/v1
+  - url: /api/v1
 security:
   - cfAccessClientId: []
     cfAccessClientSecret: []

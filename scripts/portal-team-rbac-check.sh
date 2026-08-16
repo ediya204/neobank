@@ -38,7 +38,7 @@ team_file="${repo_dir}/worker/portal-team.ts"
 auth_file="${repo_dir}/worker/auth.ts"
 frontend_api_file="${repo_dir}/src/features/portal-team/api.ts"
 wrangler_bin="${repo_dir}/node_modules/.bin/wrangler"
-database_name="${VA_D1_DATABASE:-va-api-db}"
+database_name="${VA_D1_DATABASE:-va-api-local-db}"
 
 if [[ ! "$database_name" =~ ^[A-Za-z0-9_-]+$ ]]; then
   printf 'Unsafe D1 database name: %s\n' "$database_name" >&2

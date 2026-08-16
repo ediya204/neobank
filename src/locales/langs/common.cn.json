@@ -131,7 +131,7 @@
       "customer": {
         "eyebrow": "客户登录",
         "title": "登录网上银行",
-        "subtitle": "请输入您的账户邮箱和密码。密码验证通过后，还需输入验证器生成的动态验证码。",
+        "subtitle": "请输入开户注册时设置的邮箱和密码。KYC / KYB 与运营审核通过后即可登录。",
         "submit": "安全登录",
         "activated_only": "仅限已完成开户并激活网上银行的客户使用。如无法登录，请联系您的客户经理或银行支持团队。",
         "new_customer": "还没有 SCC数字银行账户？",
@@ -166,7 +166,8 @@
         "authorized_contact": "授权联系人",
         "beneficial_owner": "最终受益人",
         "contact": "联系方式",
-        "email_hint": "该邮箱用于申请识别、KYC 补件及后续审核联络。"
+        "email_hint": "该邮箱用于申请识别、KYC 补件及审核联络，审批通过后也是登录邮箱。",
+        "password_hint": "密码须为 14–128 位，并包含大写字母、小写字母、数字和符号。密码会安全哈希保存，审批前不能用于登录。"
       },
       "fields": {
         "full_name": "证件上的完整姓名",
@@ -180,6 +181,8 @@
         "beneficial_owner_name": "最终受益人姓名",
         "ownership": "持股或控制比例（%）",
         "email": "电子邮箱",
+        "password": "设置登录密码",
+        "confirm_password": "确认登录密码",
         "phone_code": "国家区号",
         "phone": "电话号码",
         "residence_country": "常住 / 营业国家或地区"
@@ -222,6 +225,8 @@
         "required": "请填写此项。",
         "account_type": "请选择个人账户或企业账户。",
         "email": "请输入有效的电子邮箱。",
+        "password": "密码须为 14–128 位，并包含大写字母、小写字母、数字和符号。",
+        "passwords_mismatch": "两次输入的密码不一致。",
         "phone": "请输入有效的电话号码。",
         "adult": "个人账户申请人须年满 18 周岁。",
         "ownership": "比例必须大于 0 且不超过 100。",
@@ -245,7 +250,7 @@
         "reference": "申请编号",
         "next_email": "妥善保存申请编号，并留意补件联络。",
         "next_kyc": "等待合规人员完成人工 KYC / KYB 审核。",
-        "next_review": "等待合规与运营审核；通过后再设置登录密码和动态验证码。",
+        "next_review": "等待合规与运营审核；审批通过后即可使用该邮箱和密码直接登录。",
         "back_to_login": "返回登录"
       }
     },

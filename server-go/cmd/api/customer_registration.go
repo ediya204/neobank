@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -41,6 +42,7 @@ var (
 type customerRegistrationInput struct {
 	AccountType              string `json:"account_type"`
 	Email                    string `json:"email"`
+	Password                 string `json:"password"`
 	PhoneCountryCode         string `json:"phone_country_code"`
 	Phone                    string `json:"phone"`
 	ResidenceCountry         string `json:"residence_country"`
@@ -80,7 +82,8 @@ func normalizeRegistrationInput(input *customerRegistrationInput) bool {
 	input.BeneficialOwnerName = strings.TrimSpace(input.BeneficialOwnerName)
 	input.BeneficialOwnerOwnership = strings.TrimSpace(input.BeneficialOwnerOwnership)
 
-	if input.Email == "" || !customerPhoneCodePattern.MatchString(input.PhoneCountryCode) ||
+	if input.Email == "" || !validCustomerPassword(input.Password) ||
+		!customerPhoneCodePattern.MatchString(input.PhoneCountryCode) ||
 		!customerPhonePattern.MatchString(input.Phone) ||
 		!customerCountryPattern.MatchString(input.ResidenceCountry) ||
 		!input.KYCConsent || !input.TermsAccepted {
@@ -115,10 +118,12 @@ func validRegistrationText(value string, maximum int) bool {
 	return value != "" && len([]rune(value)) <= maximum
 }
 
-func registrationFingerprint(input customerRegistrationInput) string {
+func (app *application) registrationFingerprint(input customerRegistrationInput) string {
 	encoded, _ := json.Marshal(input)
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:])
+	mac := hmac.New(sha256.New, app.customerPasswordPepper)
+	_, _ = mac.Write([]byte("neobank-customer-registration-v1\x00"))
+	_, _ = mac.Write(encoded)
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func registrationReference(now time.Time) string {
@@ -139,7 +144,7 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 		validationError(w)
 		return
 	}
-	fingerprint := registrationFingerprint(input)
+	fingerprint := app.registrationFingerprint(input)
 	existing, err := app.db.Query(r.Context(), `SELECT application_reference, request_fingerprint
 	    FROM customer_applications WHERE tenant_id=? AND idempotency_key=?`, app.tenantID, idempotencyKey)
 	if err != nil {
@@ -167,11 +172,25 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 	if input.AccountType == "business" {
 		displayName = input.LegalName
 	}
+	passwordSalt := randomBytes(16)
+	passwordHash := app.deriveCustomerArgon2id(input.Password, passwordSalt)
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: `INSERT OR IGNORE INTO customers
 	      (id, tenant_id, email, display_name, status, kyc_status, operations_status, created_by, created_at, updated_at)
 	      VALUES (?, ?, ?, ?, 'pending_setup', 'pending', 'pending', ?, ?, ?)`, Params: []any{
 			customerID, app.tenantID, input.Email, displayName, "public_registration", nowText, nowText,
+		}},
+		d1.Statement{SQL: `INSERT INTO customer_credentials
+	      (customer_id, password_salt, password_hash, password_algorithm, password_iterations,
+	       password_memory_kib, password_time_cost, password_parallelism, password_changed_at,
+	       credential_version, updated_at)
+	      SELECT ?, ?, ?, ?, 0, ?, ?, ?, ?, 1, ?
+	      WHERE EXISTS (SELECT 1 FROM customers
+	        WHERE id=? AND tenant_id=? AND status='pending_setup' AND kyc_status='pending'
+	          AND operations_status='pending')`, Params: []any{
+			customerID, hex.EncodeToString(passwordSalt), hex.EncodeToString(passwordHash),
+			customerPasswordAlgorithm, customerArgonMemoryKiB, customerArgonTimeCost,
+			customerArgonParallelism, nowText, nowText, customerID, app.tenantID,
 		}},
 		d1.Statement{SQL: insertCustomerApplicationSQL, Params: []any{
 			applicationID, app.tenantID, customerID, reference, idempotencyKey, fingerprint,
@@ -192,8 +211,9 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 		databaseError(app, w, err)
 		return
 	}
-	if len(results) != 3 || resultChanges(results[:1]) != 1 ||
-		resultChanges(results[1:2]) != 1 || resultChanges(results[2:3]) != 1 {
+	if len(results) != 4 || resultChanges(results[:1]) != 1 ||
+		resultChanges(results[1:2]) != 1 || resultChanges(results[2:3]) != 1 ||
+		resultChanges(results[3:4]) != 1 {
 		conflict(w, "application_already_exists")
 		return
 	}

@@ -63,7 +63,7 @@ const expectedApiVersion = '1.7.0';
 assert(
   contract?.openapi === '3.1.0' &&
     contract?.info?.version === expectedApiVersion &&
-    contract?.servers?.[0]?.url === 'https://moventra.xyz/api/v1',
+    contract?.servers?.[0]?.url === '/api/v1',
   'OpenAPI version or canonical Partner API server is incorrect.'
 );
 assert(
@@ -197,7 +197,7 @@ assert(
 assert(
   chineseGuide.includes('版本：V1.7.0') &&
     chineseGuide.includes('最后更新：2026 年 8 月 2 日') &&
-    chineseGuide.includes('https://moventra.xyz/api/v1') &&
+    chineseGuide.includes('/api/v1') &&
     /\p{Script=Han}/u.test(chineseGuide),
   'Chinese Partner guide is missing its version, canonical API URL, or Chinese content.'
 );
