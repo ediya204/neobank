@@ -3,6 +3,8 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,6 +51,23 @@ func TestRelayAuthenticationRejectsTamperedBody(t *testing.T) {
 
 	if err := app.authenticate(request, tampered); err == nil || err.Error() != "signature mismatch" {
 		t.Fatalf("expected signature mismatch, got %v", err)
+	}
+}
+
+func TestRelayRoutesAddressOwnershipThroughAuthentication(t *testing.T) {
+	app := &relay{
+		secret: []byte("0123456789abcdef0123456789abcdef"),
+		now:    time.Now,
+		nonces: make(map[string]time.Time),
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/address/inner", strings.NewReader(`{}`))
+	response := httptest.NewRecorder()
+
+	app.routes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("ownership route must reach relay authentication, got status %d", response.Code)
 	}
 }
 

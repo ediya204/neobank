@@ -34,6 +34,7 @@ const (
 
 var allowedPaths = map[string]struct{}{
 	"/api/v1/address/create": {},
+	"/api/v1/address/inner":  {},
 	"/api/v1/address/legal":  {},
 	"/api/v2/payout":         {},
 }
@@ -76,16 +77,9 @@ func main() {
 		nonces: make(map[string]time.Time),
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", app.health)
-	mux.HandleFunc("POST /api/v1/address/create", app.forward)
-	mux.HandleFunc("POST /api/v1/address/legal", app.forward)
-	mux.HandleFunc("POST /api/v2/payout", app.forward)
-	mux.HandleFunc("/", app.notFound)
-
 	server := &http.Server{
 		Addr:              envOr("LISTEN_ADDR", defaultListenAddress),
-		Handler:           securityHeaders(mux),
+		Handler:           securityHeaders(app.routes()),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      25 * time.Second,
@@ -110,6 +104,17 @@ func main() {
 		logger.Error("relay shutdown failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+func (app *relay) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", app.health)
+	mux.HandleFunc("POST /api/v1/address/create", app.forward)
+	mux.HandleFunc("POST /api/v1/address/inner", app.forward)
+	mux.HandleFunc("POST /api/v1/address/legal", app.forward)
+	mux.HandleFunc("POST /api/v2/payout", app.forward)
+	mux.HandleFunc("/", app.notFound)
+	return mux
 }
 
 func validateUpstream(raw string) (*url.URL, error) {
