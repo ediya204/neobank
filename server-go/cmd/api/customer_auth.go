@@ -314,16 +314,43 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 	customerID := ""
 	failedAttempts := int64(0)
 	credentialVersion := int64(0)
+	accountLocked := false
+	credentialMetadataValid := false
 	if len(rows) == 1 && text(rows[0]["status"]) == "active" {
 		customerID = text(rows[0]["id"])
 		failedAttempts = integer(rows[0]["failed_attempts"])
 		credentialVersion = integer(rows[0]["credential_version"])
 		lockedUntil, _ := time.Parse(time.RFC3339Nano, text(rows[0]["locked_until"]))
-		if lockedUntil.IsZero() || !lockedUntil.After(now) {
+		accountLocked = !lockedUntil.IsZero() && lockedUntil.After(now)
+		salt, saltErr := hex.DecodeString(text(rows[0]["password_salt"]))
+		passwordHash, hashErr := hex.DecodeString(text(rows[0]["password_hash"]))
+		algorithm := text(rows[0]["password_algorithm"])
+		credentialMetadataValid = saltErr == nil && hashErr == nil && len(salt) == 16 && len(passwordHash) == 32 &&
+			((algorithm == customerPasswordAlgorithm &&
+				integer(rows[0]["password_memory_kib"]) == customerArgonMemoryKiB &&
+				integer(rows[0]["password_time_cost"]) == customerArgonTimeCost &&
+				integer(rows[0]["password_parallelism"]) == customerArgonParallelism) ||
+				(algorithm == "pbkdf2-sha256-v1" && integer(rows[0]["password_iterations"]) == customerLegacyPasswordIterations))
+		if !accountLocked {
 			valid, upgradePassword = app.verifyCustomerPassword(input.Password, rows[0])
 		}
 	}
 	if !valid {
+		reason := "customer_not_eligible"
+		if len(rows) == 1 && text(rows[0]["status"]) != "active" {
+			reason = "customer_not_active"
+		} else if accountLocked {
+			reason = "account_locked"
+		} else if len(rows) == 1 && !credentialMetadataValid {
+			reason = "credential_metadata_invalid"
+		} else if len(rows) == 1 {
+			reason = "password_mismatch"
+		}
+		app.logger.Warn("customer login rejected",
+			"customer_id", customerID,
+			"reason", reason,
+			"failed_attempts", failedAttempts,
+		)
 		if len(rows) != 1 {
 			_ = app.deriveCustomerArgon2id(input.Password, make([]byte, 16))
 		}
