@@ -23,6 +23,19 @@ var (
 	safeIdentifier  = regexp.MustCompile(`^[A-Za-z0-9_.:@-]{1,128}$`)
 )
 
+type walletProvisionError struct {
+	status int
+	code   string
+	cause  error
+}
+
+func (err *walletProvisionError) Error() string {
+	if err.cause != nil {
+		return err.code + ": " + err.cause.Error()
+	}
+	return err.code
+}
+
 const (
 	usdtTRC20ChainID  = "195"
 	usdtTRC20TokenID  = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
@@ -102,9 +115,6 @@ func (app *application) routeCregis(w http.ResponseWriter, r *http.Request) bool
 }
 
 func (app *application) createCregisWallet(w http.ResponseWriter, r *http.Request) {
-	if !app.requireCregis(w) {
-		return
-	}
 	var input struct {
 		CustomerID  string `json:"customer_id"`
 		ChainID     string `json:"chain_id"`
@@ -124,71 +134,114 @@ func (app *application) createCregisWallet(w http.ResponseWriter, r *http.Reques
 		validationError(w)
 		return
 	}
-	customerRows, err := app.db.Query(r.Context(), `SELECT id FROM customers
-    WHERE id=? AND tenant_id=? AND status='active' AND kyc_status='approved' AND operations_status='active'`, input.CustomerID, app.tenantID)
-	if err != nil {
-		databaseError(app, w, err)
+	wallet, status, provisionErr := app.provisionCregisWallet(r.Context(), input.CustomerID,
+		input.Alias, input.Idempotency, edgeUser(r))
+	if provisionErr != nil {
+		app.writeWalletProvisionError(w, provisionErr)
 		return
 	}
+	writeJSON(w, status, wallet)
+}
+
+func (app *application) writeWalletProvisionError(w http.ResponseWriter, provisionErr *walletProvisionError) {
+	if provisionErr.cause != nil {
+		app.logger.Error("Cregis wallet provisioning failed", "code", provisionErr.code, "error", provisionErr.cause)
+	}
+	writeJSON(w, provisionErr.status, map[string]any{"error": map[string]string{"code": provisionErr.code}})
+}
+
+func (app *application) provisionCregisWallet(ctx context.Context, customerID, alias, idempotency, actor string) (map[string]any, int, *walletProvisionError) {
+	if !app.cregisLive || app.cregis == nil {
+		return nil, 0, &walletProvisionError{status: http.StatusServiceUnavailable, code: "cregis_not_enabled"}
+	}
+	customerRows, err := app.db.Query(ctx, `SELECT id FROM customers
+    WHERE id=? AND tenant_id=? AND status IN ('active', 'pending_setup')
+      AND kyc_status='approved' AND operations_status='active'`, customerID, app.tenantID)
+	if err != nil {
+		return nil, 0, &walletProvisionError{status: http.StatusInternalServerError, code: "database_error", cause: err}
+	}
 	if len(customerRows) != 1 {
-		conflict(w, "customer_account_not_available")
-		return
+		return nil, 0, &walletProvisionError{status: http.StatusConflict, code: "customer_account_not_available"}
+	}
+	existing, err := app.db.Query(ctx, `SELECT id, customer_id, chain_id, token_id, currency, address, status,
+      custody_provider, ownership_verified_at, created_at
+    FROM cregis_wallets WHERE tenant_id=? AND customer_id=? AND chain_id=? AND token_id=?
+      AND status='active' AND custody_provider='cregis' AND ownership_verified_at IS NOT NULL
+      AND address IS NOT NULL ORDER BY created_at ASC LIMIT 1`, app.tenantID, customerID,
+		usdtTRC20ChainID, usdtTRC20TokenID)
+	if err != nil {
+		return nil, 0, &walletProvisionError{status: http.StatusInternalServerError, code: "database_error", cause: err}
+	}
+	if len(existing) == 1 {
+		existing[0]["deposit_enabled"] = true
+		return existing[0], http.StatusOK, nil
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	id := randomID("wallet")
-	reservation, err := app.db.Batch(r.Context(),
+	reservation, err := app.db.Batch(ctx,
 		d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_wallets
       (id, tenant_id, customer_id, idempotency_key, chain_id, token_id, currency, alias, status, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?)`, Params: []any{id, app.tenantID,
-			input.CustomerID, input.Idempotency, usdtTRC20ChainID, usdtTRC20TokenID,
-			usdtTRC20Currency, nullIfEmpty(input.Alias), edgeUser(r), now, now}},
+			customerID, idempotency, usdtTRC20ChainID, usdtTRC20TokenID,
+			usdtTRC20Currency, nullIfEmpty(alias), actor, now, now}},
 		d1.Statement{SQL: `SELECT id, customer_id, chain_id, token_id, currency, address, status,
         custody_provider, ownership_verified_at, created_at
-      FROM cregis_wallets WHERE tenant_id=? AND customer_id=? AND idempotency_key=?`, Params: []any{app.tenantID, input.CustomerID, input.Idempotency}},
+      FROM cregis_wallets WHERE tenant_id=? AND customer_id=? AND idempotency_key=?`, Params: []any{app.tenantID, customerID, idempotency}},
 	)
 	if err != nil {
-		databaseError(app, w, err)
-		return
+		return nil, 0, &walletProvisionError{status: http.StatusInternalServerError, code: "database_error", cause: err}
 	}
 	if len(reservation) != 2 || len(reservation[1].Results) != 1 {
-		databaseError(app, w, fmt.Errorf("wallet reservation was not readable"))
-		return
+		return nil, 0, &walletProvisionError{status: http.StatusInternalServerError, code: "database_error", cause: fmt.Errorf("wallet reservation was not readable")}
 	}
 	reserved := reservation[1].Results[0]
 	if resultChanges(reservation[:1]) == 0 {
 		if text(reserved["status"]) == "active" && text(reserved["custody_provider"]) == "cregis" &&
 			text(reserved["ownership_verified_at"]) != "" && text(reserved["address"]) != "" {
 			reserved["deposit_enabled"] = true
-			writeJSON(w, http.StatusOK, reserved)
-			return
+			return reserved, http.StatusOK, nil
 		}
-		conflict(w, "wallet_creation_not_retryable")
-		return
+		if text(reserved["status"]) != "error" {
+			return nil, 0, &walletProvisionError{status: http.StatusConflict, code: "wallet_creation_in_progress"}
+		}
+		reset, resetErr := app.db.Query(ctx, `UPDATE cregis_wallets SET status='creating', updated_at=?
+      WHERE id=? AND tenant_id=? AND status='error' RETURNING id`, now, text(reserved["id"]), app.tenantID)
+		if resetErr != nil || len(reset) != 1 {
+			if resetErr == nil {
+				resetErr = errors.New("wallet retry reservation failed")
+			}
+			return nil, 0, &walletProvisionError{status: http.StatusInternalServerError, code: "database_error", cause: resetErr}
+		}
+		id = text(reserved["id"])
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	provisionCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	response, err := app.cregis.Call(ctx, "/api/v1/address/create", map[string]any{
-		"chain_id":     usdtTRC20ChainID,
-		"alias":        input.Alias,
-		"callback_url": app.publicURL + "/api/v1/callbacks/cregis/deposit",
-	})
-	if err != nil {
-		_, _ = app.db.Query(r.Context(), `UPDATE cregis_wallets SET status='error', updated_at=? WHERE id=? AND status='creating'`, now, id)
-		app.logger.Error("Cregis address creation failed", "code", responseCode(response), "error", err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "cregis_address_create_failed"}})
-		return
+	address := text(reserved["address"])
+	if address == "" {
+		response, createErr := app.cregis.Call(provisionCtx, "/api/v1/address/create", map[string]any{
+			"chain_id":     usdtTRC20ChainID,
+			"alias":        alias,
+			"callback_url": app.publicURL + "/api/v1/callbacks/cregis/deposit",
+		})
+		if createErr != nil {
+			_, _ = app.db.Query(ctx, `UPDATE cregis_wallets SET status='error', updated_at=? WHERE id=? AND status='creating'`, now, id)
+			return nil, 0, &walletProvisionError{status: http.StatusBadGateway, code: "cregis_address_create_failed", cause: fmt.Errorf("code=%s: %w", responseCode(response), createErr)}
+		}
+		var data struct {
+			Address string `json:"address"`
+		}
+		if decodeErr := json.Unmarshal(response.Data, &data); decodeErr != nil || data.Address == "" {
+			_, _ = app.db.Query(ctx, `UPDATE cregis_wallets SET status='error', updated_at=? WHERE id=? AND status='creating'`, now, id)
+			if decodeErr == nil {
+				decodeErr = errors.New("Cregis response did not include an address")
+			}
+			return nil, 0, &walletProvisionError{status: http.StatusBadGateway, code: "invalid_cregis_response", cause: decodeErr}
+		}
+		address = data.Address
 	}
-	var data struct {
-		Address string `json:"address"`
-	}
-	if err := json.Unmarshal(response.Data, &data); err != nil || data.Address == "" {
-		_, _ = app.db.Query(r.Context(), `UPDATE cregis_wallets SET status='error', updated_at=? WHERE id=? AND status='creating'`, now, id)
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "invalid_cregis_response"}})
-		return
-	}
-	ownershipResponse, ownershipErr := app.cregis.Call(ctx, "/api/v1/address/inner", map[string]any{
+	ownershipResponse, ownershipErr := app.cregis.Call(provisionCtx, "/api/v1/address/inner", map[string]any{
 		"chain_id": usdtTRC20ChainID,
-		"address":  data.Address,
+		"address":  address,
 	})
 	ownership := struct {
 		Result bool `json:"result"`
@@ -196,28 +249,29 @@ func (app *application) createCregisWallet(w http.ResponseWriter, r *http.Reques
 	verifiedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	if ownershipErr != nil || ownershipResponse == nil ||
 		json.Unmarshal(ownershipResponse.Data, &ownership) != nil || !ownership.Result {
-		_, _ = app.db.Query(r.Context(), failWalletOwnershipVerificationSQL,
-			data.Address, verifiedAt, id, app.tenantID)
-		app.logger.Error("Cregis wallet ownership verification failed", "wallet_id", id,
-			"code", responseCode(ownershipResponse), "error", ownershipErr)
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{
-			"code": "cregis_address_ownership_verification_failed",
-		}})
-		return
+		_, _ = app.db.Query(ctx, failWalletOwnershipVerificationSQL,
+			address, verifiedAt, id, app.tenantID)
+		if ownershipErr == nil {
+			ownershipErr = errors.New("Cregis did not confirm wallet ownership")
+		}
+		return nil, 0, &walletProvisionError{status: http.StatusBadGateway,
+			code:  "cregis_address_ownership_verification_failed",
+			cause: fmt.Errorf("wallet_id=%s code=%s: %w", id, responseCode(ownershipResponse), ownershipErr)}
 	}
-	_, err = app.db.Query(ctx, activateVerifiedWalletSQL,
-		data.Address, verifiedAt, verifiedAt, id, app.tenantID)
+	stored, err := app.db.Query(ctx, activateVerifiedWalletSQL+` RETURNING id`,
+		address, verifiedAt, verifiedAt, id, app.tenantID)
 	if err != nil {
-		app.logger.Error("store Cregis wallet failed", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": "wallet_persistence_failed"}})
-		return
+		return nil, 0, &walletProvisionError{status: http.StatusInternalServerError, code: "wallet_persistence_failed", cause: err}
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"id": id, "customer_id": input.CustomerID, "chain_id": usdtTRC20ChainID,
-		"token_id": usdtTRC20TokenID, "currency": usdtTRC20Currency, "address": data.Address,
+	if len(stored) != 1 {
+		return nil, 0, &walletProvisionError{status: http.StatusConflict, code: "wallet_activation_state_conflict"}
+	}
+	return map[string]any{
+		"id": id, "customer_id": customerID, "chain_id": usdtTRC20ChainID,
+		"token_id": usdtTRC20TokenID, "currency": usdtTRC20Currency, "address": address,
 		"status": "active", "custody_provider": "cregis",
 		"ownership_verified_at": verifiedAt, "deposit_enabled": true, "created_at": now,
-	})
+	}, http.StatusCreated, nil
 }
 
 func (app *application) listCregisWallets(w http.ResponseWriter, r *http.Request) {

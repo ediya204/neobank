@@ -36,6 +36,19 @@ const (
 	reviewCustomerKYCSQL = `UPDATE customers
     SET kyc_status=?, kyc_reviewed_by=?, kyc_reviewed_at=?, kyc_review_note=?, updated_at=?
     WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending'`
+	approveCustomerKYCAutomationSQL = `UPDATE customers
+    SET kyc_status='approved', kyc_reviewed_by=?, kyc_reviewed_at=?, kyc_review_note=?,
+	    operations_status='active',
+	    status=CASE WHEN EXISTS (SELECT 1 FROM customer_credentials cc
+	      WHERE cc.customer_id=customers.id AND cc.password_salt IS NOT NULL
+	        AND cc.password_hash IS NOT NULL AND (
+	          (cc.password_algorithm='argon2id-v1' AND cc.password_memory_kib=19456
+	            AND cc.password_time_cost=2 AND cc.password_parallelism=1)
+	          OR (cc.password_algorithm='pbkdf2-sha256-v1' AND cc.password_iterations=210000)
+	        )) THEN 'active' ELSE status END,
+	    activated_by=?, activated_at=?, updated_at=?
+    WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending'
+	  AND status IN ('pending_setup', 'active')`
 	auditCustomerKYCReviewSQL = `INSERT INTO customer_auth_audit_events
     (id, customer_id, event_type, actor, metadata_json, created_at)
     SELECT ?, ?, 'customer.kyc_reviewed', ?, ?, ?
@@ -105,15 +118,15 @@ func (app *application) reviewCustomerKYC(w http.ResponseWriter, r *http.Request
 		conflict(w, "kyc_rejection_reason_required")
 		return
 	}
-	status := "approved"
-	if input.Decision == "reject" {
-		status = "rejected"
-	}
 	actor := edgeUser(r)
 	now := databaseTimestamp(time.Now())
 	metadata := mustJSON(map[string]string{"decision": input.Decision, "note": note})
+	if input.Decision == "approve" {
+		app.approveCustomerKYCAndProvisionWallet(w, r, id, actor, note, metadata, now)
+		return
+	}
 	results, err := app.db.Batch(r.Context(),
-		d1.Statement{SQL: reviewCustomerKYCSQL, Params: []any{status, actor, now, nullIfEmpty(note), now, id, app.tenantID}},
+		d1.Statement{SQL: reviewCustomerKYCSQL, Params: []any{"rejected", actor, now, nullIfEmpty(note), now, id, app.tenantID}},
 		d1.Statement{SQL: auditCustomerKYCReviewSQL, Params: []any{randomID("audit"), id, actor, metadata, now, id, app.tenantID, actor, now}},
 	)
 	if err != nil {
@@ -129,6 +142,83 @@ func (app *application) reviewCustomerKYC(w http.ResponseWriter, r *http.Request
 		return
 	}
 	app.writeAdminCustomer(w, r, id, nil)
+}
+
+func automaticWalletIdempotency(customerID string) string {
+	return "auto-kyc-" + customerID
+}
+
+func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWriter, r *http.Request, id, actor, note, metadata, now string) {
+	stateRows, err := app.db.Query(r.Context(), `SELECT c.status, c.kyc_status, c.operations_status,
+	  CASE WHEN EXISTS (SELECT 1 FROM customer_credentials cc WHERE cc.customer_id=c.id
+	    AND cc.password_salt IS NOT NULL AND cc.password_hash IS NOT NULL AND (
+	      (cc.password_algorithm='argon2id-v1' AND cc.password_memory_kib=? AND cc.password_time_cost=?
+	        AND cc.password_parallelism=?)
+	      OR (cc.password_algorithm='pbkdf2-sha256-v1' AND cc.password_iterations=?)))
+	  THEN 1 ELSE 0 END AS password_ready
+	  FROM customers c WHERE c.id=? AND c.tenant_id=?`, customerArgonMemoryKiB,
+		customerArgonTimeCost, customerArgonParallelism, customerLegacyPasswordIterations, id, app.tenantID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(stateRows) != 1 {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]string{"code": "customer_not_found"}})
+		return
+	}
+	state := stateRows[0]
+	kycStatus := text(state["kyc_status"])
+	operationsStatus := text(state["operations_status"])
+	extra := map[string]any{}
+	if kycStatus == "pending" && operationsStatus == "pending" {
+		passwordReady := text(state["password_ready"]) == "1" || text(state["password_ready"]) == "true"
+		statements := []d1.Statement{
+			{SQL: approveCustomerKYCAutomationSQL, Params: []any{actor, now, nullIfEmpty(note), actor, now, now, id, app.tenantID}},
+			{SQL: auditCustomerKYCReviewSQL, Params: []any{randomID("audit"), id, actor, metadata, now, id, app.tenantID, actor, now}},
+			{SQL: auditCustomerActivationSQL, Params: []any{randomID("audit"), id, actor,
+				mustJSON(map[string]string{"trigger": "kyc_approved", "mode": "automatic"}), now,
+				id, app.tenantID, actor, now}},
+		}
+		if text(state["status"]) == "pending_setup" && !passwordReady {
+			token := randomToken(32)
+			expiresAt := databaseTimestamp(time.Now().Add(customerSetupDuration))
+			statements = append(statements, d1.Statement{SQL: issueCustomerSetupCredentialSQL, Params: []any{
+				id, customerLegacyPasswordIterations, tokenHash(token), expiresAt, now,
+				id, app.tenantID, actor, now,
+			}})
+			extra["setup_url"] = app.portalURL + "/customer/setup#setup_token=" + url.QueryEscape(token)
+			extra["setup_expires_at"] = expiresAt
+		} else if text(state["status"]) == "pending_setup" {
+			extra["login_ready"] = true
+		}
+		results, batchErr := app.db.Batch(r.Context(), statements...)
+		if batchErr != nil {
+			databaseError(app, w, batchErr)
+			return
+		}
+		if len(results) != len(statements) {
+			databaseError(app, w, errCustomerStateRead)
+			return
+		}
+		for _, result := range results {
+			if resultChanges([]d1.Result{result}) != 1 {
+				conflict(w, "kyc_not_pending")
+				return
+			}
+		}
+	} else if kycStatus != "approved" || operationsStatus != "active" {
+		conflict(w, "kyc_not_pending")
+		return
+	}
+
+	wallet, _, provisionErr := app.provisionCregisWallet(r.Context(), id,
+		"SCC automatic wallet", automaticWalletIdempotency(id), actor)
+	if provisionErr != nil {
+		app.writeWalletProvisionError(w, provisionErr)
+		return
+	}
+	extra["wallet"] = wallet
+	app.writeAdminCustomer(w, r, id, extra)
 }
 
 func (app *application) activateCustomerOperations(w http.ResponseWriter, r *http.Request, id string) {

@@ -16,8 +16,10 @@ There is no public self-service creation of an authenticated Admin or Partner
 identity. `/portal/register` provides the applicant-facing individual/business
 account-opening V1 UI, including KYC/KYB preparation and explicit pending-review
 states. The separate Core API/admin onboarding workspace now mirrors the same
-individual/business fields and enforces two manual checkpoints: Compliance
-records the KYC result, then Operations separately approves account opening.
+individual/business fields. The default VA profile retains separate Compliance
+and Operations checkpoints. In the Neobank production profile, manual KYC approval
+automatically activates the customer and provisions the Cregis-verified USDT-TRC20
+wallet without a second Operations approval click.
 There is still no public submission API, email verification, KYC-provider
 session, or automatic identity provisioning connected to `/portal/register`.
 Do not treat its local completion screen as a stored or production-accepted

@@ -127,16 +127,16 @@
       "provisioned_only": "Administrative accounts are provisioned by an administrator and cannot be self-registered.",
       "new_customer": "New to SCC Digital Bank?",
       "open_account": "Open an individual or business account",
-      "registration_helper": "KYC / KYB and Operations review are required after submission. No account is activated before approval.",
+      "registration_helper": "Manual KYC / KYB review is required after submission. Approval automatically activates the account and creates a USDT-TRC20 wallet.",
       "customer": {
         "eyebrow": "Customer sign-in",
         "title": "Sign in to Online Banking",
-        "subtitle": "Enter the email and password you chose when applying. Sign-in becomes available after KYC / KYB and Operations approval.",
+        "subtitle": "Enter the email and password you chose when applying. Sign-in becomes available after KYC / KYB approval and automatic activation.",
         "submit": "Secure sign in",
         "activated_only": "For customers who have completed account opening and activated Online Banking. If you cannot sign in, contact your relationship manager or bank support team.",
         "new_customer": "New to SCC Digital Bank?",
         "register": "Apply for an account",
-        "registration_helper": "Apply for an individual or business account. KYC / KYB and Operations review are still required, and no account is opened before approval."
+        "registration_helper": "Apply for an individual or business account. Manual KYC / KYB approval automatically opens the account and creates its wallet."
       }
     },
     "registration": {
@@ -207,12 +207,12 @@
           "people": "Directors, authorized persons, and beneficial owners",
           "ownership": "Ownership and control structure"
         },
-        "security_title": "Manual KYC and Operations review",
-        "security_description": "Compliance records the KYC decision manually and Operations performs a separate review. KYC approval does not activate an account.",
+        "security_title": "Manual KYC and automatic activation",
+        "security_description": "Compliance records the KYC decision manually. Approval automatically activates the account and idempotently creates a Cregis-verified USDT-TRC20 wallet.",
         "consent": "I consent to processing the submitted information for account opening, identity verification, anti-money-laundering, and sanctions screening."
       },
       "review": {
-        "pending_notice": "Submission only creates an application for review. Accounts, wallets, and fund functions remain disabled until KYC / KYB passes and Operations approves the application.",
+        "pending_notice": "Submission only creates an application for review. Accounts, wallets, and fund functions remain disabled until KYC / KYB passes.",
         "account_type": "Account type",
         "applicant": "Applicant / business",
         "email": "Contact email",
@@ -246,11 +246,11 @@
       "success": {
         "eyebrow": "Manual identity review pending",
         "title": "Application received",
-        "subtitle": "Your application is in pre-screening. Submission does not mean the account is open; it remains disabled until KYC / KYB and Operations review are complete.",
+        "subtitle": "Your application is in pre-screening. Submission does not mean the account is open; KYC / KYB approval automatically activates it and creates its wallet.",
         "reference": "Application reference",
         "next_email": "Keep the application reference and watch for document follow-up.",
         "next_kyc": "Wait for Compliance to complete the manual KYC / KYB review.",
-        "next_review": "Wait for Compliance and Operations approval. Once approved, sign in directly with this email and password.",
+        "next_review": "Wait for Compliance approval. After automatic activation, sign in directly with this email and password.",
         "back_to_login": "Back to sign in"
       }
     },

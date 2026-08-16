@@ -1,4 +1,4 @@
-import { coreApi } from './core-api';
+import { coreApi, neobankApi } from './core-api';
 
 function response(input: {
   ok?: boolean;
@@ -21,17 +21,17 @@ describe('coreApi response validation', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('rejects a successful HTML fallback instead of returning null to the page', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(
-      response({ contentType: 'text/html', payload: '<html />' })
-    );
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(response({ contentType: 'text/html', payload: '<html />' }));
 
     await expect(coreApi('/customers')).rejects.toThrow('API 响应格式无效');
   });
 
   it('rejects malformed JSON on a successful response', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue(
-      response({ jsonError: new SyntaxError('invalid JSON') })
-    );
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(response({ jsonError: new SyntaxError('invalid JSON') }));
 
     await expect(coreApi('/customers')).rejects.toThrow('API 响应格式无效');
   });
@@ -41,5 +41,16 @@ describe('coreApi response validation', () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(response({ payload }));
 
     await expect(coreApi('/customers')).resolves.toEqual(payload);
+  });
+
+  it('keeps Go wallet routes separate from the Core administration origin', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(response({ payload: [] }));
+
+    await neobankApi('/admin/customers');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/admin/customers',
+      expect.objectContaining({ credentials: 'include', cache: 'no-store' })
+    );
   });
 });

@@ -283,9 +283,10 @@ export type CryptoTransfer = {
   operator?: { id: string; displayName: string };
 };
 
-const baseUrl = process.env.REACT_APP_CORE_API_URL || '/api/v1';
+const coreBaseUrl = process.env.REACT_APP_CORE_API_URL || '/api/v1';
 
-export async function coreApi<T>(
+async function requestApi<T>(
+  baseUrl: string,
   path: string,
   init?: RequestInit & { userId?: string }
 ): Promise<T> {
@@ -318,7 +319,15 @@ export async function coreApi<T>(
   return payload as T;
 }
 
-export const demoOrganizationId = 'org_demo';
+export function coreApi<T>(path: string, init?: RequestInit & { userId?: string }) {
+  return requestApi<T>(coreBaseUrl, path, init);
+}
+
+export function neobankApi<T>(path: string, init?: RequestInit & { userId?: string }) {
+  return requestApi<T>('/api/v1', path, init);
+}
+
+export const demoOrganizationId = process.env.REACT_APP_CORE_ORGANIZATION_ID || 'org_demo';
 
 export const demoUsers = [
   { id: 'usr_maker', label: '提交人 Maker' },

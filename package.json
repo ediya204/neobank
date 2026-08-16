@@ -49,7 +49,7 @@
     "cf:release": "npm run cf:build && npm run cf:deploy:dry-run:prepared && npm run cf:deploy:prepared",
     "cf:types": "wrangler types",
     "neobank:profile:check": "node scripts/check-neobank-isolated-profile.mjs",
-    "neobank:build": "npm run neobank:profile:check && REACT_APP_NEOBANK_DEPLOYMENT_MODE=isolated-wallet GENERATE_SOURCEMAP=false npm run build",
+    "neobank:build": "npm run neobank:profile:check && REACT_APP_NEOBANK_DEPLOYMENT_MODE=full-admin-wallet REACT_APP_CORE_API_URL=/api/core REACT_APP_CORE_ORGANIZATION_ID=org_neobank GENERATE_SOURCEMAP=false npm run build",
     "neobank:typecheck": "tsc --noEmit -p worker-web/tsconfig.json",
     "neobank:deploy": "npm run neobank:build && npm run neobank:deploy:prepared",
     "neobank:deploy:prepared": "wrangler deploy --config wrangler.neobank.jsonc --old-asset-ttl 86400",

@@ -50,6 +50,33 @@ services:
         sync: false
       - key: TENANT_ID
         value: neobank
+  - type: web
+    name: neobank-core
+    runtime: node
+    rootDir: server
+    region: singapore
+    plan: free
+    buildCommand: npm ci --include=dev && npm run prisma:generate && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: off
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: neobank-postgres
+          property: connectionString
+      - key: CORE_EDGE_SHARED_SECRET
+        sync: false
+      - key: CORE_EDGE_AUTH_REQUIRED
+        value: "true"
+      - key: CORE_ADMIN_USER_ID
+        value: usr_neobank_admin
+      - key: CORE_ORGANIZATION_ID
+        value: org_neobank
+      - key: NEOBANK_SOURCE_TENANT_ID
+        value: neobank
+      - key: WEB_ORIGIN
+        value: https://portal.sscdigitalbank.com
 
 databases:
   - name: neobank-postgres

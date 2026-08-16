@@ -18,12 +18,28 @@ func TestAdminCustomerViewNeverSelectsCredentialMaterial(t *testing.T) {
 	}
 }
 
-func TestKYCAndOperationsActivationAreIndependentStateGates(t *testing.T) {
-	for _, required := range []string{"kyc_status='pending'", "operations_status='pending'"} {
-		if !strings.Contains(reviewCustomerKYCSQL, required) {
-			t.Fatalf("KYC review SQL must contain %q", required)
+func TestKYCApprovalAutomaticallyActivatesCustomerBeforeWalletProvisioning(t *testing.T) {
+	for _, required := range []string{
+		"kyc_status='approved'",
+		"operations_status='active'",
+		"kyc_status='pending'",
+		"operations_status='pending'",
+		"password_hash IS NOT NULL",
+		"THEN 'active'",
+	} {
+		if !strings.Contains(approveCustomerKYCAutomationSQL, required) {
+			t.Fatalf("automatic KYC approval SQL must contain %q", required)
 		}
 	}
+	if got := automaticWalletIdempotency("customer_123"); got != "auto-kyc-customer_123" {
+		t.Fatalf("automatic wallet idempotency = %q", got)
+	}
+	if !safeIdentifier.MatchString(automaticWalletIdempotency("customer_123")) {
+		t.Fatal("automatic wallet idempotency must satisfy the public wallet API contract")
+	}
+}
+
+func TestManualActivationRemainsARepairPath(t *testing.T) {
 	for _, required := range []string{
 		"kyc_status='approved'",
 		"operations_status='pending'",
