@@ -134,6 +134,9 @@ func Run(ctx context.Context, source Database, target Database) (Manifest, error
 	if err := ensureTargetSchema(ctx, target); err != nil {
 		return Manifest{}, err
 	}
+	if err := ensureLegacyFinancialCustomerRefs(ctx, target); err != nil {
+		return Manifest{}, err
+	}
 
 	sourceRows := make(map[string][]map[string]any, len(tables))
 	targetPopulated := false
