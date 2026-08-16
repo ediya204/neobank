@@ -10,7 +10,7 @@ const RegisterPage = lazy(() => import('src/pages/auth/jwt/register'));
 const PortalRoleEntryPage = lazy(() => import('src/pages/auth/portal-role-entry'));
 const InvalidAuthEntryPage = lazy(() => import('src/pages/auth/jwt/invalid-entry'));
 
-const adminAuthRoutes = [
+export const adminAuthRoutes = [
   {
     path: 'admin/login',
     element: (

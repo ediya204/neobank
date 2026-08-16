@@ -794,17 +794,19 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
 
   const renderTotpVerification = (
     <Stack spacing={3}>
-      <ToggleButtonGroup
-        fullWidth
-        exclusive
-        color="primary"
-        value={verificationMethod}
-        onChange={(_, value) => value && setVerificationMethod(value)}
-        aria-label={t('auth.verify.method_label')}
-      >
-        <ToggleButton value="totp">{t('auth.verify.authenticator')}</ToggleButton>
-        <ToggleButton value="recovery">{t('auth.verify.recovery_code')}</ToggleButton>
-      </ToggleButtonGroup>
+      {expectedRole !== 'admin' && (
+        <ToggleButtonGroup
+          fullWidth
+          exclusive
+          color="primary"
+          value={verificationMethod}
+          onChange={(_, value) => value && setVerificationMethod(value)}
+          aria-label={t('auth.verify.method_label')}
+        >
+          <ToggleButton value="totp">{t('auth.verify.authenticator')}</ToggleButton>
+          <ToggleButton value="recovery">{t('auth.verify.recovery_code')}</ToggleButton>
+        </ToggleButtonGroup>
+      )}
 
       {verificationMethod === 'totp' ? (
         <FormProvider methods={codeMethods} onSubmit={handleTotpCode}>

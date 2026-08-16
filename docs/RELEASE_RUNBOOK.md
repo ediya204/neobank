@@ -2,8 +2,8 @@
 
 ## Scope
 
-This runbook covers normal Worker and static Portal/Dashboard releases. A D1
-migration is a separate production operation and still requires the complete
+This runbook covers normal Worker and static Portal/Dashboard releases. A
+PostgreSQL migration is a separate production operation and still requires the complete
 backup, checksum, restore test, manual approval, migration, and post-checks in
 `AGENTS.md` and `docs/CODEX_HANDOFF.md`.
 
@@ -76,11 +76,22 @@ npm run neobank:deploy
 `REACT_APP_NEOBANK_DEPLOYMENT_MODE=isolated-wallet`; every prepared Wrangler
 command includes `--config wrangler.neobank.jsonc`. The normal local/default
 build remains the full Nest application. See
-`docs/NEOBANK_CREGIS_DEPLOYMENT.md` for the route matrix, Access session chain,
-Go/Render dependency, KYC and operations gates, and D1 migration procedure.
-The whole-core D1 to Render PostgreSQL procedure is separately gated in
-`docs/NEOBANK_POSTGRES_CUTOVER.md`; a normal Neobank web release must not change
-`DATABASE_BACKEND`, copy database data, or open PostgreSQL ingress.
+`docs/NEOBANK_CREGIS_DEPLOYMENT.md` for the route matrix, Admin application-session chain,
+Go/Render dependency, KYC and operations gates, and PostgreSQL migration procedure.
+The completed historical D1 cutover is recorded in
+`docs/NEOBANK_POSTGRES_CUTOVER.md`; D1 is not a runtime fallback.
+
+Changing the Admin boundary from Cloudflare Access to application password +
+TOTP is a gated security migration, not a normal web-only release. Keep Access
+enabled while preparing it. Back up Render PostgreSQL, checksum and restore-test
+the backup, review and apply `migrations-postgres/0004_admin_auth.sql`, configure
+the three Render Admin auth secrets, deploy the Go API and D1-free Worker, create
+the one-time Admin setup link, and verify the
+password/TOTP/session/CSRF flow through a non-custom-domain Worker endpoint.
+Only after those assertions pass may an operator remove or bypass the Access
+application covering `/admin*` and the corresponding Admin API paths. Recheck
+that unauthenticated requests are rejected by the application after the Access
+change. Never disable Access first.
 
 ## Temporary worktrees and processes
 
@@ -99,6 +110,6 @@ The whole-core D1 to Render PostgreSQL procedure is separately gated in
 ## Post-deploy verification
 
 Record the deployed Worker version and confirm its traffic percentage. Recheck
-GitHub SHA and D1 migration state separately. Validate authentication, response
+GitHub SHA and PostgreSQL migration state separately. Validate authentication, response
 shape, tenant scope, and business data where credentials and an approved manual
 session are available; transport success alone is insufficient.

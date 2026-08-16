@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -18,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ediya204/neobank/server-go/internal/coremigrate"
 	"github.com/ediya204/neobank/server-go/internal/cregis"
 	"github.com/ediya204/neobank/server-go/internal/d1"
 	"github.com/ediya204/neobank/server-go/internal/fastforex"
@@ -33,6 +31,9 @@ type application struct {
 	customerPasswordPepper []byte
 	customerTOTPKey        []byte
 	customerRecoveryPepper []byte
+	adminPasswordPepper    []byte
+	adminTOTPKey           []byte
+	adminBootstrapSecret   []byte
 	publicURL              string
 	portalURL              string
 	tenantID               string
@@ -48,52 +49,17 @@ type databaseClient interface {
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	databaseBackend := strings.ToLower(envOr("DATABASE_BACKEND", "d1"))
-	if strings.EqualFold(os.Getenv("DATABASE_CUTOVER_COPY"), "true") {
-		backupSHA256 := strings.ToLower(strings.TrimSpace(os.Getenv("DATABASE_CUTOVER_BACKUP_SHA256")))
-		backupChecksum, checksumErr := hex.DecodeString(backupSHA256)
-		if databaseBackend != "d1" || strings.EqualFold(os.Getenv("CREGIS_ENABLED"), "true") ||
-			os.Getenv("DATABASE_CUTOVER_APPROVED") != "render-postgres-2026-08-16" ||
-			checksumErr != nil || len(backupChecksum) != sha256.Size {
-			logger.Error("database cutover copy refused", "error", "D1 must remain authoritative, Cregis must be disabled, and the dated approval gate must match")
-			os.Exit(1)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		result, cutoverErr := coremigrate.RunFromEnvironment(ctx)
-		cancel()
-		if cutoverErr != nil {
-			logger.Error("database cutover copy failed", "error", cutoverErr)
-			os.Exit(1)
-		}
-		manifestJSON, marshalErr := json.Marshal(result)
-		if marshalErr != nil {
-			logger.Error("database cutover manifest failed", "error", marshalErr)
-			os.Exit(1)
-		}
-		manifestHash := sha256.Sum256(manifestJSON)
-		logger.Info("database cutover snapshot verified",
-			"copied", result.Copied,
-			"backup_sha256", backupSHA256,
-			"manifest_sha256", hex.EncodeToString(manifestHash[:]),
-			"manifest_json", string(manifestJSON),
-		)
+	databaseBackend := strings.ToLower(envOr("DATABASE_BACKEND", "postgres"))
+	if databaseBackend != "postgres" {
+		logger.Error("invalid database configuration", "error", "runtime DATABASE_BACKEND must be postgres; D1 is historical migration input only")
+		os.Exit(1)
 	}
-	var db databaseClient
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	db, err := postgresdb.New(ctx, os.Getenv("DATABASE_URL"))
+	cancel()
 	var closeDatabase func()
-	var err error
-	switch databaseBackend {
-	case "d1":
-		db, err = d1.New(os.Getenv("D1_GATEWAY_URL"), os.Getenv("D1_GATEWAY_SECRET"))
-		closeDatabase = func() {}
-	case "postgres":
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		db, err = postgresdb.New(ctx, os.Getenv("DATABASE_URL"))
-		cancel()
-		if postgresClient, ok := db.(*postgresdb.Client); ok {
-			closeDatabase = postgresClient.Close
-		}
-	default:
-		err = fmt.Errorf("DATABASE_BACKEND must be d1 or postgres")
+	if postgresClient, ok := any(db).(*postgresdb.Client); ok {
+		closeDatabase = postgresClient.Close
 	}
 	if err != nil || db == nil || closeDatabase == nil {
 		logger.Error("invalid database configuration", "backend", databaseBackend, "error", err)
@@ -145,6 +111,21 @@ func main() {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
+	adminPasswordPepper, err := requiredSecret("ADMIN_PASSWORD_PEPPER", 32)
+	if err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+	adminTOTPKey, err := requiredKey32("ADMIN_TOTP_KEY")
+	if err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+	adminBootstrapSecret, err := requiredSecret("ADMIN_BOOTSTRAP_SECRET", 32)
+	if err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 	var marketData marketDataClient
 	if fastForexKey := strings.TrimSpace(os.Getenv("FASTFOREX_API_KEY")); fastForexKey != "" {
 		marketData, err = fastforex.New(fastforex.Config{APIKey: fastForexKey})
@@ -158,6 +139,7 @@ func main() {
 	app := &application{
 		db: db, cregis: cregisClient, cregisLive: cregisLive, edgeSecret: []byte(edgeSecret),
 		customerPasswordPepper: passwordPepper, customerTOTPKey: totpKey, customerRecoveryPepper: recoveryPepper,
+		adminPasswordPepper: adminPasswordPepper, adminTOTPKey: adminTOTPKey, adminBootstrapSecret: adminBootstrapSecret,
 		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"),
 		databaseBackend: databaseBackend, marketData: marketData, logger: logger,
 	}
@@ -220,6 +202,15 @@ func (app *application) api(w http.ResponseWriter, r *http.Request) {
 		app.health(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/customer/") && app.routeCustomerAPI(w, r) {
+		return
+	}
+	adminSession, err := app.requireAdminRequest(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "session_expired"}})
+		return
+	}
+	r.Header.Set("X-Neobank-User", adminSession.Email)
 	if r.URL.Path == "/api/v1/admin/market-rate" && r.Method == http.MethodGet {
 		app.marketRate(w, r)
 		return
@@ -234,6 +225,9 @@ func (app *application) api(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) auth(w http.ResponseWriter, r *http.Request) {
+	if app.routeAdminAuth(w, r) {
+		return
+	}
 	if app.routeCustomerAuth(w, r) {
 		return
 	}

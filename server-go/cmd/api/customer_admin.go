@@ -42,7 +42,15 @@ const (
     WHERE EXISTS (SELECT 1 FROM customers
       WHERE id=? AND tenant_id=? AND kyc_reviewed_by=? AND kyc_reviewed_at=?)`
 	activateCustomerOperationsSQL = `UPDATE customers
-    SET operations_status='active', activated_by=?, activated_at=?, updated_at=?
+	SET operations_status='active',
+	    status=CASE WHEN EXISTS (SELECT 1 FROM customer_credentials cc
+	      WHERE cc.customer_id=customers.id AND cc.password_salt IS NOT NULL
+	        AND cc.password_hash IS NOT NULL AND (
+	          (cc.password_algorithm='argon2id-v1' AND cc.password_memory_kib=19456
+	            AND cc.password_time_cost=2 AND cc.password_parallelism=1)
+	          OR (cc.password_algorithm='pbkdf2-sha256-v1' AND cc.password_iterations=210000)
+	        )) THEN 'active' ELSE status END,
+	    activated_by=?, activated_at=?, updated_at=?
     WHERE id=? AND tenant_id=? AND kyc_status='approved' AND operations_status='pending'
       AND status IN ('pending_setup', 'active')`
 	issueCustomerSetupCredentialSQL = `INSERT INTO customer_credentials
@@ -149,21 +157,35 @@ func (app *application) activateCustomerOperations(w http.ResponseWriter, r *htt
 	}
 	actor := edgeUser(r)
 	now := databaseTimestamp(time.Now())
+	credentialRows, err := app.db.Query(r.Context(), `SELECT customer_id FROM customer_credentials
+	    WHERE customer_id=? AND password_salt IS NOT NULL AND password_hash IS NOT NULL AND (
+	      (password_algorithm='argon2id-v1' AND password_memory_kib=? AND password_time_cost=?
+	        AND password_parallelism=?)
+	      OR (password_algorithm='pbkdf2-sha256-v1' AND password_iterations=?)
+	    )`, id, customerArgonMemoryKiB, customerArgonTimeCost, customerArgonParallelism,
+		customerLegacyPasswordIterations)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	passwordReady := len(credentialRows) == 1
 	statements := []d1.Statement{
 		{SQL: activateCustomerOperationsSQL, Params: []any{actor, now, now, id, app.tenantID}},
 	}
-	var setup map[string]string
-	if status == "pending_setup" {
+	var setup map[string]any
+	if status == "pending_setup" && !passwordReady {
 		token := randomToken(32)
 		expiresAt := databaseTimestamp(time.Now().Add(customerSetupDuration))
 		statements = append(statements, d1.Statement{SQL: issueCustomerSetupCredentialSQL, Params: []any{
 			id, customerLegacyPasswordIterations, tokenHash(token), expiresAt, now,
 			id, app.tenantID, actor, now,
 		}})
-		setup = map[string]string{
+		setup = map[string]any{
 			"setup_url":        app.portalURL + "/customer/setup#setup_token=" + url.QueryEscape(token),
 			"setup_expires_at": expiresAt,
 		}
+	} else if status == "pending_setup" {
+		setup = map[string]any{"login_ready": true}
 	}
 	statements = append(statements, d1.Statement{SQL: auditCustomerActivationSQL, Params: []any{
 		randomID("audit"), id, actor, mustJSON(map[string]string{"customer_status": status}), now,
@@ -187,7 +209,7 @@ func (app *application) activateCustomerOperations(w http.ResponseWriter, r *htt
 	app.writeAdminCustomer(w, r, id, setup)
 }
 
-func (app *application) writeAdminCustomer(w http.ResponseWriter, r *http.Request, id string, extra map[string]string) {
+func (app *application) writeAdminCustomer(w http.ResponseWriter, r *http.Request, id string, extra map[string]any) {
 	rows, err := app.db.Query(r.Context(), `SELECT `+adminCustomerFields+`
 	    `+adminCustomerFrom+` WHERE c.id=? AND c.tenant_id=?`, id, app.tenantID)
 	if err != nil || len(rows) != 1 {

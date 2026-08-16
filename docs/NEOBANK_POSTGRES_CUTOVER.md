@@ -1,5 +1,9 @@
 # Neobank D1 to Render PostgreSQL cutover
 
+> Historical cutover runbook. The live source of truth is now Render
+> PostgreSQL. D1 is retained only as historical migration evidence and must not
+> receive new project writes or be selected as a runtime rollback target.
+
 This runbook moves the complete isolated Neobank core from D1 to Render
 PostgreSQL. It does not move only password hashes: customers, authentication,
 wallets, deposits, withdrawals, and Cregis callback idempotency records must

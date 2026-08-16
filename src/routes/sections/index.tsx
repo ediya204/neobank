@@ -9,9 +9,8 @@ import { getUserHome } from 'src/auth/role-access';
 import { PortalPermission } from 'src/auth/types';
 import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
 import { dashboardRoutes } from './dashboard';
-import { authRoutes, customerAuthRoutes } from './auth';
+import { adminAuthRoutes, authRoutes, customerAuthRoutes } from './auth';
 
-const Page403 = lazy(() => import('src/pages/403'));
 const Page404 = lazy(() => import('src/pages/404'));
 const CustomerHome = lazy(() => import('src/pages/portal/customer-home'));
 const CustomerAccounts = lazy(() => import('src/pages/portal/customer-accounts'));
@@ -51,14 +50,6 @@ function FullPortalAuthBoundary({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function AccessAdminBoundary({ children }: { children: React.ReactNode }) {
-  const { authenticated, loading, user } = useAuthContext();
-
-  if (loading) return <SplashScreen />;
-  if (!authenticated || user?.role !== 'admin') return <Page403 />;
-  return <>{children}</>;
-}
-
 function PortalMessagesRoute() {
   const { messageId } = useParams();
   return <PortalMessages selectedId={messageId} />;
@@ -89,14 +80,15 @@ const isolatedWalletRoutes = [
     ],
   },
   ...customerAuthRoutes,
+  ...adminAuthRoutes,
   {
     path: '/admin',
     element: (
-      <AccessAdminBoundary>
+      <AuthGuard expectedRole="admin">
         <Suspense fallback={<LoadingScreen />}>
           <CryptoOperationsAdmin />
         </Suspense>
-      </AccessAdminBoundary>
+      </AuthGuard>
     ),
   },
   { path: '/admin/neobank-crypto', element: <Navigate to="/admin" replace /> },

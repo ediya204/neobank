@@ -1,11 +1,9 @@
 interface Env {
   ASSETS: Fetcher;
-  CF_ACCESS_TEAM_DOMAIN: string;
-  CF_ACCESS_AUD: string;
-  NEOBANK_ADMIN_EMAILS: string;
   GO_API_BASE_URL: string;
   GO_EDGE_SHARED_SECRET: string;
   CUSTOMER_AUTH_MAINTENANCE: string;
+  ADMIN_AUTH_RATE_LIMITER: RateLimit;
   CUSTOMER_AUTH_RATE_LIMITER: RateLimit;
 }
 

@@ -1,15 +1,39 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/hex"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ediya204/neobank/server-go/internal/d1"
 )
+
+type customerLoginDatabase struct {
+	rows       []map[string]any
+	statements []d1.Statement
+}
+
+func (db *customerLoginDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+	return db.rows, nil
+}
+
+func (db *customerLoginDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
+	db.statements = append(db.statements, statements...)
+	results := make([]d1.Result, len(statements))
+	for index := range results {
+		results[index] = d1.Result{Meta: map[string]any{"changes": float64(1)}}
+	}
+	return results, nil
+}
 
 func TestRecoverySessionRequiresFreshlyConsumedCode(t *testing.T) {
 	for _, required := range []string{
@@ -64,6 +88,43 @@ func TestCustomerArgonPasswordDerivationUsesPepperAndSalt(t *testing.T) {
 	second := app.deriveCustomerArgon2id("Correct-Horse-7-Battery", []byte("fedcba9876543210"))
 	if hmac.Equal(first, second) {
 		t.Fatal("different salts must produce different hashes")
+	}
+}
+
+func TestApprovedRegistrationCanLoginDirectlyWithPassword(t *testing.T) {
+	pepper := []byte("0123456789abcdef0123456789abcdef")
+	password := "Correct-Horse-7-Battery!"
+	salt := []byte("0123456789abcdef")
+	app := &application{customerPasswordPepper: pepper, tenantID: "tenant_test", portalURL: "http://localhost:3000"}
+	hash := app.deriveCustomerArgon2id(password, salt)
+	db := &customerLoginDatabase{rows: []map[string]any{{
+		"id": "customer_test", "email": "applicant@example.test", "display_name": "Test Applicant",
+		"status": "active", "password_salt": hex.EncodeToString(salt),
+		"password_hash": hex.EncodeToString(hash), "password_algorithm": customerPasswordAlgorithm,
+		"password_iterations": int64(0), "password_memory_kib": int64(customerArgonMemoryKiB),
+		"password_time_cost": int64(customerArgonTimeCost), "password_parallelism": int64(customerArgonParallelism),
+		"credential_version": int64(1), "failed_attempts": int64(0), "locked_until": "",
+		"totp_secret_ciphertext": nil,
+	}}}
+	app.db = db
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/login", bytes.NewBufferString(
+		`{"email":"applicant@example.test","password":"Correct-Horse-7-Battery!"}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	app.customerLogin(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"next_step":"authenticated"`) {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	if len(response.Result().Cookies()) != 2 {
+		t.Fatalf("expected session and CSRF cookies, got %d", len(response.Result().Cookies()))
+	}
+	combined := ""
+	for _, statement := range db.statements {
+		combined += statement.SQL
+	}
+	if strings.Contains(combined, "customer_login_challenges") {
+		t.Fatal("password-only registration login must not create a TOTP challenge")
 	}
 }
 

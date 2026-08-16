@@ -28,6 +28,8 @@ func TestKYCAndOperationsActivationAreIndependentStateGates(t *testing.T) {
 		"kyc_status='approved'",
 		"operations_status='pending'",
 		"status IN ('pending_setup', 'active')",
+		"password_hash IS NOT NULL",
+		"THEN 'active'",
 	} {
 		if !strings.Contains(activateCustomerOperationsSQL, required) {
 			t.Fatalf("operations activation SQL must contain %q", required)

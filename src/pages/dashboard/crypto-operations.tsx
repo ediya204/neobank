@@ -91,6 +91,7 @@ type AdminCustomer = {
 type AdminCustomerActivation = AdminCustomer & {
   setup_url?: string;
   setup_expires_at?: string;
+  login_ready?: boolean;
 };
 
 function customerReadyForWallet(customer: AdminCustomer) {
@@ -330,11 +331,13 @@ export default function CryptoOperationsAdmin() {
         { method: 'PATCH', body: JSON.stringify({}), userId }
       );
       setActivation(result);
-      setSuccess(
-        result.setup_url
-          ? '运营已激活；请通过批准的安全渠道交付一次性客户激活链接。'
-          : '现有已认证客户的运营状态已恢复；密码和 TOTP 未被重置。'
-      );
+      let successMessage = '现有已认证客户的运营状态已恢复；密码和 TOTP 未被重置。';
+      if (result.setup_url) {
+        successMessage = '运营已激活；请通过批准的安全渠道交付一次性客户激活链接。';
+      } else if (result.login_ready) {
+        successMessage = '运营已批准；客户现在可使用开户注册时设置的邮箱和密码直接登录。';
+      }
+      setSuccess(successMessage);
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : '运营激活失败');
