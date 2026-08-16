@@ -30,7 +30,12 @@ const (
 	    ca.contact_role AS contact_role, ca.beneficial_owner_name AS beneficial_owner_name,
 	    ca.beneficial_owner_ownership AS beneficial_owner_ownership,
 	    ca.kyc_consent_at AS kyc_consent_at, ca.terms_accepted_at AS terms_accepted_at,
-	    ca.submitted_at AS application_submitted_at`
+	    ca.submitted_at AS application_submitted_at,
+	    (SELECT COUNT(*) FROM cregis_wallets cw
+	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id) AS wallet_count,
+	    (SELECT cw.status FROM cregis_wallets cw
+	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id
+	      ORDER BY cw.created_at DESC LIMIT 1) AS wallet_status`
 	adminCustomerFrom = ` FROM customers c LEFT JOIN customer_applications ca
 	    ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id`
 	reviewCustomerKYCSQL = `UPDATE customers
@@ -148,6 +153,13 @@ func automaticWalletIdempotency(customerID string) string {
 	return "auto-kyc-" + customerID
 }
 
+func walletProvisioningRetryMetadata(provisionErr *walletProvisionError) map[string]any {
+	return map[string]any{
+		"status":     "retry_required",
+		"error_code": provisionErr.code,
+	}
+}
+
 func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWriter, r *http.Request, id, actor, note, metadata, now string) {
 	stateRows, err := app.db.Query(r.Context(), `SELECT c.status, c.kyc_status, c.operations_status,
 	  CASE WHEN EXISTS (SELECT 1 FROM customer_credentials cc WHERE cc.customer_id=c.id
@@ -214,7 +226,12 @@ func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWrit
 	wallet, _, provisionErr := app.provisionCregisWallet(r.Context(), id,
 		"SCC automatic wallet", automaticWalletIdempotency(id), actor)
 	if provisionErr != nil {
-		app.writeWalletProvisionError(w, provisionErr)
+		if provisionErr.cause != nil {
+			app.logger.Error("automatic wallet provisioning failed after KYC approval",
+				"code", provisionErr.code, "error", provisionErr.cause)
+		}
+		extra["wallet_provisioning"] = walletProvisioningRetryMetadata(provisionErr)
+		app.writeAdminCustomer(w, r, id, extra)
 		return
 	}
 	extra["wallet"] = wallet

@@ -1,4 +1,4 @@
-import { getCsrfToken } from 'src/auth/csrf-token';
+import { getCsrfToken, notifySessionExpired } from 'src/auth/csrf-token';
 
 export type Currency = 'USD' | 'SGD' | 'HKD' | 'EUR' | 'GBP' | 'USDT';
 export type CryptoNetwork = 'TRON' | 'BSC' | 'ETHEREUM';
@@ -105,6 +105,8 @@ export type Customer = {
   kycReviewedAt?: string;
   kycReviewNote?: string;
   accounts: MoneyAccount[];
+  walletCount?: number;
+  walletStatus?: string;
   beneficiaries?: Beneficiary[];
   creatorId?: string;
   reviewerId?: string;
@@ -311,6 +313,9 @@ async function requestApi<T>(
   if (!response.ok) {
     const message = Array.isArray(payload?.message) ? payload.message.join('，') : payload?.message;
     const code = payload?.error?.code;
+    if (response.status === 401 && code === 'session_expired') {
+      notifySessionExpired();
+    }
     throw new Error(message || code || `请求失败 (${response.status})`);
   }
   if (payload === null) {

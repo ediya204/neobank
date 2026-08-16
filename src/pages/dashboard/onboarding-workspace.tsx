@@ -64,6 +64,16 @@ type NeobankCustomer = {
   contact_role?: string;
   beneficial_owner_name?: string;
   beneficial_owner_ownership?: string;
+  wallet_count?: number;
+  wallet_status?: string | null;
+};
+
+type NeobankKycReviewResult = {
+  wallet?: { id: string };
+  wallet_provisioning?: {
+    status: 'retry_required';
+    error_code: string;
+  };
 };
 
 function mapNeobankCustomer(row: NeobankCustomer): Customer {
@@ -94,6 +104,8 @@ function mapNeobankCustomer(row: NeobankCustomer): Customer {
     beneficialOwnerOwnership: row.beneficial_owner_ownership,
     kycStatus,
     accounts: [],
+    walletCount: Number(row.wallet_count) || 0,
+    walletStatus: row.wallet_status || undefined,
   };
 }
 
@@ -148,6 +160,7 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(true);
+  const [reviewingCustomerId, setReviewingCustomerId] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -218,14 +231,21 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
   };
 
   const reviewKyc = async (customer: Customer, decision: 'APPROVE' | 'REJECT') => {
+    setReviewingCustomerId(customer.id);
+    setError('');
+    setSuccess('');
     try {
       const note = decision === 'APPROVE' ? 'KYC 资料人工核验通过' : 'KYC 资料未通过人工核验';
+      let neobankResult: NeobankKycReviewResult | null = null;
       if (IS_NEOBANK_DEPLOYMENT) {
-        await neobankApi(`/admin/customers/${customer.id}/kyc`, {
-          method: 'PATCH',
-          userId,
-          body: JSON.stringify({ decision: decision.toLowerCase(), note }),
-        });
+        neobankResult = await neobankApi<NeobankKycReviewResult>(
+          `/admin/customers/${customer.id}/kyc`,
+          {
+            method: 'PATCH',
+            userId,
+            body: JSON.stringify({ decision: decision.toLowerCase(), note }),
+          }
+        );
       } else {
         await coreApi(`/customers/${customer.id}/kyc`, {
           method: 'PATCH',
@@ -235,15 +255,21 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
       }
       let reviewMessage = 'KYC 未通过，申请已拒绝';
       if (decision === 'APPROVE') {
-        reviewMessage = IS_NEOBANK_DEPLOYMENT
-          ? 'KYC 已通过，客户已自动激活并创建 USDT-TRC20 钱包'
-          : 'KYC 已通过，申请进入运营开户审核';
+        if (!IS_NEOBANK_DEPLOYMENT) {
+          reviewMessage = 'KYC 已通过，申请进入运营开户审核';
+        } else if (neobankResult?.wallet) {
+          reviewMessage = 'KYC 已通过，客户已自动激活并创建 USDT-TRC20 钱包';
+        } else {
+          reviewMessage = 'KYC 已通过，客户已自动激活；钱包生成失败，已标记为待重试';
+        }
       }
       setSuccess(reviewMessage);
       setSelectedCustomer(null);
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : '审核失败');
+    } finally {
+      setReviewingCustomerId('');
     }
   };
 
@@ -395,6 +421,8 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
         customer={selectedCustomer}
         currentUserId={userId}
         portal={portal}
+        error={error}
+        reviewing={reviewingCustomerId === selectedCustomer?.id}
         onClose={() => setSelectedCustomer(null)}
         onReviewKyc={reviewKyc}
         onApproveCustomer={approveCustomer}
@@ -492,7 +520,7 @@ function CustomerTable({
               <TableCell>
                 <CustomerStatus status={customer.status} />
               </TableCell>
-              <TableCell>{customer.accounts?.length || 0}</TableCell>
+              <TableCell>{walletSummary(customer)}</TableCell>
             </TableRow>
           ))}
           {!rows.length && (
@@ -747,6 +775,8 @@ function CustomerDrawer({
   customer,
   currentUserId,
   portal,
+  error,
+  reviewing,
   onClose,
   onReviewKyc,
   onApproveCustomer,
@@ -755,6 +785,8 @@ function CustomerDrawer({
   customer: Customer | null;
   currentUserId: string;
   portal: boolean;
+  error: string;
+  reviewing: boolean;
   onClose: () => void;
   onReviewKyc: (customer: Customer, decision: 'APPROVE' | 'REJECT') => Promise<void>;
   onApproveCustomer: (customer: Customer) => Promise<void>;
@@ -769,6 +801,7 @@ function CustomerDrawer({
       PaperProps={{ sx: { width: { xs: 1, sm: 520 }, p: 3 } }}
     >
       <Stack spacing={3}>
+        {error && <Alert severity="error">{error}</Alert>}
         <Stack direction="row" justifyContent="space-between">
           <Box>
             <Typography variant="h5">{customer.displayName}</Typography>
@@ -805,6 +838,7 @@ function CustomerDrawer({
           </>
         )}
         <Info label="客户编号" value={customer.id} />
+        <Info label="钱包状态" value={walletSummary(customer)} />
         <Alert severity="info">
           {IS_NEOBANK_DEPLOYMENT
             ? 'KYC 通过会自动激活客户并幂等创建一个经 Cregis 归属验证的 USDT-TRC20 钱包。'
@@ -841,17 +875,20 @@ function CustomerDrawer({
               fullWidth
               color="error"
               variant="outlined"
+              disabled={reviewing}
               onClick={() => onReviewKyc(customer, 'REJECT').catch(() => undefined)}
             >
-              KYC 不通过
+              {reviewing ? '处理中…' : 'KYC 不通过'}
             </Button>
             <Button
               fullWidth
               variant="contained"
-              disabled={customer.creatorId === currentUserId && currentUserId !== 'usr_admin'}
+              disabled={
+                reviewing || (customer.creatorId === currentUserId && currentUserId !== 'usr_admin')
+              }
               onClick={() => onReviewKyc(customer, 'APPROVE').catch(() => undefined)}
             >
-              KYC 通过
+              {reviewing ? '处理中…' : 'KYC 通过'}
             </Button>
           </Stack>
         )}
@@ -892,6 +929,15 @@ function kycStatusLabel(status: Customer['kycStatus'], customerStatus: Customer[
     return customerStatus === 'PENDING_REVIEW' ? '已通过，待运营审核' : '已通过';
   }
   return { PENDING: '待人工审核', REJECTED: '未通过' }[status];
+}
+
+function walletSummary(customer: Customer) {
+  const count = customer.walletCount || 0;
+  if (!count) return '0';
+  if (customer.walletStatus === 'error') return `${count} · 待重试`;
+  if (customer.walletStatus === 'creating') return `${count} · 生成中`;
+  if (customer.walletStatus === 'active') return `${count} · 已启用`;
+  return String(count);
 }
 function Info({ label, value }: { label: string; value: string }) {
   return (
