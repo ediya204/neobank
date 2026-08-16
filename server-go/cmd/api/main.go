@@ -207,6 +207,11 @@ func (app *application) api(w http.ResponseWriter, r *http.Request) {
 	}
 	adminSession, err := app.requireAdminRequest(r)
 	if err != nil {
+		app.logger.Warn("admin request rejected",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"reason", err.Error(),
+		)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "session_expired"}})
 		return
 	}
