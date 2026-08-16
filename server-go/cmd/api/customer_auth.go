@@ -1225,6 +1225,14 @@ func tokenHash(value string) string {
 
 func integer(value any) int64 {
 	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int8:
+		return int64(typed)
+	case int16:
+		return int64(typed)
+	case int32:
+		return int64(typed)
 	case float64:
 		return int64(typed)
 	case int64:

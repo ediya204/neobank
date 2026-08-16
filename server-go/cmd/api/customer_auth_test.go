@@ -154,9 +154,9 @@ func TestArgonPasswordVerificationRejectsWrongParameters(t *testing.T) {
 		"password_salt":        hex.EncodeToString(salt),
 		"password_hash":        hex.EncodeToString(hash),
 		"password_algorithm":   customerPasswordAlgorithm,
-		"password_memory_kib":  int64(customerArgonMemoryKiB),
-		"password_time_cost":   int64(customerArgonTimeCost),
-		"password_parallelism": int64(customerArgonParallelism),
+		"password_memory_kib":  int32(customerArgonMemoryKiB),
+		"password_time_cost":   int32(customerArgonTimeCost),
+		"password_parallelism": int32(customerArgonParallelism),
 	}
 	valid, upgrade := app.verifyCustomerPassword("Correct-Horse-7-Battery", row)
 	if !valid || upgrade {
@@ -166,6 +166,24 @@ func TestArgonPasswordVerificationRejectsWrongParameters(t *testing.T) {
 	valid, _ = app.verifyCustomerPassword("Correct-Horse-7-Battery", row)
 	if valid {
 		t.Fatal("unsupported Argon2id parameters must fail closed")
+	}
+}
+
+func TestIntegerSupportsPGXIntegerTypes(t *testing.T) {
+	tests := []struct {
+		value    any
+		expected int64
+	}{
+		{value: int8(1), expected: 1},
+		{value: int16(2), expected: 2},
+		{value: int32(3), expected: 3},
+		{value: int64(4), expected: 4},
+		{value: int(5), expected: 5},
+	}
+	for _, test := range tests {
+		if actual := integer(test.value); actual != test.expected {
+			t.Fatalf("integer(%T(%v)) = %d; want %d", test.value, test.value, actual, test.expected)
+		}
 	}
 }
 
