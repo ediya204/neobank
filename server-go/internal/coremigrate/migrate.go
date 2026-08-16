@@ -131,6 +131,9 @@ func Run(ctx context.Context, source Database, target Database) (Manifest, error
 	if err != nil || len(version) != 1 {
 		return Manifest{}, errors.New("target postgres schema 0001_neobank_core is not applied")
 	}
+	if err := ensureTargetSchema(ctx, target); err != nil {
+		return Manifest{}, err
+	}
 
 	sourceRows := make(map[string][]map[string]any, len(tables))
 	targetPopulated := false
