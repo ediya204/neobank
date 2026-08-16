@@ -850,7 +850,7 @@ func (app *application) customerWalletBalances(r *http.Request, walletID, custom
 		app.tenantID, walletID, customerID)
 	if err != nil || len(rows) != 1 {
 		if err == nil {
-			err = errors.New("wallet balance query returned no row")
+			err = fmt.Errorf("wallet balance query returned %d rows for wallet %s", len(rows), walletID)
 		}
 		return "", "", err
 	}
