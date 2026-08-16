@@ -258,7 +258,13 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       if (section === 'accounts') message = 'USD 折算行情暂不可用，请稍后重试';
       else if (value instanceof Error) {
         const { message: errorMessage } = value;
-        message = errorMessage;
+        if (errorMessage === 'market_data_not_configured') {
+          message = 'FastForex 参考行情尚未配置；手工结算汇率仍可正常维护。';
+        } else if (errorMessage === 'market_data_unavailable') {
+          message = 'FastForex 参考行情暂时不可用，请稍后重试。';
+        } else {
+          message = errorMessage;
+        }
       }
       setMarketError(message);
     } finally {
