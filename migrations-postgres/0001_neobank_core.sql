@@ -151,7 +151,7 @@ CREATE INDEX IF NOT EXISTS idx_customer_auth_audit_customer
 CREATE TABLE IF NOT EXISTS cregis_wallets (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
-  customer_id TEXT NOT NULL REFERENCES customers(id),
+  customer_id TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
   chain_id TEXT NOT NULL,
   token_id TEXT,
@@ -179,7 +179,7 @@ CREATE INDEX IF NOT EXISTS idx_cregis_wallets_customer_fk
 CREATE TABLE IF NOT EXISTS cregis_withdrawals (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
-  customer_id TEXT NOT NULL REFERENCES customers(id),
+  customer_id TEXT NOT NULL,
   wallet_id TEXT REFERENCES cregis_wallets(id),
   idempotency_key TEXT NOT NULL,
   third_party_id TEXT NOT NULL UNIQUE,

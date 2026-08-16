@@ -9,6 +9,7 @@ import (
 )
 
 const customerApplicationsMigration = "0002_customer_applications"
+const legacyFinancialCustomerRefsMigration = "0003_legacy_financial_customer_refs"
 
 const createCustomerApplicationsTableSQL = `CREATE TABLE IF NOT EXISTS customer_applications (
   id TEXT PRIMARY KEY,
@@ -94,6 +95,49 @@ func ensureTargetSchema(ctx context.Context, target Database) error {
 	)
 	if err != nil || len(version) != 1 {
 		return fmt.Errorf("verify target schema migration %s", customerApplicationsMigration)
+	}
+	return nil
+}
+
+func ensureLegacyFinancialCustomerRefs(ctx context.Context, target Database) error {
+	version, err := target.Query(ctx,
+		`SELECT version FROM neobank_schema_migrations WHERE version=?`,
+		legacyFinancialCustomerRefsMigration,
+	)
+	if err != nil {
+		return fmt.Errorf("read target schema migration %s: %w", legacyFinancialCustomerRefsMigration, err)
+	}
+	if len(version) == 1 {
+		return nil
+	}
+	if len(version) != 0 {
+		return errors.New("target schema migration lookup returned duplicate rows")
+	}
+
+	for _, table := range tables {
+		rows, countErr := target.Query(ctx, fmt.Sprintf("SELECT COUNT(*) AS count FROM %s", table.Name))
+		if countErr != nil || len(rows) != 1 || integer(rows[0]["count"]) != 0 {
+			return fmt.Errorf("target must be empty before applying %s", legacyFinancialCustomerRefsMigration)
+		}
+	}
+
+	if _, err := target.Batch(ctx,
+		d1.Statement{SQL: `ALTER TABLE cregis_wallets DROP CONSTRAINT IF EXISTS cregis_wallets_customer_id_fkey`},
+		d1.Statement{SQL: `ALTER TABLE cregis_withdrawals DROP CONSTRAINT IF EXISTS cregis_withdrawals_customer_id_fkey`},
+		d1.Statement{
+			SQL:    `INSERT INTO neobank_schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING`,
+			Params: []any{legacyFinancialCustomerRefsMigration},
+		},
+	); err != nil {
+		return fmt.Errorf("apply target schema migration %s: %w", legacyFinancialCustomerRefsMigration, err)
+	}
+
+	version, err = target.Query(ctx,
+		`SELECT version FROM neobank_schema_migrations WHERE version=?`,
+		legacyFinancialCustomerRefsMigration,
+	)
+	if err != nil || len(version) != 1 {
+		return fmt.Errorf("verify target schema migration %s", legacyFinancialCustomerRefsMigration)
 	}
 	return nil
 }

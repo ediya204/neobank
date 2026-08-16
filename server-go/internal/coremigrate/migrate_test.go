@@ -34,7 +34,11 @@ func (database *schemaTestDatabase) Query(_ context.Context, sql string, params 
 
 func (database *schemaTestDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
 	database.batch = append(database.batch, statements...)
-	database.versions[customerApplicationsMigration] = true
+	for _, statement := range statements {
+		if strings.Contains(statement.SQL, "INSERT INTO neobank_schema_migrations") && len(statement.Params) == 1 {
+			database.versions[statement.Params[0].(string)] = true
+		}
+	}
 	results := make([]d1.Result, len(statements))
 	return results, nil
 }
@@ -86,6 +90,42 @@ func TestEnsureTargetSchemaAppliesCustomerApplicationsOnlyToEmptyTarget(t *testi
 	nonempty.counts["customers"] = 1
 	if err := ensureTargetSchema(context.Background(), nonempty); err == nil {
 		t.Fatal("nonempty target must fail closed before schema reconciliation")
+	}
+}
+
+func TestEnsureLegacyFinancialCustomerRefsRequiresEmptyTarget(t *testing.T) {
+	database := &schemaTestDatabase{versions: map[string]bool{}, counts: map[string]int64{}}
+	for _, table := range tables {
+		database.counts[table.Name] = 0
+	}
+	if err := ensureLegacyFinancialCustomerRefs(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	if len(database.batch) != 3 {
+		t.Fatalf("expected one atomic three-statement migration, got %d statements", len(database.batch))
+	}
+	for _, expected := range []string{
+		"ALTER TABLE cregis_wallets DROP CONSTRAINT",
+		"ALTER TABLE cregis_withdrawals DROP CONSTRAINT",
+	} {
+		found := false
+		for _, statement := range database.batch {
+			if strings.Contains(statement.SQL, expected) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing migration statement %q", expected)
+		}
+	}
+
+	nonempty := &schemaTestDatabase{versions: map[string]bool{}, counts: map[string]int64{}}
+	for _, table := range tables {
+		nonempty.counts[table.Name] = 0
+	}
+	nonempty.counts["cregis_wallets"] = 1
+	if err := ensureLegacyFinancialCustomerRefs(context.Background(), nonempty); err == nil {
+		t.Fatal("nonempty target must fail closed before dropping compatibility constraints")
 	}
 }
 
