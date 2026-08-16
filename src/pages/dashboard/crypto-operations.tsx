@@ -93,15 +93,12 @@ type AdminCustomerActivation = AdminCustomer & {
   setup_url?: string;
   setup_expires_at?: string;
   login_ready?: boolean;
+  wallet?: {
+    id: string;
+    address: string;
+    currency: string;
+  };
 };
-
-function customerReadyForWallet(customer: AdminCustomer) {
-  return (
-    customer.status === 'active' &&
-    customer.kyc_status === 'approved' &&
-    customer.operations_status === 'active'
-  );
-}
 
 function normalizedCregisStatus(status: string): CryptoTransfer['status'] {
   if (status === 'submitted') return 'SUBMITTED';
@@ -291,7 +288,7 @@ export default function CryptoOperationsAdmin() {
       setCustomerEmail('');
       setActivation(null);
       setCreatedWallet(null);
-      setSuccess('客户档案已创建；请先完成 KYC 审核，再由运营激活。');
+      setSuccess('客户档案已创建；KYC 通过后将自动激活并创建 USDT-TRC20 钱包。');
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : '测试客户创建失败');
@@ -305,69 +302,32 @@ export default function CryptoOperationsAdmin() {
     setCustomerActionId(customer.id);
     setError('');
     try {
-      await neobankApi<AdminCustomer>(`/admin/customers/${customer.id}/kyc`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          decision,
-          ...(kycNote.trim() ? { note: kycNote.trim() } : {}),
-        }),
-        userId,
-      });
-      setKycNote('');
-      setSuccess(decision === 'approve' ? 'KYC 已批准；仍需运营激活。' : 'KYC 已拒绝并记录原因。');
-      await load();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : 'KYC 审核失败');
-    } finally {
-      setCustomerActionId('');
-    }
-  };
-
-  const activateCustomer = async (customer: AdminCustomer) => {
-    setCustomerActionId(customer.id);
-    setError('');
-    try {
       const result = await neobankApi<AdminCustomerActivation>(
-        `/admin/customers/${customer.id}/activate`,
-        { method: 'PATCH', body: JSON.stringify({}), userId }
-      );
-      setActivation(result);
-      let successMessage = '现有已认证客户的运营状态已恢复；密码和 TOTP 未被重置。';
-      if (result.setup_url) {
-        successMessage = '运营已激活；请通过批准的安全渠道交付一次性客户激活链接。';
-      } else if (result.login_ready) {
-        successMessage = '运营已批准；客户现在可使用开户注册时设置的邮箱和密码直接登录。';
-      }
-      setSuccess(successMessage);
-      await load();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : '运营激活失败');
-    } finally {
-      setCustomerActionId('');
-    }
-  };
-
-  const createUSDTWallet = async (customer: AdminCustomer) => {
-    if (!customerReadyForWallet(customer)) return;
-    setCustomerActionId(customer.id);
-    setError('');
-    try {
-      const wallet = await neobankApi<{ id: string; address: string; currency: string }>(
-        '/crypto/wallets',
+        `/admin/customers/${customer.id}/kyc`,
         {
-          method: 'POST',
+          method: 'PATCH',
           body: JSON.stringify({
-            customer_id: customer.id,
-            alias: `Test ${customer.email}`,
-            idempotency_key: crypto.randomUUID(),
+            decision,
+            ...(kycNote.trim() ? { note: kycNote.trim() } : {}),
           }),
           userId,
         }
       );
-      setCreatedWallet({ ...wallet, customerId: customer.id });
-      setSuccess('新的 USDT-TRC20 测试地址已创建；现有钱包绑定未变更。');
+      setKycNote('');
+      if (decision === 'approve') {
+        setActivation(result);
+        if (result.wallet) {
+          setCreatedWallet({ ...result.wallet, customerId: customer.id });
+        }
+      }
+      setSuccess(
+        decision === 'approve'
+          ? 'KYC 已批准；客户已自动激活，USDT-TRC20 钱包已创建并通过 Cregis 归属验证。'
+          : 'KYC 已拒绝并记录原因。'
+      );
+      await load();
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'USDT-TRC20 地址创建失败');
+      setError(value instanceof Error ? value.message : 'KYC 审核失败');
     } finally {
       setCustomerActionId('');
     }
@@ -569,12 +529,12 @@ export default function CryptoOperationsAdmin() {
         fullWidth
         maxWidth="lg"
       >
-        <DialogTitle>客户 KYC、运营激活与钱包门禁</DialogTitle>
+        <DialogTitle>客户 KYC 与自动钱包开通</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Alert severity="warning">
-              固定顺序：创建客户 → KYC 审核 → 运营激活 → 客户完成密码与 TOTP →
-              创建钱包。任何一步都不会自动发起真实转账。
+              固定顺序：创建客户 → 人工 KYC 审核 → 自动激活并创建经 Cregis 归属验证的 USDT-TRC20
+              钱包。钱包开通不会自动发起真实转账。
             </Alert>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
               <TextField
@@ -620,7 +580,6 @@ export default function CryptoOperationsAdmin() {
                 <TableBody>
                   {customers.map((customer) => {
                     const busy = customerActionId === customer.id;
-                    const ready = customerReadyForWallet(customer);
                     return (
                       <TableRow key={customer.id}>
                         <TableCell>
@@ -675,27 +634,11 @@ export default function CryptoOperationsAdmin() {
                               </>
                             )}
                             {customer.kyc_status === 'approved' &&
-                              customer.operations_status === 'pending' && (
-                                <Button
-                                  size="small"
-                                  variant="contained"
-                                  disabled={busy}
-                                  onClick={() => activateCustomer(customer).catch(() => undefined)}
-                                >
-                                  运营激活
-                                </Button>
+                              customer.operations_status === 'active' && (
+                                <Typography variant="caption" color="success.main">
+                                  已自动激活并生成钱包
+                                </Typography>
                               )}
-                            {ready && (
-                              <Button
-                                size="small"
-                                color="warning"
-                                variant="contained"
-                                disabled={busy}
-                                onClick={() => createUSDTWallet(customer).catch(() => undefined)}
-                              >
-                                创建 Cregis 钱包
-                              </Button>
-                            )}
                             {customer.operations_status === 'active' &&
                               customer.status === 'pending_setup' && (
                                 <Typography variant="caption" color="text.secondary">
@@ -770,8 +713,8 @@ export default function CryptoOperationsAdmin() {
           {applicationReview && (
             <Stack spacing={0.5}>
               <Alert severity="warning" sx={{ mb: 1.5 }}>
-                本页资料仅用于人工 KYC / KYB 审核。查看资料不代表审核通过，KYC
-                结论与运营激活仍需分别执行。
+                本页资料仅用于人工 KYC / KYB 审核。查看资料不代表审核通过；只有点击 KYC
+                通过后，系统才会自动激活客户并创建钱包。
               </Alert>
               <Info label="申请编号" value={applicationReview.application_reference || '-'} mono />
               <Info

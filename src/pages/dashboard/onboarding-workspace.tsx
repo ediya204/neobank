@@ -233,9 +233,13 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
           body: JSON.stringify({ decision, note }),
         });
       }
-      setSuccess(
-        decision === 'APPROVE' ? 'KYC 已通过，申请进入运营开户审核' : 'KYC 未通过，申请已拒绝'
-      );
+      let reviewMessage = 'KYC 未通过，申请已拒绝';
+      if (decision === 'APPROVE') {
+        reviewMessage = IS_NEOBANK_DEPLOYMENT
+          ? 'KYC 已通过，客户已自动激活并创建 USDT-TRC20 钱包'
+          : 'KYC 已通过，申请进入运营开户审核';
+      }
+      setSuccess(reviewMessage);
       setSelectedCustomer(null);
       await load();
     } catch (value) {
@@ -319,7 +323,7 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
               <Typography variant="h4">客户开户与 VA</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
                 {IS_NEOBANK_DEPLOYMENT
-                  ? '显示 Render PostgreSQL 中的真实客户申请；KYC 与运营激活保持两个独立步骤。'
+                  ? '显示 Render PostgreSQL 中的真实客户申请；KYC 通过后自动激活并创建 USDT-TRC20 钱包。'
                   : '支持个人和企业开户；先完成人工 KYC，再由运营批准开户。只有运营批准后才创建钱包。'}
               </Typography>
             </Box>
@@ -802,7 +806,9 @@ function CustomerDrawer({
         )}
         <Info label="客户编号" value={customer.id} />
         <Alert severity="info">
-          KYC 通过不代表开户完成。运营批准后才创建 USD、HKD 法币钱包和 USDT-TRON 数字钱包。
+          {IS_NEOBANK_DEPLOYMENT
+            ? 'KYC 通过会自动激活客户并幂等创建一个经 Cregis 归属验证的 USDT-TRC20 钱包。'
+            : 'KYC 通过不代表开户完成。运营批准后才创建 USD、HKD 法币钱包和 USDT-TRON 数字钱包。'}
         </Alert>
         {customer.status === 'ACTIVE' && (
           <>
@@ -849,16 +855,19 @@ function CustomerDrawer({
             </Button>
           </Stack>
         )}
-        {!portal && customer.status === 'PENDING_REVIEW' && customer.kycStatus === 'APPROVED' && (
-          <Button
-            fullWidth
-            variant="contained"
-            disabled={customer.creatorId === currentUserId && currentUserId !== 'usr_admin'}
-            onClick={() => onApproveCustomer(customer).catch(() => undefined)}
-          >
-            运营批准开户
-          </Button>
-        )}
+        {!IS_NEOBANK_DEPLOYMENT &&
+          !portal &&
+          customer.status === 'PENDING_REVIEW' &&
+          customer.kycStatus === 'APPROVED' && (
+            <Button
+              fullWidth
+              variant="contained"
+              disabled={customer.creatorId === currentUserId && currentUserId !== 'usr_admin'}
+              onClick={() => onApproveCustomer(customer).catch(() => undefined)}
+            >
+              运营批准开户
+            </Button>
+          )}
       </Stack>
     </Drawer>
   );

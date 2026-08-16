@@ -18,6 +18,10 @@ that the assumption no longer applies.
   cannot create OTC orders.
 - A submitted sweep with a transaction hash must not be treated like an unsubmitted
   locked batch. Cancellation and completion rules must prevent value reuse.
+- In the Neobank profile, manual KYC approval is the final account-opening gate.
+  Approval automatically activates the customer and idempotently provisions one
+  Cregis-verified USDT-TRC20 wallet. This removes the separate Operations and wallet
+  approval clicks, but does not approve, execute, or settle any withdrawal.
 
 ## Partner integration
 

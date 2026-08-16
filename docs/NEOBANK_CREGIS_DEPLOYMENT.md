@@ -37,7 +37,7 @@ These aliases do not change the authentication boundary.
 
 The customer Portal remains wallet-only. The administrator Dashboard exposes
 customer and onboarding review, finance operations, accounts, channels, rates,
-ledger views, and the existing Go/Cregis digital-wallet approval page. Partner
+ledger views, and the Go/Cregis digital-wallet operations page. Partner
 Portal routes are not part of this production profile.
 
 Use only the Neobank-prefixed commands for this deployment:
@@ -85,27 +85,27 @@ secret, recovery codes, or bootstrap secret in source control or chat.
 Set values in the Render dashboard. Never commit or paste secret values into a
 ticket, chat, log, or repository.
 
-| Name                             | Secret    | Initial value or source                                  |
-| -------------------------------- | --------- | -------------------------------------------------------- |
-| `DATABASE_BACKEND`               | No        | Must be `postgres`; every other value fails startup      |
-| `DATABASE_URL`                   | Yes       | Render PostgreSQL internal connection                    |
-| `EDGE_SHARED_SECRET`             | Yes       | Same random value as the web Worker secret               |
-| `PUBLIC_BASE_URL`                | No        | Render service origin, without a trailing slash          |
-| `CUSTOMER_PORTAL_BASE_URL`       | No        | Public customer Portal origin, without a trailing slash  |
-| `TENANT_ID`                      | No        | `neobank`                                                |
-| `CUSTOMER_PASSWORD_PEPPER`       | Yes       | Separate random value of at least 32 bytes               |
-| `CUSTOMER_TOTP_KEY`              | Yes       | Random 32-byte AES key encoded as hex or Base64          |
-| `CUSTOMER_RECOVERY_PEPPER`       | Yes       | Separate random value of at least 32 bytes               |
-| `ADMIN_PASSWORD_PEPPER`          | Yes       | Separate random value of at least 32 bytes               |
-| `ADMIN_TOTP_KEY`                 | Yes       | Random 32-byte AES key encoded as hex or Base64          |
-| `ADMIN_BOOTSTRAP_SECRET`         | Yes       | Setup-token bearer secret of at least 32 bytes           |
-| `FASTFOREX_API_KEY`              | Yes       | Rotated FastForex key; configure directly in Render      |
-| `CREGIS_BASE_URL`                | No        | Test gateway while commissioning                         |
-| `CREGIS_ENABLED`                 | No        | `false` until the acceptance gate passes                 |
-| `CREGIS_PROJECT_ID`              | Sensitive | Cregis project configuration                             |
-| `CREGIS_PROJECT_SECRET`          | Yes       | Newly rotated Cregis secret                              |
-| `CREGIS_RELAY_URL`               | No        | Dedicated HTTPS origin for the Neobank-only egress relay |
-| `CREGIS_RELAY_SECRET`            | Yes       | Separate random HMAC secret shared only with the relay   |
+| Name                       | Secret    | Initial value or source                                  |
+| -------------------------- | --------- | -------------------------------------------------------- |
+| `DATABASE_BACKEND`         | No        | Must be `postgres`; every other value fails startup      |
+| `DATABASE_URL`             | Yes       | Render PostgreSQL internal connection                    |
+| `EDGE_SHARED_SECRET`       | Yes       | Same random value as the web Worker secret               |
+| `PUBLIC_BASE_URL`          | No        | Render service origin, without a trailing slash          |
+| `CUSTOMER_PORTAL_BASE_URL` | No        | Public customer Portal origin, without a trailing slash  |
+| `TENANT_ID`                | No        | `neobank`                                                |
+| `CUSTOMER_PASSWORD_PEPPER` | Yes       | Separate random value of at least 32 bytes               |
+| `CUSTOMER_TOTP_KEY`        | Yes       | Random 32-byte AES key encoded as hex or Base64          |
+| `CUSTOMER_RECOVERY_PEPPER` | Yes       | Separate random value of at least 32 bytes               |
+| `ADMIN_PASSWORD_PEPPER`    | Yes       | Separate random value of at least 32 bytes               |
+| `ADMIN_TOTP_KEY`           | Yes       | Random 32-byte AES key encoded as hex or Base64          |
+| `ADMIN_BOOTSTRAP_SECRET`   | Yes       | Setup-token bearer secret of at least 32 bytes           |
+| `FASTFOREX_API_KEY`        | Yes       | Rotated FastForex key; configure directly in Render      |
+| `CREGIS_BASE_URL`          | No        | Test gateway while commissioning                         |
+| `CREGIS_ENABLED`           | No        | `false` until the acceptance gate passes                 |
+| `CREGIS_PROJECT_ID`        | Sensitive | Cregis project configuration                             |
+| `CREGIS_PROJECT_SECRET`    | Yes       | Newly rotated Cregis secret                              |
+| `CREGIS_RELAY_URL`         | No        | Dedicated HTTPS origin for the Neobank-only egress relay |
+| `CREGIS_RELAY_SECRET`      | Yes       | Separate random HMAC secret shared only with the relay   |
 
 The `neobank-core` service additionally requires:
 
@@ -210,8 +210,8 @@ Only USDT on TRON TRC20 is accepted:
 Do not change the existing legacy wallet row to these identifiers. Create a
 new customer, then create a new wallet using that new customer ID. Public
 applicants choose their password during registration; only its salted, peppered
-Argon2id result is stored. The password cannot authenticate until both manual
-approval gates have passed. Admin-created customers without a password retain
+Argon2id result is stored. The password cannot authenticate until manual KYC
+approval completes automatic activation. Admin-created customers without a password retain
 the 30-minute setup-link and TOTP fallback flow.
 
 The Core administration rollout order is mandatory:
@@ -233,17 +233,20 @@ The Core administration rollout order is mandatory:
    hash and keeps login disabled; it requires a same-origin request and an
    `Idempotency-Key` header. The admin-created route does not issue credentials.
 6. Review the customer with `PATCH /api/v1/admin/customers/:id/kyc`, recording a
-   reason for rejection, then separately activate an approved customer with
-   `PATCH /api/v1/admin/customers/:id/activate`.
+   reason for rejection. Approval atomically sets Operations active and starts
+   idempotent Cregis wallet provisioning; there is no separate account or wallet
+   approval click.
 7. Approval changes a public applicant with a stored password to `active`; the
    customer can then sign in directly with the registration email and password.
    For admin-created `pending_setup` customers without a password, deliver the
    activation response's one-time setup URL securely and complete the legacy
    password and TOTP setup. An already active customer is restored without
    resetting credentials or issuing a new setup URL.
-8. Only after status is `active`, KYC is `approved`, and operations is `active`,
-   create a new wallet through `POST /api/v1/crypto/wallets`. This is the first
-   step that calls Cregis and requires explicit approval.
+8. The KYC approval response must include the single active USDT-TRC20 wallet.
+   The server reuses an existing verified wallet, retries a failed deterministic
+   reservation, calls Cregis only when needed, and exposes the address only after
+   `address/inner` proves project ownership. `POST /api/v1/crypto/wallets` remains
+   an authenticated repair interface, not a separate business approval step.
 9. Verify customer login and an empty, customer-scoped history, then test a
    small deposit callback and reconcile it in the customer and admin
    histories.
@@ -267,9 +270,9 @@ Before changing `CREGIS_ENABLED` to `true`:
    setup and that unauthenticated Admin API requests are rejected.
 5. Confirm the intended administrator can submit and then approve or reject the
    same request, while each action remains separately audited.
-6. Create a test wallet, verify it belongs to the configured Cregis project via
-   `POST /api/v1/address/inner`, and confirm the Portal does not expose the
-   address before that verification succeeds.
+6. Approve KYC for a test customer and confirm automatic wallet provisioning
+   verifies ownership through `POST /api/v1/address/inner`; the Portal must not
+   expose the address before that verification succeeds.
 7. Obtain explicit approval before any test that can create a real payout.
 
 ## Acceptance evidence

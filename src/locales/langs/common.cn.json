@@ -127,16 +127,16 @@
       "provisioned_only": "管理账户由管理员预先创建，不提供自主注册。",
       "new_customer": "首次使用 SCC数字银行？",
       "open_account": "个人或企业开户注册",
-      "registration_helper": "提交申请后仍需完成 KYC / KYB 与运营审核，审核通过前不会开通账户。",
+      "registration_helper": "提交申请后需完成人工 KYC / KYB 审核；审核通过后系统自动激活账户并创建 USDT-TRC20 钱包。",
       "customer": {
         "eyebrow": "客户登录",
         "title": "登录网上银行",
-        "subtitle": "请输入开户注册时设置的邮箱和密码。KYC / KYB 与运营审核通过后即可登录。",
+        "subtitle": "请输入开户注册时设置的邮箱和密码。KYC / KYB 通过并自动激活后即可登录。",
         "submit": "安全登录",
         "activated_only": "仅限已完成开户并激活网上银行的客户使用。如无法登录，请联系您的客户经理或银行支持团队。",
         "new_customer": "还没有 SCC数字银行账户？",
         "register": "申请开立账户",
-        "registration_helper": "可申请个人或企业账户。提交申请后仍需完成 KYC / KYB 与运营审核，审核通过前不会开通账户。"
+        "registration_helper": "可申请个人或企业账户。提交后需完成人工 KYC / KYB 审核，审核通过后系统自动开户并创建钱包。"
       }
     },
     "registration": {
@@ -207,12 +207,12 @@
           "people": "董事、授权人及最终受益人身份",
           "ownership": "股权与控制结构说明"
         },
-        "security_title": "人工 KYC 与运营复核",
-        "security_description": "KYC 结论由后台人工记录，并需经过独立运营审核；KYC 通过不代表账户已开通。",
+        "security_title": "人工 KYC 与自动开户",
+        "security_description": "KYC 结论由后台人工记录；KYC 通过后系统自动激活账户，并幂等创建经 Cregis 归属验证的 USDT-TRC20 钱包。",
         "consent": "我同意为开户注册、身份核验、反洗钱及制裁筛查目的处理所提交的资料。"
       },
       "review": {
-        "pending_notice": "提交只会创建待审核申请。KYC / KYB 未通过或运营未批准前，账户、钱包和资金功能均不会启用。",
+        "pending_notice": "提交只会创建待审核申请。KYC / KYB 未通过前，账户、钱包和资金功能均不会启用。",
         "account_type": "开户类型",
         "applicant": "申请人 / 企业",
         "email": "联系邮箱",
@@ -246,11 +246,11 @@
       "success": {
         "eyebrow": "待人工身份审核",
         "title": "开户申请已收到",
-        "subtitle": "你的申请已进入资料预审。申请提交不代表开户完成，账户在 KYC / KYB 与运营审核通过前不会启用。",
+        "subtitle": "你的申请已进入资料预审。申请提交不代表开户完成；KYC / KYB 通过后系统会自动激活账户并创建钱包。",
         "reference": "申请编号",
         "next_email": "妥善保存申请编号，并留意补件联络。",
         "next_kyc": "等待合规人员完成人工 KYC / KYB 审核。",
-        "next_review": "等待合规与运营审核；审批通过后即可使用该邮箱和密码直接登录。",
+        "next_review": "等待合规人员审核；KYC / KYB 通过并自动激活后，即可使用该邮箱和密码直接登录。",
         "back_to_login": "返回登录"
       }
     },

@@ -21,6 +21,7 @@ const [
   coreEdgeAuth,
   onboardingPage,
   customerSync,
+  customerAdmin,
 ] = await Promise.all([
   read('package.json'),
   read('wrangler.neobank.jsonc'),
@@ -38,6 +39,7 @@ const [
   read('server/src/security/edge-auth.ts'),
   read('src/pages/dashboard/onboarding-workspace.tsx'),
   read('server/src/customers/neobank-customer-sync.ts'),
+  read('server-go/cmd/api/customer_admin.go'),
 ]);
 
 const packageJson = JSON.parse(packageSource);
@@ -103,11 +105,16 @@ assert.match(adminPage, /process\.env\.NODE_ENV === 'development'/);
 assert.match(adminPage, /IS_NEOBANK_DEPLOYMENT/);
 assert.match(adminPage, /neobankApi/);
 assert.match(adminPage, /\/admin\/customers\/\$\{customer\.id\}\/kyc/);
-assert.match(adminPage, /\/admin\/customers\/\$\{customer\.id\}\/activate/);
-assert.match(adminPage, /customerReadyForWallet\(customer\)/);
+assert.doesNotMatch(adminPage, /\/admin\/customers\/\$\{customer\.id\}\/activate/);
+assert.doesNotMatch(adminPage, /customerReadyForWallet\(customer\)/);
+assert.doesNotMatch(adminPage, /创建 Cregis 钱包/);
 assert.match(onboardingPage, /neobankApi<\{ data: NeobankCustomer\[\] \}>/);
 assert.match(onboardingPage, /decision: decision\.toLowerCase\(\)/);
-assert.match(onboardingPage, /\/admin\/customers\/\$\{customer\.id\}\/activate/);
+assert.match(onboardingPage, /KYC 已通过，客户已自动激活并创建 USDT-TRC20 钱包/);
+assert.match(customerAdmin, /approveCustomerKYCAutomationSQL/);
+assert.match(customerAdmin, /operations_status='active'/);
+assert.match(customerAdmin, /automaticWalletIdempotency\(id\)/);
+assert.match(customerAdmin, /provisionCregisWallet/);
 
 assert.match(worker, /proxyAPI\(request, env, 'application-session-edge'\)/);
 assert.match(worker, /proxyCoreAPI\(request, env\)/);
