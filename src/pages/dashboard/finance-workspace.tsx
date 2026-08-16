@@ -31,6 +31,7 @@ import {
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
+import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import BeneficiaryDialog from 'src/features/finance/beneficiary-dialog';
 import { ACTION_ICONS, UI_ICONS } from 'src/theme/iconography';
 import {
@@ -46,6 +47,7 @@ import {
   JournalEntry,
   MarketQuote,
   MoneyAccount,
+  neobankApi,
   Operation,
   OperationType,
   RateVersion,
@@ -244,7 +246,10 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
             ];
       const quotes = await Promise.all(
         pairs.map(([base, quote]) =>
-          coreApi<MarketQuote>(`/admin/market-rate?base=${base}&quote=${quote}`, { userId })
+          (IS_NEOBANK_DEPLOYMENT ? neobankApi : coreApi)<MarketQuote>(
+            `/admin/market-rate?base=${base}&quote=${quote}`,
+            { userId }
+          )
         )
       );
       setMarketQuotes(quotes);

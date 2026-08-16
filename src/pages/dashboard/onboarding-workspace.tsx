@@ -31,15 +31,71 @@ import {
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
+import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import {
   coreApi,
   Currency,
   Customer,
   demoOrganizationId,
   demoUsers,
+  neobankApi,
   supportedFiatCurrencies,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
+
+type NeobankCustomer = {
+  id: string;
+  email: string;
+  display_name: string;
+  status: string;
+  kyc_status: string;
+  operations_status: string;
+  account_type?: 'individual' | 'business';
+  phone_country_code?: string;
+  phone?: string;
+  residence_country?: string;
+  full_name?: string;
+  date_of_birth?: string;
+  nationality?: string;
+  legal_name?: string;
+  registration_number?: string;
+  incorporation_country?: string;
+  contact_name?: string;
+  contact_role?: string;
+  beneficial_owner_name?: string;
+  beneficial_owner_ownership?: string;
+};
+
+function mapNeobankCustomer(row: NeobankCustomer): Customer {
+  let status: Customer['status'] = 'PENDING_REVIEW';
+  let kycStatus: Customer['kycStatus'] = 'PENDING';
+  if (row.kyc_status === 'rejected') status = 'REJECTED';
+  if (row.kyc_status === 'rejected') kycStatus = 'REJECTED';
+  if (row.kyc_status === 'approved') kycStatus = 'APPROVED';
+  if (row.status === 'suspended' || row.status === 'closed') status = 'SUSPENDED';
+  if (row.status === 'active' && row.operations_status === 'active') status = 'ACTIVE';
+  return {
+    id: row.id,
+    organizationId: demoOrganizationId,
+    type: row.account_type === 'business' ? 'BUSINESS' : 'INDIVIDUAL',
+    status,
+    displayName: row.display_name,
+    legalName: row.legal_name || row.full_name || row.display_name,
+    email: row.email,
+    phone: row.phone,
+    phoneCountryCode: row.phone_country_code,
+    countryCode: row.incorporation_country || row.residence_country || '--',
+    registrationNo: row.registration_number,
+    dateOfBirth: row.date_of_birth,
+    nationality: row.nationality,
+    contactName: row.contact_name,
+    contactRole: row.contact_role,
+    beneficialOwnerName: row.beneficial_owner_name,
+    beneficialOwnerOwnership: row.beneficial_owner_ownership,
+    kycStatus,
+    accounts: [],
+  };
+}
 
 type CustomerForm = {
   type: 'INDIVIDUAL' | 'BUSINESS';
@@ -98,7 +154,11 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
     setError('');
     try {
       const [customerRows, requestRows] = await Promise.all([
-        coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`, { userId }),
+        IS_NEOBANK_DEPLOYMENT
+          ? neobankApi<{ data: NeobankCustomer[] }>('/admin/customers', { userId }).then(
+              (payload) => payload.data.map(mapNeobankCustomer)
+            )
+          : coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`, { userId }),
         coreApi<VirtualAccountRequest[]>(
           `/virtual-account-requests?organizationId=${demoOrganizationId}`,
           { userId }
@@ -159,15 +219,23 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
 
   const reviewKyc = async (customer: Customer, decision: 'APPROVE' | 'REJECT') => {
     try {
-      await coreApi(`/customers/${customer.id}/kyc`, {
-        method: 'PATCH',
-        userId,
-        body: JSON.stringify({
-          decision,
-          note: decision === 'APPROVE' ? 'KYC 资料人工核验通过' : 'KYC 资料未通过人工核验',
-        }),
-      });
-      setSuccess(decision === 'APPROVE' ? 'KYC 已通过，申请进入运营开户审核' : 'KYC 未通过，申请已拒绝');
+      const note = decision === 'APPROVE' ? 'KYC 资料人工核验通过' : 'KYC 资料未通过人工核验';
+      if (IS_NEOBANK_DEPLOYMENT) {
+        await neobankApi(`/admin/customers/${customer.id}/kyc`, {
+          method: 'PATCH',
+          userId,
+          body: JSON.stringify({ decision: decision.toLowerCase(), note }),
+        });
+      } else {
+        await coreApi(`/customers/${customer.id}/kyc`, {
+          method: 'PATCH',
+          userId,
+          body: JSON.stringify({ decision, note }),
+        });
+      }
+      setSuccess(
+        decision === 'APPROVE' ? 'KYC 已通过，申请进入运营开户审核' : 'KYC 未通过，申请已拒绝'
+      );
       setSelectedCustomer(null);
       await load();
     } catch (value) {
@@ -177,12 +245,24 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
 
   const approveCustomer = async (customer: Customer) => {
     try {
-      await coreApi(`/customers/${customer.id}/approve`, {
-        method: 'PATCH',
-        userId,
-        body: JSON.stringify({ note: 'KYC 已通过，运营批准开户' }),
-      });
-      setSuccess('运营已批准开户，USD/HKD 与 USDT-TRON 钱包已创建');
+      if (IS_NEOBANK_DEPLOYMENT) {
+        await neobankApi(`/admin/customers/${customer.id}/activate`, {
+          method: 'PATCH',
+          userId,
+          body: JSON.stringify({}),
+        });
+      } else {
+        await coreApi(`/customers/${customer.id}/approve`, {
+          method: 'PATCH',
+          userId,
+          body: JSON.stringify({ note: 'KYC 已通过，运营批准开户' }),
+        });
+      }
+      setSuccess(
+        IS_NEOBANK_DEPLOYMENT
+          ? '运营已批准开户；客户登录状态已按现有凭据流程更新。'
+          : '运营已批准开户，USD/HKD 与 USDT-TRON 钱包已创建'
+      );
       setSelectedCustomer(null);
       await load();
     } catch (value) {
@@ -238,31 +318,37 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
             <Box>
               <Typography variant="h4">客户开户与 VA</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                支持个人和企业开户；先完成人工 KYC，再由运营批准开户。只有运营批准后才创建钱包。
+                {IS_NEOBANK_DEPLOYMENT
+                  ? '显示 Render PostgreSQL 中的真实客户申请；KYC 与运营激活保持两个独立步骤。'
+                  : '支持个人和企业开户；先完成人工 KYC，再由运营批准开户。只有运营批准后才创建钱包。'}
               </Typography>
             </Box>
             <Stack direction="row" spacing={1.5}>
-              <FormControl size="small" sx={{ minWidth: 180 }}>
-                <InputLabel>本地演示身份</InputLabel>
-                <Select
-                  label="本地演示身份"
-                  value={userId}
-                  onChange={(event) => setUserId(event.target.value)}
+              {!IS_NEOBANK_DEPLOYMENT && (
+                <FormControl size="small" sx={{ minWidth: 180 }}>
+                  <InputLabel>本地演示身份</InputLabel>
+                  <Select
+                    label="本地演示身份"
+                    value={userId}
+                    onChange={(event) => setUserId(event.target.value)}
+                  >
+                    {demoUsers.map((user) => (
+                      <MenuItem key={user.id} value={user.id}>
+                        {user.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+              {!IS_NEOBANK_DEPLOYMENT && (
+                <Button
+                  variant="contained"
+                  startIcon={<Iconify icon="solar:add-circle-linear" />}
+                  onClick={() => setCustomerOpen(true)}
                 >
-                  {demoUsers.map((user) => (
-                    <MenuItem key={user.id} value={user.id}>
-                      {user.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Button
-                variant="contained"
-                startIcon={<Iconify icon="solar:add-circle-linear" />}
-                onClick={() => setCustomerOpen(true)}
-              >
-                发起开户
-              </Button>
+                  发起开户
+                </Button>
+              )}
             </Stack>
           </Stack>
           {error && (
@@ -708,7 +794,9 @@ function CustomerDrawer({
             <Info label="最终受益人" value={customer.beneficialOwnerName || '-'} />
             <Info
               label="持股或控制比例"
-              value={customer.beneficialOwnerOwnership ? `${customer.beneficialOwnerOwnership}%` : '-'}
+              value={
+                customer.beneficialOwnerOwnership ? `${customer.beneficialOwnerOwnership}%` : '-'
+              }
             />
           </>
         )}

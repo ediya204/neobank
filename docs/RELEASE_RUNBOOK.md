@@ -57,12 +57,12 @@ chunks while the root recovery boundary moves stale clients to the new build.
 GitHub push and Cloudflare deployment remain separate actions. Do not infer one
 from the other.
 
-### Isolated Neobank wallet
+### Neobank full administration + wallet
 
 The commands above target the separate default VA API profile and must not be
-reused for the isolated Neobank deployment. The currently deployed and bound
-Neobank Worker is `neobank-web`; it uses a compile-time route allowlist and an
-explicit Wrangler config:
+reused for the Neobank deployment. The currently deployed and bound Neobank
+Worker is `neobank-web`; it uses an explicit full-admin-wallet profile and
+Wrangler config:
 
 ```bash
 npm run neobank:profile:check
@@ -73,11 +73,11 @@ npm run neobank:deploy
 ```
 
 `neobank:deploy:dry-run` builds with
-`REACT_APP_NEOBANK_DEPLOYMENT_MODE=isolated-wallet`; every prepared Wrangler
+`REACT_APP_NEOBANK_DEPLOYMENT_MODE=full-admin-wallet`; every prepared Wrangler
 command includes `--config wrangler.neobank.jsonc`. The normal local/default
 build remains the full Nest application. See
 `docs/NEOBANK_CREGIS_DEPLOYMENT.md` for the route matrix, Admin application-session chain,
-Go/Render dependency, KYC and operations gates, and PostgreSQL migration procedure.
+Go and Nest Core Render dependencies, KYC and operations gates, and PostgreSQL migration procedure.
 The completed historical D1 cutover is recorded in
 `docs/NEOBANK_POSTGRES_CUTOVER.md`; D1 is not a runtime fallback.
 

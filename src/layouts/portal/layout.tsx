@@ -21,7 +21,7 @@ import Iconify from 'src/components/iconify';
 import { useAuthContext } from 'src/auth/hooks';
 import { canAccessPortalPath } from 'src/auth/role-access';
 import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
-import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
+import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import {
   PortalCustomerProvider,
   usePortalCustomer,
@@ -56,8 +56,7 @@ function PortalFrame() {
     visibleNavItems = navItems.filter(([, path]) => canAccessPortalPath(user, path));
   }
   const showAccountSettings =
-    !IS_ISOLATED_WALLET_DEPLOYMENT &&
-    Boolean(user && canAccessPortalPath(user, '/portal/settings'));
+    !IS_NEOBANK_DEPLOYMENT && Boolean(user && canAccessPortalPath(user, '/portal/settings'));
   const isActive = (path: string) => {
     if (path === '/portal/home') {
       return (
@@ -120,29 +119,27 @@ function PortalFrame() {
               ))}
             </Stack>
             <Box sx={{ flex: { xs: 1, lg: 0 } }} />
-            {process.env.NODE_ENV === 'development' &&
-              !IS_ISOLATED_WALLET_DEPLOYMENT &&
-              customer && (
-                <Select
-                  size="small"
-                  value={customer.id}
-                  onChange={(event) => selectCustomer(event.target.value)}
-                  sx={{
-                    display: { xs: 'none', md: 'flex' },
-                    minWidth: 210,
-                    bgcolor: 'background.paper',
-                  }}
-                >
-                  {customers
-                    .filter((row) => row.id.startsWith('cus_demo_'))
-                    .map((row) => (
-                      <MenuItem key={row.id} value={row.id}>
-                        {row.type === 'BUSINESS' ? '企业 · ' : '个人 · '}
-                        {row.displayName}
-                      </MenuItem>
-                    ))}
-                </Select>
-              )}
+            {process.env.NODE_ENV === 'development' && !IS_NEOBANK_DEPLOYMENT && customer && (
+              <Select
+                size="small"
+                value={customer.id}
+                onChange={(event) => selectCustomer(event.target.value)}
+                sx={{
+                  display: { xs: 'none', md: 'flex' },
+                  minWidth: 210,
+                  bgcolor: 'background.paper',
+                }}
+              >
+                {customers
+                  .filter((row) => row.id.startsWith('cus_demo_'))
+                  .map((row) => (
+                    <MenuItem key={row.id} value={row.id}>
+                      {row.type === 'BUSINESS' ? '企业 · ' : '个人 · '}
+                      {row.displayName}
+                    </MenuItem>
+                  ))}
+              </Select>
+            )}
             <IconButton onClick={(event) => setAnchor(event.currentTarget)} aria-label="账户菜单">
               <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', typography: 'body2' }}>
                 {customer?.displayName.slice(0, 1) || 'M'}

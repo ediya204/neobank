@@ -7,7 +7,10 @@ import { AuthGuard, PermissionRouteGuard, RoleRouteGuard } from 'src/auth/guard'
 import { useAuthContext } from 'src/auth/hooks';
 import { getUserHome } from 'src/auth/role-access';
 import { PortalPermission } from 'src/auth/types';
-import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
+import {
+  IS_FULL_ADMIN_WALLET_DEPLOYMENT,
+  IS_ISOLATED_WALLET_DEPLOYMENT,
+} from 'src/config/deployment-mode';
 import { dashboardRoutes } from './dashboard';
 import { adminAuthRoutes, authRoutes, customerAuthRoutes } from './auth';
 
@@ -92,6 +95,44 @@ const isolatedWalletRoutes = [
     ),
   },
   { path: '/admin/neobank-crypto', element: <Navigate to="/admin" replace /> },
+  { path: '*', element: <Page404 /> },
+];
+
+const fullAdminWalletRoutes = [
+  { path: '/', element: <HomeRedirect /> },
+  {
+    path: '/portal',
+    element: (
+      <AuthGuard expectedRole="customer">
+        <RoleRouteGuard roles={['customer']}>
+          <PortalLayout />
+        </RoleRouteGuard>
+      </AuthGuard>
+    ),
+    children: [
+      { index: true, element: <Navigate to="/portal/home" replace /> },
+      { path: 'home', element: <CryptoWalletPage /> },
+      { path: 'crypto-wallet', element: <Navigate to="/portal/home" replace /> },
+      { path: 'crypto-wallet/deposit', element: <CryptoWalletPage view="deposit" /> },
+      { path: 'crypto-wallet/withdraw', element: <CryptoWalletPage view="withdraw" /> },
+      { path: '*', element: <Page404 /> },
+    ],
+  },
+  ...customerAuthRoutes,
+  ...adminAuthRoutes,
+  {
+    path: '/admin',
+    element: (
+      <AuthGuard expectedRole="admin">
+        <Navigate to="/dashboard/overview" replace />
+      </AuthGuard>
+    ),
+  },
+  {
+    path: '/admin/neobank-crypto',
+    element: <Navigate to="/dashboard/operations/crypto-wallets" replace />,
+  },
+  ...dashboardRoutes,
   { path: '*', element: <Page404 /> },
 ];
 
@@ -202,5 +243,8 @@ const fullApplicationRoutes = [
 ];
 
 export default function Router() {
-  return useRoutes(IS_ISOLATED_WALLET_DEPLOYMENT ? isolatedWalletRoutes : fullApplicationRoutes);
+  let routes = fullApplicationRoutes;
+  if (IS_ISOLATED_WALLET_DEPLOYMENT) routes = isolatedWalletRoutes;
+  if (IS_FULL_ADMIN_WALLET_DEPLOYMENT) routes = fullAdminWalletRoutes;
+  return useRoutes(routes);
 }

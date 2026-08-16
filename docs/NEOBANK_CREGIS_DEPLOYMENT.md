@@ -1,14 +1,17 @@
 # Neobank Cregis deployment runbook
 
-This runbook covers the isolated Neobank wallet service only. It does not claim
-that the existing application backend has been fully replaced by Go.
+This runbook covers the Neobank web application, the Go authentication and
+wallet service, and the separate Nest Core administration service. Go remains
+authoritative for customer credentials, KYC/activation, and Cregis operations;
+Nest Core owns the general administration and financial-operation modules.
 
 ## Isolation boundary
 
 - Cloudflare Worker: `neobank-web`
 - Authoritative database: Render PostgreSQL `neobank-postgres`
 - Legacy D1 `neobank-core-v1`: historical migration evidence only; no runtime writes
-- Render service: `neobank`
+- Render Go service: `neobank`
+- Render Nest Core service: `neobank-core`
 - Tenant identifier: `neobank`
 - Cregis calls remain disabled until the credential, outbound IP allowlist, and
   callback checks are complete.
@@ -18,23 +21,24 @@ The production Go runtime must refuse every `DATABASE_BACKEND` value other than
 
 ## Production web profile
 
-The production web build is an explicit allowlist, selected at compile time with
-`REACT_APP_NEOBANK_DEPLOYMENT_MODE=isolated-wallet`. It exposes only:
+The production web build is selected at compile time with
+`REACT_APP_NEOBANK_DEPLOYMENT_MODE=full-admin-wallet`. It exposes:
 
 | Audience      | Browser routes                                                        | Authentication source                              |
 | ------------- | --------------------------------------------------------------------- | -------------------------------------------------- |
 | Customer      | `/customer/register`, `/customer/login`, `/customer/setup`            | Public application password; legacy setup fallback |
 | Customer      | `/portal/home`; wallet actions remain under `/portal/crypto-wallet/*` | Same validated customer session                    |
-| Administrator | `/admin/login`, `/admin/setup`, `/admin`                              | Application password + TOTP session                |
+| Administrator | `/admin/login`, `/admin/setup`, `/admin`, `/dashboard/*`              | Application password + TOTP session                |
 
 For compatibility with saved links, `/portal/crypto-wallet` redirects to
-`/portal/home`, and `/admin/neobank-crypto` redirects to `/admin`. These aliases
-do not change the authentication boundary.
+`/portal/home`, `/admin` redirects to `/dashboard/overview`, and
+`/admin/neobank-crypto` redirects to `/dashboard/operations/crypto-wallets`.
+These aliases do not change the authentication boundary.
 
-All Partner Portal, general Dashboard, and other Nest-only routes render the
-safe 404 page in this profile. The default
-local build remains the complete Nest application and must not be used as the
-Neobank production artifact.
+The customer Portal remains wallet-only. The administrator Dashboard exposes
+customer and onboarding review, finance operations, accounts, channels, rates,
+ledger views, and the existing Go/Cregis digital-wallet approval page. Partner
+Portal routes are not part of this production profile.
 
 Use only the Neobank-prefixed commands for this deployment:
 
@@ -58,6 +62,18 @@ PostgreSQL. Browser admin APIs require the `__Host-neobank_admin` HttpOnly
 cookie, the paired CSRF cookie/header, and a same-origin mutation. The web
 Worker performs rate limiting and signed transport only; it never derives or
 accepts an administrator identity from browser headers.
+
+The Worker authenticates that Go Admin session before proxying `/api/core/*` to
+Nest Core. Mutations also require the Go session's CSRF token. Worker-to-Core
+requests use a separate HMAC secret; the public Core origin rejects unsigned
+requests. The Worker rewrites `/api/core/*` to `/api/v1/*` at the Core origin.
+Browser-supplied identity headers are never trusted.
+
+The production customer list and onboarding actions continue to read and write
+the lowercase Go tables. Core synchronizes those customer identities and status
+fields into its quoted Prisma `Customer` table by stable customer ID before
+serving finance views. This synchronization does not invent balances, accounts,
+ledger entries, or settlement state.
 
 The first administrator is provisioned through the bootstrap-secret protected
 `POST /api/auth/setup-token` flow and completes password and TOTP enrollment at
@@ -91,6 +107,18 @@ ticket, chat, log, or repository.
 | `CREGIS_RELAY_URL`               | No        | Dedicated HTTPS origin for the Neobank-only egress relay |
 | `CREGIS_RELAY_SECRET`            | Yes       | Separate random HMAC secret shared only with the relay   |
 
+The `neobank-core` service additionally requires:
+
+| Name                       | Secret | Initial value or source                          |
+| -------------------------- | ------ | ------------------------------------------------ |
+| `DATABASE_URL`             | Yes    | Same Render PostgreSQL internal connection       |
+| `CORE_EDGE_SHARED_SECRET`  | Yes    | Separate random value shared with the web Worker |
+| `CORE_EDGE_AUTH_REQUIRED`  | No     | Must be `true` in production                     |
+| `CORE_ADMIN_USER_ID`       | No     | `usr_neobank_admin`                              |
+| `CORE_ORGANIZATION_ID`     | No     | `org_neobank`                                    |
+| `NEOBANK_SOURCE_TENANT_ID` | No     | `neobank`                                        |
+| `WEB_ORIGIN`               | No     | `https://portal.sscdigitalbank.com`              |
+
 ## Required web Worker bindings
 
 Configure these on `neobank-web`, not on Render:
@@ -98,6 +126,7 @@ Configure these on `neobank-web`, not on Render:
 | Name                         | Secret | Purpose                                      |
 | ---------------------------- | ------ | -------------------------------------------- |
 | `GO_EDGE_SHARED_SECRET`      | Yes    | Signed Worker-to-Go transport                |
+| `CORE_EDGE_SHARED_SECRET`    | Yes    | Signed Worker-to-Core transport              |
 | `ADMIN_AUTH_RATE_LIMITER`    | No     | Edge Admin login and TOTP request throttling |
 | `CUSTOMER_AUTH_RATE_LIMITER` | No     | Edge customer auth request throttling        |
 
@@ -166,9 +195,9 @@ The customer routes use the application session instead of Cloudflare Access:
 - Customer auth API: `/api/auth/customer/*`, `/api/auth/me`, `/api/auth/logout`
 - Customer-scoped wallet API: `/api/v1/customer/*`
 
-The Worker protects `/admin*` and administrator `/api/*` routes with the
-application Admin session, while the isolated React router still returns 404
-for Nest-only pages. Cregis callbacks remain public but signature-verified. A
+The Worker protects `/admin*`, `/dashboard*`, and administrator API routes with
+the application Admin session. Cregis callbacks remain public but
+signature-verified. A
 customer ID supplied by a browser is never used as the authorization scope;
 the API derives the customer ID from the validated session.
 
@@ -185,17 +214,19 @@ Argon2id result is stored. The password cannot authenticate until both manual
 approval gates have passed. Admin-created customers without a password retain
 the 30-minute setup-link and TOTP fallback flow.
 
-The rollout order is mandatory:
+The Core administration rollout order is mandatory:
 
 1. Back up Render PostgreSQL, record SHA-256, restore it into an isolated
    PostgreSQL 17 database, and assert business row counts and invariants.
-2. Review and apply `migrations-postgres/0004_admin_auth.sql` with the guarded
-   `server-go/cmd/postgres-migrate` command, then verify the migration record,
-   five Admin tables, constraints, and unchanged business row counts.
-3. Configure the Admin and customer authentication secrets and
-   `CUSTOMER_PORTAL_BASE_URL` without exposing their values.
-4. Deploy the Go API and D1-free web Worker separately; assert
-   the response body and customer data scope at each boundary.
+2. Review and apply the pending Prisma migrations with `prisma migrate deploy`,
+   then run `bootstrap:production` with the confirmed Admin email. Verify quoted
+   Core tables, the organization/Admin mapping, imported customer IDs, and
+   unchanged lowercase Go business-table row counts.
+3. Configure `CORE_EDGE_SHARED_SECRET` independently on `neobank-core` and
+   `neobank-web`; set `CORE_EDGE_AUTH_REQUIRED=true` on Core.
+4. Deploy and validate `neobank-core` before deploying the D1-free web Worker.
+   An unsigned direct Core request must fail, while a logged-in Admin request
+   through `/api/core/*` must return tenant-scoped data.
 5. Submit a public application with email and password through
    `POST /api/auth/customer/register`, or create a pending customer through
    `POST /api/v1/admin/customers`. Public registration stores only the password

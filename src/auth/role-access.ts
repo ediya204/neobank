@@ -1,4 +1,7 @@
-import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
+import {
+  IS_FULL_ADMIN_WALLET_DEPLOYMENT,
+  IS_ISOLATED_WALLET_DEPLOYMENT,
+} from 'src/config/deployment-mode';
 import { AuthRole, AuthSessionUser } from './types';
 import { hasPortalPermission } from './permissions';
 
@@ -178,8 +181,9 @@ export function safeReturnTo(
   const requiredRole = requiredRoleForPath(canonicalUrl.pathname);
 
   if (requiredRole && requiredRole !== role) return fallback;
-  if (IS_ISOLATED_WALLET_DEPLOYMENT) {
+  if (IS_ISOLATED_WALLET_DEPLOYMENT || IS_FULL_ADMIN_WALLET_DEPLOYMENT) {
     if (
+      IS_ISOLATED_WALLET_DEPLOYMENT &&
       role === 'admin' &&
       canonicalUrl.pathname !== '/admin' &&
       canonicalUrl.pathname !== '/admin/neobank-crypto'

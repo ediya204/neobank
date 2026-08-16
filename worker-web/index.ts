@@ -126,8 +126,124 @@ async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<R
   return new Response(response.body, { status: response.status, headers: responseHeaders });
 }
 
+type AdminSessionPayload = {
+  csrf_token?: unknown;
+  user?: { email?: unknown; role?: unknown };
+};
+
+function constantTimeTextEqual(left: string, right: string): boolean {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  let mismatch = leftBytes.length ^ rightBytes.length;
+  const length = Math.max(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < length; index += 1) {
+    mismatch |= (leftBytes[index] || 0) ^ (rightBytes[index] || 0);
+  }
+  return mismatch === 0;
+}
+
+async function loadAdminSession(request: Request, env: Env): Promise<AdminSessionPayload | null> {
+  const upstreamOrigin = new URL(env.GO_API_BASE_URL);
+  if (upstreamOrigin.protocol !== 'https:' || upstreamOrigin.pathname !== '/') {
+    throw new Error('GO_API_BASE_URL must be an HTTPS origin');
+  }
+  const upstream = new URL('/api/auth/me', upstreamOrigin);
+  const bodyHashHex = Array.from(
+    new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array()))
+  )
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const edgeUser = 'application-session-edge';
+  const canonical = [timestamp, 'GET', '/api/auth/me', edgeUser, bodyHashHex].join('\n');
+  const signature = await hmacHex(env.GO_EDGE_SHARED_SECRET, canonical);
+  const headers = new Headers({
+    accept: 'application/json',
+    'x-neobank-user': edgeUser,
+    'x-neobank-edge-timestamp': timestamp,
+    'x-neobank-edge-signature': signature,
+  });
+  const cookie = request.headers.get('cookie');
+  if (cookie) headers.set('cookie', cookie);
+  const response = await fetch(upstream, { headers, redirect: 'manual' });
+  if (!response.ok) return null;
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.toLowerCase().includes('application/json')) return null;
+  return (await response.json()) as AdminSessionPayload;
+}
+
+async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
+  const contentLength = Number(request.headers.get('content-length') || '0');
+  if (contentLength > MAX_BODY_BYTES) return json({ error: { code: 'payload_too_large' } }, 413);
+  const body = await request.arrayBuffer();
+  if (body.byteLength > MAX_BODY_BYTES) return json({ error: { code: 'payload_too_large' } }, 413);
+
+  const session = await loadAdminSession(request, env);
+  const email = typeof session?.user?.email === 'string' ? session.user.email : '';
+  if (session?.user?.role !== 'admin' || !email) {
+    return json({ error: { code: 'authentication_required' } }, 401);
+  }
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+    const expected = typeof session.csrf_token === 'string' ? session.csrf_token : '';
+    const provided = request.headers.get('x-csrf-token') || '';
+    if (!expected || !provided || !constantTimeTextEqual(expected, provided)) {
+      return json({ error: { code: 'invalid_csrf_token' } }, 403);
+    }
+  }
+
+  const incoming = new URL(request.url);
+  const upstreamOrigin = new URL(env.CORE_API_BASE_URL);
+  if (upstreamOrigin.protocol !== 'https:' || upstreamOrigin.pathname !== '/') {
+    throw new Error('CORE_API_BASE_URL must be an HTTPS origin');
+  }
+  const corePath = incoming.pathname.replace(/^\/api\/core(?=\/|$)/, '/api/v1');
+  const upstream = new URL(corePath + incoming.search, upstreamOrigin);
+  const bodyHashHex = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', body)))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const canonical = [
+    timestamp,
+    request.method,
+    corePath + incoming.search,
+    email,
+    bodyHashHex,
+  ].join('\n');
+  const signature = await hmacHex(env.CORE_EDGE_SHARED_SECRET, canonical);
+  const headers = new Headers({
+    accept: 'application/json',
+    'x-neobank-user': email,
+    'x-core-edge-timestamp': timestamp,
+    'x-core-edge-signature': signature,
+  });
+  const contentType = request.headers.get('content-type');
+  if (contentType) headers.set('content-type', contentType);
+  const idempotencyKey = request.headers.get('idempotency-key');
+  if (idempotencyKey) headers.set('idempotency-key', idempotencyKey);
+  const response = await fetch(upstream, {
+    method: request.method,
+    headers,
+    body: request.method === 'GET' || request.method === 'HEAD' ? undefined : body,
+    redirect: 'manual',
+  });
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(`Core API redirect rejected (${response.status})`);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      'cache-control': 'no-store',
+      'content-type': response.headers.get('content-type') || 'application/json',
+    },
+  });
+}
+
 function isApplicationAPI(pathname: string) {
-  return pathname.startsWith('/api/auth/') || pathname.startsWith('/api/v1/');
+  return (
+    pathname.startsWith('/api/auth/') ||
+    pathname.startsWith('/api/v1/') ||
+    pathname.startsWith('/api/core/')
+  );
 }
 
 function customerAPIInMaintenance(env: Env): boolean {
@@ -164,6 +280,9 @@ export default {
         }
         if (!hasValidMutationOrigin(request)) {
           return json({ error: { code: 'invalid_origin' } }, 403);
+        }
+        if (url.pathname.startsWith('/api/core/')) {
+          return await proxyCoreAPI(request, env);
         }
         return await proxyAPI(request, env, 'application-session-edge');
       }

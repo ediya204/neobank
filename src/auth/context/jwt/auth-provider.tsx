@@ -14,7 +14,7 @@ import {
   getCsrfToken,
   setCsrfToken,
 } from 'src/auth/csrf-token';
-import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
+import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import { AuthContext } from './auth-context';
 import {
   AuthApiError,
@@ -55,7 +55,7 @@ const initialState: State = {
 
 function localDemoUser(): AuthSessionUser | null {
   if (
-    IS_ISOLATED_WALLET_DEPLOYMENT ||
+    IS_NEOBANK_DEPLOYMENT ||
     process.env.NODE_ENV !== 'development' ||
     process.env.REACT_APP_LOCAL_DEMO !== 'true'
   ) {

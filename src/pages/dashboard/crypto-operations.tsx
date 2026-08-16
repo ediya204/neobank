@@ -28,13 +28,14 @@ import {
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
-import { IS_ISOLATED_WALLET_DEPLOYMENT } from 'src/config/deployment-mode';
+import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import {
   coreApi,
   CryptoTransfer,
   Customer,
   demoOrganizationId,
   demoUsers,
+  neobankApi,
 } from 'src/features/finance/core-api';
 
 type CregisHistoryRow = {
@@ -182,7 +183,7 @@ export default function CryptoOperationsAdmin() {
   const load = useCallback(async () => {
     setError('');
     try {
-      if (!IS_ISOLATED_WALLET_DEPLOYMENT) {
+      if (!IS_NEOBANK_DEPLOYMENT) {
         const localCustomers = await coreApi<Customer[]>(
           `/customers?organizationId=${demoOrganizationId}`,
           { userId }
@@ -204,8 +205,8 @@ export default function CryptoOperationsAdmin() {
       }
 
       const [history, customerPayload] = await Promise.all([
-        coreApi<{ withdrawals: CregisHistoryRow[] }>('/crypto/history', { userId }),
-        coreApi<{ data: AdminCustomer[] }>('/admin/customers', { userId }),
+        neobankApi<{ withdrawals: CregisHistoryRow[] }>('/crypto/history', { userId }),
+        neobankApi<{ data: AdminCustomer[] }>('/admin/customers', { userId }),
       ]);
       setRows(
         history.withdrawals
@@ -237,7 +238,7 @@ export default function CryptoOperationsAdmin() {
       let body: string | undefined;
       if (action === 'reject') body = JSON.stringify({ reason });
 
-      if (!IS_ISOLATED_WALLET_DEPLOYMENT) {
+      if (!IS_NEOBANK_DEPLOYMENT) {
         if (action === 'execute') {
           const txHash = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
             .map((byte) => byte.toString(16).padStart(2, '0'))
@@ -259,7 +260,7 @@ export default function CryptoOperationsAdmin() {
         return;
       }
 
-      await coreApi(`/crypto/withdrawals/${selected.id}/${action}`, {
+      await neobankApi(`/crypto/withdrawals/${selected.id}/${action}`, {
         method: 'POST',
         body,
         userId,
@@ -281,7 +282,7 @@ export default function CryptoOperationsAdmin() {
     setProvisioning(true);
     setError('');
     try {
-      await coreApi<AdminCustomer>('/admin/customers', {
+      await neobankApi<AdminCustomer>('/admin/customers', {
         method: 'POST',
         body: JSON.stringify({ email: customerEmail, display_name: customerName }),
         userId,
@@ -304,7 +305,7 @@ export default function CryptoOperationsAdmin() {
     setCustomerActionId(customer.id);
     setError('');
     try {
-      await coreApi<AdminCustomer>(`/admin/customers/${customer.id}/kyc`, {
+      await neobankApi<AdminCustomer>(`/admin/customers/${customer.id}/kyc`, {
         method: 'PATCH',
         body: JSON.stringify({
           decision,
@@ -326,7 +327,7 @@ export default function CryptoOperationsAdmin() {
     setCustomerActionId(customer.id);
     setError('');
     try {
-      const result = await coreApi<AdminCustomerActivation>(
+      const result = await neobankApi<AdminCustomerActivation>(
         `/admin/customers/${customer.id}/activate`,
         { method: 'PATCH', body: JSON.stringify({}), userId }
       );
@@ -351,7 +352,7 @@ export default function CryptoOperationsAdmin() {
     setCustomerActionId(customer.id);
     setError('');
     try {
-      const wallet = await coreApi<{ id: string; address: string; currency: string }>(
+      const wallet = await neobankApi<{ id: string; address: string; currency: string }>(
         '/crypto/wallets',
         {
           method: 'POST',
@@ -376,7 +377,7 @@ export default function CryptoOperationsAdmin() {
     <>
       <Helmet>
         <title>
-          {IS_ISOLATED_WALLET_DEPLOYMENT
+          {IS_NEOBANK_DEPLOYMENT
             ? '数字钱包审批 | SCC Digital Bank'
             : '数字钱包复核 | SCC Digital Bank'}
         </title>
@@ -386,15 +387,15 @@ export default function CryptoOperationsAdmin() {
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={2}>
             <Box>
               <Typography variant="h4">
-                {IS_ISOLATED_WALLET_DEPLOYMENT ? '数字钱包审批' : '数字钱包复核'}
+                {IS_NEOBANK_DEPLOYMENT ? '数字钱包审批' : '数字钱包复核'}
               </Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                {IS_ISOLATED_WALLET_DEPLOYMENT
+                {IS_NEOBANK_DEPLOYMENT
                   ? '单人审批 USDT 付币指令，并在人工执行后登记链上交易哈希。'
                   : '复核本地 USDT 付币指令，并在模拟通道执行后登记交易哈希。'}
               </Typography>
             </Box>
-            {process.env.NODE_ENV === 'development' && !IS_ISOLATED_WALLET_DEPLOYMENT && (
+            {process.env.NODE_ENV === 'development' && !IS_NEOBANK_DEPLOYMENT && (
               <FormControl size="small" sx={{ minWidth: 190 }}>
                 <InputLabel>本地演示身份</InputLabel>
                 <Select
@@ -410,7 +411,7 @@ export default function CryptoOperationsAdmin() {
                 </Select>
               </FormControl>
             )}
-            {IS_ISOLATED_WALLET_DEPLOYMENT && (
+            {IS_NEOBANK_DEPLOYMENT && (
               <Button
                 variant="contained"
                 startIcon={<Iconify icon="solar:user-plus-bold-duotone" />}
@@ -431,7 +432,7 @@ export default function CryptoOperationsAdmin() {
             </Alert>
           )}
           <Alert severity="info">
-            {IS_ISOLATED_WALLET_DEPLOYMENT
+            {IS_NEOBANK_DEPLOYMENT
               ? '当前为单人审批模式：审批只改变内部状态；只有再次点击“提交至 Cregis”才会发起 API 请求，最终结果与 TXID 以 Cregis 签名通知为准。'
               : '本地完整模式保留提交人与复核人分离；执行步骤仅生成测试交易哈希，不会发起真实链上转账。'}
           </Alert>
@@ -520,18 +521,18 @@ export default function CryptoOperationsAdmin() {
                 <Button
                   fullWidth
                   variant="contained"
-                  disabled={!IS_ISOLATED_WALLET_DEPLOYMENT && selected.maker?.id === userId}
+                  disabled={!IS_NEOBANK_DEPLOYMENT && selected.maker?.id === userId}
                   onClick={() => perform('approve').catch(() => undefined)}
                 >
-                  {IS_ISOLATED_WALLET_DEPLOYMENT ? '审批通过' : '复核通过'}
+                  {IS_NEOBANK_DEPLOYMENT ? '审批通过' : '复核通过'}
                 </Button>
               </Stack>
             )}
-            {(IS_ISOLATED_WALLET_DEPLOYMENT
+            {(IS_NEOBANK_DEPLOYMENT
               ? selected.rawStatus === 'approved'
               : selected.status === 'PROCESSING') && (
               <Button variant="contained" onClick={() => perform('execute').catch(() => undefined)}>
-                {IS_ISOLATED_WALLET_DEPLOYMENT ? '提交至 Cregis' : '模拟通道执行并回填 TXID'}
+                {IS_NEOBANK_DEPLOYMENT ? '提交至 Cregis' : '模拟通道执行并回填 TXID'}
               </Button>
             )}
           </Stack>
@@ -563,7 +564,7 @@ export default function CryptoOperationsAdmin() {
         </DialogActions>
       </Dialog>
       <Dialog
-        open={IS_ISOLATED_WALLET_DEPLOYMENT && provisionOpen}
+        open={IS_NEOBANK_DEPLOYMENT && provisionOpen}
         onClose={() => setProvisionOpen(false)}
         fullWidth
         maxWidth="lg"
