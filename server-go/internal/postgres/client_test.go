@@ -18,6 +18,26 @@ func TestPostgresSQLRebindsParametersWithoutChangingQuotedQuestionMarks(t *testi
 	}
 }
 
+func TestPostgresSQLClassifiesQueriesAcrossWhitespace(t *testing.T) {
+	tests := []struct {
+		name  string
+		sql   string
+		query bool
+	}{
+		{name: "select newline", sql: "SELECT\nvalue FROM test", query: true},
+		{name: "with newline", sql: "WITH\nvalues AS (SELECT 1) SELECT * FROM values", query: true},
+		{name: "update", sql: "UPDATE test SET value=?", query: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, query := postgresSQL(test.sql)
+			if query != test.query {
+				t.Fatalf("query classification = %t, want %t", query, test.query)
+			}
+		})
+	}
+}
+
 func TestPostgresSQLConvertsInsertOrIgnore(t *testing.T) {
 	sql, query := postgresSQL("INSERT OR IGNORE INTO test (id, value) VALUES (?, ?)")
 	if query {

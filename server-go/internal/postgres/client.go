@@ -173,7 +173,8 @@ func collectRows(rows pgx.Rows) ([]map[string]any, error) {
 func postgresSQL(raw string) (string, bool) {
 	sql := strings.TrimSpace(raw)
 	upper := strings.ToUpper(sql)
-	query := strings.HasPrefix(upper, "SELECT ") || strings.HasPrefix(upper, "WITH ")
+	fields := strings.Fields(upper)
+	query := len(fields) > 0 && (fields[0] == "SELECT" || fields[0] == "WITH")
 	if strings.HasPrefix(upper, "INSERT OR IGNORE INTO ") {
 		sql = "INSERT INTO " + strings.TrimSpace(sql[len("INSERT OR IGNORE INTO "):])
 		sql += " ON CONFLICT DO NOTHING"
