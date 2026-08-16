@@ -487,20 +487,22 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
               </Typography>
             </Box>
             <Stack direction="row" gap={1.5} alignItems="center">
-              <FormControl size="small" sx={{ minWidth: 180 }}>
-                <InputLabel>本地演示身份</InputLabel>
-                <Select
-                  label="本地演示身份"
-                  value={userId}
-                  onChange={(event) => setUserId(event.target.value)}
-                >
-                  {demoUsers.map((user) => (
-                    <MenuItem key={user.id} value={user.id}>
-                      {user.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              {!IS_NEOBANK_DEPLOYMENT && (
+                <FormControl size="small" sx={{ minWidth: 180 }}>
+                  <InputLabel>本地演示身份</InputLabel>
+                  <Select
+                    label="本地演示身份"
+                    value={userId}
+                    onChange={(event) => setUserId(event.target.value)}
+                  >
+                    {demoUsers.map((user) => (
+                      <MenuItem key={user.id} value={user.id}>
+                        {user.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
               {copy.type && (
                 <Button
                   variant="contained"
