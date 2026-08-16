@@ -87,6 +87,8 @@ type AdminCustomer = {
   kyc_consent_at?: string;
   terms_accepted_at?: string;
   application_submitted_at?: string;
+  wallet_count?: number;
+  wallet_status?: string | null;
 };
 
 type AdminCustomerActivation = AdminCustomer & {
@@ -98,6 +100,10 @@ type AdminCustomerActivation = AdminCustomer & {
     address: string;
     currency: string;
   };
+  wallet_provisioning?: {
+    status: 'retry_required';
+    error_code: string;
+  };
 };
 
 function normalizedCregisStatus(status: string): CryptoTransfer['status'] {
@@ -106,6 +112,12 @@ function normalizedCregisStatus(status: string): CryptoTransfer['status'] {
   if (status === 'rejected') return 'REJECTED';
   if (['failed', 'exception', 'cancelled'].includes(status)) return 'FAILED';
   return 'PROCESSING';
+}
+
+function automaticWalletStatusLabel(customer: AdminCustomer) {
+  if (customer.wallet_status === 'active') return '已自动激活，钱包已启用';
+  if (customer.wallet_status === 'error') return '已自动激活，钱包待重试';
+  return '已自动激活，钱包生成中';
 }
 
 function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
@@ -320,11 +332,13 @@ export default function CryptoOperationsAdmin() {
           setCreatedWallet({ ...result.wallet, customerId: customer.id });
         }
       }
-      setSuccess(
-        decision === 'approve'
+      let reviewMessage = 'KYC 已拒绝并记录原因。';
+      if (decision === 'approve') {
+        reviewMessage = result.wallet
           ? 'KYC 已批准；客户已自动激活，USDT-TRC20 钱包已创建并通过 Cregis 归属验证。'
-          : 'KYC 已拒绝并记录原因。'
-      );
+          : 'KYC 已批准且客户已自动激活；钱包生成失败，已标记为待重试。';
+      }
+      setSuccess(reviewMessage);
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : 'KYC 审核失败');
@@ -618,7 +632,7 @@ export default function CryptoOperationsAdmin() {
                                     reviewCustomerKyc(customer, 'approve').catch(() => undefined)
                                   }
                                 >
-                                  KYC 通过
+                                  {busy ? '处理中…' : 'KYC 通过'}
                                 </Button>
                                 <Button
                                   size="small"
@@ -629,14 +643,14 @@ export default function CryptoOperationsAdmin() {
                                     reviewCustomerKyc(customer, 'reject').catch(() => undefined)
                                   }
                                 >
-                                  KYC 拒绝
+                                  {busy ? '处理中…' : 'KYC 拒绝'}
                                 </Button>
                               </>
                             )}
                             {customer.kyc_status === 'approved' &&
                               customer.operations_status === 'active' && (
                                 <Typography variant="caption" color="success.main">
-                                  已自动激活并生成钱包
+                                  {automaticWalletStatusLabel(customer)}
                                 </Typography>
                               )}
                             {customer.operations_status === 'active' &&

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -11,7 +12,9 @@ func TestAdminCustomerViewNeverSelectsCredentialMaterial(t *testing.T) {
 			t.Fatalf("admin customer response must not include %q: %s", prohibited, adminCustomerFields)
 		}
 	}
-	for _, required := range []string{"kyc_status", "operations_status", "kyc_reviewed_by", "activated_by"} {
+	for _, required := range []string{
+		"kyc_status", "operations_status", "kyc_reviewed_by", "activated_by", "wallet_count", "wallet_status",
+	} {
 		if !strings.Contains(adminCustomerFields, required) {
 			t.Fatalf("admin customer response must include %q", required)
 		}
@@ -36,6 +39,23 @@ func TestKYCApprovalAutomaticallyActivatesCustomerBeforeWalletProvisioning(t *te
 	}
 	if !safeIdentifier.MatchString(automaticWalletIdempotency("customer_123")) {
 		t.Fatal("automatic wallet idempotency must satisfy the public wallet API contract")
+	}
+}
+
+func TestKYCApprovalReportsWalletRetryWithoutReversingApproval(t *testing.T) {
+	metadata := walletProvisioningRetryMetadata(&walletProvisionError{
+		status: 502,
+		code:   "cregis_address_ownership_verification_failed",
+		cause:  errors.New("internal cause"),
+	})
+	if metadata["status"] != "retry_required" {
+		t.Fatalf("wallet provisioning status = %q", metadata["status"])
+	}
+	if metadata["error_code"] != "cregis_address_ownership_verification_failed" {
+		t.Fatalf("wallet provisioning error code = %q", metadata["error_code"])
+	}
+	if _, exposed := metadata["cause"]; exposed {
+		t.Fatal("wallet provisioning metadata must not expose the internal cause")
 	}
 }
 

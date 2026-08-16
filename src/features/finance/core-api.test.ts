@@ -1,3 +1,4 @@
+import { AUTH_SESSION_EXPIRED_EVENT } from 'src/auth/csrf-token';
 import { coreApi, neobankApi } from './core-api';
 
 function response(input: {
@@ -52,5 +53,22 @@ describe('coreApi response validation', () => {
       '/api/v1/admin/customers',
       expect.objectContaining({ credentials: 'include', cache: 'no-store' })
     );
+  });
+
+  it('notifies the auth guard when an authenticated API session expires', async () => {
+    const listener = jest.fn();
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, listener);
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      response({
+        ok: false,
+        status: 401,
+        payload: { error: { code: 'session_expired' } },
+      })
+    );
+
+    await expect(neobankApi('/admin/customers')).rejects.toThrow('session_expired');
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, listener);
   });
 });
