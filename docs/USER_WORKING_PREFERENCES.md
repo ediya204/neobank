@@ -13,6 +13,10 @@ These preferences summarize how to collaborate effectively on this project.
   tenant isolation, and real state transitions. HTTP status alone is insufficient.
 - Preserve unrelated dirty work. Make minimal scoped patches and provide focused
   verification evidence.
+- Do not bring D1 into implementation or planning. Use Render PostgreSQL only;
+  never present D1 as an option, comparison, fallback, test target, deployment
+  step, or migration path unless the user explicitly reverses
+  `docs/DATASTORE_POLICY.md`.
 - For financial work, preserve pending, cleared, and exception/reconciliation
   meaning. Never turn an administrator's entry into final settlement implicitly.
 - Keep bank and wallet actions manually confirmed and auditable.

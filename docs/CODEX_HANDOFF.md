@@ -1,12 +1,21 @@
 # Codex travel handoff
 
-Updated: 2 August 2026 (Asia/Hong_Kong)
+Updated: 19 August 2026 (Asia/Hong_Kong)
+
+## Mandatory datastore direction
+
+Read `docs/DATASTORE_POLICY.md` first. Render PostgreSQL is the only datastore in
+scope. D1 must not be considered in new code, planning, alternatives, fallbacks,
+local development, tests, deployments, migrations, reviews, or acceptance. Any D1
+reference remaining in this handoff or elsewhere in the repository is historical
+evidence only and is overridden by that policy.
 
 ## Start here
 
-This private repository is the complete VA API Dashboard, Partner Portal,
-Cloudflare Worker, D1 migration, documentation, and local-test source. Continue
-from `main`; feature-branch names and deployment IDs in older notes are historical.
+This private repository contains the VA API Dashboard, Partner Portal,
+Cloudflare web Worker, Render services, PostgreSQL migrations, documentation, and
+local-test source. Continue from `main`; feature-branch names and deployment IDs
+in older notes are historical.
 
 On a new computer:
 
@@ -16,15 +25,12 @@ cd neobank
 nvm install
 nvm use
 npm ci
-npm run local:bootstrap
-npm run cf:dev:local
+npm run local:core:bootstrap
+npm run dev
 ```
 
-In a second terminal, run `npm run local:auth:link` and
-`npm run local:auth:partner-link`, then enroll separate local-only Admin and
-Partner passwords and TOTP authenticators from the generated links. Follow
-`docs/LOCAL_DEVELOPMENT.md`. Never copy production secrets or local D1 files to
-the new computer.
+Follow `docs/LOCAL_FULL_STACK.md`. Never copy production secrets, databases, or
+local state to the new computer.
 
 Suggested first prompt to Codex:
 
@@ -37,8 +43,9 @@ Suggested first prompt to Codex:
 - Node is pinned by `.nvmrc`; npm and engine expectations are declared in
   `package.json`.
 - `npm ci` uses the committed `package-lock.json`.
-- `npm run local:bootstrap` creates missing local-only auth secrets, applies all
-  migrations to local D1, and installs idempotent synthetic demo data.
+- Use the PostgreSQL-only local full-stack procedure in
+  `docs/LOCAL_FULL_STACK.md`. Do not use D1-backed bootstrap, migration, seed, or
+  test paths for current development.
 - `.dev.vars`, `.local-auth`, `.wrangler`, build output, database exports, and
   `.learnings` remain excluded from Git. Keep temporary screenshots outside the
   repository unless they are intentionally reviewed product assets.
@@ -49,7 +56,7 @@ Suggested first prompt to Codex:
 The source includes:
 
 - Partner API V1.3 read-only USDT sweep reconciliation with pagination, detail,
-  tenant isolation, completed transaction-history entries, and hardened D1 state
+  tenant isolation, completed transaction-history entries, and hardened state
   guards.
 - Precise Webhook signature documentation and reconciliation guidance.
 - Optional VA-account IBAN alongside the existing account number.
@@ -66,24 +73,12 @@ Partner roles cannot perform settlement, ledger posting, withdrawal, manual OTC,
 or USDT sweep operations. Those financial boundaries remain administrator-controlled
 and manually confirmed.
 
-## Migration order
+## Database migrations
 
-Wrangler records the complete migration filename. Preserve the two already
-established `0018` filenames and apply new migrations in this order:
-
-1. `0019_va_account_optional_iban.sql`
-2. `0020_portal_team_rbac.sql`
-3. `0021_auth_challenge_credential_version.sql`
-4. `0022_sweep_tenant_and_state_guards.sql`
-5. `0023_portal_role_mutation_guard.sql`
-6. `0024_partner_customer_id.sql`
-7. `0025_managed_webhook_signing_keys.sql`
-8. `0026_va_application_changes_requested.sql`
-
-Before any remote migration, make a complete D1 export, record its checksum,
-restore it separately, verify integrity and table counts, then run the financial
-invariant preflight. Apply migrations before deploying Worker code that depends
-on the new schema.
+For current database changes, use PostgreSQL migrations only. Before any
+production PostgreSQL migration, make a complete backup, record its checksum,
+restore-test it separately, verify integrity and business row counts, obtain
+manual approval, then perform an auditable post-check.
 
 ## Validation expectations
 
@@ -95,21 +90,24 @@ npm run i18n:check
 npm run docs:check
 npm run webhook-security:check
 npm run accounting:check
-npm run auth:smoke
-bash scripts/portal-team-rbac-check.sh
-npm run db:preflight:remote
-npm run cf:deploy:dry-run
+npm run api:test
+npm run api:build
+npm run local:core:check
+npm run neobank:profile:check
+npm run neobank:typecheck
+npm run neobank:deploy:dry-run
 ```
 
-Then verify a fresh clone with `npm ci` and `npm run local:bootstrap`. Cloudflare
-Access redirects or HTTP 200/403 responses prove only the transport/protection
-layer; business acceptance still requires authenticated response fields, tenant
-isolation, and state-transition assertions.
+Then verify a fresh clone with `npm ci`, `npm run local:core:bootstrap`, and the
+PostgreSQL-only checks relevant to the change. Cloudflare Access redirects or HTTP
+200/403 responses prove only the transport/protection layer; business acceptance
+still requires authenticated response fields, tenant isolation, and
+state-transition assertions.
 
 ## Live-state rule
 
 This document intentionally does not pin a Worker version or claim that production
-is current. After cloning, verify `origin/main`, `wrangler whoami`, remote pending
-migrations, the deployed Worker version, and live endpoints. The release task's
-final report is the dated evidence for the publication and deployment performed on
-2 August 2026.
+is current. After cloning, verify `origin/main`, Render service and PostgreSQL
+migration state, `wrangler whoami`, the deployed web Worker version, and live
+endpoints. A dated release report is evidence only for the exact publication and
+deployment it verifies.

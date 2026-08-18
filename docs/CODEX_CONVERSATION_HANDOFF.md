@@ -4,6 +4,13 @@ This is a privacy-reduced summary of important conversations, not a raw transcri
 It preserves decisions and task identifiers without copying credentials, customer
 records, temporary links, local database contents, or internal tool output.
 
+## Current datastore instruction
+
+Render PostgreSQL is the only datastore in scope. D1 references below are
+historical context only and must never be used to propose, plan, implement, test,
+deploy, or review current work. `docs/DATASTORE_POLICY.md` overrides every older
+D1-related note in this history.
+
 ## Core product direction
 
 - Initial VA planning established a manually controlled lifecycle: create an

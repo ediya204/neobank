@@ -52,7 +52,12 @@ that the assumption no longer applies.
 
 ## Security and operations
 
-- Render PostgreSQL is the authoritative business datastore. D1-backed Worker code is legacy and must not be selected for new durable features unless the user explicitly restores it to scope.
+- Render PostgreSQL is the only authoritative and supported business datastore.
+  D1 is completely out of scope for new or changed work: do not consider it in
+  code, architecture, comparisons, plans, fallbacks, tests, deployments,
+  migrations, reviews, or acceptance. Existing D1 material is historical evidence
+  only. Follow `docs/DATASTORE_POLICY.md`; only a new explicit user instruction
+  specifically reversing that policy may change this decision.
 - Partner machine authentication and human Portal authentication are separate
   trust boundaries.
 - Cloudflare Access redirects or denials prove only the edge behavior tested; they
@@ -61,7 +66,8 @@ that the assumption no longer applies.
   time, not only when the endpoint is approved.
 - Financial and migration operations must be recoverable and auditable: inspect,
   back up, checksum, restore-test, approve, execute, and verify.
-- GitHub push, Worker deployment, and D1 migration are three separate operations.
+- GitHub push, Cloudflare web deployment, Render deployment, and PostgreSQL
+  migration are separate operations.
 
 ## Documentation
 

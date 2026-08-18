@@ -53,6 +53,7 @@ export const paths = {
       root: `${DASHBOARD_ROOT}/customers`,
       details: (id: string) => `${DASHBOARD_ROOT}/customers/${id}`,
     },
+    customerDemo: (variant: string) => `${DASHBOARD_ROOT}/customers/demo/${variant}`,
     onboarding: `${DASHBOARD_ROOT}/onboarding`,
     fundOperations: {
       reconciliation: `${DASHBOARD_ROOT}/operations/reconciliation`,
