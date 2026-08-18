@@ -6,6 +6,8 @@ const baseCustomer = {
   id: 'customer_test',
   organizationId: 'org_test',
   creatorId: 'maker_test',
+  email: 'customer@example.com',
+  displayName: 'Test Customer',
   status: 'PENDING_REVIEW',
   kycStatus: 'PENDING',
 };
@@ -20,7 +22,8 @@ const admin = {
 test('manual KYC approval does not activate a customer or create wallets', async () => {
   let updateData;
   let walletWrites = 0;
-  const database = {
+  let queuedEmail;
+  const transaction = {
     customer: {
       findUnique: async () => baseCustomer,
       updateMany: async ({ data }) => {
@@ -30,14 +33,27 @@ test('manual KYC approval does not activate a customer or create wallets', async
       findUniqueOrThrow: async () => ({ ...baseCustomer, ...updateData, accounts: [] }),
     },
     user: { findUnique: async () => admin },
-    account: { upsert: async () => { walletWrites += 1; } },
+    account: {
+      upsert: async () => {
+        walletWrites += 1;
+      },
+    },
   };
-  const service = new CustomersService(database);
+  const service = new CustomersService(
+    { $transaction: async (operation) => operation(transaction) },
+    {
+      enqueue: async (_tx, input) => {
+        queuedEmail = input;
+      },
+    }
+  );
   const result = await service.reviewKyc('customer_test', 'admin_test', 'APPROVE', 'manual review');
 
   assert.equal(result.status, 'PENDING_REVIEW');
   assert.equal(result.kycStatus, 'APPROVED');
   assert.equal(walletWrites, 0);
+  assert.equal(queuedEmail.templateKey, 'CUSTOMER_KYC_APPROVED');
+  assert.equal(queuedEmail.customerId, 'customer_test');
 });
 
 test('operations approval is blocked until KYC is approved', async () => {
@@ -45,7 +61,11 @@ test('operations approval is blocked until KYC is approved', async () => {
   const transaction = {
     customer: { findUnique: async () => baseCustomer },
     user: { findUnique: async () => admin },
-    account: { upsert: async () => { walletWrites += 1; } },
+    account: {
+      upsert: async () => {
+        walletWrites += 1;
+      },
+    },
   };
   const service = new CustomersService({
     $transaction: async (operation) => operation(transaction),

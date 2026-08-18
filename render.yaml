@@ -77,6 +77,43 @@ services:
         value: neobank
       - key: WEB_ORIGIN
         value: https://portal.sscdigitalbank.com
+      - key: EMAIL_NOTIFICATIONS_ENABLED
+        value: "false"
+  - type: worker
+    name: neobank-email-worker
+    runtime: node
+    rootDir: server
+    region: singapore
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run prisma:generate && npm run build
+    startCommand: npm run start:email-worker
+    autoDeployTrigger: off
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: neobank-postgres
+          property: connectionString
+      - key: EMAIL_NOTIFICATIONS_ENABLED
+        value: "false"
+      - key: EMAIL_WORKER_POLL_INTERVAL_MS
+        value: "5000"
+      - key: PORTAL_BASE_URL
+        value: https://portal.sscdigitalbank.com
+      - key: ZOHO_ACCOUNTS_BASE_URL
+        value: https://accounts.zoho.com
+      - key: ZOHO_MAIL_API_BASE_URL
+        value: https://mail.zoho.com/api
+      - key: ZOHO_OAUTH_CLIENT_ID
+        sync: false
+      - key: ZOHO_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: ZOHO_OAUTH_REFRESH_TOKEN
+        sync: false
+      - key: ZOHO_MAIL_ACCOUNT_ID
+        sync: false
+      - key: ZOHO_MAIL_FROM_ADDRESS
+        sync: false
 
 databases:
   - name: neobank-postgres

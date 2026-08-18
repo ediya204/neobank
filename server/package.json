@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/src/main.js",
+    "start:email-worker": "node dist/src/email/email-worker.js",
     "start:dev": "npm run build && node --watch dist/src/main.js",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "prisma:generate": "prisma generate",

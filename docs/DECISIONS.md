@@ -37,6 +37,7 @@ that the assumption no longer applies.
 
 ## Security and operations
 
+- Render PostgreSQL is the authoritative business datastore. D1-backed Worker code is legacy and must not be selected for new durable features unless the user explicitly restores it to scope.
 - Partner machine authentication and human Portal authentication are separate
   trust boundaries.
 - Cloudflare Access redirects or denials prove only the edge behavior tested; they

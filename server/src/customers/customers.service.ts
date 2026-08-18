@@ -4,11 +4,20 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { BeneficiaryType, Currency, CustomerStatus, CustomerType, Prisma } from '@prisma/client';
+import {
+  BeneficiaryType,
+  Currency,
+  CustomerStatus,
+  CustomerType,
+  EmailTemplateKey,
+  Prisma,
+} from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { requireCustomerAccess, requireOrganizationAccess } from '../common/tenant-access';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailOutboxService } from '../email/email-outbox.service';
 import { syncNeobankCustomers } from './neobank-customer-sync';
 import {
   isSupportedFiatCurrency,
@@ -38,7 +47,10 @@ type CreateCustomerInput = {
 
 @Injectable()
 export class CustomersService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    @Optional() private readonly email?: EmailOutboxService
+  ) {}
 
   async list(organizationId: string, userId: string, status?: CustomerStatus) {
     await requireOrganizationAccess(this.db, userId, organizationId);
@@ -112,44 +124,58 @@ export class CustomersService {
   }
 
   async reviewKyc(id: string, reviewerId: string, decision: 'APPROVE' | 'REJECT', note?: string) {
-    const customer = await this.db.customer.findUnique({ where: { id } });
-    if (!customer) throw new NotFoundException('customer_not_found');
-    const reviewer = await this.requireChecker(this.db, reviewerId);
-    if (reviewer.organizationId !== customer.organizationId) {
-      throw new NotFoundException('customer_not_found');
-    }
-    if (customer.status !== 'PENDING_REVIEW' || customer.kycStatus !== 'PENDING') {
-      throw new ConflictException('customer_not_pending_kyc');
-    }
-    if (customer.creatorId === reviewerId && reviewer.role !== 'ADMIN') {
-      throw new ForbiddenException('admin_required_for_self_approval');
-    }
-    if (decision === 'REJECT' && !note?.trim()) {
-      throw new ConflictException('kyc_rejection_reason_required');
-    }
-    const reviewedAt = new Date();
-    const result = await this.db.customer.updateMany({
-      where: {
-        id,
-        organizationId: customer.organizationId,
-        status: 'PENDING_REVIEW',
-        kycStatus: 'PENDING',
+    return this.db.$transaction(
+      async (tx) => {
+        const customer = await tx.customer.findUnique({ where: { id } });
+        if (!customer) throw new NotFoundException('customer_not_found');
+        const reviewer = await this.requireChecker(tx, reviewerId);
+        if (reviewer.organizationId !== customer.organizationId) {
+          throw new NotFoundException('customer_not_found');
+        }
+        if (customer.status !== 'PENDING_REVIEW' || customer.kycStatus !== 'PENDING') {
+          throw new ConflictException('customer_not_pending_kyc');
+        }
+        if (customer.creatorId === reviewerId && reviewer.role !== 'ADMIN') {
+          throw new ForbiddenException('admin_required_for_self_approval');
+        }
+        if (decision === 'REJECT' && !note?.trim()) {
+          throw new ConflictException('kyc_rejection_reason_required');
+        }
+        const reviewedAt = new Date();
+        const result = await tx.customer.updateMany({
+          where: {
+            id,
+            organizationId: customer.organizationId,
+            status: 'PENDING_REVIEW',
+            kycStatus: 'PENDING',
+          },
+          data: {
+            kycStatus: decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+            kycReviewerId: reviewerId,
+            kycReviewedAt: reviewedAt,
+            kycReviewNote: note?.trim() || null,
+            ...(decision === 'REJECT'
+              ? { status: 'REJECTED', reviewerId, reviewedAt, reviewNote: note?.trim() }
+              : {}),
+          },
+        });
+        if (result.count !== 1) throw new ConflictException('customer_not_pending_kyc');
+        const updated = await tx.customer.findUniqueOrThrow({
+          where: { id },
+          include: { accounts: { where: supportedCustomerAccountWhere } },
+        });
+        await this.enqueueCustomerEmail(
+          tx,
+          customer,
+          decision === 'APPROVE'
+            ? EmailTemplateKey.CUSTOMER_KYC_APPROVED
+            : EmailTemplateKey.CUSTOMER_KYC_REJECTED,
+          `customer:${customer.id}:kyc:${decision.toLowerCase()}`
+        );
+        return updated;
       },
-      data: {
-        kycStatus: decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
-        kycReviewerId: reviewerId,
-        kycReviewedAt: reviewedAt,
-        kycReviewNote: note?.trim() || null,
-        ...(decision === 'REJECT'
-          ? { status: 'REJECTED', reviewerId, reviewedAt, reviewNote: note?.trim() }
-          : {}),
-      },
-    });
-    if (result.count !== 1) throw new ConflictException('customer_not_pending_kyc');
-    return this.db.customer.findUniqueOrThrow({
-      where: { id },
-      include: { accounts: { where: supportedCustomerAccountWhere } },
-    });
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   async approve(id: string, reviewerId: string, note?: string) {
@@ -194,40 +220,54 @@ export class CustomersService {
             network: 'TRON',
           },
         });
-        return tx.customer.update({
+        const activated = await tx.customer.update({
           where: { id },
           data: { status: 'ACTIVE', reviewerId, reviewedAt: new Date(), reviewNote: note },
           include: { accounts: { where: supportedCustomerAccountWhere } },
         });
+        await this.enqueueCustomerEmail(
+          tx,
+          customer,
+          EmailTemplateKey.CUSTOMER_ACTIVATED,
+          `customer:${customer.id}:activated`
+        );
+        return activated;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
   }
 
   async reject(id: string, reviewerId: string, reason: string) {
-    const customer = await this.db.customer.findUnique({ where: { id } });
-    if (!customer) throw new NotFoundException('customer_not_found');
-    const reviewer = await this.requireChecker(this.db, reviewerId);
-    if (reviewer.organizationId !== customer.organizationId) {
-      throw new NotFoundException('customer_not_found');
-    }
-    if (customer.status !== 'PENDING_REVIEW' || customer.kycStatus !== 'APPROVED') {
-      throw new ConflictException('customer_not_pending_operations_review');
-    }
-    if (customer.creatorId === reviewerId && reviewer.role !== 'ADMIN') {
-      throw new ForbiddenException('admin_required_for_self_approval');
-    }
-    const result = await this.db.customer.updateMany({
-      where: {
-        id,
-        organizationId: customer.organizationId,
-        status: 'PENDING_REVIEW',
-        kycStatus: 'APPROVED',
+    return this.db.$transaction(
+      async (tx) => {
+        const customer = await tx.customer.findUnique({ where: { id } });
+        if (!customer) throw new NotFoundException('customer_not_found');
+        const reviewer = await this.requireChecker(tx, reviewerId);
+        if (reviewer.organizationId !== customer.organizationId) {
+          throw new NotFoundException('customer_not_found');
+        }
+        if (customer.status !== 'PENDING_REVIEW' || customer.kycStatus !== 'APPROVED') {
+          throw new ConflictException('customer_not_pending_operations_review');
+        }
+        if (customer.creatorId === reviewerId && reviewer.role !== 'ADMIN') {
+          throw new ForbiddenException('admin_required_for_self_approval');
+        }
+        const result = await tx.customer.updateMany({
+          where: {
+            id,
+            organizationId: customer.organizationId,
+            status: 'PENDING_REVIEW',
+            kycStatus: 'APPROVED',
+          },
+          data: { status: 'REJECTED', reviewerId, reviewedAt: new Date(), reviewNote: reason },
+        });
+        if (result.count !== 1) {
+          throw new ConflictException('customer_not_pending_operations_review');
+        }
+        return tx.customer.findUniqueOrThrow({ where: { id } });
       },
-      data: { status: 'REJECTED', reviewerId, reviewedAt: new Date(), reviewNote: reason },
-    });
-    if (result.count !== 1) throw new ConflictException('customer_not_pending_operations_review');
-    return this.db.customer.findUniqueOrThrow({ where: { id } });
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
   }
 
   async requestVirtualAccount(
@@ -280,7 +320,7 @@ export class CustomersService {
             bankName: '待接入银行通道',
           },
         });
-        return tx.virtualAccountRequest.update({
+        const updated = await tx.virtualAccountRequest.update({
           where: { id },
           data: {
             status: 'APPROVED',
@@ -290,28 +330,66 @@ export class CustomersService {
           },
           include: { assignedAccount: true },
         });
+        await this.enqueueCustomerEmail(
+          tx,
+          request.customer,
+          EmailTemplateKey.VIRTUAL_ACCOUNT_APPROVED,
+          `virtual-account-request:${request.id}:approved`,
+          { currency: request.currency }
+        );
+        return updated;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
   }
 
   async rejectVirtualAccountRequest(id: string, checkerId: string, reason: string) {
-    const request = await this.db.virtualAccountRequest.findUnique({
-      where: { id },
-      include: { customer: { select: { organizationId: true } } },
-    });
-    if (!request) throw new NotFoundException('virtual_account_request_not_found');
-    const checker = await this.requireChecker(this.db, checkerId);
-    if (checker.organizationId !== request.customer.organizationId) {
-      throw new NotFoundException('virtual_account_request_not_found');
-    }
-    if (request.status !== 'SUBMITTED') throw new ConflictException('request_not_pending');
-    if (request.makerId === checkerId && checker.role !== 'ADMIN') {
-      throw new ForbiddenException('admin_required_for_self_approval');
-    }
-    return this.db.virtualAccountRequest.update({
-      where: { id },
-      data: { status: 'REJECTED', checkerId, reviewedAt: new Date(), rejectionReason: reason },
+    return this.db.$transaction(
+      async (tx) => {
+        const request = await tx.virtualAccountRequest.findUnique({
+          where: { id },
+          include: { customer: true },
+        });
+        if (!request) throw new NotFoundException('virtual_account_request_not_found');
+        const checker = await this.requireChecker(tx, checkerId);
+        if (checker.organizationId !== request.customer.organizationId) {
+          throw new NotFoundException('virtual_account_request_not_found');
+        }
+        if (request.status !== 'SUBMITTED') throw new ConflictException('request_not_pending');
+        if (request.makerId === checkerId && checker.role !== 'ADMIN') {
+          throw new ForbiddenException('admin_required_for_self_approval');
+        }
+        const updated = await tx.virtualAccountRequest.update({
+          where: { id },
+          data: { status: 'REJECTED', checkerId, reviewedAt: new Date(), rejectionReason: reason },
+        });
+        await this.enqueueCustomerEmail(
+          tx,
+          request.customer,
+          EmailTemplateKey.VIRTUAL_ACCOUNT_REJECTED,
+          `virtual-account-request:${request.id}:rejected`,
+          { currency: request.currency }
+        );
+        return updated;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  }
+
+  private async enqueueCustomerEmail(
+    tx: Prisma.TransactionClient,
+    customer: { id: string; organizationId: string; email: string; displayName: string },
+    templateKey: EmailTemplateKey,
+    dedupeKey: string,
+    payload?: Record<string, string>
+  ) {
+    await this.email?.enqueue(tx, {
+      organizationId: customer.organizationId,
+      customerId: customer.id,
+      dedupeKey,
+      templateKey,
+      recipient: customer.email,
+      payload: { displayName: customer.displayName, ...payload },
     });
   }
 

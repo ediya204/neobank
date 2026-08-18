@@ -10,11 +10,13 @@ import { BeneficiariesModule } from './beneficiaries/beneficiaries.module';
 import { RatesModule } from './rates/rates.module';
 import { CryptoWalletsModule } from './crypto-wallets/crypto-wallets.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    EmailModule,
     CustomersModule,
     ChannelsModule,
     BeneficiariesModule,

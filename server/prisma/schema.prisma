@@ -139,15 +139,31 @@ enum BeneficiaryType {
   CRYPTO
 }
 
+enum EmailDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  DEAD
+}
+
+enum EmailTemplateKey {
+  CUSTOMER_KYC_APPROVED
+  CUSTOMER_KYC_REJECTED
+  CUSTOMER_ACTIVATED
+  VIRTUAL_ACCOUNT_APPROVED
+  VIRTUAL_ACCOUNT_REJECTED
+}
+
 model Organization {
-  id        String           @id @default(uuid())
-  name      String
-  slug      String           @unique
-  users     User[]
-  customers Customer[]
-  channels  FundingChannel[]
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  id          String           @id @default(uuid())
+  name        String
+  slug        String           @unique
+  users       User[]
+  customers   Customer[]
+  channels    FundingChannel[]
+  emailOutbox EmailOutbox[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 }
 
 model FundingChannel {
@@ -232,6 +248,7 @@ model Customer {
   vaRequests               VirtualAccountRequest[]
   cryptoWallets            CryptoWallet[]
   cryptoTransfers          CryptoTransfer[]
+  emailOutbox              EmailOutbox[]
   createdAt                DateTime                @default(now())
   updatedAt                DateTime                @updatedAt
 
@@ -470,4 +487,31 @@ model RateVersion {
   createdAt      DateTime    @default(now())
 
   @@index([type, baseCurrency, quoteCurrency, active, effectiveFrom])
+}
+
+model EmailOutbox {
+  id                String              @id @default(uuid())
+  organizationId    String
+  organization      Organization        @relation(fields: [organizationId], references: [id])
+  customerId        String?
+  customer          Customer?           @relation(fields: [customerId], references: [id])
+  dedupeKey         String              @unique
+  templateKey       EmailTemplateKey
+  recipient         String
+  payload           Json
+  status            EmailDeliveryStatus @default(PENDING)
+  attemptCount      Int                 @default(0)
+  maxAttempts       Int                 @default(5)
+  nextAttemptAt     DateTime            @default(now())
+  lockedAt          DateTime?
+  sentAt            DateTime?
+  providerMessageId String?
+  lastErrorCode     String?
+  lastErrorAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([customerId, createdAt])
 }
