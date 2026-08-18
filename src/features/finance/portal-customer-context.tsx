@@ -5,6 +5,7 @@ import {
   Customer,
   demoOrganizationId,
   isSupportedPortalAccount,
+  neobankApi,
   Operation,
 } from './core-api';
 
@@ -36,7 +37,7 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
     setError('');
     try {
       if (user?.role === 'customer') {
-        const profile = await coreApi<{
+        const profile = await neobankApi<{
           id: string;
           email: string;
           display_name: string;

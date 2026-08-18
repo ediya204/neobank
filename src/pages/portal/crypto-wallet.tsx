@@ -46,6 +46,7 @@ import {
   CryptoNetwork,
   CryptoTransfer,
   CryptoWallet,
+  neobankApi,
   supportedCryptoNetwork,
 } from 'src/features/finance/core-api';
 import {
@@ -194,8 +195,8 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
     try {
       if (user?.role === 'customer') {
         const [walletPayload, history] = await Promise.all([
-          coreApi<{ data: CustomerWalletRow[] }>('/customer/wallets'),
-          coreApi<CustomerHistory>('/customer/history'),
+          neobankApi<{ data: CustomerWalletRow[] }>('/customer/wallets'),
+          neobankApi<CustomerHistory>('/customer/history'),
         ]);
         const customerWallets = walletPayload.data.map(toCustomerWallet);
         const walletById = new Map(customerWallets.map((row) => [row.id, row]));
