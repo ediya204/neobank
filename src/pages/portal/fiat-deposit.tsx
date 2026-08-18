@@ -34,7 +34,7 @@ const modes: Array<{
   {
     value: 'PLATFORM',
     title: '平台账户收款',
-    description: '汇入 SCC 平台银行账户并填写专属附言',
+    description: '汇入 SSC 平台银行账户并填写专属附言',
     icon: 'solar:bank-bold-duotone',
   },
   {
@@ -79,7 +79,7 @@ export default function FiatDepositPage() {
   const channel = channels.find(
     (row) => row.active && row.supportedCurrencies.includes(account?.currency || 'USD')
   );
-  const reference = customer ? `SCC-${customer.id.slice(-8).toUpperCase()}` : '';
+  const reference = customer ? `SSC-${customer.id.slice(-8).toUpperCase()}` : '';
 
   useEffect(() => {
     if (!customer) return;
@@ -160,7 +160,7 @@ export default function FiatDepositPage() {
           {mode === 'PLATFORM' && (
             <BankInstructionCard
               title="平台账户入款信息"
-              description="从外部银行汇入 SCC 平台账户"
+              description="从外部银行汇入 SSC 平台账户"
               accounts={systemAccounts}
               account={account}
               accountId={accountId}

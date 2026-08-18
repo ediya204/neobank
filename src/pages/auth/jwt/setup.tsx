@@ -16,7 +16,7 @@ export default function SetupPage({ expectedRole }: Props) {
   return (
     <>
       <Helmet>
-        <title>{title} | SCC Digital Bank</title>
+        <title>{title} | SSC Digital Bank</title>
       </Helmet>
 
       <JwtLoginView initialMode="setup" expectedRole={expectedRole} />

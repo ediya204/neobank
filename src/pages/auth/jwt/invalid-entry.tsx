@@ -10,7 +10,7 @@ export default function InvalidAuthEntryPage() {
   return (
     <>
       <Helmet>
-        <title>{t('auth.invalid_entry.page_title')} | SCC Digital Bank</title>
+        <title>{t('auth.invalid_entry.page_title')} | SSC Digital Bank</title>
       </Helmet>
 
       <Stack spacing={2.5}>

@@ -13,6 +13,8 @@ class CreateWithdrawalDto {
   @IsString() toAddress!: string;
   @IsOptional() @IsString() beneficiaryId?: string;
   @IsString() idempotencyKey!: string;
+  @IsOptional() @IsNumberString() expectedFeeAmount?: string;
+  @IsOptional() @IsString() expectedFeeRuleVersion?: string;
 }
 
 class RejectTransferDto {

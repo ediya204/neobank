@@ -27,7 +27,12 @@ export type MoneyAccount = {
   name: string;
   accountNumber?: string;
   bankName?: string;
+  bankAddress?: string;
+  bankCountry?: string;
+  branchName?: string;
   swiftBic?: string;
+  iban?: string;
+  fundingChannelId?: string;
   walletAddress?: string;
   network?: string;
   availableBalance: string;
@@ -121,6 +126,10 @@ export type VirtualAccountRequest = {
   status: 'SUBMITTED' | 'APPROVED' | 'REJECTED';
   preferredCountry: string;
   purpose: string;
+  channelId?: string;
+  channel?: FundingChannel;
+  requestSource?: 'ADMIN' | 'CUSTOMER';
+  requesterEmail?: string;
   makerId: string;
   checkerId?: string;
   rejectionReason?: string;
@@ -146,18 +155,24 @@ export type Beneficiary = {
   walletAddress?: string;
   network?: CryptoNetwork;
   active: boolean;
+  status?: 'ACTIVE' | 'REVOKED' | 'SUSPENDED';
+  verifiedAt?: string;
+  revokedAt?: string;
 };
 
 export type FundingChannel = {
   id: string;
   code: string;
   name: string;
-  type: 'FIAT_INBOUND' | 'VA_PAYOUT' | 'POBO_PAYOUT' | 'PLATFORM_PAYOUT';
+  type: 'FIAT_INBOUND' | 'VIRTUAL_ACCOUNT' | 'VA_PAYOUT' | 'POBO_PAYOUT' | 'PLATFORM_PAYOUT';
   supportedCurrencies: Currency[];
   active: boolean;
   settlementBankName?: string;
   settlementAccount?: string;
   swiftBic?: string;
+  bankCountry?: string;
+  bankAddress?: string;
+  branchName?: string;
 };
 
 export type Operation = {
@@ -252,10 +267,25 @@ export type CryptoWallet = {
   frozenBalance: string;
   minimumDeposit: string;
   withdrawalFee: string;
+  withdrawalFeeRuleVersion?: string;
   confirmationsRequired: number;
   custodyProvider?: 'CREGIS' | null;
   ownershipVerifiedAt?: string | null;
   depositEnabled?: boolean;
+};
+
+export type WithdrawalFeeRule = {
+  id: string;
+  organizationId?: string;
+  assetClass: 'FIAT' | 'CRYPTO';
+  currency: Currency;
+  method: 'VA' | 'POBO' | 'PLATFORM' | 'ON_CHAIN';
+  channelCode: string;
+  network?: CryptoNetwork;
+  amount: string;
+  active: boolean;
+  version: string;
+  updatedAt: string;
 };
 
 export type CryptoTransfer = {
@@ -292,7 +322,7 @@ async function requestApi<T>(
   path: string,
   init?: RequestInit & { userId?: string }
 ): Promise<T> {
-  const { userId = 'usr_maker', headers, ...requestInit } = init || {};
+  const { userId = 'usr_admin', headers, ...requestInit } = init || {};
   const method = (requestInit.method || 'GET').toUpperCase();
   const csrfToken = getCsrfToken();
   const response = await fetch(`${baseUrl}${path}`, {
@@ -332,11 +362,8 @@ export function neobankApi<T>(path: string, init?: RequestInit & { userId?: stri
   return requestApi<T>('/api/v1', path, init);
 }
 
-export const demoOrganizationId = process.env.REACT_APP_CORE_ORGANIZATION_ID || 'org_demo';
+export function customerAuthApi<T>(path: string, init?: RequestInit & { userId?: string }) {
+  return requestApi<T>('/api/auth/customer', path, init);
+}
 
-export const demoUsers = [
-  { id: 'usr_maker', label: '提交人 Maker' },
-  { id: 'usr_checker', label: '复核人 Checker' },
-  { id: 'usr_operator', label: '出款操作员' },
-  { id: 'usr_admin', label: '平台管理员' },
-] as const;
+export const demoOrganizationId = process.env.REACT_APP_CORE_ORGANIZATION_ID || 'org_demo';

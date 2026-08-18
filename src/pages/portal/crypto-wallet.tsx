@@ -37,6 +37,7 @@ import {
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import { NETWORK_META, USDT_ASSET_ICON } from 'src/utils/asset-icons';
+import { UI_ICONS } from 'src/theme/iconography';
 import Label from 'src/components/label';
 import { useAuthContext } from 'src/auth/hooks';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
@@ -46,6 +47,8 @@ import {
   CryptoNetwork,
   CryptoTransfer,
   CryptoWallet,
+  customerAuthApi,
+  neobankApi,
   supportedCryptoNetwork,
 } from 'src/features/finance/core-api';
 import {
@@ -66,6 +69,8 @@ type CustomerWalletRow = {
   deposit_enabled?: boolean | number;
   available_balance?: string;
   frozen_balance?: string;
+  withdrawal_fee_amount?: string;
+  withdrawal_fee_rule_version?: string;
 };
 
 type CustomerHistoryRow = {
@@ -74,6 +79,8 @@ type CustomerHistoryRow = {
   wallet_id: string;
   direction: 'deposit' | 'withdrawal';
   amount: string;
+  fee_amount?: string;
+  net_amount?: string;
   status: string;
   address: string;
   txid?: string;
@@ -83,6 +90,17 @@ type CustomerHistoryRow = {
 type CustomerHistory = {
   withdrawals: CustomerHistoryRow[];
   deposits: CustomerHistoryRow[];
+};
+
+type CustomerWithdrawalAddressRow = {
+  id: string;
+  label: string;
+  currency: string;
+  network: 'TRON';
+  address: string;
+  status: 'active' | 'revoked' | 'suspended';
+  verified_at: string;
+  revoked_at?: string | null;
 };
 
 function toCustomerWallet(row: CustomerWalletRow): CryptoWallet {
@@ -98,7 +116,8 @@ function toCustomerWallet(row: CustomerWalletRow): CryptoWallet {
     availableBalance: row.available_balance || '0',
     frozenBalance: row.frozen_balance || '0',
     minimumDeposit: '0',
-    withdrawalFee: '0',
+    withdrawalFee: row.withdrawal_fee_amount || '0',
+    withdrawalFeeRuleVersion: row.withdrawal_fee_rule_version,
     confirmationsRequired: 20,
     custodyProvider: row.custody_provider === 'cregis' ? 'CREGIS' : null,
     ownershipVerifiedAt: row.ownership_verified_at || null,
@@ -137,8 +156,8 @@ function toCustomerTransfer(row: CustomerHistoryRow, wallet: CryptoWallet): Cryp
     direction: deposit ? 'DEPOSIT' : 'WITHDRAWAL',
     status,
     amount: row.amount,
-    feeAmount: '0',
-    netAmount: row.amount,
+    feeAmount: deposit ? '0' : row.fee_amount || '0',
+    netAmount: deposit ? row.amount : row.net_amount || row.amount,
     fromAddress: deposit ? '链上来源' : wallet.walletAddress,
     toAddress: deposit ? row.address : row.address,
     txHash: row.txid,
@@ -193,9 +212,10 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
     setError('');
     try {
       if (user?.role === 'customer') {
-        const [walletPayload, history] = await Promise.all([
-          coreApi<{ data: CustomerWalletRow[] }>('/customer/wallets'),
-          coreApi<CustomerHistory>('/customer/history'),
+        const [walletPayload, history, addressPayload] = await Promise.all([
+          neobankApi<{ data: CustomerWalletRow[] }>('/customer/wallets'),
+          neobankApi<CustomerHistory>('/customer/history'),
+          neobankApi<{ data: CustomerWithdrawalAddressRow[] }>('/customer/withdrawal-addresses'),
         ]);
         const customerWallets = walletPayload.data.map(toCustomerWallet);
         const walletById = new Map(customerWallets.map((row) => [row.id, row]));
@@ -208,7 +228,21 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
         setWallets(customerWallets);
         setTransfers(customerTransfers);
-        setBeneficiaries([]);
+        setBeneficiaries(
+          addressPayload.data.map((row) => ({
+            id: row.id,
+            customerId: customer.id,
+            type: 'CRYPTO',
+            name: row.label,
+            currency: 'USDT',
+            walletAddress: row.address,
+            network: row.network,
+            active: row.status === 'active',
+            status: row.status.toUpperCase() as Beneficiary['status'],
+            verifiedAt: row.verified_at,
+            revokedAt: row.revoked_at || undefined,
+          }))
+        );
         return;
       }
       const [walletRows, transferRows, customerDetail] = await Promise.all([
@@ -256,7 +290,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
   return (
     <>
       <Helmet>
-        <title>{title} | SCC Digital Bank</title>
+        <title>{title} | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
@@ -533,9 +567,7 @@ function DepositView({
                     value="USDT  Tether"
                     InputProps={{
                       readOnly: true,
-                      startAdornment: (
-                        <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />
-                      ),
+                      startAdornment: <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />,
                     }}
                   />
                 </Box>
@@ -573,7 +605,7 @@ function DepositView({
                     </Typography>
                   ) : (
                     <Alert severity="warning" sx={{ mt: 1.5 }}>
-                      充值暂未开放。只有 Cregis 成功分配地址，并确认该地址属于当前 SCC
+                      充值暂未开放。只有 Cregis 成功分配地址，并确认该地址属于当前 SSC
                       项目后，系统才会显示收币地址和二维码。
                     </Alert>
                   )}
@@ -615,7 +647,7 @@ function DepositView({
                         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5 }}>
                           <Iconify icon="solar:shield-check-bold" color="success.main" />
                           <Typography variant="caption" color="text.secondary">
-                            Cregis 已确认该地址属于当前 SCC 项目；转账前请逐字核对网络与地址。
+                            Cregis 已确认该地址属于当前 SSC 项目；转账前请逐字核对网络与地址。
                           </Typography>
                         </Stack>
                       </Box>
@@ -658,7 +690,7 @@ function DepositView({
             <Notice number="3" text="达到网络确认数后，余额会自动更新。" />
             <Notice
               number="4"
-              text="只有 Cregis 成功分配并验证属于当前 SCC 项目的地址，才会开放充值。"
+              text="只有 Cregis 成功分配并验证属于当前 SSC 项目的地址，才会开放充值。"
             />
           </CardContent>
         </Card>
@@ -695,27 +727,29 @@ function WithdrawView({
   const navigate = useNavigate();
   const [network, setNetwork] = useState<CryptoNetwork>('TRON');
   const [beneficiaryId, setBeneficiaryId] = useState('');
-  const [address, setAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  const [addressLabel, setAddressLabel] = useState('');
+  const [newAddress, setNewAddress] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [addingAddress, setAddingAddress] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const withdrawalWallets = wallets.filter(isWithdrawalReady);
   const wallet = withdrawalWallets.find((row) => row.network === network) || withdrawalWallets[0];
-  const savedBeneficiaries = beneficiaries.filter((row) => row.network === network);
+  const savedBeneficiaries = beneficiaries.filter(
+    (row) => row.network === network && row.active && row.status !== 'REVOKED'
+  );
   const selectedBeneficiary = savedBeneficiaries.find((row) => row.id === beneficiaryId);
+  const address = selectedBeneficiary?.walletAddress || '';
   const fee = Number(wallet?.withdrawalFee || 0);
   const net = Math.max(0, Number(amount || 0) - fee);
 
   const validate = () => {
     if (!isWithdrawalReady(wallet)) return '当前没有状态正常的可付币钱包';
-    if (!address) return '请输入收币地址';
-    const valid =
-      network === 'TRON'
-        ? /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)
-        : /^0x[a-fA-F0-9]{40}$/.test(address);
-    if (!valid) return `请输入有效的 ${networkMeta[network].standard} 地址`;
+    if (!selectedBeneficiary || !address) return '请选择已通过 OTP 验证的白名单地址';
     if (!amount || Number(amount) <= fee) return '付币金额必须大于网络手续费';
     if (Number(amount) > Number(wallet.availableBalance)) return '可用余额不足';
     return '';
@@ -738,34 +772,48 @@ function WithdrawView({
       setConfirmOpen(false);
       return;
     }
+    if (!selectedBeneficiary?.walletAddress) {
+      setError('请选择已通过 OTP 验证的白名单地址');
+      setConfirmOpen(false);
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
-      await coreApi(customerSession ? '/customer/withdrawals' : '/crypto-wallets/withdrawals', {
-        method: 'POST',
-        body: JSON.stringify(
-          customerSession
-            ? {
-                wallet_id: wallet.id,
-                currency: '195@TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-                amount,
-                to_address: address,
-                idempotency_key: crypto.randomUUID(),
-              }
-            : {
-                customerId,
-                walletId: wallet.id,
-                network: wallet.network,
-                amount,
-                toAddress: address,
-                beneficiaryId: selectedBeneficiary?.id,
-                idempotencyKey: crypto.randomUUID(),
-              }
-        ),
-      });
+      const payload = customerSession
+        ? {
+            wallet_id: wallet.id,
+            withdrawal_address_id: selectedBeneficiary.id,
+            currency: '195@TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            amount,
+            expected_fee_amount: wallet.withdrawalFee,
+            expected_fee_rule_version: wallet.withdrawalFeeRuleVersion,
+            idempotency_key: crypto.randomUUID(),
+          }
+        : {
+            customerId,
+            walletId: wallet.id,
+            network: wallet.network,
+            amount,
+            expectedFeeAmount: wallet.withdrawalFee,
+            expectedFeeRuleVersion: wallet.withdrawalFeeRuleVersion,
+            toAddress: address,
+            beneficiaryId: selectedBeneficiary.id,
+            idempotencyKey: crypto.randomUUID(),
+          };
+      if (customerSession) {
+        await neobankApi('/customer/withdrawals', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await coreApi('/crypto-wallets/withdrawals', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
       setConfirmOpen(false);
       setAmount('');
-      setAddress('');
       setBeneficiaryId('');
       setSuccess('付币申请已提交，平台管理员审批后进入人工链上执行。');
       await onCreated();
@@ -774,6 +822,75 @@ function WithdrawView({
       setConfirmOpen(false);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const closeAddressDialog = () => {
+    if (addingAddress) return;
+    setAddressDialogOpen(false);
+    setAddressLabel('');
+    setNewAddress('');
+    setOtpCode('');
+  };
+
+  const addWithdrawalAddress = async (event: FormEvent) => {
+    event.preventDefault();
+    const label = addressLabel.trim();
+    const destination = newAddress.trim();
+    if (!label) {
+      setError('请输入地址名称');
+      return;
+    }
+    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(destination)) {
+      setError('请输入有效的 TRON（TRC20）地址');
+      return;
+    }
+    if (!/^\d{6}$/.test(otpCode)) {
+      setError('请输入验证器当前显示的 6 位 OTP');
+      return;
+    }
+    setAddingAddress(true);
+    setError('');
+    try {
+      const stepUp = await customerAuthApi<{ step_up_token: string }>('/step-up/totp', {
+        method: 'POST',
+        body: JSON.stringify({
+          purpose: 'add_withdrawal_address',
+          otp_code: otpCode,
+        }),
+      });
+      const created = await neobankApi<CustomerWithdrawalAddressRow>(
+        '/customer/withdrawal-addresses',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            label,
+            address: destination,
+            step_up_token: stepUp.step_up_token,
+            idempotency_key: crypto.randomUUID(),
+          }),
+        }
+      );
+      await onCreated();
+      setBeneficiaryId(created.id);
+      setSuccess(`白名单地址“${created.label}”已通过 OTP 验证并生效。`);
+      setAddressDialogOpen(false);
+      setAddressLabel('');
+      setNewAddress('');
+      setOtpCode('');
+    } catch (value) {
+      const message = value instanceof Error ? value.message : '白名单地址添加失败';
+      if (message === 'invalid_totp_code') {
+        setError('OTP 无效、已过期或已使用，请输入当前验证码');
+      } else if (message === 'totp_not_enrolled') {
+        setError('当前账户尚未绑定验证器，无法添加白名单地址');
+      } else if (message === 'withdrawal_address_already_exists') {
+        setError('该地址已经在白名单中');
+      } else {
+        setError(message);
+      }
+    } finally {
+      setAddingAddress(false);
     }
   };
 
@@ -814,9 +931,7 @@ function WithdrawView({
                     value="USDT  Tether"
                     InputProps={{
                       readOnly: true,
-                      startAdornment: (
-                        <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />
-                      ),
+                      startAdornment: <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />,
                     }}
                   />
                 </Box>
@@ -828,7 +943,6 @@ function WithdrawView({
                     onChange={(event) => {
                       setNetwork(event.target.value as CryptoNetwork);
                       setBeneficiaryId('');
-                      setAddress('');
                     }}
                   >
                     {withdrawalWallets.map((row) => (
@@ -839,53 +953,82 @@ function WithdrawView({
                     ))}
                   </Select>
                 </FormControl>
-                {!customerSession && (
-                  <FormControl fullWidth disabled={!wallet}>
-                    <InputLabel>已保存的收款人（可选）</InputLabel>
-                    <Select
-                      label="已保存的收款人（可选）"
-                      value={beneficiaryId}
-                      onChange={(event) => {
-                        const nextId = event.target.value;
-                        const beneficiary = savedBeneficiaries.find((row) => row.id === nextId);
-                        setBeneficiaryId(nextId);
-                        setAddress(beneficiary?.walletAddress || '');
-                      }}
-                    >
-                      <MenuItem value="">
-                        <em>手动输入新地址</em>
+                <FormControl fullWidth disabled={!wallet || !savedBeneficiaries.length}>
+                  <InputLabel>白名单地址</InputLabel>
+                  <Select
+                    required
+                    label="白名单地址"
+                    value={beneficiaryId}
+                    onChange={(event) => setBeneficiaryId(event.target.value)}
+                    renderValue={(selected) => {
+                      const beneficiary = savedBeneficiaries.find((row) => row.id === selected);
+                      return beneficiary
+                        ? `${beneficiary.name} · ${beneficiary.walletAddress?.slice(
+                            0,
+                            7
+                          )}…${beneficiary.walletAddress?.slice(-6)}`
+                        : '';
+                    }}
+                  >
+                    {savedBeneficiaries.map((row) => (
+                      <MenuItem key={row.id} value={row.id}>
+                        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ width: 1 }}>
+                          <Iconify icon="solar:shield-check-bold" color="success.main" width={20} />
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography variant="subtitle2" noWrap>
+                              {row.name}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ fontFamily: 'monospace' }}
+                            >
+                              {row.walletAddress?.slice(0, 9)}…{row.walletAddress?.slice(-8)}
+                            </Typography>
+                          </Box>
+                          <Chip label="已验证" color="success" size="small" variant="outlined" />
+                        </Stack>
                       </MenuItem>
-                      {savedBeneficiaries.map((row) => (
-                        <MenuItem key={row.id} value={row.id}>
-                          {row.name} · {row.walletAddress?.slice(0, 7)}…
-                          {row.walletAddress?.slice(-6)}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    {!savedBeneficiaries.length && (
-                      <Button
-                        size="small"
-                        onClick={() => navigate('/portal/money/beneficiaries')}
-                        sx={{ mt: 0.75, alignSelf: 'flex-start', px: 0 }}
-                      >
-                        添加数字货币收款人
-                      </Button>
-                    )}
-                  </FormControl>
-                )}
-                <TextField
-                  required
-                  disabled={!wallet}
-                  label="收币地址"
-                  placeholder={network === 'TRON' ? 'T...' : '0x...'}
-                  value={address}
-                  onChange={(event) => {
-                    const nextAddress = event.target.value.trim();
-                    setAddress(nextAddress);
-                    if (selectedBeneficiary?.walletAddress !== nextAddress) setBeneficiaryId('');
+                    ))}
+                  </Select>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75 }}>
+                    付币只能发送至已通过 OTP 验证的 {networkMeta[network].standard} 地址。
+                  </Typography>
+                </FormControl>
+                <Button
+                  size="small"
+                  startIcon={<Iconify icon={UI_ICONS.add} />}
+                  onClick={() => {
+                    if (customerSession) {
+                      setError('');
+                      setAddressDialogOpen(true);
+                      return;
+                    }
+                    navigate('/portal/money/beneficiaries');
                   }}
-                  helperText={`只接受 ${networkMeta[network].standard} 地址`}
-                />
+                  disabled={!wallet}
+                  sx={{ mt: -1, alignSelf: 'flex-start', px: 0 }}
+                >
+                  添加白名单地址
+                </Button>
+                {selectedBeneficiary?.walletAddress && (
+                  <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
+                    <CardContent sx={{ p: 2 }}>
+                      <Stack direction="row" spacing={1.25} alignItems="flex-start">
+                        <Iconify icon="solar:verified-check-bold" color="success.main" width={22} />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="subtitle2">{selectedBeneficiary.name}</Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{ mt: 0.5, fontFamily: 'monospace', overflowWrap: 'anywhere' }}
+                          >
+                            {selectedBeneficiary.walletAddress}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                )}
                 <TextField
                   required
                   disabled={!wallet}
@@ -913,7 +1056,7 @@ function WithdrawView({
                   type="submit"
                   variant="contained"
                   size="large"
-                  disabled={!isWithdrawalReady(wallet) || submitting}
+                  disabled={!isWithdrawalReady(wallet) || !selectedBeneficiary || submitting}
                 >
                   核对并提交
                 </Button>
@@ -938,6 +1081,77 @@ function WithdrawView({
         </Card>
       </Box>
       <TransferList title="近期付币" rows={transfers} loading={loading} onOpen={onOpenTransfer} />
+      <Dialog
+        open={customerSession && addressDialogOpen}
+        onClose={closeAddressDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <Box component="form" onSubmit={addWithdrawalAddress}>
+          <DialogTitle>添加白名单地址</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2.25} sx={{ pt: 0.5 }}>
+              <Alert severity="info" icon={<Iconify icon="solar:shield-keyhole-bold" />}>
+                新地址必须使用当前账户验证器生成的 6 位 OTP 确认。地址生效后才能用于付币。
+              </Alert>
+              {error && <Alert severity="error">{error}</Alert>}
+              <TextField
+                required
+                autoFocus
+                label="地址名称"
+                value={addressLabel}
+                onChange={(event) => setAddressLabel(event.target.value.slice(0, 100))}
+                placeholder="例如：公司冷钱包"
+                inputProps={{ maxLength: 100 }}
+              />
+              <TextField
+                required
+                label="TRON（TRC20）地址"
+                value={newAddress}
+                onChange={(event) => setNewAddress(event.target.value.trim())}
+                placeholder="T..."
+                helperText="请逐字核对网络和地址；钱包地址保存后不可修改。"
+                inputProps={{ spellCheck: false, autoComplete: 'off' }}
+              />
+              <Divider />
+              <TextField
+                required
+                label="6 位 OTP"
+                value={otpCode}
+                onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                helperText="输入验证器当前显示且尚未使用的动态码。"
+                inputProps={{
+                  inputMode: 'numeric',
+                  pattern: '[0-9]*',
+                  maxLength: 6,
+                  autoComplete: 'one-time-code',
+                }}
+              />
+              <Alert severity="warning">
+                链上转账不可撤销。系统不会通过邮件、聊天或电话索取你的 OTP。
+              </Alert>
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeAddressDialog} disabled={addingAddress}>
+              取消
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={
+                addingAddress ||
+                !addressLabel.trim() ||
+                !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(newAddress) ||
+                !/^\d{6}$/.test(otpCode)
+              }
+            >
+              {addingAddress ? '验证中…' : '验证并添加'}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>确认付币信息</DialogTitle>
         <DialogContent>
@@ -952,6 +1166,7 @@ function WithdrawView({
             <DetailRow label="发送数量" value={formatUsdt(amount || 0)} />
             <DetailRow label="手续费" value={formatUsdt(fee)} />
             <DetailRow label="预计到账" value={formatUsdt(net)} />
+            <DetailRow label="白名单名称" value={selectedBeneficiary?.name || '-'} />
             <DetailRow label="收币地址" value={address} mono />
           </Stack>
         </DialogContent>
@@ -960,7 +1175,7 @@ function WithdrawView({
           <Button
             variant="contained"
             color="warning"
-            disabled={submitting || !isWithdrawalReady(wallet)}
+            disabled={submitting || !isWithdrawalReady(wallet) || !selectedBeneficiary}
             onClick={() => submit().catch(() => undefined)}
           >
             {submitting ? '提交中…' : '确认提交'}

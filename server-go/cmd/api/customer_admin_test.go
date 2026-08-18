@@ -40,6 +40,9 @@ func TestKYCApprovalAutomaticallyActivatesCustomerBeforeWalletProvisioning(t *te
 	if !safeIdentifier.MatchString(automaticWalletIdempotency("customer_123")) {
 		t.Fatal("automatic wallet idempotency must satisfy the public wallet API contract")
 	}
+	if got := automaticWalletAlias("customer_123"); got != "customer_123" {
+		t.Fatalf("automatic wallet alias = %q", got)
+	}
 }
 
 func TestKYCApprovalReportsWalletRetryWithoutReversingApproval(t *testing.T) {

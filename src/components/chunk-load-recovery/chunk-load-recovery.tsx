@@ -1,6 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 
-const RELOAD_MARKER = 'scc:chunk-reload-attempt';
+const RELOAD_MARKER = 'ssc:chunk-reload-attempt';
 const RELOAD_GUARD_MS = 60_000;
 const SERVER_PROBE_INTERVAL_MS = 2_000;
 

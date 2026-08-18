@@ -103,7 +103,7 @@ export default function CustomerActivity() {
         detail:
           row.type === 'FX' || row.type === 'OTC'
             ? `${row.currency} → ${row.quoteCurrency || '—'}`
-            : row.beneficiary?.name || row.sourceAccount?.name || 'SCC 余额账户',
+            : row.beneficiary?.name || row.sourceAccount?.name || 'SSC 余额账户',
       };
     });
     const cryptoRows = cryptoTransfers.map(

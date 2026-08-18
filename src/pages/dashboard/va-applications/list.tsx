@@ -97,7 +97,7 @@ export default function VaApplicationListPage() {
   return (
     <>
       <Helmet>
-        <title>{t('applications.list.pageTitle')} | SCC Digital Bank</title>
+        <title>{t('applications.list.pageTitle')} | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
         <CustomBreadcrumbs

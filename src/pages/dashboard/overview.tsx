@@ -225,7 +225,7 @@ export default function AdminOverviewPage() {
   return (
     <>
       <Helmet>
-        <title>{t('overview.pageTitle')} | SCC Digital Bank</title>
+        <title>{t('overview.pageTitle')} | SSC Digital Bank</title>
       </Helmet>
 
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>

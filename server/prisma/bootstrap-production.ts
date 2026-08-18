@@ -18,8 +18,8 @@ async function main() {
 
   await db.organization.upsert({
     where: { id: organizationId },
-    update: { name: 'SCC Digital Bank', slug: 'scc-digital-bank' },
-    create: { id: organizationId, name: 'SCC Digital Bank', slug: 'scc-digital-bank' },
+    update: { name: 'SSC Digital Bank', slug: 'ssc-digital-bank' },
+    create: { id: organizationId, name: 'SSC Digital Bank', slug: 'ssc-digital-bank' },
   });
   await db.user.upsert({
     where: { id: adminUserId },

@@ -105,7 +105,7 @@ func TestCustomerRegistrationIsIdempotent(t *testing.T) {
 		logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	db := &registrationDatabase{rows: []map[string]any{{
-		"application_reference": "SCC-20260815-ABC123",
+		"application_reference": "SSC-20260815-ABC123",
 		"request_fingerprint":   app.registrationFingerprint(input),
 	}}}
 	app.db = db
@@ -114,7 +114,7 @@ func TestCustomerRegistrationIsIdempotent(t *testing.T) {
 	if response.Code != http.StatusAccepted || len(db.statements) != 0 {
 		t.Fatalf("status=%d statements=%d body=%q", response.Code, len(db.statements), response.Body.String())
 	}
-	if !strings.Contains(response.Body.String(), "SCC-20260815-ABC123") {
+	if !strings.Contains(response.Body.String(), "SSC-20260815-ABC123") {
 		t.Fatalf("idempotent response lost application reference: %q", response.Body.String())
 	}
 }

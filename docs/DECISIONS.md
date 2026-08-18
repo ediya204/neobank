@@ -18,6 +18,13 @@ that the assumption no longer applies.
   cannot create OTC orders.
 - A submitted sweep with a transaction hash must not be treated like an unsubmitted
   locked batch. Cancellation and completion rules must prevent value reuse.
+- Withdrawal fees are versioned by asset class, currency, payout method, channel,
+  and network. Fiat and crypto creation must resolve the server-side active rule and
+  store a transaction snapshot; later fee changes affect only new submissions.
+- Fiat payout amounts represent the beneficiary principal and the fee is added to
+  the account reservation. Cregis customer input represents the total wallet debit;
+  only the stored net amount is submitted on-chain. Stale fee confirmation requires
+  explicit customer reconfirmation.
 - In the Neobank profile, manual KYC approval is the final account-opening gate.
   Approval automatically activates the customer and idempotently provisions one
   Cregis-verified USDT-TRC20 wallet. This removes the separate Operations and wallet
@@ -34,6 +41,14 @@ that the assumption no longer applies.
   to another Partner returns the same not-found response as a nonexistent ID.
 - Partner responses must not expose operator notes, staff identity, internal tenant
   keys, address configuration versions, or internal Webhook delivery status.
+- VA 开户必须绑定后台已启用的 `VIRTUAL_ACCOUNT` 银行渠道。客户先选择银行，
+  再从该银行声明的支持币种中选择开户币种；服务端重复校验渠道、币种和客户归属。
+- 银行名称、国家/地区、地址、分行与 SWIFT/BIC 是渠道固定资料。运营批准申请时
+  只录入银行实际分配的账户名称、账号和可选 IBAN；开通账户保存固定资料快照，
+  后续修改渠道不会静默改写历史 VA。
+- `VIRTUAL_ACCOUNT` 是同一家银行的统一 VA 能力配置：开户批准后账户保存
+  `fundingChannelId`，VA 出款必须复用该账户绑定的银行渠道，不能另选独立
+  `VA_PAYOUT`。旧 `VA_PAYOUT` 仅保留历史读取兼容，禁止新建或重新启用。
 
 ## Security and operations
 

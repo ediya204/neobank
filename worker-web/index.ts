@@ -126,9 +126,9 @@ async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<R
   return new Response(response.body, { status: response.status, headers: responseHeaders });
 }
 
-type AdminSessionPayload = {
+type ApplicationSessionPayload = {
   csrf_token?: unknown;
-  user?: { email?: unknown; role?: unknown };
+  user?: { id?: unknown; email?: unknown; role?: unknown };
 };
 
 function constantTimeTextEqual(left: string, right: string): boolean {
@@ -142,7 +142,10 @@ function constantTimeTextEqual(left: string, right: string): boolean {
   return mismatch === 0;
 }
 
-async function loadAdminSession(request: Request, env: Env): Promise<AdminSessionPayload | null> {
+async function loadApplicationSession(
+  request: Request,
+  env: Env
+): Promise<ApplicationSessionPayload | null> {
   const upstreamOrigin = new URL(env.GO_API_BASE_URL);
   if (upstreamOrigin.protocol !== 'https:' || upstreamOrigin.pathname !== '/') {
     throw new Error('GO_API_BASE_URL must be an HTTPS origin');
@@ -169,7 +172,24 @@ async function loadAdminSession(request: Request, env: Env): Promise<AdminSessio
   if (!response.ok) return null;
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.toLowerCase().includes('application/json')) return null;
-  return (await response.json()) as AdminSessionPayload;
+  return (await response.json()) as ApplicationSessionPayload;
+}
+
+function customerCoreRouteAllowed(
+  url: URL,
+  method: string,
+  customerId: string,
+  organizationId: string
+) {
+  if (url.pathname === '/api/core/funding-channels' && method === 'GET') {
+    return (
+      url.searchParams.get('organizationId') === organizationId &&
+      url.searchParams.get('type') === 'VIRTUAL_ACCOUNT' &&
+      url.searchParams.get('active') === 'true'
+    );
+  }
+  const ownRequests = `/api/core/customers/${customerId}/virtual-account-requests`;
+  return url.pathname === ownRequests && (method === 'GET' || method === 'POST');
 }
 
 async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
@@ -178,20 +198,29 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
   const body = await request.arrayBuffer();
   if (body.byteLength > MAX_BODY_BYTES) return json({ error: { code: 'payload_too_large' } }, 413);
 
-  const session = await loadAdminSession(request, env);
+  const incoming = new URL(request.url);
+  const session = await loadApplicationSession(request, env);
+  const role = typeof session?.user?.role === 'string' ? session.user.role : '';
+  const userId = typeof session?.user?.id === 'string' ? session.user.id : '';
   const email = typeof session?.user?.email === 'string' ? session.user.email : '';
-  if (session?.user?.role !== 'admin' || !email) {
+  if (!email || (role !== 'admin' && role !== 'customer')) {
     return json({ error: { code: 'authentication_required' } }, 401);
   }
+  if (
+    role === 'customer' &&
+    (!userId ||
+      !customerCoreRouteAllowed(incoming, request.method, userId, env.CORE_ORGANIZATION_ID))
+  ) {
+    return json({ error: { code: 'customer_core_route_forbidden' } }, 403);
+  }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
-    const expected = typeof session.csrf_token === 'string' ? session.csrf_token : '';
+    const expected = typeof session?.csrf_token === 'string' ? session.csrf_token : '';
     const provided = request.headers.get('x-csrf-token') || '';
     if (!expected || !provided || !constantTimeTextEqual(expected, provided)) {
       return json({ error: { code: 'invalid_csrf_token' } }, 403);
     }
   }
 
-  const incoming = new URL(request.url);
   const upstreamOrigin = new URL(env.CORE_API_BASE_URL);
   if (upstreamOrigin.protocol !== 'https:' || upstreamOrigin.pathname !== '/') {
     throw new Error('CORE_API_BASE_URL must be an HTTPS origin');
@@ -202,17 +231,18 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
   const timestamp = Math.floor(Date.now() / 1000).toString();
+  const identity = role === 'customer' ? `customer:${userId}:${email}` : `admin:${email}`;
   const canonical = [
     timestamp,
     request.method,
     corePath + incoming.search,
-    email,
+    identity,
     bodyHashHex,
   ].join('\n');
   const signature = await hmacHex(env.CORE_EDGE_SHARED_SECRET, canonical);
   const headers = new Headers({
     accept: 'application/json',
-    'x-neobank-user': email,
+    'x-neobank-user': identity,
     'x-core-edge-timestamp': timestamp,
     'x-core-edge-signature': signature,
   });

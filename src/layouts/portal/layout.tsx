@@ -51,7 +51,10 @@ function PortalFrame() {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   let visibleNavItems: ReadonlyArray<readonly [string, string, string]> = [];
   if (user?.role === 'customer') {
-    visibleNavItems = [['USDT 钱包', '/portal/home', 'solar:wallet-2-bold-duotone']];
+    visibleNavItems = [
+      ['USDT 钱包', '/portal/home', 'solar:wallet-2-bold-duotone'],
+      ['VA 账户', '/portal/virtual-accounts', 'solar:bank-bold-duotone'],
+    ];
   } else if (user) {
     visibleNavItems = navItems.filter(([, path]) => canAccessPortalPath(user, path));
   }

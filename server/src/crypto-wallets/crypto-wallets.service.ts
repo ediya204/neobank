@@ -18,6 +18,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { supportedCryptoAsset, supportedCryptoNetwork } from '../supported-assets';
 import { isValidTronAddress } from './tron-address';
+import { WithdrawalFeesService } from '../withdrawal-fees/withdrawal-fees.service';
 
 type CreateWithdrawalInput = {
   customerId: string;
@@ -27,14 +28,27 @@ type CreateWithdrawalInput = {
   toAddress: string;
   beneficiaryId?: string;
   idempotencyKey: string;
+  expectedFeeAmount?: string;
+  expectedFeeRuleVersion?: string;
 };
 
 @Injectable()
 export class CryptoWalletsService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly withdrawalFees: WithdrawalFeesService
+  ) {}
 
   async listWallets(customerId: string, userId: string) {
-    await this.requireCustomerTenant(customerId, userId);
+    const customer = await this.requireCustomerTenant(customerId, userId);
+    const resolvedFee = await this.withdrawalFees.resolve(this.db, {
+      scopeId: process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || customer.organizationId,
+      assetClass: 'CRYPTO',
+      currency: supportedCryptoAsset,
+      method: 'ON_CHAIN',
+      channelCode: 'CREGIS',
+      network: supportedCryptoNetwork,
+    });
     const wallets = await this.db.cryptoWallet.findMany({
       where: {
         customerId,
@@ -46,6 +60,8 @@ export class CryptoWalletsService {
     });
     return wallets.map((wallet) => ({
       ...wallet,
+      withdrawalFee: resolvedFee.amount,
+      withdrawalFeeRuleVersion: resolvedFee.snapshot.version,
       walletAddress: '',
       custodyProvider: null,
       ownershipVerifiedAt: null,
@@ -140,6 +156,7 @@ export class CryptoWalletsService {
         }
         if (
           !maker?.active ||
+          maker.role !== 'ADMIN' ||
           !maker.organizationId ||
           maker.organizationId !== customer.organizationId
         ) {
@@ -158,7 +175,23 @@ export class CryptoWalletsService {
         ) {
           throw new BadRequestException('crypto_beneficiary_mismatch');
         }
-        if (amount.lte(wallet.withdrawalFee)) {
+        const resolvedFee = await this.withdrawalFees.resolve(tx, {
+          scopeId: process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || customer.organizationId,
+          assetClass: 'CRYPTO',
+          currency: supportedCryptoAsset,
+          method: 'ON_CHAIN',
+          channelCode: 'CREGIS',
+          network: supportedCryptoNetwork,
+          expectedVersion: input.expectedFeeRuleVersion,
+        });
+        const withdrawalFee = resolvedFee.amount;
+        if (
+          input.expectedFeeAmount !== undefined &&
+          !withdrawalFee.equals(new Prisma.Decimal(input.expectedFeeAmount))
+        ) {
+          throw new ConflictException('withdrawal_fee_changed');
+        }
+        if (amount.lte(withdrawalFee)) {
           throw new BadRequestException('amount_must_exceed_network_fee');
         }
         const frozen = await tx.cryptoWallet.updateMany({
@@ -185,7 +218,7 @@ export class CryptoWalletsService {
         if (mirrorFrozen.count !== 1) {
           throw new ConflictException('crypto_account_mirror_balance_mismatch');
         }
-        const netAmount = amount.sub(wallet.withdrawalFee);
+        const netAmount = amount.sub(withdrawalFee);
         const transferId = randomUUID();
         const reference = this.reference('CWO');
         const transfer = await tx.cryptoTransfer.create({
@@ -200,7 +233,7 @@ export class CryptoWalletsService {
             direction: 'WITHDRAWAL',
             status: 'SUBMITTED',
             amount,
-            feeAmount: wallet.withdrawalFee,
+            feeAmount: withdrawalFee,
             netAmount,
             fromAddress: wallet.walletAddress,
             toAddress: input.toAddress,
@@ -218,13 +251,17 @@ export class CryptoWalletsService {
             status: 'SUBMITTED',
             currency: 'USDT',
             amount: netAmount,
-            feeAmount: wallet.withdrawalFee,
+            feeAmount: withdrawalFee,
             sourceAccountId: mirrorAccount.id,
             beneficiaryId: input.beneficiaryId,
             makerId,
             narrative: `USDT TRON withdrawal ${reference}`,
             submittedAt: new Date(),
-            metadata: { rail: 'TRON', cryptoTransferId: transferId },
+            metadata: {
+              rail: 'TRON',
+              cryptoTransferId: transferId,
+              withdrawalFee: resolvedFee.snapshot,
+            },
           },
         });
         return transfer;
@@ -241,7 +278,7 @@ export class CryptoWalletsService {
       });
       if (!transfer) throw new NotFoundException('crypto_transfer_not_found');
       if (transfer.status !== 'SUBMITTED') throw new ConflictException('transfer_not_submitted');
-      const checker = await this.requireRole(tx, checkerId, ['ADMIN', 'CHECKER']);
+      const checker = await this.requireRole(tx, checkerId, ['ADMIN']);
       if (checker.organizationId !== transfer.customer.organizationId) {
         throw new NotFoundException('crypto_transfer_not_found');
       }
@@ -269,7 +306,7 @@ export class CryptoWalletsService {
       });
       if (!transfer) throw new NotFoundException('crypto_transfer_not_found');
       if (transfer.status !== 'SUBMITTED') throw new ConflictException('transfer_not_submitted');
-      const checker = await this.requireRole(tx, checkerId, ['ADMIN', 'CHECKER']);
+      const checker = await this.requireRole(tx, checkerId, ['ADMIN']);
       if (checker.organizationId !== transfer.customer.organizationId) {
         throw new NotFoundException('crypto_transfer_not_found');
       }
@@ -327,7 +364,7 @@ export class CryptoWalletsService {
       });
       if (!transfer) throw new NotFoundException('crypto_transfer_not_found');
       if (transfer.status !== 'PROCESSING') throw new ConflictException('transfer_not_processing');
-      const operator = await this.requireRole(tx, operatorId, ['ADMIN', 'OPERATOR']);
+      const operator = await this.requireRole(tx, operatorId, ['ADMIN']);
       if (operator.organizationId !== transfer.customer.organizationId) {
         throw new NotFoundException('crypto_transfer_not_found');
       }
@@ -467,13 +504,19 @@ export class CryptoWalletsService {
       }),
       this.db.user.findUnique({
         where: { id: userId },
-        select: { active: true, organizationId: true },
+        select: { active: true, organizationId: true, role: true },
       }),
     ]);
     if (!customer) throw new NotFoundException('customer_not_found');
-    if (!user?.active || !user.organizationId || user.organizationId !== customer.organizationId) {
+    if (
+      !user?.active ||
+      user.role !== 'ADMIN' ||
+      !user.organizationId ||
+      user.organizationId !== customer.organizationId
+    ) {
       throw new ForbiddenException('cross_tenant_crypto_customer');
     }
+    return customer;
   }
 
   private reference(prefix: string) {

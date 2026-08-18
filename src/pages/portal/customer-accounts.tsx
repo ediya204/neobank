@@ -33,9 +33,10 @@ import {
   AssetSummary,
   coreApi,
   Currency,
+  demoOrganizationId,
+  FundingChannel,
   MarketQuote,
   MoneyAccount,
-  supportedFiatCurrencies,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
 import { AccountKindChip, accountLabel, money } from './customer-shared';
@@ -526,16 +527,33 @@ function VaRequestDialog({
   onCreated: () => void;
 }) {
   const [currency, setCurrency] = useState<Currency>('USD');
-  const [country, setCountry] = useState('HK');
+  const [channels, setChannels] = useState<FundingChannel[]>([]);
+  const [channelId, setChannelId] = useState('');
   const [purpose, setPurpose] = useState('接收客户货款');
   const [error, setError] = useState('');
+  const selectedChannel = channels.find((channel) => channel.id === channelId);
+
+  useEffect(() => {
+    if (!open) return;
+    coreApi<FundingChannel[]>(
+      `/funding-channels?organizationId=${demoOrganizationId}&type=VIRTUAL_ACCOUNT&active=true`
+    )
+      .then((rows) => {
+        setChannels(rows);
+        const first = rows[0];
+        setChannelId(first?.id || '');
+        if (first?.supportedCurrencies[0]) setCurrency(first.supportedCurrencies[0]);
+      })
+      .catch((value) => setError(value instanceof Error ? value.message : '银行渠道加载失败'));
+  }, [open]);
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
     try {
       await coreApi<VirtualAccountRequest>(`/customers/${customerId}/virtual-account-requests`, {
         method: 'POST',
-        body: JSON.stringify({ currency, preferredCountry: country, purpose }),
+        body: JSON.stringify({ channelId, currency, purpose }),
       });
       onCreated();
     } catch (value) {
@@ -549,27 +567,48 @@ function VaRequestDialog({
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
-            <FormControl fullWidth>
+            <FormControl fullWidth required>
+              <InputLabel>银行</InputLabel>
+              <Select
+                label="银行"
+                value={channelId}
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  const channel = channels.find((item) => item.id === nextId);
+                  setChannelId(nextId);
+                  if (channel?.supportedCurrencies[0]) setCurrency(channel.supportedCurrencies[0]);
+                }}
+              >
+                {channels.map((channel) => (
+                  <MenuItem key={channel.id} value={channel.id}>
+                    {channel.settlementBankName || channel.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {selectedChannel ? (
+              <Alert severity="info">
+                {selectedChannel.bankCountry || '--'} · SWIFT {selectedChannel.swiftBic || '—'}
+                <br />
+                支持币种：{selectedChannel.supportedCurrencies.join(' / ')}
+              </Alert>
+            ) : (
+              <Alert severity="warning">当前没有已启用的 VA 银行渠道。</Alert>
+            )}
+            <FormControl fullWidth required disabled={!selectedChannel}>
               <InputLabel>币种</InputLabel>
               <Select
                 label="币种"
                 value={currency}
                 onChange={(event) => setCurrency(event.target.value as Currency)}
               >
-                {supportedFiatCurrencies.map((item) => (
+                {(selectedChannel?.supportedCurrencies || []).map((item) => (
                   <MenuItem key={item} value={item}>
                     {item}
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
-            <TextField
-              required
-              label="开户地区代码"
-              value={country}
-              onChange={(event) => setCountry(event.target.value.toUpperCase())}
-              inputProps={{ maxLength: 2 }}
-            />
             <TextField
               required
               label="账户用途"
@@ -585,7 +624,7 @@ function VaRequestDialog({
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>取消</Button>
-          <Button type="submit" variant="contained">
+          <Button type="submit" variant="contained" disabled={!selectedChannel}>
             提交申请
           </Button>
         </DialogActions>
@@ -735,7 +774,7 @@ function AccountDialog({
         </Alert>
         <Stack divider={<Divider flexItem />}>
           <Detail label="账户名称" value={account.name} />
-          <Detail label="银行" value={account.bankName || 'SCC数字银行合作银行'} />
+          <Detail label="银行" value={account.bankName || 'SSC数字银行合作银行'} />
           <Detail label="账户号码" value={account.accountNumber || '-'} mono />
           <Detail label="SWIFT / BIC" value={account.swiftBic || '-'} mono />
           <Detail label="币种" value={account.currency} />

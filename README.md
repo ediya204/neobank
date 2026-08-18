@@ -1,4 +1,4 @@
-# SCC数字银行 · SCC Digital Bank
+# SSC数字银行 · SSC Digital Bank
 
 React/TypeScript Portal and Admin UI with a Cloudflare Worker and D1 backend.
 

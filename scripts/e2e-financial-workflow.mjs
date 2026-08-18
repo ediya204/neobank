@@ -5,6 +5,7 @@ const headers = (userId) => ({ 'content-type': 'application/json', 'x-user-id': 
 
 const detail = await get(`/customers/${customerId}`, 'usr_admin');
 const channels = await get('/funding-channels?organizationId=org_demo', 'usr_admin');
+const withdrawalFees = await get('/withdrawal-fees?organizationId=org_demo', 'usr_admin');
 const account = (kind, currency) =>
   detail.accounts.find((row) => row.kind === kind && row.currency === currency);
 const systemUsd = account('SYSTEM_WALLET', 'USD');
@@ -16,7 +17,10 @@ const channel = (type) => channels.find((row) => row.type === type && row.active
 const inbound = channel('FIAT_INBOUND');
 const platform = channel('PLATFORM_PAYOUT');
 const pobo = channel('POBO_PAYOUT');
-const vaPayout = channel('VA_PAYOUT');
+const vaPayout = channels.find(
+  (row) => row.id === vaHkd?.fundingChannelId && row.type === 'VIRTUAL_ACCOUNT' && row.active
+);
+const legacyVaPayouts = channels.filter((row) => row.type === 'VA_PAYOUT');
 assert(
   systemUsd &&
     systemHkd &&
@@ -30,6 +34,10 @@ assert(
   'USD/HKD system accounts, VAs, beneficiary, and funding channels exist'
 );
 assert(
+  legacyVaPayouts.every((row) => !row.active),
+  'legacy VA payout channels remain inactive and cannot accept new transfers'
+);
+assert(
   channels.every((row) =>
     row.supportedCurrencies.every((currency) => ['USD', 'HKD'].includes(currency))
   ),
@@ -41,19 +49,19 @@ const vaDeposit = await submitDeposit(vaUsd, 'VA');
 assert(systemDeposit.journals.length === 1, 'platform-account deposit has one balanced journal');
 assert(vaDeposit.journals.length === 1, 'VA deposit has one balanced journal');
 
-const selfApprovalCandidate = await createPayout('PLATFORM', platform, systemHkd, '1.00', '0');
+const selfApprovalCandidate = await createPayout('PLATFORM', platform, systemHkd, '1.00');
 await expectPatchStatus(`/operations/${selfApprovalCandidate.id}/approve`, 'usr_maker', 403);
 await patch(`/operations/${selfApprovalCandidate.id}/reject`, 'usr_admin', {
   reason: `${marker} 单人审批拒绝路径`,
 });
 assert(true, 'non-admin cannot approve and the submitting admin can reject with reservation released');
 
-const platformResult = await completePayout('PLATFORM', platform, systemHkd, '2.00', '0.25');
-const poboResult = await completePayout('POBO', pobo, systemHkd, '2.00', '0');
-const vaResult = await completePayout('VA', vaPayout, vaHkd, '2.00', '0');
-assert(platformResult.journals.length === 2, 'platform payout has principal and fee journals');
-assert(poboResult.journals.length === 1, 'POBO payout has principal journal');
-assert(vaResult.journals.length === 1, 'VA payout has principal journal');
+const platformResult = await completePayout('PLATFORM', platform, systemHkd, '2.00');
+const poboResult = await completePayout('POBO', pobo, systemHkd, '2.00');
+const vaResult = await completePayout('VA', vaPayout, vaHkd, '2.00');
+assertPayoutFee(platformResult, 'PLATFORM', platform);
+assertPayoutFee(poboResult, 'POBO', pobo);
+assertPayoutFee(vaResult, 'VA', vaPayout);
 
 await expectCreateStatus(
   {
@@ -107,13 +115,23 @@ async function submitDeposit(target, label) {
   return get(`/operations/${operation.id}`, 'usr_admin');
 }
 
-function createPayout(method, fundingChannel, source, amount, feeAmount) {
+function createPayout(method, fundingChannel, source, amount) {
+  const fee = withdrawalFees.find(
+    (row) =>
+      row.active &&
+      row.assetClass === 'FIAT' &&
+      row.currency === 'HKD' &&
+      row.method === method &&
+      row.channelCode === fundingChannel.code
+  );
+  assert(fee, `${method} payout has an active versioned server-side fee rule`);
   return post('/operations', 'usr_admin', {
     customerId,
     type: 'PAYOUT',
     currency: 'HKD',
     amount,
-    feeAmount,
+    expectedFeeAmount: fee.amount,
+    expectedFeeRuleVersion: fee.version,
     sourceAccountId: source.id,
     beneficiaryId: beneficiaryHkd.id,
     channelId: fundingChannel.id,
@@ -123,8 +141,8 @@ function createPayout(method, fundingChannel, source, amount, feeAmount) {
   });
 }
 
-async function completePayout(method, fundingChannel, source, amount, feeAmount) {
-  const operation = await createPayout(method, fundingChannel, source, amount, feeAmount);
+async function completePayout(method, fundingChannel, source, amount) {
+  const operation = await createPayout(method, fundingChannel, source, amount);
   assert(operation.status === 'SUBMITTED', `${method} payout submitted and funds reserved`);
   const approved = await patch(`/operations/${operation.id}/approve`, 'usr_admin');
   assert(approved.status === 'PROCESSING', `${method} payout waits for bank execution`);
@@ -133,6 +151,22 @@ async function completePayout(method, fundingChannel, source, amount, feeAmount)
   });
   assert(completed.status === 'COMPLETED', `${method} payout completes with external reference`);
   return get(`/operations/${operation.id}`, 'usr_admin');
+}
+
+function assertPayoutFee(result, method, fundingChannel) {
+  const snapshot = result.metadata?.withdrawalFee;
+  assert(
+      snapshot?.method === method &&
+      snapshot.channelCode === fundingChannel.code &&
+      Number(snapshot.amount) === Number(result.feeAmount) &&
+      Boolean(snapshot.version),
+    `${method} payout stores the resolved fee rule snapshot`
+  );
+  const expectedJournals = Number(result.feeAmount) > 0 ? 2 : 1;
+  assert(
+    result.journals.length === expectedJournals,
+    `${method} payout posts principal and a fee journal only when the configured fee is non-zero`
+  );
 }
 
 async function submitAndApprove(body) {

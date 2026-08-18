@@ -106,6 +106,9 @@ func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testin
 	for _, required := range []string{
 		"INSERT OR IGNORE INTO cregis_withdrawals",
 		"amount_minor",
+		"fee_amount_minor",
+		"net_amount_minor",
+		"fee_rule_version",
 		"c.kyc_status='approved'",
 		"c.operations_status='active'",
 		"c.status='active'",
@@ -116,6 +119,15 @@ func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testin
 		if !strings.Contains(reserveWithdrawalSQL, required) {
 			t.Fatalf("atomic reservation SQL must contain %q", required)
 		}
+	}
+}
+
+func TestUSDTFeeCanBeZeroButWithdrawalCannot(t *testing.T) {
+	if amount, ok := parseUSDTMicroUnitsAllowZero("0"); !ok || amount != 0 {
+		t.Fatalf("zero fee must be accepted exactly, got %d, %v", amount, ok)
+	}
+	if _, ok := parseUSDTMicroUnits("0"); ok {
+		t.Fatal("zero withdrawal amount must remain invalid")
 	}
 }
 

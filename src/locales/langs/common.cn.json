@@ -70,7 +70,7 @@
       "assurance_totp": "使用验证器生成的一次性动态验证码",
       "assurance_audit": "登录与敏感操作均可审计",
       "partner": {
-        "eyebrow": "SCC数字银行合作方支付工作台",
+        "eyebrow": "SSC数字银行合作方支付工作台",
         "title": "统一管理账户、资金与付款",
         "subtitle": "通过合作方 Portal 发起虚拟账户开户，查看法币与数字资产余额，并集中跟踪入账、转出、兑换及交易记录。",
         "assurance_session": "账户与资金数据按合作方权限隔离",
@@ -78,7 +78,7 @@
         "assurance_audit": "关键操作与资金记录全程留痕"
       },
       "customer": {
-        "eyebrow": "SCC数字银行客户服务",
+        "eyebrow": "SSC数字银行客户服务",
         "title": "安全访问您的银行账户",
         "subtitle": "登录后查看账户余额、交易记录与资金动态，并管理已开通的银行服务。",
         "assurance_session": "安全会话机制保护您的登录状态",
@@ -125,7 +125,7 @@
       "subtitle": "使用管理员分配的账户登录。密码通过后，还需要验证器动态验证码。",
       "submit": "继续身份验证",
       "provisioned_only": "管理账户由管理员预先创建，不提供自主注册。",
-      "new_customer": "首次使用 SCC数字银行？",
+      "new_customer": "首次使用 SSC数字银行？",
       "open_account": "个人或企业开户注册",
       "registration_helper": "提交申请后需完成人工 KYC / KYB 审核；审核通过后系统自动激活账户并创建 USDT-TRC20 钱包。",
       "customer": {
@@ -134,7 +134,7 @@
         "subtitle": "请输入开户注册时设置的邮箱和密码。KYC / KYB 通过并自动激活后即可登录。",
         "submit": "安全登录",
         "activated_only": "仅限已完成开户并激活网上银行的客户使用。如无法登录，请联系您的客户经理或银行支持团队。",
-        "new_customer": "还没有 SCC数字银行账户？",
+        "new_customer": "还没有 SSC数字银行账户？",
         "register": "申请开立账户",
         "registration_helper": "可申请个人或企业账户。提交后需完成人工 KYC / KYB 审核，审核通过后系统自动开户并创建钱包。"
       }

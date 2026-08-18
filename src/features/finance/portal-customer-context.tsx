@@ -5,6 +5,7 @@ import {
   Customer,
   demoOrganizationId,
   isSupportedPortalAccount,
+  neobankApi,
   Operation,
 } from './core-api';
 
@@ -19,7 +20,7 @@ type PortalCustomerContextValue = {
 };
 
 const PortalCustomerContext = createContext<PortalCustomerContextValue | null>(null);
-const STORAGE_KEY = 'scc-digital-bank.portal.demo-customer';
+const STORAGE_KEY = 'ssc-digital-bank.portal.demo-customer';
 
 export function PortalCustomerProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuthContext();
@@ -36,7 +37,7 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
     setError('');
     try {
       if (user?.role === 'customer') {
-        const profile = await coreApi<{
+        const profile = await neobankApi<{
           id: string;
           email: string;
           display_name: string;

@@ -26,6 +26,7 @@ const PortalWebhookDeliveries = lazy(() => import('src/pages/portal-webhook-deli
 const CryptoWalletPage = lazy(() => import('src/pages/portal/crypto-wallet'));
 const FundsHub = lazy(() => import('src/pages/portal/funds-hub'));
 const FiatDepositPage = lazy(() => import('src/pages/portal/fiat-deposit'));
+const VirtualAccountsPage = lazy(() => import('src/pages/portal/virtual-accounts'));
 const CryptoOperationsAdmin = lazy(() => import('src/pages/dashboard/crypto-operations'));
 
 function HomeRedirect() {
@@ -79,6 +80,7 @@ const isolatedWalletRoutes = [
       { path: 'crypto-wallet', element: <Navigate to="/portal/home" replace /> },
       { path: 'crypto-wallet/deposit', element: <CryptoWalletPage view="deposit" /> },
       { path: 'crypto-wallet/withdraw', element: <CryptoWalletPage view="withdraw" /> },
+      { path: 'virtual-accounts', element: <VirtualAccountsPage /> },
       { path: '*', element: <Page404 /> },
     ],
   },
@@ -115,6 +117,7 @@ const fullAdminWalletRoutes = [
       { path: 'crypto-wallet', element: <Navigate to="/portal/home" replace /> },
       { path: 'crypto-wallet/deposit', element: <CryptoWalletPage view="deposit" /> },
       { path: 'crypto-wallet/withdraw', element: <CryptoWalletPage view="withdraw" /> },
+      { path: 'virtual-accounts', element: <VirtualAccountsPage /> },
       { path: '*', element: <Page404 /> },
     ],
   },
@@ -157,6 +160,7 @@ const fullApplicationRoutes = [
       { path: 'crypto-wallet', element: <CryptoWalletPage /> },
       { path: 'crypto-wallet/deposit', element: <CryptoWalletPage view="deposit" /> },
       { path: 'crypto-wallet/withdraw', element: <CryptoWalletPage view="withdraw" /> },
+      { path: 'virtual-accounts', element: <VirtualAccountsPage /> },
       { path: 'transactions', element: <CustomerActivity /> },
       { path: 'transfers', element: <Navigate to="/portal/money/transfers" replace /> },
       { path: 'otc', element: <CustomerActionPage action="otc" /> },

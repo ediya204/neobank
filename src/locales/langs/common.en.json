@@ -70,7 +70,7 @@
       "assurance_totp": "Verification codes come from your authenticator",
       "assurance_audit": "Sign-ins and sensitive actions are auditable",
       "partner": {
-        "eyebrow": "SCC Digital Bank partner payments workspace",
+        "eyebrow": "SSC Digital Bank partner payments workspace",
         "title": "Manage accounts, funds and payments in one place",
         "subtitle": "Open virtual accounts, review fiat and digital-asset balances, and track deposits, payouts, conversions and transaction records through the Partner Portal.",
         "assurance_session": "Account and fund data are isolated by partner permissions",
@@ -78,7 +78,7 @@
         "assurance_audit": "Key actions and fund records remain fully traceable"
       },
       "customer": {
-        "eyebrow": "SCC Digital Bank customer banking",
+        "eyebrow": "SSC Digital Bank customer banking",
         "title": "Secure access to your bank accounts",
         "subtitle": "Sign in to review balances, transactions and account activity, and manage the banking services available to you.",
         "assurance_session": "Secure session controls protect your signed-in access",
@@ -125,7 +125,7 @@
       "subtitle": "Sign in with the account your administrator provided. After your password, you’ll enter a code from your authenticator.",
       "submit": "Continue to verification",
       "provisioned_only": "Administrative accounts are provisioned by an administrator and cannot be self-registered.",
-      "new_customer": "New to SCC Digital Bank?",
+      "new_customer": "New to SSC Digital Bank?",
       "open_account": "Open an individual or business account",
       "registration_helper": "Manual KYC / KYB review is required after submission. Approval automatically activates the account and creates a USDT-TRC20 wallet.",
       "customer": {
@@ -134,7 +134,7 @@
         "subtitle": "Enter the email and password you chose when applying. Sign-in becomes available after KYC / KYB approval and automatic activation.",
         "submit": "Secure sign in",
         "activated_only": "For customers who have completed account opening and activated Online Banking. If you cannot sign in, contact your relationship manager or bank support team.",
-        "new_customer": "New to SCC Digital Bank?",
+        "new_customer": "New to SSC Digital Bank?",
         "register": "Apply for an account",
         "registration_helper": "Apply for an individual or business account. Manual KYC / KYB approval automatically opens the account and creates its wallet."
       }

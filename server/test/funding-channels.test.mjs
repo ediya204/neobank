@@ -1,0 +1,113 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { ChannelsController } from '../dist/src/channels/channels.controller.js';
+
+const admin = {
+  id: 'admin_test',
+  organizationId: 'org_test',
+  active: true,
+  role: 'ADMIN',
+};
+
+const request = { header: (name) => (name === 'x-user-id' ? 'admin_test' : undefined) };
+
+test('new funding channels are normalized and remain inactive until explicitly enabled', async () => {
+  let createData;
+  const controller = new ChannelsController({
+    user: { findUnique: async () => admin },
+    fundingChannel: {
+      create: async ({ data }) => {
+        createData = data;
+        return { id: 'channel_test', ...data };
+      },
+    },
+  });
+
+  const result = await controller.create(
+    {
+      organizationId: 'org_test',
+      code: 'BANK-IN-02',
+      name: '  新法币入账通道  ',
+      type: 'FIAT_INBOUND',
+      supportedCurrencies: ['USD', 'HKD'],
+      settlementBankName: '  Example Bank  ',
+      settlementAccount: '  123-456  ',
+      swiftBic: '  exampLe1  ',
+    },
+    request
+  );
+
+  assert.equal(result.active, false);
+  assert.equal(createData.name, '新法币入账通道');
+  assert.equal(createData.settlementBankName, 'Example Bank');
+  assert.equal(createData.settlementAccount, '123-456');
+  assert.equal(createData.swiftBic, 'EXAMPLE1');
+});
+
+test('an active inbound channel cannot lose required bank instructions', async () => {
+  let writes = 0;
+  const controller = new ChannelsController({
+    user: { findUnique: async () => admin },
+    fundingChannel: {
+      findUnique: async () => ({
+        organizationId: 'org_test',
+        type: 'FIAT_INBOUND',
+        active: true,
+        settlementBankName: 'Example Bank',
+        settlementAccount: '123-456',
+        swiftBic: 'EXAMPLE1',
+      }),
+      update: async () => {
+        writes += 1;
+      },
+    },
+  });
+
+  await assert.rejects(
+    controller.update('channel_test', { settlementAccount: '' }, request),
+    /inbound_channel_bank_details_required/
+  );
+  assert.equal(writes, 0);
+});
+
+test('non-admin users cannot create funding channels', async () => {
+  const controller = new ChannelsController({
+    user: { findUnique: async () => ({ ...admin, role: 'MAKER' }) },
+    fundingChannel: { create: async () => assert.fail('create must not be called') },
+  });
+
+  await assert.rejects(
+    controller.create(
+      {
+        organizationId: 'org_test',
+        code: 'BANK-IN-02',
+        name: 'New channel',
+        type: 'FIAT_INBOUND',
+        supportedCurrencies: ['USD'],
+      },
+      request
+    ),
+    /admin_role_required/
+  );
+});
+
+test('VA payout cannot be configured as a separate new funding channel', async () => {
+  const controller = new ChannelsController({
+    user: { findUnique: async () => admin },
+    fundingChannel: { create: async () => assert.fail('create must not be called') },
+  });
+
+  await assert.rejects(
+    controller.create(
+      {
+        organizationId: 'org_test',
+        code: 'VA-PAYOUT-02',
+        name: 'Duplicate VA payout channel',
+        type: 'VA_PAYOUT',
+        supportedCurrencies: ['USD'],
+      },
+      request
+    ),
+    /va_payout_channel_merged/
+  );
+});

@@ -1063,7 +1063,7 @@ export default function ApiIntegrationApprovalPage() {
     return (
       <>
         <Helmet>
-          <title>{t('apiIntegrationApproval.pageTitle')} | SCC Digital Bank</title>
+          <title>{t('apiIntegrationApproval.pageTitle')} | SSC Digital Bank</title>
         </Helmet>
         <Container maxWidth={settings.themeStretch ? false : 'xl'}>
           <Box sx={{ mb: 4 }}>
@@ -1090,7 +1090,7 @@ export default function ApiIntegrationApprovalPage() {
   return (
     <>
       <Helmet>
-        <title>{t('apiIntegrationApproval.pageTitle')} | SCC Digital Bank</title>
+        <title>{t('apiIntegrationApproval.pageTitle')} | SSC Digital Bank</title>
       </Helmet>
 
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>

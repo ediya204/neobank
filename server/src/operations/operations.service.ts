@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 import { requireActiveUser, requireOrganizationAccess } from '../common/tenant-access';
 import { PrismaService } from '../prisma/prisma.service';
 import { isSupportedFiatCurrency, supportedCryptoNetwork } from '../supported-assets';
+import { WithdrawalFeesService } from '../withdrawal-fees/withdrawal-fees.service';
 
 type CreateOperationInput = {
   customerId: string;
@@ -31,6 +32,8 @@ type CreateOperationInput = {
   currency: Currency;
   amount: string;
   feeAmount?: string;
+  expectedFeeAmount?: string;
+  expectedFeeRuleVersion?: string;
   sourceAccountId?: string;
   targetAccountId?: string;
   beneficiaryId?: string;
@@ -60,7 +63,10 @@ const operationInclude = {
 
 @Injectable()
 export class OperationsService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly withdrawalFees: WithdrawalFeesService
+  ) {}
 
   async list(
     filters: {
@@ -129,8 +135,8 @@ export class OperationsService {
       throw new BadRequestException('unsupported_quote_currency');
     }
     const amount = this.positiveMoney(input.amount, 'amount', input.currency);
-    const feeAmount = new Prisma.Decimal(input.feeAmount || 0);
-    if (feeAmount.isNegative()) throw new BadRequestException('fee_must_not_be_negative');
+    const requestedFeeAmount = new Prisma.Decimal(input.feeAmount || 0);
+    if (requestedFeeAmount.isNegative()) throw new BadRequestException('fee_must_not_be_negative');
 
     const [maker, customer, source, target, channel, beneficiary] = await Promise.all([
       this.db.user.findUnique({ where: { id: makerId } }),
@@ -148,7 +154,9 @@ export class OperationsService {
         ? this.db.beneficiary.findUnique({ where: { id: input.beneficiaryId } })
         : null,
     ]);
-    if (!maker || !maker.active) throw new ForbiddenException('maker_not_active');
+    if (!maker || !maker.active || maker.role !== 'ADMIN') {
+      throw new ForbiddenException('admin_role_required');
+    }
     if (!customer) throw new NotFoundException('customer_not_found');
     if (maker.organizationId && maker.organizationId !== customer.organizationId) {
       throw new ForbiddenException('cross_tenant_operation');
@@ -166,8 +174,6 @@ export class OperationsService {
       input.type === 'FX' ||
       input.type === 'OTC' ||
       (input.type === 'ADJUSTMENT' && input.adjustmentDirection === 'DEBIT');
-    const reserve = amount.add(feeAmount);
-
     try {
       return await this.db.$transaction(
         async (tx) => {
@@ -197,6 +203,30 @@ export class OperationsService {
               throw new ConflictException('duplicate_remittance_reference');
             }
           }
+          let feeAmount = requestedFeeAmount;
+          let withdrawalFeeSnapshot: Record<string, string> | undefined;
+          if (input.type === 'PAYOUT') {
+            if (!channel || !input.payoutMethod) {
+              throw new BadRequestException('payout_details_required');
+            }
+            const resolvedFee = await this.withdrawalFees.resolve(tx, {
+              scopeId: customer.organizationId,
+              assetClass: 'FIAT',
+              currency: input.currency,
+              method: input.payoutMethod,
+              channelCode: channel.code,
+              expectedVersion: input.expectedFeeRuleVersion,
+            });
+            feeAmount = resolvedFee.amount;
+            withdrawalFeeSnapshot = resolvedFee.snapshot;
+            if (
+              input.expectedFeeAmount !== undefined &&
+              !feeAmount.equals(new Prisma.Decimal(input.expectedFeeAmount))
+            ) {
+              throw new ConflictException('withdrawal_fee_changed');
+            }
+          }
+          const reserve = amount.add(feeAmount);
           if (frozen && source) {
             await this.freeze(tx, source.id, reserve);
             if (input.type === 'OTC' && input.currency === 'USDT') {
@@ -227,6 +257,9 @@ export class OperationsService {
               remittanceReference: input.remittanceReference?.trim(),
               receivedAt: input.receivedAt ? new Date(input.receivedAt) : undefined,
               proofUrl: input.proofUrl,
+              metadata: withdrawalFeeSnapshot
+                ? { withdrawalFee: withdrawalFeeSnapshot }
+                : undefined,
               submittedAt: new Date(),
             },
             include: operationInclude,
@@ -258,7 +291,7 @@ export class OperationsService {
         this.requireNonCryptoWorkflow(operation);
         if (operation.status !== 'SUBMITTED')
           throw new ConflictException('operation_not_pending_approval');
-        const checker = await this.requireRole(tx, checkerId, ['ADMIN', 'CHECKER']);
+        const checker = await this.requireRole(tx, checkerId, ['ADMIN']);
         if (checker.organizationId !== operation.customer.organizationId) {
           throw new NotFoundException('operation_not_found');
         }
@@ -297,7 +330,7 @@ export class OperationsService {
         this.requireNonCryptoWorkflow(operation);
         if (operation.status !== 'SUBMITTED')
           throw new ConflictException('operation_not_pending_approval');
-        const checker = await this.requireRole(tx, checkerId, ['ADMIN', 'CHECKER']);
+        const checker = await this.requireRole(tx, checkerId, ['ADMIN']);
         if (checker.organizationId !== operation.customer.organizationId) {
           throw new NotFoundException('operation_not_found');
         }
@@ -346,7 +379,7 @@ export class OperationsService {
         if (operation.type !== 'PAYOUT' || operation.status !== 'PROCESSING') {
           throw new ConflictException('payout_not_ready_for_execution');
         }
-        const operator = await this.requireRole(tx, operatorId, ['ADMIN', 'OPERATOR']);
+        const operator = await this.requireRole(tx, operatorId, ['ADMIN']);
         if (operator.organizationId !== operation.customer.organizationId) {
           throw new NotFoundException('operation_not_found');
         }
@@ -375,6 +408,7 @@ export class OperationsService {
       status: AccountStatus;
       currency: Currency;
       network: string | null;
+      fundingChannelId: string | null;
     } | null,
     target: {
       id: string;
@@ -384,7 +418,12 @@ export class OperationsService {
       currency: Currency;
       network: string | null;
     } | null,
-    channel: { type: ChannelType; supportedCurrencies: Currency[]; active: boolean } | null,
+    channel: {
+      id: string;
+      type: ChannelType;
+      supportedCurrencies: Currency[];
+      active: boolean;
+    } | null,
     beneficiary: {
       customerId: string;
       type: BeneficiaryType;
@@ -431,14 +470,25 @@ export class OperationsService {
       if (!source || !input.beneficiaryId || !input.payoutMethod || !channel) {
         throw new BadRequestException('payout_details_required');
       }
-      const expectedKind = input.payoutMethod === 'VA' ? 'VIRTUAL_ACCOUNT' : 'SYSTEM_WALLET';
+      const allowedSourceKinds: AccountKind[] =
+        input.payoutMethod === 'VA'
+          ? ['VIRTUAL_ACCOUNT']
+          : input.payoutMethod === 'POBO'
+          ? ['SYSTEM_WALLET', 'VIRTUAL_ACCOUNT']
+          : ['SYSTEM_WALLET'];
       const expectedChannel: ChannelType =
         input.payoutMethod === 'VA'
-          ? 'VA_PAYOUT'
+          ? 'VIRTUAL_ACCOUNT'
           : input.payoutMethod === 'POBO'
           ? 'POBO_PAYOUT'
           : 'PLATFORM_PAYOUT';
-      if (source.kind !== expectedKind || channel.type !== expectedChannel) {
+      const vaChannelMismatch =
+        input.payoutMethod === 'VA' && source.fundingChannelId !== channel.id;
+      if (
+        !allowedSourceKinds.includes(source.kind) ||
+        channel.type !== expectedChannel ||
+        vaChannelMismatch
+      ) {
         throw new BadRequestException('payout_source_or_channel_mismatch');
       }
       if (

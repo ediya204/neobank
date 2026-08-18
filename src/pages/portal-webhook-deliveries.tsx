@@ -102,7 +102,7 @@ export default function PortalWebhookDeliveriesPage() {
   return (
     <>
       <Helmet>
-        <title>{translate('全部 Webhook 投递')} | SCC Digital Bank</title>
+        <title>{translate('全部 Webhook 投递')} | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl" sx={{ py: { xs: 3, md: 5 } }}>
         <Stack spacing={3}>

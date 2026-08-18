@@ -15,7 +15,7 @@ export default function PortalRoleEntryPage() {
   return (
     <>
       <Helmet>
-        <title>选择登录入口 | SCC Digital Bank</title>
+        <title>选择登录入口 | SSC Digital Bank</title>
       </Helmet>
       <Stack spacing={2.5}>
         <Typography variant="h3">选择登录入口</Typography>

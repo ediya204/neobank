@@ -195,7 +195,7 @@ func (app *application) adminTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := text(rows[0]["email"])
-	issuer := "SCC Digital Bank Admin"
+	issuer := "SSC Digital Bank Admin"
 	otpauth := "otpauth://totp/" + url.PathEscape(issuer+":"+email) + "?secret=" + url.QueryEscape(secret) + "&issuer=" + url.QueryEscape(issuer) + "&algorithm=SHA1&digits=6&period=30"
 	writeJSON(w, http.StatusOK, map[string]any{"secret": secret, "otpauth_uri": otpauth, "issuer": issuer, "account_name": email, "enrollment_token": input.EnrollmentToken})
 }

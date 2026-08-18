@@ -93,6 +93,13 @@ application covering `/admin*` and the corresponding Admin API paths. Recheck
 that unauthenticated requests are rejected by the application after the Access
 change. Never disable Access first.
 
+The customer withdrawal-address whitelist is a separate PostgreSQL change.
+Before deploying code that requires it, repeat the same backup, checksum,
+restore-test, review, approval-hash, and post-migration verification gates for
+`migrations-postgres/0005_customer_withdrawal_address_whitelist.sql`. Applying
+the migration, deploying the Go service, deploying the web Worker, and enabling
+any real withdrawal remain four separate approvals.
+
 ## Temporary worktrees and processes
 
 - Create temporary release worktrees with a unique `mktemp -d` path.

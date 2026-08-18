@@ -65,9 +65,9 @@ try {
 }
 
 try {
-  const denied = await fetch('http://localhost:4000/api/v1/crypto-wallets/withdrawals', {
+  const unsupported = await fetch('http://localhost:4000/api/v1/crypto-wallets/withdrawals', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-user-id': 'usr_maker' },
+    headers: { 'content-type': 'application/json', 'x-user-id': 'usr_admin' },
     body: JSON.stringify({
       customerId: 'cus_demo_business',
       walletId: 'cw_biz_tron',
@@ -77,8 +77,8 @@ try {
       idempotencyKey: 'unsupported-network-check',
     }),
   });
-  const passed = denied.status === 400;
-  console.log(`${passed ? 'PASS' : 'FAIL'} Unsupported crypto network guard ${denied.status}`);
+  const passed = unsupported.status === 400;
+  console.log(`${passed ? 'PASS' : 'FAIL'} Unsupported crypto network guard ${unsupported.status}`);
   failed ||= !passed;
 } catch (error) {
   failed = true;

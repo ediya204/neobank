@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,12 +16,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const requiredMigration = "0004_admin_auth.sql"
+var migrationFilename = regexp.MustCompile(`^[0-9]{4}_[a-z0-9_]+\.sql$`)
 
 func main() {
-	if len(os.Args) != 2 || filepath.Base(os.Args[1]) != requiredMigration {
-		fatal(fmt.Errorf("usage: postgres-migrate /path/to/%s", requiredMigration))
+	if len(os.Args) != 2 || !migrationFilename.MatchString(filepath.Base(os.Args[1])) {
+		fatal(errors.New("usage: postgres-migrate /path/to/NNNN_reviewed_migration.sql"))
 	}
+	migrationVersion := strings.TrimSuffix(filepath.Base(os.Args[1]), ".sql")
 	sql, err := os.ReadFile(os.Args[1])
 	if err != nil {
 		fatal(fmt.Errorf("read migration: %w", err))
@@ -60,7 +62,7 @@ func main() {
 		fatal(fmt.Errorf("acquire migration lock: %w", err))
 	}
 	var applied string
-	err = tx.QueryRow(ctx, `SELECT version FROM neobank_schema_migrations WHERE version='0004_admin_auth'`).Scan(&applied)
+	err = tx.QueryRow(ctx, `SELECT version FROM neobank_schema_migrations WHERE version=$1`, migrationVersion).Scan(&applied)
 	if err == nil {
 		fmt.Printf("migration already applied: version=%s sha256=%s\n", applied, digestHex)
 		return
@@ -71,7 +73,7 @@ func main() {
 	if _, err = tx.Exec(ctx, string(sql)); err != nil {
 		fatal(fmt.Errorf("execute migration: %w", err))
 	}
-	if err = tx.QueryRow(ctx, `SELECT version FROM neobank_schema_migrations WHERE version='0004_admin_auth'`).Scan(&applied); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT version FROM neobank_schema_migrations WHERE version=$1`, migrationVersion).Scan(&applied); err != nil {
 		fatal(fmt.Errorf("verify migration: %w", err))
 	}
 	if err = tx.Commit(ctx); err != nil {

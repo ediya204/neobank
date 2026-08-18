@@ -274,7 +274,7 @@ export default function BeneficiaryDialog({
                   inputProps={{ spellCheck: false, autoComplete: 'off' }}
                 />
                 <Alert severity="warning">
-                  数字货币转账不可撤销。这里保存的是外部收款地址，不是 SCC/Cregis
+                  数字货币转账不可撤销。这里保存的是外部收款地址，不是 SSC/Cregis
                   分配的充值地址。
                 </Alert>
                 <FormControlLabel

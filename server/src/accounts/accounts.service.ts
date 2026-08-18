@@ -44,7 +44,7 @@ export class AccountsService {
     const [user, customer] = await Promise.all([
       this.db.user.findUnique({
         where: { id: userId },
-        select: { active: true, organizationId: true },
+        select: { active: true, organizationId: true, role: true },
       }),
       this.db.customer.findUnique({
         where: { id: customerId },
@@ -81,7 +81,12 @@ export class AccountsService {
     ]);
 
     if (!customer) throw new NotFoundException('customer_not_found');
-    if (!user?.active || !user.organizationId || user.organizationId !== customer.organizationId) {
+    if (
+      !user?.active ||
+      user.role !== 'ADMIN' ||
+      !user.organizationId ||
+      user.organizationId !== customer.organizationId
+    ) {
       throw new ForbiddenException('cross_tenant_customer');
     }
 

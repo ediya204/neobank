@@ -6,7 +6,7 @@ export class HealthController {
   health() {
     return {
       status: 'ok',
-      service: 'scc-digital-bank-core-api',
+      service: 'ssc-digital-bank-core-api',
       timestamp: new Date().toISOString(),
     };
   }

@@ -9,8 +9,8 @@ export async function requireActiveUser(db: TenantDatabase, userId: string) {
     where: { id: userId },
     select: { id: true, active: true, organizationId: true, role: true },
   });
-  if (!user?.active || !user.organizationId) {
-    throw new ForbiddenException('active_user_required');
+  if (!user?.active || !user.organizationId || user.role !== 'ADMIN') {
+    throw new ForbiddenException('admin_role_required');
   }
   return user;
 }

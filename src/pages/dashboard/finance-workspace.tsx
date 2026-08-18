@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   Container,
   Dialog,
@@ -15,11 +16,15 @@ import {
   Divider,
   Drawer,
   FormControl,
+  FormControlLabel,
+  FormHelperText,
+  InputAdornment,
   InputLabel,
   MenuItem,
   Select,
   Skeleton,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -42,7 +47,6 @@ import {
   Currency,
   Customer,
   demoOrganizationId,
-  demoUsers,
   FundingChannel,
   JournalEntry,
   MarketQuote,
@@ -52,6 +56,7 @@ import {
   OperationType,
   RateVersion,
   supportedFiatCurrencies,
+  WithdrawalFeeRule,
 } from 'src/features/finance/core-api';
 
 export type FinanceSection =
@@ -77,7 +82,7 @@ const sectionCopy: Record<
     title: '账户与钱包',
     description: '查看客户的 VA 账户、系统多货币法币账户和数字钱包状态。',
   },
-  channels: { title: '资金通道', description: '查看法币入账、VA 出款、POBO 和平台代付通道。' },
+  channels: { title: '资金通道', description: '查看法币入账、VA 银行、POBO 和平台代付通道。' },
   beneficiaries: {
     title: '收款人管理',
     description: '维护客户银行账户和 USDT-TRON 地址，并在付款时复用已核对资料。',
@@ -142,6 +147,20 @@ type OperationForm = {
   narrative: string;
 };
 
+type ChannelForm = {
+  code: string;
+  name: string;
+  type: FundingChannel['type'];
+  supportedCurrencies: Currency[];
+  active: boolean;
+  settlementBankName: string;
+  settlementAccount: string;
+  swiftBic: string;
+  bankCountry: string;
+  bankAddress: string;
+  branchName: string;
+};
+
 const initialForm: OperationForm = {
   customerId: '',
   currency: 'USD',
@@ -161,11 +180,79 @@ const initialForm: OperationForm = {
   narrative: '',
 };
 
+const initialChannelForm: ChannelForm = {
+  code: '',
+  name: '',
+  type: 'FIAT_INBOUND',
+  supportedCurrencies: ['USD', 'HKD'],
+  active: false,
+  settlementBankName: '',
+  settlementAccount: '',
+  swiftBic: '',
+  bankCountry: '',
+  bankAddress: '',
+  branchName: '',
+};
+
+function payoutAccountKindAllowed(
+  kind: MoneyAccount['kind'],
+  payoutMethod: OperationForm['payoutMethod']
+) {
+  if (payoutMethod === 'VA') return kind === 'VIRTUAL_ACCOUNT';
+  if (payoutMethod === 'POBO') return kind === 'SYSTEM_WALLET' || kind === 'VIRTUAL_ACCOUNT';
+  return kind === 'SYSTEM_WALLET';
+}
+
+function payoutAccountScopeLabel(payoutMethod: OperationForm['payoutMethod']) {
+  if (payoutMethod === 'VA') return 'VA 钱包';
+  if (payoutMethod === 'POBO') return '系统钱包或 VA 钱包';
+  return '系统钱包';
+}
+
+const channelTypeCopy: Record<
+  FundingChannel['type'],
+  { label: string; description: string; icon: string }
+> = {
+  FIAT_INBOUND: {
+    label: '法币入账',
+    description: '接收银行汇款，匹配客户与目标 VA/钱包，审批后才记账。',
+    icon: ACTION_ICONS.fundsIn,
+  },
+  VIRTUAL_ACCOUNT: {
+    label: 'VA 银行',
+    description: '同一银行通道负责 VA 开户，并绑定该 VA 后续转出所使用的银行。',
+    icon: ACTION_ICONS.accounts,
+  },
+  VA_PAYOUT: {
+    label: '历史 VA 出款',
+    description: '旧版兼容类型；不再用于新配置或新业务，历史记录继续保留。',
+    icon: ACTION_ICONS.accounts,
+  },
+  POBO_PAYOUT: {
+    label: 'POBO 出款',
+    description: '从系统钱包扣款，由外部通道以客户名义执行付款。',
+    icon: ACTION_ICONS.fundsOut,
+  },
+  PLATFORM_PAYOUT: {
+    label: '平台代付',
+    description: '从系统钱包扣款，以平台母账户作为银行付款人。',
+    icon: ACTION_ICONS.internalTransfer,
+  },
+};
+
+const configurableChannelTypes: FundingChannel['type'][] = [
+  'FIAT_INBOUND',
+  'VIRTUAL_ACCOUNT',
+  'POBO_PAYOUT',
+  'PLATFORM_PAYOUT',
+];
+
 export default function FinanceWorkspace({ section }: { section: FinanceSection }) {
   const copy = sectionCopy[section];
-  const [userId, setUserId] = useState<string>('usr_admin');
+  const userId = 'usr_admin';
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [channels, setChannels] = useState<FundingChannel[]>([]);
+  const [withdrawalFees, setWithdrawalFees] = useState<WithdrawalFeeRule[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [rates, setRates] = useState<RateVersion[]>([]);
   const [marketQuotes, setMarketQuotes] = useState<MarketQuote[]>([]);
@@ -187,19 +274,29 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [customerDetail, setCustomerDetail] = useState<Customer | null>(null);
   const [beneficiaryOpen, setBeneficiaryOpen] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
+  const [channelEditorOpen, setChannelEditorOpen] = useState(false);
+  const [editingChannel, setEditingChannel] = useState<FundingChannel | null>(null);
+  const [channelForm, setChannelForm] = useState<ChannelForm>(initialChannelForm);
+  const [channelSaving, setChannelSaving] = useState(false);
+  const [channelFormError, setChannelFormError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [customerRows, channelRows] = await Promise.all([
+      const [customerRows, channelRows, feeRows] = await Promise.all([
         coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`, { userId }),
         coreApi<FundingChannel[]>(`/funding-channels?organizationId=${demoOrganizationId}`, {
           userId,
         }),
+        coreApi<WithdrawalFeeRule[]>(
+          `/withdrawal-fees?organizationId=${demoOrganizationId}`,
+          { userId }
+        ),
       ]);
       setCustomers(customerRows);
       setChannels(channelRows);
+      setWithdrawalFees(feeRows);
       if (!selectedCustomerId && customerRows[0]) setSelectedCustomerId(customerRows[0].id);
       const params = new URLSearchParams({ organizationId: demoOrganizationId });
       if (copy.type) params.set('type', copy.type);
@@ -314,6 +411,10 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!copy.type) return;
+    if (copy.type === 'PAYOUT' && form.payoutMethod === 'VA' && !form.channelId) {
+      setError('所选 VA 账户未绑定开户银行通道，不能提交 VA 出款。');
+      return;
+    }
     setError('');
     try {
       const payload: Record<string, unknown> = {
@@ -347,10 +448,24 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         });
       }
       if (copy.type === 'PAYOUT') {
+        const selectedChannel = channels.find((channel) => channel.id === form.channelId);
+        const feeRule = selectedChannel
+          ? withdrawalFees.find(
+              (rule) =>
+                rule.assetClass === 'FIAT' &&
+                rule.currency === form.currency &&
+                rule.method === form.payoutMethod &&
+                rule.channelCode === selectedChannel.code &&
+                rule.active
+            )
+          : undefined;
+        if (!feeRule) throw new Error('当前渠道尚未配置生效的转出手续费');
         Object.assign(payload, {
           channelId: form.channelId,
           beneficiaryId: form.beneficiaryId,
           payoutMethod: form.payoutMethod,
+          expectedFeeAmount: feeRule.amount,
+          expectedFeeRuleVersion: feeRule.version,
         });
       }
       if (copy.type === 'FX' || copy.type === 'OTC') payload.quoteCurrency = form.quoteCurrency;
@@ -388,6 +503,133 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : '操作失败');
+    }
+  };
+
+  const openChannelEditor = (channel?: FundingChannel) => {
+    setEditingChannel(channel || null);
+    setChannelForm(
+      channel
+        ? {
+            code: channel.code,
+            name: channel.name,
+            type: channel.type,
+            supportedCurrencies: channel.supportedCurrencies,
+            active: channel.active,
+            settlementBankName: channel.settlementBankName || '',
+            settlementAccount: channel.settlementAccount || '',
+            swiftBic: channel.swiftBic || '',
+            bankCountry: channel.bankCountry || '',
+            bankAddress: channel.bankAddress || '',
+            branchName: channel.branchName || '',
+          }
+        : initialChannelForm
+    );
+    setChannelFormError('');
+    setChannelEditorOpen(true);
+  };
+
+  const saveChannel = async (event: FormEvent) => {
+    event.preventDefault();
+    const name = channelForm.name.trim();
+    const code = channelForm.code.trim().toUpperCase();
+    if (!name) {
+      setChannelFormError('请输入通道名称。');
+      return;
+    }
+    if (!editingChannel && !/^[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(code)) {
+      setChannelFormError('通道代码只能使用大写字母、数字和连字符，例如 BANK-IN-01。');
+      return;
+    }
+    if (!channelForm.supportedCurrencies.length) {
+      setChannelFormError('请至少选择一种支持币种。');
+      return;
+    }
+    if (
+      channelForm.type === 'FIAT_INBOUND' &&
+      channelForm.active &&
+      (!channelForm.settlementBankName.trim() ||
+        !channelForm.settlementAccount.trim() ||
+        !channelForm.swiftBic.trim())
+    ) {
+      setChannelFormError('启用法币入账通道前，请完整填写银行名称、收款账号和 SWIFT / BIC。');
+      return;
+    }
+    if (
+      channelForm.type === 'VIRTUAL_ACCOUNT' &&
+      channelForm.active &&
+      (!channelForm.settlementBankName.trim() ||
+        !channelForm.swiftBic.trim() ||
+        !channelForm.bankCountry.trim() ||
+        !channelForm.bankAddress.trim())
+    ) {
+      setChannelFormError('启用 VA 开户通道前，请完整填写银行名称、国家、地址和 SWIFT / BIC。');
+      return;
+    }
+    setChannelSaving(true);
+    setChannelFormError('');
+    try {
+      const body = {
+        ...(!editingChannel
+          ? {
+              organizationId: demoOrganizationId,
+              code,
+              type: channelForm.type,
+            }
+          : {}),
+        name,
+        supportedCurrencies: channelForm.supportedCurrencies,
+        ...(editingChannel ? { active: channelForm.active } : {}),
+        settlementBankName: channelForm.settlementBankName.trim(),
+        settlementAccount: channelForm.settlementAccount.trim(),
+        swiftBic: channelForm.swiftBic.trim().toUpperCase(),
+        bankCountry: channelForm.bankCountry.trim().toUpperCase(),
+        bankAddress: channelForm.bankAddress.trim(),
+        branchName: channelForm.branchName.trim(),
+      };
+      await coreApi(
+        editingChannel ? `/funding-channels/${editingChannel.id}` : '/funding-channels',
+        {
+          method: editingChannel ? 'PATCH' : 'POST',
+          body: JSON.stringify(body),
+          userId,
+        }
+      );
+      setChannelEditorOpen(false);
+      setSuccess(
+        editingChannel
+          ? '资金通道配置已保存。'
+          : '资金通道已创建并保持停用；核对结算资料后可编辑启用。'
+      );
+      await load();
+    } catch (value) {
+      setChannelFormError(channelErrorMessage(value));
+    } finally {
+      setChannelSaving(false);
+    }
+  };
+
+  const saveWithdrawalFee = async (
+    scope: Omit<WithdrawalFeeRule, 'id' | 'amount' | 'active' | 'version' | 'updatedAt'>,
+    amount: string,
+    current?: WithdrawalFeeRule
+  ) => {
+    setError('');
+    try {
+      await coreApi(current ? `/withdrawal-fees/${current.id}` : '/withdrawal-fees', {
+        method: current ? 'PATCH' : 'POST',
+        userId,
+        body: JSON.stringify(
+          current
+            ? { amount, active: true, version: current.version }
+            : { ...scope, organizationId: demoOrganizationId, amount, active: true }
+        ),
+      });
+      setSuccess('转出手续费配置已保存；已提交交易的费用快照不会改变。');
+      await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : '手续费保存失败');
+      throw value;
     }
   };
 
@@ -437,17 +679,32 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       </Card>
     </>
   );
-  if (section === 'channels') workspaceContent = <ChannelGrid channels={channels} />;
+  if (section === 'channels') {
+    workspaceContent = (
+      <ChannelWorkspace
+        channels={channels}
+        withdrawalFees={withdrawalFees}
+        loading={loading}
+        onCreate={() => openChannelEditor()}
+        onEdit={openChannelEditor}
+        onRefresh={() => load().catch(() => undefined)}
+        onSaveFee={saveWithdrawalFee}
+      />
+    );
+  }
   if (section === 'accounts') {
     workspaceContent = (
       <AccountWorkspace
         customers={customers}
+        selectedCustomer={selectedCustomer}
         selectedCustomerId={selectedCustomer?.id || ''}
         onCustomerChange={setSelectedCustomerId}
         accounts={displayAccounts}
+        loading={loading}
         marketQuotes={marketQuotes}
         marketLoading={marketLoading}
         marketError={marketError}
+        onRefresh={() => load().catch(() => undefined)}
         onRefreshMarket={loadMarketQuotes}
       />
     );
@@ -481,7 +738,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   return (
     <>
       <Helmet>
-        <title>{copy.title} | SCC Digital Bank</title>
+        <title>{copy.title} | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
@@ -493,22 +750,6 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
               </Typography>
             </Box>
             <Stack direction="row" gap={1.5} alignItems="center">
-              {!IS_NEOBANK_DEPLOYMENT && (
-                <FormControl size="small" sx={{ minWidth: 180 }}>
-                  <InputLabel>本地演示身份</InputLabel>
-                  <Select
-                    label="本地演示身份"
-                    value={userId}
-                    onChange={(event) => setUserId(event.target.value)}
-                  >
-                    {demoUsers.map((user) => (
-                      <MenuItem key={user.id} value={user.id}>
-                        {user.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
               {copy.type && (
                 <Button
                   variant="contained"
@@ -516,6 +757,15 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
                   onClick={openCreate}
                 >
                   新建{copy.title}
+                </Button>
+              )}
+              {section === 'channels' && (
+                <Button
+                  variant="contained"
+                  startIcon={<Iconify icon={UI_ICONS.add} />}
+                  onClick={() => openChannelEditor()}
+                >
+                  新增资金通道
                 </Button>
               )}
             </Stack>
@@ -531,10 +781,16 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
               {success}
             </Alert>
           )}
-          <Alert severity="info">
-            当前为单人审批模式：一名授权管理员可以提交并审批；银行流水号或链上 Tx Hash
-            仍需在实际执行后人工回填。
-          </Alert>
+          {section === 'channels' ? (
+            <Alert severity="info">
+              通道配置只决定后续业务可选择的资金路径；不会自动记账、结算或发起银行转账。
+            </Alert>
+          ) : (
+            <Alert severity="info">
+              当前为单人审批模式：一名授权管理员可以提交并审批；银行流水号或链上 Tx Hash
+              仍需在实际执行后人工回填。
+            </Alert>
+          )}
 
           {workspaceContent}
         </Stack>
@@ -548,8 +804,10 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
           setForm={setForm}
           customers={customers}
           accounts={availableAccounts}
+          accountsCustomerId={customerDetail?.id}
           beneficiaries={beneficiaries}
           channels={channels}
+          withdrawalFees={withdrawalFees}
           onClose={() => setCreateOpen(false)}
           onSubmit={submit}
         />
@@ -614,6 +872,18 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
           load().catch(() => undefined);
         }}
         userId={userId}
+      />
+      <ChannelEditorDrawer
+        open={channelEditorOpen}
+        channel={editingChannel}
+        form={channelForm}
+        saving={channelSaving}
+        error={channelFormError}
+        onChange={setChannelForm}
+        onClose={() => {
+          if (!channelSaving) setChannelEditorOpen(false);
+        }}
+        onSubmit={saveChannel}
       />
       <RateDialog
         open={rateOpen}
@@ -1048,68 +1318,651 @@ function Metric({
   );
 }
 
-function ChannelGrid({ channels }: { channels: FundingChannel[] }) {
-  const descriptions: Record<FundingChannel['type'], string> = {
-    FIAT_INBOUND: '接收银行汇款，匹配客户与目标 VA/钱包，管理员审批后入账。',
-    VA_PAYOUT: '从指定 VA 账户的币种余额扣款，以该 VA 持有人信息作为付款人。',
-    POBO_PAYOUT: '从系统钱包扣款，由通道以客户名义执行 POBO 付款。',
-    PLATFORM_PAYOUT: '从系统钱包扣款，以平台母账户作为银行付款人。',
-  };
-  return (
-    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
-      {channels.map((channel) => (
-        <Card key={channel.id}>
-          <CardContent>
-            <Stack direction="row" justifyContent="space-between">
-              <Box>
-                <Typography variant="h6">{channel.name}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {channel.code}
-                </Typography>
-              </Box>
-              <Chip
-                color={channel.active ? 'success' : 'default'}
-                label={channel.active ? '启用' : '停用'}
-                size="small"
-              />
-            </Stack>
-            <Typography color="text.secondary" sx={{ my: 2 }}>
-              {descriptions[channel.type]}
-            </Typography>
-            <Stack direction="row" flexWrap="wrap" gap={0.75}>
-              {channel.supportedCurrencies.map((currency) => (
-                <Chip key={currency} label={currency} size="small" />
-              ))}
-            </Stack>
-            {channel.settlementBankName && (
-              <Typography variant="body2" sx={{ mt: 2 }}>
-                {channel.settlementBankName} · {channel.settlementAccount}
+function ChannelWorkspace({
+  channels,
+  withdrawalFees,
+  loading,
+  onCreate,
+  onEdit,
+  onRefresh,
+  onSaveFee,
+}: {
+  channels: FundingChannel[];
+  withdrawalFees: WithdrawalFeeRule[];
+  loading: boolean;
+  onCreate: () => void;
+  onEdit: (channel: FundingChannel) => void;
+  onRefresh: () => void;
+  onSaveFee: (
+    scope: Omit<WithdrawalFeeRule, 'id' | 'amount' | 'active' | 'version' | 'updatedAt'>,
+    amount: string,
+    current?: WithdrawalFeeRule
+  ) => Promise<void>;
+}) {
+  if (loading) {
+    return (
+      <Stack spacing={1.5} aria-label="正在加载资金通道">
+        {[0, 1, 2].map((item) => (
+          <Skeleton key={item} variant="rounded" height={124} />
+        ))}
+      </Stack>
+    );
+  }
+
+  const legacyVaPayoutCount = channels.filter((channel) => channel.type === 'VA_PAYOUT').length;
+  const configuredChannels = channels.filter((channel) => channel.type !== 'VA_PAYOUT');
+
+  if (!configuredChannels.length) {
+    return (
+      <Stack spacing={2}>
+        <Card variant="outlined">
+          <Stack alignItems="center" spacing={2} sx={{ px: 3, py: { xs: 6, md: 9 } }}>
+            <Box
+              sx={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                bgcolor: 'background.neutral',
+                color: 'text.secondary',
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              <Iconify icon="solar:bank-bold-duotone" width={30} />
+            </Box>
+            <Box sx={{ textAlign: 'center', maxWidth: 520 }}>
+              <Typography variant="h6">还没有资金通道</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                创建通道后，入账和出款表单才能选择对应路径。每个 VA 银行通道同时绑定开户和该 VA 的后续转出。
               </Typography>
-            )}
-          </CardContent>
+            </Box>
+            <Button
+              variant="contained"
+              startIcon={<Iconify icon={UI_ICONS.add} />}
+              onClick={onCreate}
+            >
+              创建第一个通道
+            </Button>
+          </Stack>
         </Card>
-      ))}
-    </Box>
+        <WithdrawalFeeWorkspace channels={[]} rules={withdrawalFees} onSave={onSaveFee} />
+      </Stack>
+    );
+  }
+
+  const activeCount = configuredChannels.filter((channel) => channel.active).length;
+  const inboundCount = configuredChannels.filter(
+    (channel) => channel.type === 'FIAT_INBOUND'
+  ).length;
+  const vaCount = configuredChannels.filter(
+    (channel) => channel.type === 'VIRTUAL_ACCOUNT'
+  ).length;
+  const payoutCount = configuredChannels.length - inboundCount - vaCount;
+
+  return (
+    <Stack spacing={2}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: '1fr',
+            sm: 'repeat(2, minmax(0, 1fr))',
+            lg: 'repeat(4, minmax(0, 1fr))',
+          },
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 2,
+          overflow: 'hidden',
+          bgcolor: 'background.paper',
+        }}
+      >
+        {[
+          ['可用通道', `${activeCount} / ${configuredChannels.length}`],
+          ['入账路径', inboundCount],
+          ['VA 银行', vaCount],
+          ['出款路径', payoutCount],
+        ].map(([label, value], index) => (
+          <Box
+            key={label}
+            sx={{
+              px: 2.5,
+              py: 2,
+              borderLeft: {
+                xs: 0,
+                sm: index % 2 ? 1 : 0,
+                lg: index ? 1 : 0,
+              },
+              borderTop: {
+                xs: index ? 1 : 0,
+                sm: index > 1 ? 1 : 0,
+                lg: 0,
+              },
+              borderColor: 'divider',
+            }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              {label}
+            </Typography>
+            <Typography variant="h5" sx={{ mt: 0.25 }}>
+              {value}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+
+      {legacyVaPayoutCount > 0 && (
+        <Alert severity="info">
+          已保留 {legacyVaPayoutCount} 条旧版 VA 出款通道供历史记录读取；新开户和新出款均改用对应的 VA 银行通道。
+        </Alert>
+      )}
+
+      <Card variant="outlined">
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
+          justifyContent="space-between"
+          gap={1.5}
+          sx={{ px: 2.5, py: 2 }}
+        >
+          <Box>
+            <Typography variant="h6">通道配置</Typography>
+            <Typography variant="body2" color="text.secondary">
+              停用只阻止新业务选择，历史记录和账本仍会保留。
+            </Typography>
+          </Box>
+          <Button
+            variant="text"
+            startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
+            onClick={onRefresh}
+          >
+            刷新状态
+          </Button>
+        </Stack>
+        <Divider />
+        <Stack divider={<Divider flexItem />}>
+          {configuredChannels.map((channel) => {
+            const copy = channelTypeCopy[channel.type];
+            return (
+              <Box
+                key={channel.id}
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'minmax(300px, 1.4fr) minmax(170px, .7fr) minmax(220px, 1fr) auto',
+                  },
+                  alignItems: 'center',
+                  gap: { xs: 1.5, md: 2.5 },
+                  px: 2.5,
+                  py: 2.25,
+                }}
+              >
+                <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                  <Box
+                    sx={{
+                      width: 42,
+                      height: 42,
+                      flex: '0 0 auto',
+                      borderRadius: 1.5,
+                      bgcolor: 'background.neutral',
+                      color: 'primary.main',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    <Iconify icon={copy.icon} width={23} />
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                      <Typography variant="subtitle1">{channel.name}</Typography>
+                      <Chip
+                        color={channel.active ? 'success' : 'default'}
+                        label={channel.active ? '启用' : '停用'}
+                        size="small"
+                      />
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">
+                      {channel.code} · {copy.label}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      {copy.description}
+                    </Typography>
+                  </Box>
+                </Stack>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    支持币种
+                  </Typography>
+                  <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mt: 0.5 }}>
+                    {channel.supportedCurrencies.map((currency) => (
+                      <Chip key={currency} label={currency} size="small" variant="outlined" />
+                    ))}
+                  </Stack>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    结算资料
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 0.5 }}>
+                    {channel.settlementBankName || '未配置银行'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {[
+                      channel.settlementAccount,
+                      channel.swiftBic,
+                      channel.branchName,
+                      channel.bankCountry,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ') || '未配置结算资料'}
+                  </Typography>
+                </Box>
+                <Button
+                  variant="outlined"
+                  startIcon={<Iconify icon={ACTION_ICONS.edit} />}
+                  onClick={() => onEdit(channel)}
+                  sx={{ justifySelf: { xs: 'stretch', md: 'end' } }}
+                >
+                  编辑配置
+                </Button>
+              </Box>
+            );
+          })}
+        </Stack>
+      </Card>
+      <WithdrawalFeeWorkspace
+        channels={configuredChannels}
+        rules={withdrawalFees}
+        onSave={onSaveFee}
+      />
+    </Stack>
   );
+}
+
+type WithdrawalFeeScope = Omit<
+  WithdrawalFeeRule,
+  'id' | 'amount' | 'active' | 'version' | 'updatedAt'
+>;
+
+function WithdrawalFeeWorkspace({
+  channels,
+  rules,
+  onSave,
+}: {
+  channels: FundingChannel[];
+  rules: WithdrawalFeeRule[];
+  onSave: (
+    scope: WithdrawalFeeScope,
+    amount: string,
+    current?: WithdrawalFeeRule
+  ) => Promise<void>;
+}) {
+  const fiatScopes: Array<{ key: string; label: string; scope: WithdrawalFeeScope }> = channels
+    .filter((channel) =>
+      ['VIRTUAL_ACCOUNT', 'POBO_PAYOUT', 'PLATFORM_PAYOUT'].includes(channel.type)
+    )
+    .flatMap((channel) => {
+      const method =
+        channel.type === 'VIRTUAL_ACCOUNT'
+          ? 'VA'
+          : (channel.type.replace('_PAYOUT', '') as 'POBO' | 'PLATFORM');
+      return channel.supportedCurrencies
+        .filter((currency) => supportedFiatCurrencies.includes(currency))
+        .map((currency) => ({
+          key: `FIAT:${currency}:${method}:${channel.code}`,
+          label: `${channel.name} · ${method} · ${currency}`,
+          scope: {
+            organizationId: demoOrganizationId,
+            assetClass: 'FIAT' as const,
+            currency,
+            method,
+            channelCode: channel.code,
+          },
+        }));
+    });
+  const scopes = [
+    ...fiatScopes,
+    {
+      key: 'CRYPTO:USDT:ON_CHAIN:CREGIS:TRON',
+      label: 'Cregis · 链上转出 · USDT / TRON',
+      scope: {
+        organizationId: demoOrganizationId,
+        assetClass: 'CRYPTO' as const,
+        currency: 'USDT' as const,
+        method: 'ON_CHAIN' as const,
+        channelCode: 'CREGIS',
+        network: 'TRON' as const,
+      },
+    },
+  ];
+
+  return (
+    <Card variant="outlined">
+      <Stack sx={{ px: 2.5, py: 2 }} spacing={0.5}>
+        <Typography variant="h6">转出手续费</Typography>
+        <Typography variant="body2" color="text.secondary">
+          按渠道、转出方式、币种和网络分别配置。保存新金额只影响之后提交的交易。
+        </Typography>
+      </Stack>
+      <Divider />
+      <Stack divider={<Divider flexItem />}>
+        {scopes.map(({ key, label, scope }) => {
+          const current = rules.find(
+            (rule) =>
+              rule.assetClass === scope.assetClass &&
+              rule.currency === scope.currency &&
+              rule.method === scope.method &&
+              rule.channelCode === scope.channelCode &&
+              (rule.network || '') === (scope.network || '')
+          );
+          return (
+            <WithdrawalFeeEditor
+              key={key}
+              label={label}
+              scope={scope}
+              current={current}
+              onSave={onSave}
+            />
+          );
+        })}
+      </Stack>
+    </Card>
+  );
+}
+
+function WithdrawalFeeEditor({
+  label,
+  scope,
+  current,
+  onSave,
+}: {
+  label: string;
+  scope: WithdrawalFeeScope;
+  current?: WithdrawalFeeRule;
+  onSave: (
+    scope: WithdrawalFeeScope,
+    amount: string,
+    current?: WithdrawalFeeRule
+  ) => Promise<void>;
+}) {
+  const [amount, setAmount] = useState(current?.amount || '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setAmount(current?.amount || ''), [current?.amount, current?.version]);
+
+  const save = async () => {
+    if (!/^\d+(?:\.\d+)?$/.test(amount) || Number(amount) < 0) return;
+    setSaving(true);
+    try {
+      await onSave(scope, amount, current);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  let saveButtonLabel = '启用费用';
+  if (current) saveButtonLabel = '更新费用';
+  if (saving) saveButtonLabel = '保存中…';
+
+  return (
+    <Stack
+      direction={{ xs: 'column', md: 'row' }}
+      alignItems={{ md: 'center' }}
+      gap={2}
+      sx={{ px: 2.5, py: 2 }}
+    >
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="subtitle2">{label}</Typography>
+        <Typography variant="caption" color="text.secondary">
+          {current
+            ? `当前版本 ${current.version} · ${current.active ? '生效中' : '已停用'}`
+            : '尚未配置；配置前该路径不能提交转出'}
+        </Typography>
+      </Box>
+      <TextField
+        size="small"
+        type="number"
+        label="每笔固定手续费"
+        value={amount}
+        onChange={(event) => setAmount(event.target.value)}
+        inputProps={{ min: 0, step: scope.assetClass === 'CRYPTO' ? 0.000001 : 0.01 }}
+        InputProps={{
+          endAdornment: <InputAdornment position="end">{scope.currency}</InputAdornment>,
+        }}
+        sx={{ width: { xs: 1, md: 230 } }}
+      />
+      <Button
+        variant="contained"
+        disabled={saving || !/^\d+(?:\.\d+)?$/.test(amount)}
+        onClick={() => save().catch(() => undefined)}
+      >
+        {saveButtonLabel}
+      </Button>
+    </Stack>
+  );
+}
+
+function ChannelEditorDrawer({
+  open,
+  channel,
+  form,
+  saving,
+  error,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  channel: FundingChannel | null;
+  form: ChannelForm;
+  saving: boolean;
+  error: string;
+  onChange: (form: ChannelForm) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  const set = <K extends keyof ChannelForm>(key: K, value: ChannelForm[K]) =>
+    onChange({ ...form, [key]: value });
+  const activeInbound = form.active && form.type === 'FIAT_INBOUND';
+  const activeVa = form.active && form.type === 'VIRTUAL_ACCOUNT';
+  let submitLabel = channel ? '保存配置' : '创建停用通道';
+  if (saving) submitLabel = '正在保存…';
+
+  return (
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={onClose}
+      PaperProps={{ sx: { width: { xs: 1, sm: 540 } } }}
+    >
+      <Box
+        component="form"
+        onSubmit={onSubmit}
+        sx={{ minHeight: 1, display: 'flex', flexDirection: 'column' }}
+      >
+        <Stack direction="row" alignItems="flex-start" justifyContent="space-between" sx={{ p: 3 }}>
+          <Box>
+            <Typography variant="h5">{channel ? '编辑资金通道' : '新增资金通道'}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {channel ? '保存后只影响后续新业务。' : '新通道创建后默认停用。'}
+            </Typography>
+          </Box>
+          <Button color="inherit" onClick={onClose} disabled={saving}>
+            关闭
+          </Button>
+        </Stack>
+        <Divider />
+        <Stack spacing={2.5} sx={{ p: 3, flex: 1 }}>
+          {error && <Alert severity="error">{error}</Alert>}
+          {!channel && (
+            <Alert severity="info">
+              创建通道不会发起银行或钱包操作；完成资料核对后，需要再次编辑并明确启用。
+            </Alert>
+          )}
+          <TextField
+            required
+            label="通道代码"
+            value={form.code}
+            disabled={Boolean(channel)}
+            inputProps={{ maxLength: 40 }}
+            helperText={channel ? '已创建通道的代码不可修改。' : '例如 BANK-IN-01'}
+            onChange={(event) => set('code', event.target.value.toUpperCase())}
+          />
+          <TextField
+            required
+            label="通道名称"
+            value={form.name}
+            inputProps={{ maxLength: 80 }}
+            onChange={(event) => set('name', event.target.value)}
+          />
+          <FormControl required>
+            <InputLabel>通道类型</InputLabel>
+            <Select
+              label="通道类型"
+              value={form.type}
+              disabled={Boolean(channel)}
+              onChange={(event) => set('type', event.target.value as FundingChannel['type'])}
+            >
+              {configurableChannelTypes.map((type) => (
+                <MenuItem key={type} value={type}>
+                  {channelTypeCopy[type].label}
+                </MenuItem>
+              ))}
+            </Select>
+            {channel && <FormHelperText>类型关联入账/出款校验，创建后不可修改。</FormHelperText>}
+          </FormControl>
+          <FormControl required>
+            <InputLabel>支持币种</InputLabel>
+            <Select
+              multiple
+              label="支持币种"
+              value={form.supportedCurrencies}
+              renderValue={(selected) => (selected as Currency[]).join(' / ')}
+              onChange={(event) => set('supportedCurrencies', event.target.value as Currency[])}
+            >
+              {supportedFiatCurrencies.map((currency) => (
+                <MenuItem key={currency} value={currency}>
+                  <Checkbox checked={form.supportedCurrencies.includes(currency)} />
+                  {currency}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Divider>
+            <Typography variant="caption" color="text.secondary">
+              银行与结算资料
+            </Typography>
+          </Divider>
+          <TextField
+            label="银行名称"
+            required={activeInbound || activeVa}
+            value={form.settlementBankName}
+            onChange={(event) => set('settlementBankName', event.target.value)}
+          />
+          <TextField
+            label="收款 / 结算账号"
+            required={activeInbound}
+            value={form.settlementAccount}
+            onChange={(event) => set('settlementAccount', event.target.value)}
+          />
+          <TextField
+            label="SWIFT / BIC"
+            required={activeInbound || activeVa}
+            value={form.swiftBic}
+            onChange={(event) => set('swiftBic', event.target.value.toUpperCase())}
+          />
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              fullWidth
+              label="银行国家 / 地区代码"
+              required={activeVa}
+              value={form.bankCountry}
+              inputProps={{ maxLength: 2 }}
+              helperText="ISO 两位代码，例如 HK、SG"
+              onChange={(event) => set('bankCountry', event.target.value.toUpperCase())}
+            />
+            <TextField
+              fullWidth
+              label="分行名称"
+              value={form.branchName}
+              onChange={(event) => set('branchName', event.target.value)}
+            />
+          </Stack>
+          <TextField
+            multiline
+            minRows={2}
+            label="银行地址"
+            required={activeVa}
+            value={form.bankAddress}
+            onChange={(event) => set('bankAddress', event.target.value)}
+          />
+
+          {channel && (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={form.active}
+                  onChange={(event) => set('active', event.target.checked)}
+                />
+              }
+              label={form.active ? '允许新业务选择此通道' : '保持停用，不接受新业务'}
+            />
+          )}
+        </Stack>
+        <Divider />
+        <Stack direction="row" justifyContent="flex-end" spacing={1.5} sx={{ p: 3 }}>
+          <Button color="inherit" onClick={onClose} disabled={saving}>
+            放弃更改
+          </Button>
+          <Button type="submit" variant="contained" disabled={saving}>
+            {submitLabel}
+          </Button>
+        </Stack>
+      </Box>
+    </Drawer>
+  );
+}
+
+function channelErrorMessage(value: unknown) {
+  const message = value instanceof Error ? value.message : '';
+  const messages: Record<string, string> = {
+    funding_channel_code_exists: '这个通道代码已经存在，请使用新的唯一代码。',
+    inbound_channel_bank_details_required:
+      '启用法币入账通道前，请完整填写银行名称、收款账号和 SWIFT / BIC。',
+    virtual_account_channel_bank_details_required:
+      '启用 VA 开户通道前，请完整填写银行名称、国家、地址和 SWIFT / BIC。',
+    va_payout_channel_merged: 'VA 出款已与 VA 银行通道合并，请直接配置对应的 VA 银行。',
+    unsupported_funding_channel_currency: '资金通道目前只支持 USD 和 HKD。',
+    admin_role_required: '只有平台管理员可以修改资金通道。',
+    organization_access_denied: '当前管理员无权修改这个机构的资金通道。',
+  };
+  return messages[message] || message || '资金通道保存失败，请稍后重试。';
 }
 
 function AccountWorkspace({
   customers,
+  selectedCustomer,
   selectedCustomerId,
   onCustomerChange,
   accounts,
+  loading,
   marketQuotes,
   marketLoading,
   marketError,
+  onRefresh,
   onRefreshMarket,
 }: {
   customers: Customer[];
+  selectedCustomer?: Customer;
   selectedCustomerId: string;
   onCustomerChange: (id: string) => void;
   accounts: MoneyAccount[];
+  loading: boolean;
   marketQuotes: MarketQuote[];
   marketLoading: boolean;
   marketError: string;
+  onRefresh: () => void;
   onRefreshMarket: () => Promise<void>;
 }) {
   const [selectedFiatKind, setSelectedFiatKind] = useState<
@@ -1140,27 +1993,47 @@ function AccountWorkspace({
           </Select>
         </FormControl>
       </Card>
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
-          gap: 2,
-        }}
-      >
-        {fiatAccountGroups.map((group) => (
-          <FiatAccountProductCard
-            key={group.kind}
-            balances={group.balances}
-            marketQuotes={marketQuotes}
-            marketLoading={marketLoading}
-            marketError={marketError}
-            onOpen={() => setSelectedFiatKind(group.kind)}
-          />
-        ))}
-        {digitalWallets.map((account) => (
-          <DigitalWalletCard key={account.id} account={account} />
-        ))}
-      </Box>
+      {loading && (
+        <Box
+          aria-label="正在读取客户账户与钱包"
+          aria-live="polite"
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
+            gap: 2,
+          }}
+        >
+          {[0, 1, 2].map((item) => (
+            <Skeleton key={item} variant="rounded" height={208} />
+          ))}
+        </Box>
+      )}
+      {!loading && accounts.length === 0 && (
+        <AccountEmptyState customer={selectedCustomer} onRefresh={onRefresh} />
+      )}
+      {!loading && accounts.length > 0 && (
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
+            gap: 2,
+          }}
+        >
+          {fiatAccountGroups.map((group) => (
+            <FiatAccountProductCard
+              key={group.kind}
+              balances={group.balances}
+              marketQuotes={marketQuotes}
+              marketLoading={marketLoading}
+              marketError={marketError}
+              onOpen={() => setSelectedFiatKind(group.kind)}
+            />
+          ))}
+          {digitalWallets.map((account) => (
+            <DigitalWalletCard key={account.id} account={account} />
+          ))}
+        </Box>
+      )}
       <FiatAccountDetailDrawer
         balances={selectedFiatBalances}
         marketQuotes={marketQuotes}
@@ -1170,6 +2043,81 @@ function AccountWorkspace({
         onClose={() => setSelectedFiatKind(null)}
       />
     </Stack>
+  );
+}
+
+function AccountEmptyState({
+  customer,
+  onRefresh,
+}: {
+  customer?: Customer;
+  onRefresh: () => void;
+}) {
+  let title = '暂无客户账户';
+  let description = '当前还没有客户。客户完成 KYC 审核后，相关账户与钱包会显示在这里。';
+
+  if (customer?.kycStatus === 'REJECTED') {
+    title = 'KYC 已拒绝，未开通账户';
+    description =
+      '该客户未通过合规审核，因此系统没有为其创建 VA 账户、法币账户或数字钱包。如需复核，请先在客户管理中按审核流程处理 KYC。';
+  } else if (customer?.kycStatus === 'PENDING') {
+    title = 'KYC 审核尚未完成';
+    description = '客户通过 KYC 审核前不会开通账户或钱包。请在客户管理中查看审核进度。';
+  } else if (customer?.kycStatus === 'APPROVED') {
+    title = '账户尚未创建或同步';
+    description =
+      '该客户已通过 KYC，但目前没有可显示的账户或钱包。请刷新状态；如仍未出现，请检查开户与钱包创建记录。';
+  }
+
+  return (
+    <Card variant="outlined">
+      <Stack
+        alignItems="center"
+        spacing={2}
+        role="status"
+        aria-live="polite"
+        sx={{ px: 3, py: { xs: 6, md: 9 }, textAlign: 'center' }}
+      >
+        <Box
+          sx={{
+            width: 56,
+            height: 56,
+            borderRadius: '50%',
+            bgcolor: 'background.neutral',
+            color: 'text.secondary',
+            display: 'grid',
+            placeItems: 'center',
+          }}
+        >
+          <Iconify icon="solar:wallet-2-bold-duotone" width={30} />
+        </Box>
+        <Box sx={{ maxWidth: 620 }}>
+          <Typography variant="h6">{title}</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+            {description}
+          </Typography>
+        </Box>
+        {customer && (
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            flexWrap="wrap"
+            justifyContent="center"
+          >
+            <Chip size="small" variant="outlined" label={`KYC · ${customer.kycStatus}`} />
+            <Chip size="small" variant="outlined" label={`客户状态 · ${customer.status}`} />
+          </Stack>
+        )}
+        <Button
+          variant="outlined"
+          startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
+          onClick={onRefresh}
+        >
+          刷新账户状态
+        </Button>
+      </Stack>
+    </Card>
   );
 }
 
@@ -1549,8 +2497,10 @@ function OperationDialog({
   setForm,
   customers,
   accounts,
+  accountsCustomerId,
   beneficiaries,
   channels,
+  withdrawalFees,
   onClose,
   onSubmit,
 }: {
@@ -1560,8 +2510,10 @@ function OperationDialog({
   setForm: (form: OperationForm) => void;
   customers: Customer[];
   accounts: MoneyAccount[];
+  accountsCustomerId?: string;
   beneficiaries: Beneficiary[];
   channels: FundingChannel[];
+  withdrawalFees: WithdrawalFeeRule[];
   onClose: () => void;
   onSubmit: (event: FormEvent) => void;
 }) {
@@ -1573,29 +2525,98 @@ function OperationDialog({
     ['DEPOSIT', 'INTERNAL_TRANSFER', 'FX', 'OTC'].includes(type) ||
     (type === 'ADJUSTMENT' && form.adjustmentDirection === 'CREDIT');
   let payoutChannelType: FundingChannel['type'] = 'PLATFORM_PAYOUT';
-  if (form.payoutMethod === 'VA') payoutChannelType = 'VA_PAYOUT';
+  if (form.payoutMethod === 'VA') payoutChannelType = 'VIRTUAL_ACCOUNT';
   if (form.payoutMethod === 'POBO') payoutChannelType = 'POBO_PAYOUT';
+  const selectedSourceForChannel = accounts.find(
+    (account) => account.id === form.sourceAccountId
+  );
   let validChannels: FundingChannel[] = [];
   if (type === 'DEPOSIT') {
-    validChannels = channels.filter((channel) => channel.type === 'FIAT_INBOUND');
+    validChannels = channels.filter(
+      (channel) =>
+        channel.type === 'FIAT_INBOUND' &&
+        channel.active &&
+        channel.supportedCurrencies.includes(form.currency)
+    );
   }
   if (type === 'PAYOUT') {
-    validChannels = channels.filter((channel) => channel.type === payoutChannelType);
+    validChannels = channels.filter(
+      (channel) =>
+        channel.type === payoutChannelType &&
+        channel.active &&
+        channel.supportedCurrencies.includes(form.currency) &&
+        (form.payoutMethod !== 'VA' ||
+          channel.id === selectedSourceForChannel?.fundingChannelId)
+    );
   }
-  const validSources = accounts.filter(
-    (account) =>
-      account.currency === form.currency &&
-      account.status === 'ACTIVE' &&
-      (type !== 'PAYOUT' ||
-        (form.payoutMethod === 'VA'
-          ? account.kind === 'VIRTUAL_ACCOUNT'
-          : account.kind === 'SYSTEM_WALLET'))
+  const selectedPayoutChannel = channels.find((channel) => channel.id === form.channelId);
+  const selectedPayoutFee = selectedPayoutChannel
+    ? withdrawalFees.find(
+        (rule) =>
+          rule.assetClass === 'FIAT' &&
+          rule.currency === form.currency &&
+          rule.method === form.payoutMethod &&
+          rule.channelCode === selectedPayoutChannel.code &&
+          rule.active
+      )
+    : undefined;
+  const validSources = useMemo(
+    () =>
+      accounts.filter(
+        (account) =>
+          account.customerId === form.customerId &&
+          account.currency === form.currency &&
+          account.status === 'ACTIVE' &&
+          (type !== 'PAYOUT' || payoutAccountKindAllowed(account.kind, form.payoutMethod))
+      ),
+    [accounts, form.currency, form.customerId, form.payoutMethod, type]
   );
   const validTargets = accounts.filter(
     (account) =>
       account.status === 'ACTIVE' &&
       account.currency === (type === 'FX' || type === 'OTC' ? form.quoteCurrency : form.currency)
   );
+  const payoutSourceLabel = payoutAccountScopeLabel(form.payoutMethod);
+  const payoutAccountsLoading = type === 'PAYOUT' && accountsCustomerId !== form.customerId;
+  useEffect(() => {
+    if (type !== 'PAYOUT') return;
+    const {
+      sourceAccountId: currentSourceAccountId,
+      channelId: currentChannelId,
+      payoutMethod,
+    } = form;
+    const currentSource = validSources.find((account) => account.id === currentSourceAccountId);
+    const nextSource = currentSource || (validSources.length === 1 ? validSources[0] : undefined);
+    const sourceAccountId = nextSource?.id || '';
+    let channelId = '';
+    if (payoutMethod === 'VA') {
+      if (nextSource) {
+        const { fundingChannelId } = nextSource;
+        channelId = fundingChannelId || '';
+      }
+    } else if (sourceAccountId === currentSourceAccountId) {
+      channelId = currentChannelId;
+    }
+    if (currentSourceAccountId !== sourceAccountId || currentChannelId !== channelId) {
+      setForm({ ...form, sourceAccountId, channelId });
+    }
+  }, [form, setForm, type, validSources]);
+  let payoutSourceHelperText: string | undefined;
+  if (type === 'PAYOUT') {
+    if (payoutAccountsLoading) {
+      payoutSourceHelperText = `正在加载${payoutSourceLabel}…`;
+    } else if (
+      form.payoutMethod === 'VA' &&
+      selectedSourceForChannel &&
+      !selectedSourceForChannel.fundingChannelId
+    ) {
+      payoutSourceHelperText = '该 VA 是历史账户，未绑定开户银行通道，暂不能发起 VA 出款。';
+    } else {
+      payoutSourceHelperText = validSources.length
+        ? `${payoutSourceLabel}仅显示当前客户的可用 ${form.currency} 余额。`
+        : `当前客户没有可用的 ${form.currency} ${payoutSourceLabel}。`;
+    }
+  }
   const dialogNotice =
     type === 'DEPOSIT'
       ? '法币账户只有 VA 账户和系统多货币法币账户；提交后进入待审批，确认到账后记入对应币种余额。'
@@ -1704,7 +2725,27 @@ function OperationDialog({
                 label="扣款账户"
                 value={form.sourceAccountId}
                 accounts={validSources}
-                onChange={(value) => set('sourceAccountId', value)}
+                onChange={(value) => {
+                  const account = validSources.find((row) => row.id === value);
+                  setForm({
+                    ...form,
+                    sourceAccountId: value,
+                    channelId:
+                      form.payoutMethod === 'VA'
+                        ? account?.fundingChannelId || ''
+                        : form.channelId,
+                  });
+                }}
+                showAccountKind={type === 'PAYOUT'}
+                helperText={payoutSourceHelperText}
+                error={
+                  type === 'PAYOUT' &&
+                  !payoutAccountsLoading &&
+                  (!validSources.length ||
+                    (form.payoutMethod === 'VA' &&
+                      Boolean(selectedSourceForChannel) &&
+                      !selectedSourceForChannel?.fundingChannelId))
+                }
               />
             )}
             {targetRequired && (
@@ -1716,11 +2757,27 @@ function OperationDialog({
               />
             )}
             {(type === 'DEPOSIT' || type === 'PAYOUT') && (
-              <FormControl fullWidth required>
-                <InputLabel>资金通道</InputLabel>
+              <FormControl
+                fullWidth
+                required
+                error={
+                  type === 'PAYOUT' &&
+                  form.payoutMethod === 'VA' &&
+                  Boolean(selectedSourceForChannel) &&
+                  !validChannels.length
+                }
+              >
+                <InputLabel>
+                  {type === 'PAYOUT' && form.payoutMethod === 'VA' ? '开户银行通道' : '资金通道'}
+                </InputLabel>
                 <Select
-                  label="资金通道"
+                  label={
+                    type === 'PAYOUT' && form.payoutMethod === 'VA'
+                      ? '开户银行通道'
+                      : '资金通道'
+                  }
                   value={form.channelId}
+                  disabled={type === 'PAYOUT' && form.payoutMethod === 'VA'}
                   onChange={(e) => set('channelId', e.target.value)}
                 >
                   {validChannels.map((channel) => (
@@ -1729,7 +2786,39 @@ function OperationDialog({
                     </MenuItem>
                   ))}
                 </Select>
+                {type === 'PAYOUT' && form.payoutMethod === 'VA' && (
+                  <FormHelperText>
+                    {validChannels.length
+                      ? '由开户时绑定的 VA 银行自动确定，不可另选。'
+                      : '所选 VA 尚未绑定可用的开户银行通道。'}
+                  </FormHelperText>
+                )}
               </FormControl>
+            )}
+            {type === 'PAYOUT' && (
+              <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
+                <CardContent sx={{ p: 2.5 }}>
+                  {selectedPayoutChannel && selectedPayoutFee ? (
+                    <Stack spacing={1}>
+                      <Detail label="转出渠道" value={selectedPayoutChannel.name} />
+                      <Detail
+                        label="固定手续费"
+                        value={formatMoney(selectedPayoutFee.amount, form.currency)}
+                      />
+                      <Divider />
+                      <Detail
+                        label="账户总冻结"
+                        value={formatMoney(
+                          String(Number(form.amount || 0) + Number(selectedPayoutFee.amount)),
+                          form.currency
+                        )}
+                      />
+                    </Stack>
+                  ) : (
+                    <Alert severity="warning">当前渠道尚未配置生效的转出手续费。</Alert>
+                  )}
+                </CardContent>
+              </Card>
             )}
             {type === 'DEPOSIT' && (
               <>
@@ -1812,22 +2901,35 @@ function AccountSelect({
   value,
   accounts,
   onChange,
+  showAccountKind = false,
+  helperText,
+  error = false,
 }: {
   label: string;
   value: string;
   accounts: MoneyAccount[];
   onChange: (value: string) => void;
+  showAccountKind?: boolean;
+  helperText?: string;
+  error?: boolean;
 }) {
   return (
-    <FormControl fullWidth required>
+    <FormControl fullWidth required error={error}>
       <InputLabel>{label}</InputLabel>
       <Select label={label} value={value} onChange={(e) => onChange(e.target.value)}>
         {accounts.map((account) => (
           <MenuItem key={account.id} value={account.id}>
-            {accountBalanceLabel(account)} · 可用 {account.availableBalance}
+            {showAccountKind
+              ? `${account.kind === 'VIRTUAL_ACCOUNT' ? 'VA 钱包' : '系统钱包'} · ${
+                  account.currency
+                }`
+              : accountBalanceLabel(account)}
+            {showAccountKind && account.accountNumber ? ` · ${account.accountNumber}` : ''} · 可用{' '}
+            {account.availableBalance}
           </MenuItem>
         ))}
       </Select>
+      {helperText && <FormHelperText>{helperText}</FormHelperText>}
     </FormControl>
   );
 }

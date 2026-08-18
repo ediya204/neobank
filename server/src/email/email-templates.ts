@@ -44,7 +44,7 @@ function layout(displayName: string, title: string, message: string, portalBaseU
   <body style="margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#172033">
     <div style="max-width:600px;margin:0 auto;padding:32px 20px">
       <div style="background:#ffffff;border:1px solid #e1e6ef;border-radius:12px;padding:28px">
-        <div style="font-size:13px;color:#657089;margin-bottom:18px">SCC Digital Bank</div>
+        <div style="font-size:13px;color:#657089;margin-bottom:18px">SSC Digital Bank</div>
         <h1 style="font-size:22px;line-height:1.35;margin:0 0 16px">${safeTitle}</h1>
         <p style="font-size:15px;line-height:1.7;margin:0 0 12px">您好 ${safeName}，</p>
         <p style="font-size:15px;line-height:1.7;margin:0 0 24px">${safeMessage}</p>

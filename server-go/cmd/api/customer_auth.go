@@ -99,6 +99,8 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 		app.customerTOTPSetup(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/totp/verify":
 		app.verifyCustomerTOTP(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/step-up/totp":
+		app.createCustomerTOTPStepUp(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/password/change":
 		app.changeCustomerPassword(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/me":
@@ -131,6 +133,10 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 		app.customerMarketRate(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/customer/withdrawals":
 		app.createCustomerWithdrawal(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/withdrawal-addresses":
+		app.listCustomerWithdrawalAddresses(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/customer/withdrawal-addresses":
+		app.createCustomerWithdrawalAddress(w, r)
 	default:
 		return false
 	}
@@ -281,7 +287,7 @@ func (app *application) customerTOTPSetup(w http.ResponseWriter, r *http.Request
 		return
 	}
 	email := text(rows[0]["email"])
-	issuer := "SCC Digital Bank"
+	issuer := "SSC Digital Bank"
 	otpauth := "otpauth://totp/" + url.PathEscape(issuer+":"+email) + "?secret=" + url.QueryEscape(secret) + "&issuer=" + url.QueryEscape(issuer) + "&algorithm=SHA1&digits=6&period=30"
 	writeJSON(w, http.StatusOK, map[string]any{
 		"secret": secret, "otpauth_uri": otpauth, "issuer": issuer, "account_name": email,
@@ -807,6 +813,15 @@ func (app *application) listCustomerWallets(w http.ResponseWriter, r *http.Reque
 		databaseError(app, w, err)
 		return
 	}
+	feeRule, err := app.activeWithdrawalFee(r.Context(), "CRYPTO", "USDT", "ON_CHAIN", "CREGIS", "TRON")
+	if err != nil {
+		if errors.Is(err, errWithdrawalFeeMissing) {
+			conflict(w, "fee_configuration_missing")
+			return
+		}
+		databaseError(app, w, err)
+		return
+	}
 	for _, row := range rows {
 		available, frozen, balanceErr := app.customerWalletBalances(r, text(row["id"]), session.CustomerID)
 		if balanceErr != nil {
@@ -815,6 +830,8 @@ func (app *application) listCustomerWallets(w http.ResponseWriter, r *http.Reque
 		}
 		row["available_balance"] = available
 		row["frozen_balance"] = frozen
+		row["withdrawal_fee_amount"] = formatUSDTMicroUnits(feeRule.AmountMinor)
+		row["withdrawal_fee_rule_version"] = strconv.FormatInt(feeRule.Version, 10)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
@@ -826,6 +843,7 @@ func (app *application) listCustomerHistory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	withdrawals, err := app.db.Query(r.Context(), `SELECT id, customer_id, wallet_id, 'withdrawal' AS direction, currency, amount_text AS amount,
+    fee_amount_text AS fee_amount, net_amount_text AS net_amount,
     status, to_address AS address, txid, cregis_cid, created_at
     FROM cregis_withdrawals WHERE tenant_id=? AND customer_id=? ORDER BY created_at DESC LIMIT 200`, app.tenantID, session.CustomerID)
 	if err != nil {
@@ -879,9 +897,14 @@ func (app *application) createCustomerWithdrawal(w http.ResponseWriter, r *http.
 		return
 	}
 	walletID, _ := input["wallet_id"].(string)
+	withdrawalAddressID, _ := input["withdrawal_address_id"].(string)
 	amountText, _ := input["amount"].(string)
-	if !safeIdentifier.MatchString(walletID) {
+	if !safeIdentifier.MatchString(walletID) || !safeIdentifier.MatchString(withdrawalAddressID) {
 		validationError(w)
+		return
+	}
+	if _, supplied := input["to_address"]; supplied {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "withdrawal_address_id_required"}})
 		return
 	}
 	if _, ok := parseUSDTMicroUnits(amountText); !ok {

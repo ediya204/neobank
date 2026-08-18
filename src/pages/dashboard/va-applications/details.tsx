@@ -272,7 +272,7 @@ export default function VaApplicationDetailsPage() {
     <>
       <Helmet>
         <title>
-          {t('applications.details.documentTitle', { name: application.customerName })} | SCC Digital Bank
+          {t('applications.details.documentTitle', { name: application.customerName })} | SSC Digital Bank
         </title>
       </Helmet>
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>

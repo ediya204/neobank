@@ -15,19 +15,16 @@ const currencies: Currency[] = ['USD', 'HKD'];
 async function main() {
   const organization = await db.organization.upsert({
     where: { id: 'org_demo' },
-    update: { slug: 'scc-digital-bank-demo', name: 'SCC Digital Bank Demo Partner' },
+    update: { slug: 'ssc-digital-bank-demo', name: 'SSC Digital Bank Demo Partner' },
     create: {
       id: 'org_demo',
-      slug: 'scc-digital-bank-demo',
-      name: 'SCC Digital Bank Demo Partner',
+      slug: 'ssc-digital-bank-demo',
+      name: 'SSC Digital Bank Demo Partner',
     },
   });
 
   const users: Array<[string, string, string, UserRole]> = [
-    ['usr_maker', 'maker@scc-digital-bank.local', '提交人 Maker', 'MAKER'],
-    ['usr_checker', 'checker@scc-digital-bank.local', '复核人 Checker', 'CHECKER'],
-    ['usr_operator', 'operator@scc-digital-bank.local', '出款操作员', 'OPERATOR'],
-    ['usr_admin', 'admin@scc-digital-bank.local', '平台管理员', 'ADMIN'],
+    ['usr_admin', 'admin@ssc-digital-bank.local', '平台管理员', 'ADMIN'],
   ];
   for (const [id, email, displayName, role] of users) {
     await db.user.upsert({
@@ -54,7 +51,7 @@ async function main() {
       email: 'finance@northstar.example',
       phone: '+65 6123 4567',
       countryCode: 'SG',
-      creatorId: 'usr_maker',
+      creatorId: 'usr_admin',
       registrationNo: '202612345N',
     },
   });
@@ -76,7 +73,7 @@ async function main() {
       email: 'siyuan.chen@example.local',
       phone: '+65 8123 6677',
       countryCode: 'SG',
-      creatorId: 'usr_maker',
+      creatorId: 'usr_admin',
     },
   });
 
@@ -189,7 +186,6 @@ async function main() {
 
   const channelDefinitions: Array<[string, string, ChannelType]> = [
     ['FIAT-IN-01', '法币入账通道', 'FIAT_INBOUND'],
-    ['VA-PAYOUT-01', 'VA 独立账户出款', 'VA_PAYOUT'],
     ['POBO-PAYOUT-01', 'POBO 客户名义出款', 'POBO_PAYOUT'],
     ['PLATFORM-PAYOUT-01', '平台母账户代付', 'PLATFORM_PAYOUT'],
   ];
@@ -209,6 +205,136 @@ async function main() {
       },
     });
   }
+  const citiVaChannel = await db.fundingChannel.upsert({
+    where: { organizationId_code: { organizationId: organization.id, code: 'VA-CITI-US' } },
+    update: {
+      name: 'Citibank 美国 VA',
+      type: 'VIRTUAL_ACCOUNT',
+      active: true,
+      supportedCurrencies: ['USD'],
+      settlementBankName: 'Citibank N.A.',
+      swiftBic: 'CITIUS33',
+      bankCountry: 'US',
+      bankAddress: '388 Greenwich Street, New York, NY 10013, United States',
+    },
+    create: {
+      organizationId: organization.id,
+      code: 'VA-CITI-US',
+      name: 'Citibank 美国 VA',
+      type: 'VIRTUAL_ACCOUNT',
+      active: true,
+      supportedCurrencies: ['USD'],
+      settlementBankName: 'Citibank N.A.',
+      swiftBic: 'CITIUS33',
+      bankCountry: 'US',
+      bankAddress: '388 Greenwich Street, New York, NY 10013, United States',
+    },
+  });
+  const bochkVaChannel = await db.fundingChannel.upsert({
+    where: { organizationId_code: { organizationId: organization.id, code: 'VA-BOCHK-HK' } },
+    update: {
+      name: '中银香港 VA',
+      type: 'VIRTUAL_ACCOUNT',
+      active: true,
+      supportedCurrencies: ['HKD'],
+      settlementBankName: 'Bank of China (Hong Kong)',
+      swiftBic: 'BKCHHKHH',
+      bankCountry: 'HK',
+      bankAddress: '1 Garden Road, Hong Kong',
+    },
+    create: {
+      organizationId: organization.id,
+      code: 'VA-BOCHK-HK',
+      name: '中银香港 VA',
+      type: 'VIRTUAL_ACCOUNT',
+      active: true,
+      supportedCurrencies: ['HKD'],
+      settlementBankName: 'Bank of China (Hong Kong)',
+      swiftBic: 'BKCHHKHH',
+      bankCountry: 'HK',
+      bankAddress: '1 Garden Road, Hong Kong',
+    },
+  });
+  await db.fundingChannel.updateMany({
+    where: { organizationId: organization.id, type: 'VA_PAYOUT' },
+    data: { active: false },
+  });
+  await db.account.updateMany({
+    where: { accountNumber: { in: ['VA-US-001-88392001', 'VA-US-IND-66820119'] } },
+    data: { fundingChannelId: citiVaChannel.id },
+  });
+  await db.account.updateMany({
+    where: { accountNumber: 'VA-HK-001-72811002' },
+    data: { fundingChannelId: bochkVaChannel.id },
+  });
+  const feeChannels = await db.fundingChannel.findMany({
+    where: {
+      organizationId: organization.id,
+      type: { in: ['VIRTUAL_ACCOUNT', 'POBO_PAYOUT', 'PLATFORM_PAYOUT'] },
+    },
+  });
+  for (const channel of feeChannels) {
+    const method =
+      channel.type === 'VIRTUAL_ACCOUNT'
+        ? 'VA'
+        : channel.type === 'POBO_PAYOUT'
+        ? 'POBO'
+        : 'PLATFORM';
+    for (const currency of channel.supportedCurrencies.filter((value) => currencies.includes(value))) {
+      await db.withdrawalFeeRule.upsert({
+        where: {
+          scopeId_assetClass_currency_method_channelCode_network: {
+            scopeId: organization.id,
+            assetClass: 'FIAT',
+            currency,
+            method,
+            channelCode: channel.code,
+            network: '',
+          },
+        },
+        update: {},
+        create: {
+          scopeId: organization.id,
+          organizationId: organization.id,
+          assetClass: 'FIAT',
+          currency,
+          method,
+          channelCode: channel.code,
+          network: '',
+          feeAmountMinor: 0n,
+          feeDecimals: 2,
+          createdBy: 'usr_admin',
+          updatedBy: 'usr_admin',
+        },
+      });
+    }
+  }
+  await db.withdrawalFeeRule.upsert({
+    where: {
+      scopeId_assetClass_currency_method_channelCode_network: {
+        scopeId: process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || organization.id,
+        assetClass: 'CRYPTO',
+        currency: 'USDT',
+        method: 'ON_CHAIN',
+        channelCode: 'CREGIS',
+        network: 'TRON',
+      },
+    },
+    update: {},
+    create: {
+      scopeId: process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || organization.id,
+      organizationId: organization.id,
+      assetClass: 'CRYPTO',
+      currency: 'USDT',
+      method: 'ON_CHAIN',
+      channelCode: 'CREGIS',
+      network: 'TRON',
+      feeAmountMinor: 1_000_000n,
+      feeDecimals: 6,
+      createdBy: 'usr_admin',
+      updatedBy: 'usr_admin',
+    },
+  });
 
   await db.beneficiary.upsert({
     where: { id: 'ben_demo_supplier' },
@@ -375,9 +501,9 @@ async function seedCryptoWallets(
         toAddress: wallet.walletAddress,
         txHash: `0x${network === 'TRON' ? 'a' : network === 'BSC' ? 'b' : 'c'}${'1'.repeat(63)}`,
         confirmations,
-        makerId: 'usr_operator',
-        checkerId: 'usr_checker',
-        operatorId: 'usr_operator',
+        makerId: 'usr_admin',
+        checkerId: 'usr_admin',
+        operatorId: 'usr_admin',
         approvedAt: new Date('2026-07-30T10:20:00Z'),
         completedAt: new Date('2026-07-30T10:25:00Z'),
         createdAt: new Date('2026-07-30T10:20:00Z'),

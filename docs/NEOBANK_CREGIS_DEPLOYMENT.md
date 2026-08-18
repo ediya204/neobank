@@ -178,6 +178,40 @@ separate explicit actions, but the same authenticated administrator may perform
 all three. The maker, checker, and operator identity and timestamp remain stored
 for audit, and a Cregis callback is required for the final result.
 
+USDT/TRON withdrawal fees are read from the versioned PostgreSQL rule scoped to
+`CRYPTO / USDT / ON_CHAIN / CREGIS / TRON`. The customer-entered amount is the
+total wallet debit; the service stores the fee and net snapshots and submits only
+the net amount to Cregis. A retry with the same idempotency key returns the original
+snapshot. Follow `docs/WITHDRAWAL_FEE_RUNBOOK.md` for configuration, migration,
+and acceptance gates.
+
+## Customer withdrawal-address whitelist
+
+Customer withdrawals accept only an active, OTP-verified USDT-TRC20 withdrawal
+address stored in Render PostgreSQL. The Portal never sends a free-form
+`to_address`; it submits `withdrawal_address_id`, and the Go service reads the
+destination address inside the same serializable transaction that reserves the
+wallet balance.
+
+Adding an address is a two-call step-up flow:
+
+1. `POST /api/auth/customer/step-up/totp` verifies the current, unused six-digit
+   TOTP for purpose `add_withdrawal_address` and returns a single-use token that
+   expires after five minutes.
+2. `POST /api/v1/customer/withdrawal-addresses` consumes that token for the same
+   customer session and credential version while creating the address and audit
+   event atomically.
+
+`GET /api/v1/customer/withdrawal-addresses` returns only the current customer's
+tenant-scoped address records. A missing, suspended, revoked, cross-customer, or
+wrong-network address must fail the withdrawal reservation. The transfer keeps
+both `withdrawal_address_id` and the immutable `to_address` snapshot so later
+address lifecycle changes cannot rewrite financial history.
+
+Migration `migrations-postgres/0005_customer_withdrawal_address_whitelist.sql`
+creates the step-up and address tables and adds the nullable historical reference
+to `cregis_withdrawals`. It is a Render PostgreSQL migration only.
+
 ## Customer test-account boundary
 
 Customer identity, credential metadata, sessions, wallet ownership, and audit

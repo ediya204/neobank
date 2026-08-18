@@ -59,9 +59,15 @@ const (
       SET address=?, status='error', updated_at=? WHERE id=? AND tenant_id=? AND status='creating'`
 	reserveWithdrawalSQL = `INSERT OR IGNORE INTO cregis_withdrawals
     (id, tenant_id, customer_id, wallet_id, idempotency_key, third_party_id, currency, amount_text, amount_minor,
-     from_address, to_address, memo, remark, status, maker_id, created_at, updated_at)
-    SELECT ?, ?, ?, w.id, ?, ?, ?, ?, ?, w.address, ?, ?, ?, 'submitted', ?, ?, ?
-    FROM cregis_wallets w JOIN customers c ON c.id=w.customer_id AND c.tenant_id=w.tenant_id
+     fee_amount_text, fee_amount_minor, net_amount_text, net_amount_minor, fee_rule_id, fee_rule_version,
+     from_address, to_address, withdrawal_address_id, memo, remark, status, maker_id, created_at, updated_at)
+    SELECT ?, ?, ?, w.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      w.address, a.address, a.id, ?, ?, 'submitted', ?, ?, ?
+    FROM cregis_wallets w
+    JOIN customers c ON c.id=w.customer_id AND c.tenant_id=w.tenant_id
+    JOIN customer_withdrawal_addresses a
+      ON a.id=? AND a.tenant_id=w.tenant_id AND a.customer_id=c.id
+      AND a.currency=w.currency AND a.network='TRON' AND a.status='active'
     WHERE w.id=? AND w.tenant_id=? AND w.customer_id=? AND w.chain_id=? AND w.token_id=? AND w.currency=?
       AND w.status='active' AND w.custody_provider='cregis' AND w.ownership_verified_at IS NOT NULL
       AND c.status='active' AND c.kyc_status='approved' AND c.operations_status='active'
@@ -302,28 +308,85 @@ func (app *application) listCregisWallets(w http.ResponseWriter, r *http.Request
 
 func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		CustomerID  string `json:"customer_id"`
-		WalletID    string `json:"wallet_id"`
-		Currency    string `json:"currency"`
-		Amount      string `json:"amount"`
-		FromAddress string `json:"from_address"`
-		ToAddress   string `json:"to_address"`
-		Idempotency string `json:"idempotency_key"`
-		Memo        string `json:"memo"`
-		Remark      string `json:"remark"`
+		CustomerID          string `json:"customer_id"`
+		WalletID            string `json:"wallet_id"`
+		Currency            string `json:"currency"`
+		Amount              string `json:"amount"`
+		FromAddress         string `json:"from_address"`
+		WithdrawalAddressID string `json:"withdrawal_address_id"`
+		Idempotency         string `json:"idempotency_key"`
+		Memo                string `json:"memo"`
+		Remark              string `json:"remark"`
+		ExpectedFeeAmount   string `json:"expected_fee_amount"`
+		ExpectedFeeVersion  string `json:"expected_fee_rule_version"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
 	amountMinor, amountOK := parseUSDTMicroUnits(input.Amount)
 	if !safeIdentifier.MatchString(input.CustomerID) || !safeIdentifier.MatchString(input.WalletID) ||
+		!safeIdentifier.MatchString(input.WithdrawalAddressID) ||
 		(input.Currency != "" && input.Currency != usdtTRC20Currency) ||
 		!safeIdentifier.MatchString(input.Idempotency) ||
-		!amountOK || len(input.ToAddress) < 8 || len(input.ToAddress) > 256 ||
+		!amountOK ||
 		len(input.Memo) > 128 || len(input.Remark) > 256 {
 		validationError(w)
 		return
 	}
+	existingRows, err := app.db.Query(r.Context(), `SELECT id, status, third_party_id, wallet_id,
+    amount_text, fee_amount_text, net_amount_text, fee_rule_id,
+    CAST(fee_rule_version AS TEXT) AS fee_rule_version, to_address, withdrawal_address_id, created_at
+    FROM cregis_withdrawals WHERE tenant_id=? AND customer_id=? AND idempotency_key=?`,
+		app.tenantID, input.CustomerID, input.Idempotency)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(existingRows) == 1 {
+		existing := existingRows[0]
+		if text(existing["wallet_id"]) != input.WalletID || text(existing["amount_text"]) != input.Amount ||
+			text(existing["withdrawal_address_id"]) != input.WithdrawalAddressID {
+			conflict(w, "idempotency_payload_mismatch")
+			return
+		}
+		writeJSON(w, http.StatusOK, existing)
+		return
+	}
+	if len(existingRows) > 1 {
+		databaseError(app, w, errors.New("duplicate withdrawal idempotency records"))
+		return
+	}
+	feeRule, err := app.activeWithdrawalFee(r.Context(), "CRYPTO", "USDT", "ON_CHAIN", "CREGIS", "TRON")
+	if err != nil {
+		if errors.Is(err, errWithdrawalFeeMissing) {
+			conflict(w, "fee_configuration_missing")
+			return
+		}
+		databaseError(app, w, err)
+		return
+	}
+	if input.ExpectedFeeVersion != "" && input.ExpectedFeeVersion != strconv.FormatInt(feeRule.Version, 10) {
+		conflict(w, "withdrawal_fee_changed")
+		return
+	}
+	if input.ExpectedFeeAmount != "" {
+		expectedFeeMinor, ok := parseUSDTMicroUnitsAllowZero(input.ExpectedFeeAmount)
+		if !ok || expectedFeeMinor != feeRule.AmountMinor {
+			conflict(w, "withdrawal_fee_changed")
+			return
+		}
+	}
+	if feeRule.Decimals != 6 {
+		databaseError(app, w, errors.New("USDT withdrawal fee must use six decimals"))
+		return
+	}
+	if amountMinor <= feeRule.AmountMinor {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "withdrawal_amount_too_low"}})
+		return
+	}
+	feeAmountText := formatUSDTMicroUnits(feeRule.AmountMinor)
+	netAmountMinor := amountMinor - feeRule.AmountMinor
+	netAmountText := formatUSDTMicroUnits(netAmountMinor)
 	walletRows, err := app.db.Query(r.Context(), `SELECT w.id, w.address FROM cregis_wallets w
     JOIN customers c ON c.id=w.customer_id AND c.tenant_id=w.tenant_id
     WHERE w.id=? AND w.tenant_id=? AND w.customer_id=? AND w.chain_id=? AND w.token_id=? AND w.currency=?
@@ -344,9 +407,12 @@ func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Re
 	thirdPartyID := strings.ReplaceAll(randomID("nb"), "_", "")
 	results, err := app.db.Batch(r.Context(), d1.Statement{SQL: reserveWithdrawalSQL, Params: []any{id, app.tenantID,
 		input.CustomerID, input.Idempotency, thirdPartyID, usdtTRC20Currency, input.Amount, amountMinor,
-		input.ToAddress, nullIfEmpty(input.Memo), nullIfEmpty(input.Remark), edgeUser(r), now, now,
+		feeAmountText, feeRule.AmountMinor, netAmountText, netAmountMinor, feeRule.ID, feeRule.Version,
+		nullIfEmpty(input.Memo), nullIfEmpty(input.Remark), edgeUser(r), now, now, input.WithdrawalAddressID,
 		input.WalletID, app.tenantID, input.CustomerID, usdtTRC20ChainID, usdtTRC20TokenID, usdtTRC20Currency, amountMinor}},
-		d1.Statement{SQL: `SELECT id, status, third_party_id, wallet_id, amount_text, to_address, created_at FROM cregis_withdrawals
+		d1.Statement{SQL: `SELECT id, status, third_party_id, wallet_id, amount_text, fee_amount_text,
+      net_amount_text, fee_rule_id, CAST(fee_rule_version AS TEXT) AS fee_rule_version,
+      to_address, withdrawal_address_id, created_at FROM cregis_withdrawals
       WHERE tenant_id=? AND customer_id=? AND idempotency_key=?`, Params: []any{app.tenantID, input.CustomerID, input.Idempotency}},
 	)
 	if err != nil {
@@ -358,11 +424,11 @@ func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if len(results[1].Results) != 1 {
-		conflict(w, "insufficient_available_balance")
+		conflict(w, "withdrawal_address_unavailable_or_insufficient_balance")
 		return
 	}
 	reserved := results[1].Results[0]
-	if text(reserved["wallet_id"]) != input.WalletID || text(reserved["amount_text"]) != input.Amount || text(reserved["to_address"]) != input.ToAddress {
+	if text(reserved["wallet_id"]) != input.WalletID || text(reserved["amount_text"]) != input.Amount || text(reserved["withdrawal_address_id"]) != input.WithdrawalAddressID {
 		conflict(w, "idempotency_payload_mismatch")
 		return
 	}
@@ -470,7 +536,7 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: startWithdrawalExecutionSQL, Params: []any{edgeUser(r), now, id, app.tenantID}},
-		d1.Statement{SQL: `SELECT id, third_party_id, currency, amount_text, from_address, to_address, memo, remark
+		d1.Statement{SQL: `SELECT id, third_party_id, currency, net_amount_text, from_address, to_address, memo, remark
       FROM cregis_withdrawals WHERE id=? AND tenant_id=?`, Params: []any{id, app.tenantID}},
 	)
 	if err != nil {
@@ -499,7 +565,7 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 		return
 	}
 	response, callErr := app.cregis.Call(ctx, "/api/v2/payout", map[string]any{
-		"currency": currency, "amount": text(row["amount_text"]),
+		"currency": currency, "amount": text(row["net_amount_text"]),
 		"from_address": text(row["from_address"]), "to_address": text(row["to_address"]),
 		"memo": text(row["memo"]), "remark": text(row["remark"]),
 		"third_party_id": text(row["third_party_id"]),
@@ -557,6 +623,8 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 		params = append(params, customerID)
 	}
 	withdrawals, err := app.db.Query(r.Context(), `SELECT id, customer_id, 'withdrawal' AS direction, currency, amount_text AS amount,
+    fee_amount_text AS fee_amount, net_amount_text AS net_amount,
+    CAST(fee_rule_version AS TEXT) AS fee_rule_version,
     status, to_address AS address, txid, cregis_cid, maker_id, checker_id, operator_id,
     approved_at, submitted_at, completed_at, created_at
     FROM cregis_withdrawals WHERE `+filter+` ORDER BY created_at DESC LIMIT 200`, params...)
@@ -827,6 +895,11 @@ func isPositiveDecimal(value string) bool {
 }
 
 func parseUSDTMicroUnits(value string) (int64, bool) {
+	minor, ok := parseUSDTMicroUnitsAllowZero(value)
+	return minor, ok && minor > 0
+}
+
+func parseUSDTMicroUnitsAllowZero(value string) (int64, bool) {
 	if !positiveDecimal.MatchString(value) {
 		return 0, false
 	}
@@ -845,7 +918,7 @@ func parseUSDTMicroUnits(value string) (int64, bool) {
 		return 0, false
 	}
 	minor := whole*1_000_000 + fraction
-	return minor, minor > 0
+	return minor, minor >= 0
 }
 
 func formatUSDTMicroUnits(value int64) string {

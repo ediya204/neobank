@@ -11,7 +11,7 @@ export default function Page403() {
   return (
     <>
       <Helmet>
-        <title>{t('error_pages.forbidden.page_title')} | SCC Digital Bank</title>
+        <title>{t('error_pages.forbidden.page_title')} | SSC Digital Bank</title>
       </Helmet>
 
       <View403 />

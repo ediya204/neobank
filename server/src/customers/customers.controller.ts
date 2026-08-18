@@ -62,8 +62,8 @@ class ReviewKycDto {
 
 class CreateVaRequestDto {
   @IsEnum(Currency) currency!: Currency;
-  @IsString() @Length(2, 2) preferredCountry!: string;
-  @IsString() purpose!: string;
+  @IsString() channelId!: string;
+  @IsString() @Length(2, 500) purpose!: string;
 }
 
 @Controller('customers')
@@ -106,11 +106,19 @@ export class CustomersController {
 
   @Post(':id/virtual-account-requests')
   requestVa(@Param('id') id: string, @Body() dto: CreateVaRequestDto, @Req() request: Request) {
-    return this.customers.requestVirtualAccount(id, dto, currentUserId(request));
+    return this.customers.requestVirtualAccount(id, dto, requestActor(request));
   }
 
   @Get(':id/virtual-account-requests')
   listVaRequests(@Param('id') id: string, @Req() request: Request) {
-    return this.customers.listVirtualAccountRequests(id, currentUserId(request));
+    return this.customers.listVirtualAccountRequests(id, requestActor(request));
   }
+}
+
+function requestActor(request: Request) {
+  return {
+    userId: currentUserId(request),
+    customerId: request.header('x-authenticated-customer-id')?.trim() || undefined,
+    email: request.header('x-authenticated-email')?.trim().toLowerCase() || undefined,
+  };
 }

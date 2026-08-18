@@ -772,7 +772,7 @@ export default function OperationsPage({ section = 'deposits' }: { section?: Ope
     <>
       <Helmet>
         <title>
-          {t(sectionMeta.titleKey)} | {t('page.admin')} | SCC Digital Bank
+          {t(sectionMeta.titleKey)} | {t('page.admin')} | SSC Digital Bank
         </title>
       </Helmet>
       <Container maxWidth="xl">

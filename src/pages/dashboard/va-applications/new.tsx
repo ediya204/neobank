@@ -64,7 +64,7 @@ export default function VaApplicationNewPage() {
   return (
     <>
       <Helmet>
-        <title>{t('applications.new.pageTitle')} | SCC Digital Bank</title>
+        <title>{t('applications.new.pageTitle')} | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth={settings.themeStretch ? false : 'md'}>
         <CustomBreadcrumbs

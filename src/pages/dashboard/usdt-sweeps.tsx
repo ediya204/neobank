@@ -398,7 +398,7 @@ export default function UsdtSweepsPage() {
   return (
     <>
       <Helmet>
-        <title>{t('usdtSweeps.pageTitle')} | SCC Digital Bank</title>
+        <title>{t('usdtSweeps.pageTitle')} | SSC Digital Bank</title>
       </Helmet>
 
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>

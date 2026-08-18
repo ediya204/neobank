@@ -111,6 +111,32 @@ test('tenant-scoped endpoints reject missing users and cross-organization querie
   }
 });
 
+test('withdrawal fee rules are tenant-scoped and expose versioned channel dimensions', async () => {
+  const fees = await request(`/withdrawal-fees?organizationId=${organizationId}`);
+  assert.equal(fees.response.status, 200);
+  assert.ok(fees.body.length >= 1);
+  for (const fee of fees.body) {
+    assert.equal(fee.organizationId, organizationId);
+    assert.ok(['FIAT', 'CRYPTO'].includes(fee.assetClass));
+    assert.ok(['VA', 'POBO', 'PLATFORM', 'ON_CHAIN'].includes(fee.method));
+    assert.match(fee.channelCode, /^[A-Z0-9-]+$/);
+    assert.match(fee.amount, /^\d+(?:\.\d+)?$/);
+    assert.match(fee.version, /^\d+$/);
+  }
+  const cryptoFee = fees.body.find(
+    (fee) =>
+      fee.assetClass === 'CRYPTO' &&
+      fee.currency === 'USDT' &&
+      fee.method === 'ON_CHAIN' &&
+      fee.channelCode === 'CREGIS' &&
+      fee.network === 'TRON'
+  );
+  assert.ok(cryptoFee);
+
+  const crossTenant = await request('/withdrawal-fees?organizationId=org_other');
+  assert.equal(crossTenant.response.status, 403);
+});
+
 test('unsupported legacy products cannot create new operations or rates', async () => {
   const detail = (await request(`/customers/${customerId}`)).body;
   const usd = detail.accounts.find(
@@ -194,6 +220,9 @@ test('single-admin payout approval preserves idempotency, role isolation and fro
   });
   assert.equal(created.response.status, 201);
   assert.equal(created.body.status, 'SUBMITTED');
+  assert.equal(created.body.feeAmount, '0');
+  assert.equal(created.body.metadata.withdrawalFee.channelCode, channel.code);
+  assert.match(created.body.metadata.withdrawalFee.version, /^\d+$/);
 
   try {
     const repeated = await request('/operations', 'usr_admin', {

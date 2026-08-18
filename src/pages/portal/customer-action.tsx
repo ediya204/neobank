@@ -35,6 +35,7 @@ import {
   isSupportedPortalAccount,
   OperationType,
   RateVersion,
+  WithdrawalFeeRule,
   supportedFiatCurrencies,
 } from 'src/features/finance/core-api';
 import { accountLabel, money } from './customer-shared';
@@ -103,6 +104,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
   const [detail, setDetail] = useState<Customer | null>(null);
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [rates, setRates] = useState<RateVersion[]>([]);
+  const [withdrawalFees, setWithdrawalFees] = useState<WithdrawalFeeRule[]>([]);
   const [sourceId, setSourceId] = useState('');
   const [targetId, setTargetId] = useState('');
   const [beneficiaryId, setBeneficiaryId] = useState('');
@@ -116,14 +118,18 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
 
   const loadDetail = async () => {
     if (!customer) return;
-    const [customerDetail, channelRows, rateRows] = await Promise.all([
+    const [customerDetail, channelRows, rateRows, feeRows] = await Promise.all([
       coreApi<Customer>(`/customers/${customer.id}`),
       coreApi<FundingChannel[]>(`/funding-channels?organizationId=${customer.organizationId}`),
       coreApi<RateVersion[]>('/rates'),
+      coreApi<WithdrawalFeeRule[]>(
+        `/withdrawal-fees?organizationId=${customer.organizationId}&active=true`
+      ),
     ]);
     setDetail(customerDetail);
     setChannels(channelRows);
     setRates(rateRows);
+    setWithdrawalFees(feeRows);
   };
 
   useEffect(() => {
@@ -164,6 +170,26 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
           return row.kind === 'SYSTEM_WALLET' && supportedFiatCurrencies.includes(row.currency);
         });
   const sourceFieldLabel = action === 'payout' ? '付款账户' : '从账户';
+  const payoutChannel =
+    action === 'payout' && source
+      ? channels.find(
+          (row) =>
+            row.type === payoutChannelType(payoutMethod) &&
+            row.active &&
+            row.supportedCurrencies.includes(source.currency) &&
+            (payoutMethod !== 'VA' || row.id === source.fundingChannelId)
+        )
+      : undefined;
+  const payoutFee = payoutChannel
+    ? withdrawalFees.find(
+        (row) =>
+          row.assetClass === 'FIAT' &&
+          row.currency === source?.currency &&
+          row.method === payoutMethod &&
+          row.channelCode === payoutChannel.code &&
+          row.active
+      )
+    : undefined;
   const quote = useMemo(() => {
     if (!source || !amount || Number(amount) <= 0) return null;
     const target = accounts.find((row) => row.id === targetId);
@@ -245,18 +271,21 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
       if (action === 'payout') {
         type = 'PAYOUT';
         if (!selectedBeneficiary) throw new Error('请选择第三方收款人');
-        const channelType = payoutChannelType(payoutMethod);
-        const channel = channels.find(
-          (row) =>
-            row.type === channelType &&
-            row.active &&
-            row.supportedCurrencies.includes(sourceAccount.currency)
-        );
-        if (!channel) throw new Error('当前付款方式暂不支持该币种');
+        const channel = payoutChannel;
+        if (!channel) {
+          throw new Error(
+            payoutMethod === 'VA'
+              ? '所选 VA 账户未绑定可用的开户银行通道'
+              : '当前付款方式暂不支持该币种'
+          );
+        }
+        if (!payoutFee) throw new Error('当前渠道尚未配置转出手续费');
         Object.assign(payload, {
           beneficiaryId: selectedBeneficiary.id,
           payoutMethod,
           channelId: channel.id,
+          expectedFeeAmount: payoutFee.amount,
+          expectedFeeRuleVersion: payoutFee.version,
         });
       }
       payload.type = type;
@@ -290,7 +319,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
   return (
     <>
       <Helmet>
-        <title>{info.title} | SCC Digital Bank</title>
+        <title>{info.title} | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="md">
         <Stack spacing={3}>
@@ -490,6 +519,46 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                         : '请先选择付款账户'
                     }
                   />
+                  {action === 'payout' && source && (
+                    <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
+                      <CardContent sx={{ p: 2.5 }}>
+                        {payoutChannel && payoutFee ? (
+                          <Stack spacing={1.25}>
+                            <Stack direction="row" justifyContent="space-between" gap={2}>
+                              <Typography variant="body2" color="text.secondary">
+                                转出渠道
+                              </Typography>
+                              <Typography variant="subtitle2">{payoutChannel.name}</Typography>
+                            </Stack>
+                            <Stack direction="row" justifyContent="space-between" gap={2}>
+                              <Typography variant="body2" color="text.secondary">
+                                转出手续费
+                              </Typography>
+                              <Typography variant="subtitle2">
+                                {money(payoutFee.amount, source.currency)}
+                              </Typography>
+                            </Stack>
+                            <Divider />
+                            <Stack direction="row" justifyContent="space-between" gap={2}>
+                              <Typography variant="subtitle2">账户总扣款</Typography>
+                              <Typography variant="h6" color="primary.main">
+                                {money(
+                                  Number(amount || 0) + Number(payoutFee.amount),
+                                  source.currency
+                                )}
+                              </Typography>
+                            </Stack>
+                          </Stack>
+                        ) : (
+                          <Alert severity="warning">
+                            {payoutMethod === 'VA' && !source.fundingChannelId
+                              ? '该 VA 是历史账户，未绑定开户银行通道，暂不能发起 VA 转出。'
+                              : '当前渠道尚未配置可用的转出手续费。'}
+                          </Alert>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
                   {(action === 'fx' || action === 'otc') && source && targetId && amount && (
                     <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
                       <CardContent sx={{ p: 2.5 }}>
@@ -574,7 +643,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
 }
 
 function payoutChannelType(method: PayoutMethod): FundingChannel['type'] {
-  if (method === 'VA') return 'VA_PAYOUT';
+  if (method === 'VA') return 'VIRTUAL_ACCOUNT';
   if (method === 'POBO') return 'POBO_PAYOUT';
   return 'PLATFORM_PAYOUT';
 }
@@ -600,7 +669,7 @@ function BeneficiaryPage({
   return (
     <>
       <Helmet>
-        <title>收款人 | SCC Digital Bank</title>
+        <title>收款人 | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>

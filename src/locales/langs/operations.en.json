@@ -293,7 +293,7 @@
     "ipAllowlist": "IP allowlist",
     "machineApiDescription": "The service token is always the first authentication layer. The IP allowlist is an optional second source restriction.",
     "machineApiTitle": "Machine API access security",
-    "namePlaceholder": "For example, SCC Digital Bank production server",
+    "namePlaceholder": "For example, SSC Digital Bank production server",
     "rateLimitDescription": "Up to {{limit}} requests every {{seconds}} seconds. Excess traffic returns HTTP 429. This is a read-only platform setting.",
     "secondLayer": "Second layer",
     "trafficProtection": "Traffic protection",

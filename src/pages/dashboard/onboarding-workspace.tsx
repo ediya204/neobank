@@ -37,9 +37,8 @@ import {
   Currency,
   Customer,
   demoOrganizationId,
-  demoUsers,
+  FundingChannel,
   neobankApi,
-  supportedFiatCurrencies,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
 
@@ -143,20 +142,23 @@ const emptyCustomer: CustomerForm = {
   beneficialOwnerOwnership: '',
 };
 
-const fiatCurrencies: Currency[] = supportedFiatCurrencies;
-
 export default function OnboardingWorkspace({ portal = false }: { portal?: boolean }) {
   const [tab, setTab] = useState<'customers' | 'va'>('customers');
-  const [userId, setUserId] = useState('usr_admin');
+  const userId = 'usr_admin';
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vaRequests, setVaRequests] = useState<VirtualAccountRequest[]>([]);
+  const [vaChannels, setVaChannels] = useState<FundingChannel[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [vaOpen, setVaOpen] = useState(false);
   const [customerForm, setCustomerForm] = useState<CustomerForm>(emptyCustomer);
   const [vaCurrency, setVaCurrency] = useState<Currency>('USD');
-  const [vaCountry, setVaCountry] = useState('SG');
+  const [vaChannelId, setVaChannelId] = useState('');
   const [vaPurpose, setVaPurpose] = useState('跨境贸易收款');
+  const [approvalRequest, setApprovalRequest] = useState<VirtualAccountRequest | null>(null);
+  const [vaAccountName, setVaAccountName] = useState('');
+  const [vaAccountNumber, setVaAccountNumber] = useState('');
+  const [vaIban, setVaIban] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(true);
@@ -166,7 +168,7 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
     setLoading(true);
     setError('');
     try {
-      const [customerRows, requestRows] = await Promise.all([
+      const [customerRows, requestRows, channelRows] = await Promise.all([
         IS_NEOBANK_DEPLOYMENT
           ? neobankApi<{ data: NeobankCustomer[] }>('/admin/customers', { userId }).then(
               (payload) => payload.data.map(mapNeobankCustomer)
@@ -176,15 +178,25 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
           `/virtual-account-requests?organizationId=${demoOrganizationId}`,
           { userId }
         ),
+        coreApi<FundingChannel[]>(
+          `/funding-channels?organizationId=${demoOrganizationId}&type=VIRTUAL_ACCOUNT`,
+          { userId }
+        ),
       ]);
       setCustomers(customerRows);
       setVaRequests(requestRows);
+      setVaChannels(channelRows);
+      const available = channelRows.find((channel) => channel.active);
+      if (available && !channelRows.some((channel) => channel.id === vaChannelId)) {
+        setVaChannelId(available.id);
+        if (available.supportedCurrencies[0]) setVaCurrency(available.supportedCurrencies[0]);
+      }
     } catch (value) {
       setError(value instanceof Error ? value.message : '加载失败');
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, vaChannelId]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -308,8 +320,8 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
         method: 'POST',
         userId,
         body: JSON.stringify({
+          channelId: vaChannelId,
           currency: vaCurrency,
-          preferredCountry: vaCountry,
           purpose: vaPurpose,
         }),
       });
@@ -323,13 +335,24 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
     }
   };
 
-  const reviewVa = async (request: VirtualAccountRequest, action: 'approve' | 'reject') => {
+  const reviewVa = async (
+    request: VirtualAccountRequest,
+    action: 'approve' | 'reject',
+    account?: { accountName: string; accountNumber: string; iban?: string }
+  ) => {
     try {
       await coreApi(`/virtual-account-requests/${request.id}/${action}`, {
         method: 'PATCH',
         userId,
-        body: action === 'reject' ? JSON.stringify({ reason: '银行资料需要补充' }) : undefined,
+        body:
+          action === 'reject'
+            ? JSON.stringify({ reason: '银行资料需要补充' })
+            : JSON.stringify(account),
       });
+      setApprovalRequest(null);
+      setVaAccountName('');
+      setVaAccountNumber('');
+      setVaIban('');
       setSuccess(action === 'approve' ? 'VA 已开通并建立独立余额账户' : 'VA 申请已拒绝');
       await load();
     } catch (value) {
@@ -337,10 +360,17 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
     }
   };
 
+  const openVaApproval = (request: VirtualAccountRequest) => {
+    setApprovalRequest(request);
+    setVaAccountName(request.customer.displayName);
+    setVaAccountNumber('');
+    setVaIban('');
+  };
+
   return (
     <>
       <Helmet>
-        <title>客户开户与 VA | SCC Digital Bank</title>
+        <title>客户开户与 VA | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
@@ -354,22 +384,6 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
               </Typography>
             </Box>
             <Stack direction="row" spacing={1.5}>
-              {!IS_NEOBANK_DEPLOYMENT && (
-                <FormControl size="small" sx={{ minWidth: 180 }}>
-                  <InputLabel>本地演示身份</InputLabel>
-                  <Select
-                    label="本地演示身份"
-                    value={userId}
-                    onChange={(event) => setUserId(event.target.value)}
-                  >
-                    {demoUsers.map((user) => (
-                      <MenuItem key={user.id} value={user.id}>
-                        {user.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
               {!IS_NEOBANK_DEPLOYMENT && (
                 <Button
                   variant="contained"
@@ -403,7 +417,8 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
                 rows={vaRequests}
                 currentUserId={userId}
                 portal={portal}
-                onReview={reviewVa}
+                onApprove={openVaApproval}
+                onReject={(request) => reviewVa(request, 'reject')}
               />
             )}
           </Card>
@@ -433,27 +448,56 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
           <DialogTitle>申请独立 VA</DialogTitle>
           <DialogContent>
             <Stack spacing={2} sx={{ mt: 1 }}>
-              <FormControl fullWidth>
+              <FormControl fullWidth required>
+                <InputLabel>银行渠道</InputLabel>
+                <Select
+                  label="银行渠道"
+                  value={vaChannelId}
+                  onChange={(event) => {
+                    const nextId = event.target.value;
+                    const channel = vaChannels.find((item) => item.id === nextId);
+                    setVaChannelId(nextId);
+                    if (channel?.supportedCurrencies[0]) {
+                      setVaCurrency(channel.supportedCurrencies[0]);
+                    }
+                  }}
+                >
+                  {vaChannels
+                    .filter((channel) => channel.active)
+                    .map((channel) => (
+                      <MenuItem key={channel.id} value={channel.id}>
+                        {channel.settlementBankName || channel.name}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+              {vaChannels.find((channel) => channel.id === vaChannelId) ? (
+                <Alert severity="info">
+                  支持币种：
+                  {vaChannels
+                    .find((channel) => channel.id === vaChannelId)
+                    ?.supportedCurrencies.join(' / ')}
+                </Alert>
+              ) : (
+                <Alert severity="warning">暂无已启用的 VA 银行渠道。</Alert>
+              )}
+              <FormControl fullWidth required disabled={!vaChannelId}>
                 <InputLabel>币种</InputLabel>
                 <Select
                   label="币种"
                   value={vaCurrency}
                   onChange={(event) => setVaCurrency(event.target.value as Currency)}
                 >
-                  {fiatCurrencies.map((currency) => (
+                  {(
+                    vaChannels.find((channel) => channel.id === vaChannelId)?.supportedCurrencies ||
+                    []
+                  ).map((currency) => (
                     <MenuItem key={currency} value={currency}>
                       {currency}
                     </MenuItem>
                   ))}
                 </Select>
               </FormControl>
-              <TextField
-                required
-                label="开户地区（国家代码）"
-                value={vaCountry}
-                onChange={(event) => setVaCountry(event.target.value.toUpperCase())}
-                inputProps={{ maxLength: 2 }}
-              />
               <TextField
                 required
                 multiline
@@ -466,8 +510,65 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setVaOpen(false)}>取消</Button>
-            <Button type="submit" variant="contained">
+            <Button type="submit" variant="contained" disabled={!vaChannelId}>
               提交 VA 申请
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+      <Dialog
+        open={Boolean(approvalRequest)}
+        onClose={() => setApprovalRequest(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <Box
+          component="form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!approvalRequest) return;
+            reviewVa(approvalRequest, 'approve', {
+              accountName: vaAccountName,
+              accountNumber: vaAccountNumber,
+              iban: vaIban || undefined,
+            }).catch(() => undefined);
+          }}
+        >
+          <DialogTitle>录入 VA 银行账号</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Alert severity="info">
+                {approvalRequest?.channel?.settlementBankName || '未绑定银行'} ·{' '}
+                {approvalRequest?.currency}
+                <br />
+                银行地址和 SWIFT/BIC 固定取自渠道配置，不能在这里覆盖。
+              </Alert>
+              <TextField
+                required
+                label="账户名称"
+                value={vaAccountName}
+                inputProps={{ maxLength: 160 }}
+                onChange={(event) => setVaAccountName(event.target.value)}
+              />
+              <TextField
+                required
+                label="银行账号"
+                value={vaAccountNumber}
+                inputProps={{ maxLength: 80 }}
+                onChange={(event) => setVaAccountNumber(event.target.value)}
+              />
+              <TextField
+                label="IBAN（如适用）"
+                value={vaIban}
+                inputProps={{ maxLength: 80 }}
+                onChange={(event) => setVaIban(event.target.value.toUpperCase())}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setApprovalRequest(null)}>取消</Button>
+            <Button type="submit" variant="contained">
+              确认开通 VA
             </Button>
           </DialogActions>
         </Box>
@@ -540,12 +641,14 @@ function VaRequestTable({
   rows,
   currentUserId,
   portal,
-  onReview,
+  onApprove,
+  onReject,
 }: {
   rows: VirtualAccountRequest[];
   currentUserId: string;
   portal: boolean;
-  onReview: (request: VirtualAccountRequest, action: 'approve' | 'reject') => Promise<void>;
+  onApprove: (request: VirtualAccountRequest) => void;
+  onReject: (request: VirtualAccountRequest) => Promise<void>;
 }) {
   return (
     <TableContainer>
@@ -554,7 +657,7 @@ function VaRequestTable({
           <TableRow>
             <TableCell>客户</TableCell>
             <TableCell>币种</TableCell>
-            <TableCell>地区</TableCell>
+            <TableCell>银行</TableCell>
             <TableCell>用途</TableCell>
             <TableCell>状态/账户</TableCell>
             <TableCell align="right">操作</TableCell>
@@ -565,7 +668,14 @@ function VaRequestTable({
             <TableRow key={request.id}>
               <TableCell>{request.customer.displayName}</TableCell>
               <TableCell>{request.currency}</TableCell>
-              <TableCell>{request.preferredCountry}</TableCell>
+              <TableCell>
+                <Typography variant="body2">
+                  {request.channel?.settlementBankName || request.channel?.name || '历史申请'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  支持 {request.channel?.supportedCurrencies.join(' / ') || request.currency}
+                </Typography>
+              </TableCell>
               <TableCell>{request.purpose}</TableCell>
               <TableCell>
                 <Stack alignItems="flex-start" gap={0.5}>
@@ -583,7 +693,7 @@ function VaRequestTable({
                     <Button
                       size="small"
                       color="error"
-                      onClick={() => onReview(request, 'reject').catch(() => undefined)}
+                      onClick={() => onReject(request).catch(() => undefined)}
                     >
                       拒绝
                     </Button>
@@ -591,9 +701,9 @@ function VaRequestTable({
                       size="small"
                       variant="contained"
                       disabled={request.makerId === currentUserId && currentUserId !== 'usr_admin'}
-                      onClick={() => onReview(request, 'approve').catch(() => undefined)}
+                      onClick={() => onApprove(request)}
                     >
-                      通过
+                      录入账号
                     </Button>
                   </Stack>
                 )}

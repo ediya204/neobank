@@ -237,7 +237,7 @@
       "currentVersion": "版本 {{version}} · 更新人 {{operator}}",
       "systemOperator": "系统",
       "addressEyebrow": "白名单目标地址",
-      "addressTitle": "SCC数字银行 TRON 资金库地址",
+      "addressTitle": "SSC数字银行 TRON 资金库地址",
       "addressDescription": "新批次会保存该地址快照；后续修改不会影响已创建的批次。",
       "addressLabel": "TRON 目标地址"
     },
@@ -271,7 +271,7 @@
     "messages": {
       "batchCreated": "归集批次已创建，所选客户余额已锁定。",
       "rateUpdated": "固定净汇率已更新。",
-      "addressUpdated": "SCC数字银行 TRON 白名单地址已更新。"
+      "addressUpdated": "SSC数字银行 TRON 白名单地址已更新。"
     },
     "errors": {
       "loadFailed": "无法读取归集数据，请重试。",

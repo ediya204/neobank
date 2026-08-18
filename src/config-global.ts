@@ -34,8 +34,8 @@ export const MAPBOX_API = process.env.REACT_APP_MAPBOX_API;
 // PRODUCT BRAND
 // ----------------------------------------------------------------------
 
-export const APP_NAME_CN = 'SCC数字银行';
-export const APP_NAME_EN = 'SCC Digital Bank';
+export const APP_NAME_CN = 'SSC数字银行';
+export const APP_NAME_EN = 'SSC Digital Bank';
 export const APP_DISPLAY_NAME = `${APP_NAME_CN} · ${APP_NAME_EN}`;
 
 // ROOT PATH AFTER LOGIN SUCCESSFUL

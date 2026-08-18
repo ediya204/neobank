@@ -81,6 +81,161 @@ test('same channel remittance reference is idempotent only for the same deposit 
   );
 });
 
+test('POBO payout accepts an active VA wallet for the same customer and currency', async () => {
+  const source = {
+    id: 'source_test',
+    customerId: customer.id,
+    kind: 'VIRTUAL_ACCOUNT',
+    status: 'ACTIVE',
+    currency: 'USD',
+    network: null,
+  };
+  const payoutChannel = {
+    ...channel,
+    type: 'POBO_PAYOUT',
+  };
+  const beneficiary = {
+    id: 'beneficiary_test',
+    customerId: customer.id,
+    type: 'BANK',
+    currency: 'USD',
+    active: true,
+  };
+  const service = new OperationsService({});
+
+  assert.doesNotThrow(() =>
+    service.validateShape(
+      {
+        customerId: customer.id,
+        type: 'PAYOUT',
+        currency: 'USD',
+        beneficiaryId: beneficiary.id,
+        payoutMethod: 'POBO',
+      },
+      source,
+      null,
+      payoutChannel,
+      beneficiary
+    )
+  );
+});
+
+test('VA payout reuses the VIRTUAL_ACCOUNT bank channel bound at account opening', () => {
+  const source = {
+    id: 'source_test',
+    customerId: customer.id,
+    kind: 'VIRTUAL_ACCOUNT',
+    status: 'ACTIVE',
+    currency: 'USD',
+    network: null,
+    fundingChannelId: 'va_bank_channel',
+  };
+  const beneficiary = {
+    id: 'beneficiary_test',
+    customerId: customer.id,
+    type: 'BANK',
+    currency: 'USD',
+    active: true,
+  };
+  const bankChannel = {
+    ...channel,
+    id: 'va_bank_channel',
+    type: 'VIRTUAL_ACCOUNT',
+  };
+  const service = new OperationsService({});
+
+  assert.doesNotThrow(() =>
+    service.validateShape(
+      {
+        customerId: customer.id,
+        type: 'PAYOUT',
+        currency: 'USD',
+        beneficiaryId: beneficiary.id,
+        payoutMethod: 'VA',
+      },
+      source,
+      null,
+      bankChannel,
+      beneficiary
+    )
+  );
+  assert.throws(
+    () =>
+      service.validateShape(
+        {
+          customerId: customer.id,
+          type: 'PAYOUT',
+          currency: 'USD',
+          beneficiaryId: beneficiary.id,
+          payoutMethod: 'VA',
+        },
+        source,
+        null,
+        { ...bankChannel, id: 'another_va_bank' },
+        beneficiary
+      ),
+    /payout_source_or_channel_mismatch/
+  );
+  assert.throws(
+    () =>
+      service.validateShape(
+        {
+          customerId: customer.id,
+          type: 'PAYOUT',
+          currency: 'USD',
+          beneficiaryId: beneficiary.id,
+          payoutMethod: 'VA',
+        },
+        source,
+        null,
+        { ...bankChannel, type: 'VA_PAYOUT' },
+        beneficiary
+      ),
+    /payout_source_or_channel_mismatch/
+  );
+});
+
+test('platform payout continues to reject a VA wallet', async () => {
+  const source = {
+    id: 'source_test',
+    customerId: customer.id,
+    kind: 'VIRTUAL_ACCOUNT',
+    status: 'ACTIVE',
+    currency: 'USD',
+    network: null,
+  };
+  const payoutChannel = {
+    ...channel,
+    type: 'PLATFORM_PAYOUT',
+  };
+  const beneficiary = {
+    id: 'beneficiary_test',
+    customerId: customer.id,
+    type: 'BANK',
+    currency: 'USD',
+    active: true,
+  };
+  const service = new OperationsService({});
+
+  assert.throws(
+    () =>
+      service.validateShape(
+        {
+          customerId: customer.id,
+          type: 'PAYOUT',
+          currency: 'USD',
+          beneficiaryId: beneficiary.id,
+          payoutMethod: 'PLATFORM',
+        },
+        source,
+        null,
+        payoutChannel,
+        beneficiary
+      ),
+    /payout_source_or_channel_mismatch/
+  );
+});
+
 test('mirrored USDT operations cannot use generic approval, rejection, or execution', async () => {
   const mirrored = {
     id: 'crypto_transfer_test',

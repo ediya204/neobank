@@ -21,6 +21,7 @@
   "vars": {
     "GO_API_BASE_URL": "https://neobank-78pr.onrender.com",
     "CORE_API_BASE_URL": "https://neobank-core.onrender.com",
+    "CORE_ORGANIZATION_ID": "org_neobank",
     "CUSTOMER_AUTH_MAINTENANCE": "false"
   },
   "secrets": {

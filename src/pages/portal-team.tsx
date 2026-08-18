@@ -195,7 +195,7 @@ export default function PortalTeamPage() {
   return (
     <>
       <Helmet>
-        <title>{t('portalTeam.pageTitle')} | SCC Digital Bank</title>
+        <title>{t('portalTeam.pageTitle')} | SSC Digital Bank</title>
       </Helmet>
 
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>

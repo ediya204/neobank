@@ -1,5 +1,5 @@
 import { AUTH_SESSION_EXPIRED_EVENT } from 'src/auth/csrf-token';
-import { coreApi, neobankApi } from './core-api';
+import { coreApi, customerAuthApi, neobankApi } from './core-api';
 
 function response(input: {
   ok?: boolean;
@@ -52,6 +52,22 @@ describe('coreApi response validation', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/admin/customers',
       expect.objectContaining({ credentials: 'include', cache: 'no-store' })
+    );
+  });
+
+  it('sends customer OTP step-up requests to the customer auth boundary', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(response({ payload: { step_up_token: 'token' } }));
+
+    await customerAuthApi('/step-up/totp', {
+      method: 'POST',
+      body: JSON.stringify({ purpose: 'add_withdrawal_address', otp_code: '123456' }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/customer/step-up/totp',
+      expect.objectContaining({ credentials: 'include', cache: 'no-store', method: 'POST' })
     );
   });
 

@@ -127,7 +127,7 @@ func (app *application) registrationFingerprint(input customerRegistrationInput)
 }
 
 func registrationReference(now time.Time) string {
-	return "SCC-" + now.UTC().Format("20060102") + "-" + strings.ToUpper(hex.EncodeToString(randomBytes(6)))
+	return "SSC-" + now.UTC().Format("20060102") + "-" + strings.ToUpper(hex.EncodeToString(randomBytes(6)))
 }
 
 func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request) {

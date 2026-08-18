@@ -22,6 +22,11 @@ const [
   onboardingPage,
   customerSync,
   customerAdmin,
+  portalCustomerContext,
+  customerCryptoWallet,
+  virtualAccountsPage,
+  financeWorkspace,
+  coreApi,
 ] = await Promise.all([
   read('package.json'),
   read('wrangler.neobank.jsonc'),
@@ -40,6 +45,11 @@ const [
   read('src/pages/dashboard/onboarding-workspace.tsx'),
   read('server/src/customers/neobank-customer-sync.ts'),
   read('server-go/cmd/api/customer_admin.go'),
+  read('src/features/finance/portal-customer-context.tsx'),
+  read('src/pages/portal/crypto-wallet.tsx'),
+  read('src/pages/portal/virtual-accounts.tsx'),
+  read('src/pages/dashboard/finance-workspace.tsx'),
+  read('src/features/finance/core-api.ts'),
 ]);
 
 const packageJson = JSON.parse(packageSource);
@@ -101,7 +111,12 @@ assert.match(
 );
 assert.match(deploymentMode, /IS_FULL_ADMIN_WALLET_DEPLOYMENT/);
 assert.match(deploymentMode, /IS_NEOBANK_DEPLOYMENT/);
-assert.match(adminPage, /process\.env\.NODE_ENV === 'development'/);
+for (const page of [adminPage, onboardingPage, financeWorkspace]) {
+  assert.match(page, /const userId = 'usr_admin'/);
+  assert.doesNotMatch(page, /本地演示身份|demoUsers|setUserId/);
+}
+assert.match(coreApi, /userId = 'usr_admin'/);
+assert.doesNotMatch(coreApi, /提交人 Maker|复核人 Checker|出款操作员|demoUsers/);
 assert.match(adminPage, /IS_NEOBANK_DEPLOYMENT/);
 assert.match(adminPage, /neobankApi/);
 assert.match(adminPage, /\/admin\/customers\/\$\{customer\.id\}\/kyc/);
@@ -114,11 +129,20 @@ assert.match(onboardingPage, /KYC 已通过，客户已自动激活并创建 USD
 assert.match(customerAdmin, /approveCustomerKYCAutomationSQL/);
 assert.match(customerAdmin, /operations_status='active'/);
 assert.match(customerAdmin, /automaticWalletIdempotency\(id\)/);
+assert.match(customerAdmin, /automaticWalletAlias\(id\)/);
 assert.match(customerAdmin, /provisionCregisWallet/);
+assert.match(portalCustomerContext, /neobankApi<[\s\S]*?>\('\/customer\/profile'\)/);
+assert.doesNotMatch(portalCustomerContext, /coreApi<[\s\S]*?>\('\/customer\/profile'\)/);
+assert.match(customerCryptoWallet, /neobankApi<\{ data: CustomerWalletRow\[\] \}>\('\/customer\/wallets'\)/);
+assert.match(customerCryptoWallet, /neobankApi<CustomerHistory>\('\/customer\/history'\)/);
 
 assert.match(worker, /proxyAPI\(request, env, 'application-session-edge'\)/);
 assert.match(worker, /proxyCoreAPI\(request, env\)/);
-assert.match(worker, /loadAdminSession\(request, env\)/);
+assert.match(worker, /loadApplicationSession\(request, env\)/);
+assert.match(worker, /customerCoreRouteAllowed\(incoming, request\.method, userId/);
+assert.match(worker, /type'\) === 'VIRTUAL_ACCOUNT'/);
+assert.match(worker, /active'\) === 'true'/);
+assert.match(worker, /customers\/\$\{customerId\}\/virtual-account-requests/);
 assert.match(worker, /invalid_csrf_token/);
 assert.match(worker, /replace\(\/\^\\\/api\\\/core/);
 assert.doesNotMatch(worker, /handleAuthRequest/);
@@ -140,7 +164,10 @@ assert.match(coreMain, /CORE_EDGE_AUTH_REQUIRED/);
 assert.match(coreMain, /rawBody: true/);
 assert.match(coreEdgeAuth, /timingSafeEqual/);
 assert.match(coreEdgeAuth, /request\.headers\['x-user-id'\] = options\.adminUserId/);
+assert.match(coreEdgeAuth, /x-authenticated-customer-id/);
 assert.match(customerSync, /FROM customers c/);
 assert.match(customerSync, /db\.customer\.upsert/);
+assert.match(virtualAccountsPage, /选择银行并查看其支持币种/);
+assert.match(virtualAccountsPage, /supportedCurrencies/);
 
 console.log('Neobank full-admin-wallet profile checks passed.');

@@ -74,7 +74,23 @@ export function edgeAuthMiddleware(options: { adminUserId: string; secret: strin
       return;
     }
     request.headers['x-user-id'] = options.adminUserId;
-    request.headers['x-authenticated-email'] = identity;
+    if (identity.startsWith('customer:')) {
+      const separator = identity.indexOf(':', 'customer:'.length);
+      const customerId = separator > 0 ? identity.slice('customer:'.length, separator) : '';
+      const email = separator > 0 ? identity.slice(separator + 1) : '';
+      if (!customerId || !email) {
+        response.status(401).json({ error: { code: 'unauthorized_edge_request' } });
+        return;
+      }
+      request.headers['x-authenticated-role'] = 'customer';
+      request.headers['x-authenticated-customer-id'] = customerId;
+      request.headers['x-authenticated-email'] = email;
+    } else {
+      request.headers['x-authenticated-role'] = 'admin';
+      request.headers['x-authenticated-email'] = identity.startsWith('admin:')
+        ? identity.slice('admin:'.length)
+        : identity;
+    }
     next();
   };
 }

@@ -1061,7 +1061,7 @@ export default function PartnerPortalPage() {
     <>
       <Helmet>
         <title>
-          {translate(copy.title)} | {translate('合作方 Portal')} | SCC Digital Bank
+          {translate(copy.title)} | {translate('合作方 Portal')} | SSC Digital Bank
         </title>
       </Helmet>
       <Container maxWidth={portalSettings.themeStretch ? false : 'xl'} sx={{ minWidth: 0 }}>
@@ -2241,7 +2241,7 @@ function PortalDashboard({
         <DashboardMetric
           label={portalText('全部客户')}
           value={String(customers.length)}
-          helper={portalText('SCC数字银行管理的客户')}
+          helper={portalText('SSC数字银行管理的客户')}
           icon="solar:users-group-rounded-bold-duotone"
           color="primary"
         />

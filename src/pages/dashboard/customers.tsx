@@ -418,7 +418,7 @@ function CustomerListPage() {
   return (
     <>
       <Helmet>
-        <title>{t('customers.pageTitle')} | SCC Digital Bank</title>
+        <title>{t('customers.pageTitle')} | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>
         <Stack
@@ -619,7 +619,7 @@ function CustomerDetailsPage({ customerId }: { customerId: string }) {
     <>
       <Helmet>
         <title>
-          {t('customers.details.documentTitle', { name: customer.customer_name })} | SCC Digital Bank
+          {t('customers.details.documentTitle', { name: customer.customer_name })} | SSC Digital Bank
         </title>
       </Helmet>
       <Container maxWidth={settings.themeStretch ? false : 'xl'}>

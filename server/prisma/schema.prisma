@@ -110,9 +110,15 @@ enum RateType {
 
 enum ChannelType {
   FIAT_INBOUND
+  VIRTUAL_ACCOUNT
   VA_PAYOUT
   POBO_PAYOUT
   PLATFORM_PAYOUT
+}
+
+enum VaRequestSource {
+  ADMIN
+  CUSTOMER
 }
 
 enum CryptoNetwork {
@@ -166,22 +172,50 @@ model Organization {
   updatedAt   DateTime         @updatedAt
 }
 
+model WithdrawalFeeRule {
+  id             String   @id @default(uuid())
+  scopeId        String   @map("scope_id")
+  organizationId String?  @map("organization_id")
+  assetClass     String   @map("asset_class")
+  currency       String
+  method         String
+  channelCode    String   @map("channel_code")
+  network        String   @default("")
+  feeAmountMinor BigInt   @map("fee_amount_minor")
+  feeDecimals    Int      @map("fee_decimals")
+  active         Boolean  @default(true)
+  version        BigInt   @default(1)
+  createdBy      String   @map("created_by")
+  updatedBy      String   @map("updated_by")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([scopeId, assetClass, currency, method, channelCode, network])
+  @@index([scopeId, assetClass, active])
+  @@map("withdrawal_fee_rules")
+}
+
 model FundingChannel {
-  id                  String       @id @default(uuid())
-  organizationId      String
-  organization        Organization @relation(fields: [organizationId], references: [id])
-  code                String
-  name                String
-  type                ChannelType
-  supportedCurrencies Currency[]
-  active              Boolean      @default(true)
-  settlementBankName  String?
-  settlementAccount   String?
-  swiftBic            String?
-  instructions        Json?
-  operations          Operation[]
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id                     String                  @id @default(uuid())
+  organizationId         String
+  organization           Organization            @relation(fields: [organizationId], references: [id])
+  code                   String
+  name                   String
+  type                   ChannelType
+  supportedCurrencies    Currency[]
+  active                 Boolean                 @default(true)
+  settlementBankName     String?
+  settlementAccount      String?
+  swiftBic               String?
+  bankCountry            String?
+  bankAddress            String?
+  branchName             String?
+  instructions           Json?
+  operations             Operation[]
+  virtualAccountRequests VirtualAccountRequest[]
+  virtualAccounts        Account[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@unique([organizationId, code])
   @@index([organizationId, type, active])
@@ -326,6 +360,10 @@ model VirtualAccountRequest {
   status            AccountRequestStatus @default(SUBMITTED)
   preferredCountry  String
   purpose           String
+  channelId         String?
+  channel           FundingChannel?      @relation(fields: [channelId], references: [id])
+  requestSource     VaRequestSource      @default(ADMIN)
+  requesterEmail    String?
   makerId           String
   maker             User                 @relation("VaRequestMaker", fields: [makerId], references: [id])
   checkerId         String?
@@ -338,6 +376,7 @@ model VirtualAccountRequest {
   updatedAt         DateTime             @updatedAt
 
   @@index([customerId, status])
+  @@index([channelId, status])
 }
 
 model Account {
@@ -351,6 +390,8 @@ model Account {
   accountNumber    String?                @unique
   bankName         String?
   bankAddress      String?
+  bankCountry      String?
+  branchName       String?
   swiftBic         String?
   iban             String?
   walletAddress    String?
@@ -362,10 +403,13 @@ model Account {
   targetOperations Operation[]            @relation("OperationTarget")
   journalLines     JournalLine[]
   vaRequest        VirtualAccountRequest?
+  fundingChannelId String?
+  fundingChannel   FundingChannel?        @relation(fields: [fundingChannelId], references: [id])
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
   @@index([customerId, kind, currency])
+  @@index([fundingChannelId, kind])
 }
 
 model Beneficiary {

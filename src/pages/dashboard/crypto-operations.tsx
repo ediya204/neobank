@@ -11,11 +11,7 @@ import {
   DialogContent,
   DialogTitle,
   Drawer,
-  FormControl,
   IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   Table,
   TableBody,
@@ -34,7 +30,6 @@ import {
   CryptoTransfer,
   Customer,
   demoOrganizationId,
-  demoUsers,
   neobankApi,
 } from 'src/features/finance/core-api';
 
@@ -42,6 +37,9 @@ type CregisHistoryRow = {
   id: string;
   customer_id: string;
   amount: string;
+  fee_amount?: string;
+  net_amount?: string;
+  fee_rule_version?: string;
   status: string;
   address: string;
   txid?: string;
@@ -134,7 +132,8 @@ function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
     availableBalance: '0',
     frozenBalance: '0',
     minimumDeposit: '0',
-    withdrawalFee: '0',
+    withdrawalFee: row.fee_amount || '0',
+    withdrawalFeeRuleVersion: row.fee_rule_version,
     confirmationsRequired: 20,
   };
   return {
@@ -148,8 +147,8 @@ function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
     status,
     rawStatus: row.status,
     amount: row.amount,
-    feeAmount: '0',
-    netAmount: row.amount,
+    feeAmount: row.fee_amount || '0',
+    netAmount: row.net_amount || row.amount,
     fromAddress: '',
     toAddress: row.address,
     txHash: row.txid,
@@ -166,7 +165,7 @@ function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
 }
 
 export default function CryptoOperationsAdmin() {
-  const [userId, setUserId] = useState('usr_admin');
+  const userId = 'usr_admin';
   const [rows, setRows] = useState<AdminCryptoTransfer[]>([]);
   const [selected, setSelected] = useState<AdminCryptoTransfer | null>(null);
   const [error, setError] = useState('');
@@ -352,8 +351,8 @@ export default function CryptoOperationsAdmin() {
       <Helmet>
         <title>
           {IS_NEOBANK_DEPLOYMENT
-            ? '数字钱包审批 | SCC Digital Bank'
-            : '数字钱包复核 | SCC Digital Bank'}
+            ? '数字钱包审批 | SSC Digital Bank'
+            : '数字钱包复核 | SSC Digital Bank'}
         </title>
       </Helmet>
       <Container maxWidth="xl">
@@ -369,22 +368,6 @@ export default function CryptoOperationsAdmin() {
                   : '复核本地 USDT 付币指令，并在模拟通道执行后登记交易哈希。'}
               </Typography>
             </Box>
-            {process.env.NODE_ENV === 'development' && !IS_NEOBANK_DEPLOYMENT && (
-              <FormControl size="small" sx={{ minWidth: 190 }}>
-                <InputLabel>本地演示身份</InputLabel>
-                <Select
-                  label="本地演示身份"
-                  value={userId}
-                  onChange={(event) => setUserId(event.target.value)}
-                >
-                  {demoUsers.map((user) => (
-                    <MenuItem key={user.id} value={user.id}>
-                      {user.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
             {IS_NEOBANK_DEPLOYMENT && (
               <Button
                 variant="contained"
@@ -477,7 +460,9 @@ export default function CryptoOperationsAdmin() {
             </Stack>
             <Card variant="outlined" sx={{ p: 2.5 }}>
               <Info label="网络" value={`${selected.network} · ${selected.wallet.tokenStandard}`} />
-              <Info label="发送数量" value={`${selected.amount} USDT`} />
+              <Info label="钱包总扣账" value={`${selected.amount} USDT`} />
+              <Info label="转出手续费" value={`${selected.feeAmount} USDT`} />
+              <Info label="链上实际发送" value={`${selected.netAmount} USDT`} />
               <Info label="预计到账" value={`${selected.netAmount} USDT`} />
               <Info label="目标地址" value={selected.toAddress} mono />
               <Info label="交易哈希" value={selected.txHash || '执行后生成'} mono />

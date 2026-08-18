@@ -58,7 +58,7 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
   return (
     <>
       <Helmet>
-        <title>业务总览 | SCC Digital Bank</title>
+        <title>业务总览 | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>

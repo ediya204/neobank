@@ -17,6 +17,8 @@ class CreateOperationDto {
   @IsEnum(Currency) currency!: Currency;
   @IsNumberString() amount!: string;
   @IsOptional() @IsNumberString() feeAmount?: string;
+  @IsOptional() @IsNumberString() expectedFeeAmount?: string;
+  @IsOptional() @IsString() expectedFeeRuleVersion?: string;
   @IsOptional() @IsString() sourceAccountId?: string;
   @IsOptional() @IsString() targetAccountId?: string;
   @IsOptional() @IsString() beneficiaryId?: string;

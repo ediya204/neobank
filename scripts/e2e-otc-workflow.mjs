@@ -21,7 +21,7 @@ async function request(path, userId, init = {}) {
   return body;
 }
 
-const detail = await request(`/customers/${customerId}`, 'usr_maker');
+const detail = await request(`/customers/${customerId}`, 'usr_admin');
 const source = detail.accounts.find(
   (row) => row.kind === 'CRYPTO_WALLET' && row.currency === 'USDT' && row.network === 'TRON'
 );
@@ -33,7 +33,7 @@ const vaHkd = detail.accounts.find(
 );
 assert(source && systemUsd && vaHkd, 'OTC source, system cash account, and VA target exist');
 
-const walletBefore = (await request(`/crypto-wallets?customerId=${customerId}`, 'usr_maker'))[0];
+const walletBefore = (await request(`/crypto-wallets?customerId=${customerId}`, 'usr_admin'))[0];
 assert(
   Number(walletBefore.availableBalance) === Number(source.availableBalance),
   'OTC source mirror starts synchronized'
@@ -41,11 +41,11 @@ assert(
 
 const systemBefore = Number(systemUsd.availableBalance);
 const systemOperation = await submitAndApprove(systemUsd);
-const detailAfterSystem = await request(`/customers/${customerId}`, 'usr_maker');
+const detailAfterSystem = await request(`/customers/${customerId}`, 'usr_admin');
 const sourceAfterSystem = detailAfterSystem.accounts.find((row) => row.id === source.id);
 const systemAfter = detailAfterSystem.accounts.find((row) => row.id === systemUsd.id);
 const walletAfterSystem = (
-  await request(`/crypto-wallets?customerId=${customerId}`, 'usr_maker')
+  await request(`/crypto-wallets?customerId=${customerId}`, 'usr_admin')
 )[0];
 assert(
   Number(sourceAfterSystem.availableBalance) === Number(source.availableBalance) - 1 &&
@@ -70,10 +70,10 @@ assert(
 
 const vaBefore = Number(vaHkd.availableBalance);
 const vaOperation = await submitAndApprove(vaHkd);
-const detailAfterVa = await request(`/customers/${customerId}`, 'usr_maker');
+const detailAfterVa = await request(`/customers/${customerId}`, 'usr_admin');
 const sourceAfterVa = detailAfterVa.accounts.find((row) => row.id === source.id);
 const vaAfter = detailAfterVa.accounts.find((row) => row.id === vaHkd.id);
-const walletAfterVa = (await request(`/crypto-wallets?customerId=${customerId}`, 'usr_maker'))[0];
+const walletAfterVa = (await request(`/crypto-wallets?customerId=${customerId}`, 'usr_admin'))[0];
 assert(Number(vaAfter.availableBalance) > vaBefore, 'OTC proceeds credit selected VA account');
 assert(
   Number(sourceAfterVa.availableBalance) === Number(sourceAfterSystem.availableBalance) - 1 &&
@@ -105,10 +105,10 @@ await request(`/operations/${rejected.id}/reject`, 'usr_admin', {
   method: 'PATCH',
   body: JSON.stringify({ reason: `${marker} OTC 拒绝测试` }),
 });
-const detailAfterReject = await request(`/customers/${customerId}`, 'usr_maker');
+const detailAfterReject = await request(`/customers/${customerId}`, 'usr_admin');
 const sourceAfterReject = detailAfterReject.accounts.find((row) => row.id === source.id);
 const walletAfterReject = (
-  await request(`/crypto-wallets?customerId=${customerId}`, 'usr_maker')
+  await request(`/crypto-wallets?customerId=${customerId}`, 'usr_admin')
 )[0];
 assert(
   Number(sourceAfterReject.availableBalance) === Number(sourceAfterVa.availableBalance) &&
