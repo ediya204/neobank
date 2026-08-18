@@ -89,6 +89,8 @@ type AdminCustomer = {
   application_submitted_at?: string;
   wallet_count?: number;
   wallet_status?: string | null;
+  wallet_id?: string | null;
+  wallet_alias?: string | null;
 };
 
 type AdminCustomerActivation = AdminCustomer & {
@@ -342,6 +344,28 @@ export default function CryptoOperationsAdmin() {
       await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : 'KYC 审核失败');
+    } finally {
+      setCustomerActionId('');
+    }
+  };
+
+  const syncWalletAlias = async (customer: AdminCustomer) => {
+    if (!customer.wallet_id) return;
+    setCustomerActionId(customer.id);
+    setError('');
+    try {
+      const result = await neobankApi<{ alias: string; updated: boolean }>(
+        `/crypto/wallets/${customer.wallet_id}/sync-alias`,
+        { method: 'POST', userId }
+      );
+      setSuccess(
+        result.updated
+          ? `钱包别名已同步为客户 ID：${result.alias}`
+          : `钱包别名已经是客户 ID：${result.alias}`
+      );
+      await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : '钱包别名同步失败');
     } finally {
       setCustomerActionId('');
     }
@@ -652,6 +676,18 @@ export default function CryptoOperationsAdmin() {
                                 <Typography variant="caption" color="success.main">
                                   {automaticWalletStatusLabel(customer)}
                                 </Typography>
+                              )}
+                            {customer.wallet_status === 'active' &&
+                              customer.wallet_id &&
+                              customer.wallet_alias !== customer.id && (
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  disabled={busy}
+                                  onClick={() => syncWalletAlias(customer).catch(() => undefined)}
+                                >
+                                  {busy ? '同步中…' : '同步钱包别名'}
+                                </Button>
                               )}
                             {customer.operations_status === 'active' &&
                               customer.status === 'pending_setup' && (

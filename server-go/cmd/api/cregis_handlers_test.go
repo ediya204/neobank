@@ -102,6 +102,25 @@ func TestDepositWalletActivationRequiresCregisOwnershipEvidence(t *testing.T) {
 	}
 }
 
+func TestWalletAliasSyncPreservesVerifiedWalletAndAuditBoundaries(t *testing.T) {
+	for _, required := range []string{
+		"customer_id=?",
+		"address=?",
+		"status='active'",
+		"custody_provider='cregis'",
+		"ownership_verified_at IS NOT NULL",
+	} {
+		if !strings.Contains(syncWalletAliasSQL, required) {
+			t.Fatalf("wallet alias sync SQL must contain %q: %s", required, syncWalletAliasSQL)
+		}
+	}
+	for _, required := range []string{"wallet.alias_synced", "customer_id=?", "alias=?", "updated_at=?"} {
+		if !strings.Contains(auditWalletAliasSyncSQL, required) {
+			t.Fatalf("wallet alias audit SQL must contain %q: %s", required, auditWalletAliasSyncSQL)
+		}
+	}
+}
+
 func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testing.T) {
 	for _, required := range []string{
 		"INSERT OR IGNORE INTO cregis_withdrawals",
