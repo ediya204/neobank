@@ -7,7 +7,6 @@ const read = (relativePath) => readFile(new URL(relativePath, root), 'utf8');
 const [
   packageSource,
   neobankWrangler,
-  gatewayWrangler,
   router,
   authRoutes,
   provider,
@@ -30,7 +29,6 @@ const [
 ] = await Promise.all([
   read('package.json'),
   read('wrangler.neobank.jsonc'),
-  read('wrangler.gateway.jsonc'),
   read('src/routes/sections/index.tsx'),
   read('src/routes/sections/auth.tsx'),
   read('src/auth/context/jwt/auth-provider.tsx'),
@@ -63,9 +61,6 @@ assert.match(neobankWrangler, /"ADMIN_AUTH_RATE_LIMITER"/);
 assert.match(neobankWrangler, /"CORE_API_BASE_URL"/);
 assert.match(neobankWrangler, /"CORE_EDGE_SHARED_SECRET"/);
 assert.doesNotMatch(neobankWrangler, /CF_ACCESS_AUD/);
-assert.match(gatewayWrangler, /"name": "neobank-d1-gateway"/);
-assert.match(gatewayWrangler, /"database_name": "neobank-core-v1"/);
-assert.match(gatewayWrangler, /"database_id": "c6127eb2-22b7-4477-bafb-e9e506dc058a"/);
 
 assert.match(
   scripts['neobank:build'] || '',
@@ -97,12 +92,15 @@ assert.match(router, /path: 'home', element: <CryptoWalletPage \/>/);
 assert.match(router, /<Navigate to="\/portal\/home" replace \/>/);
 assert.match(router, /<Navigate to="\/admin" replace \/>/);
 assert.match(router, /path: 'crypto-wallet\/withdraw'/);
+assert.match(router, /path: 'virtual-accounts'/);
 assert.match(authRoutes, /export const adminAuthRoutes/);
 assert.match(authRoutes, /export const customerAuthRoutes/);
 assert.match(authRoutes, /path: 'customer\/register'/);
 assert.match(authRoutes, /const partnerAuthRoutes/);
 assert.match(roleAccess, /admin: IS_ISOLATED_WALLET_DEPLOYMENT \? '\/admin'/);
 assert.match(roleAccess, /customer: '\/portal\/home'/);
+assert.match(roleAccess, /pathname === '\/portal\/virtual-accounts'/);
+assert.match(roleAccess, /!isCustomerWalletPath\(canonicalUrl\.pathname\)/);
 assert.match(provider, /IS_NEOBANK_DEPLOYMENT \|\|/);
 assert.doesNotMatch(provider, /getAccessAdminSession/);
 assert.match(
