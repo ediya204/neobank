@@ -25,7 +25,7 @@ async function main() {
     where: { id: adminUserId },
     update: {
       active: true,
-      displayName: 'Neobank Administrator',
+      displayName: 'SSC Digital Bank Administrator',
       email: adminEmail,
       organizationId,
       role: 'ADMIN',
@@ -33,7 +33,7 @@ async function main() {
     create: {
       id: adminUserId,
       active: true,
-      displayName: 'Neobank Administrator',
+      displayName: 'SSC Digital Bank Administrator',
       email: adminEmail,
       organizationId,
       role: 'ADMIN',
