@@ -56,7 +56,16 @@ const (
       SET address=?, custody_provider='cregis', ownership_verified_at=?, status='active', updated_at=?
       WHERE id=? AND tenant_id=? AND status='creating'`
 	failWalletOwnershipVerificationSQL = `UPDATE cregis_wallets
-      SET address=?, status='error', updated_at=? WHERE id=? AND tenant_id=? AND status='creating'`
+	  SET address=?, status='error', updated_at=? WHERE id=? AND tenant_id=? AND status='creating'`
+	syncWalletAliasSQL = `UPDATE cregis_wallets
+	  SET alias=?, updated_at=?
+	  WHERE id=? AND tenant_id=? AND customer_id=? AND address=?
+	    AND status='active' AND custody_provider='cregis' AND ownership_verified_at IS NOT NULL`
+	auditWalletAliasSyncSQL = `INSERT INTO customer_auth_audit_events
+	  (id, customer_id, event_type, actor, metadata_json, created_at)
+	  SELECT ?, ?, 'wallet.alias_synced', ?, ?, ?
+	  WHERE EXISTS (SELECT 1 FROM cregis_wallets
+	    WHERE id=? AND tenant_id=? AND customer_id=? AND alias=? AND updated_at=?)`
 	reserveWithdrawalSQL = `INSERT OR IGNORE INTO cregis_withdrawals
     (id, tenant_id, customer_id, wallet_id, idempotency_key, third_party_id, currency, amount_text, amount_minor,
      from_address, to_address, memo, remark, status, maker_id, created_at, updated_at)
@@ -96,6 +105,8 @@ func (app *application) routeCregis(w http.ResponseWriter, r *http.Request) bool
 		app.listCregisWallets(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/crypto/wallets":
 		app.createCregisWallet(w, r)
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/sync-alias") && strings.HasPrefix(r.URL.Path, "/api/v1/crypto/wallets/"):
+		app.syncCregisWalletAlias(w, r, routeID(r.URL.Path, "/sync-alias"))
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/crypto/history":
 		app.listCregisHistory(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/crypto/withdrawals":
@@ -112,6 +123,81 @@ func (app *application) routeCregis(w http.ResponseWriter, r *http.Request) bool
 		return false
 	}
 	return true
+}
+
+func (app *application) syncCregisWalletAlias(w http.ResponseWriter, r *http.Request, walletID string) {
+	if !safeIdentifier.MatchString(walletID) {
+		validationError(w)
+		return
+	}
+	if !app.cregisLive || app.cregis == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"code": "cregis_not_enabled"}})
+		return
+	}
+	walletRows, err := app.db.Query(r.Context(), `SELECT id, customer_id, address, alias
+	  FROM cregis_wallets WHERE id=? AND tenant_id=?
+	    AND status='active' AND custody_provider='cregis' AND ownership_verified_at IS NOT NULL
+	    AND address IS NOT NULL`, walletID, app.tenantID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(walletRows) != 1 {
+		conflict(w, "wallet_unavailable")
+		return
+	}
+	wallet := walletRows[0]
+	customerID := text(wallet["customer_id"])
+	address := text(wallet["address"])
+	previousAlias := text(wallet["alias"])
+	if !safeIdentifier.MatchString(customerID) || address == "" {
+		conflict(w, "wallet_identity_invalid")
+		return
+	}
+	if previousAlias == customerID {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id": walletID, "customer_id": customerID, "alias": customerID, "updated": false,
+		})
+		return
+	}
+
+	updateCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	response, updateErr := app.cregis.Call(updateCtx, "/api/v1/address/update", map[string]any{
+		"address": address,
+		"alias":   customerID,
+	})
+	if updateErr != nil {
+		app.logger.Error("Cregis wallet alias update failed", "wallet_id", walletID,
+			"customer_id", customerID, "code", responseCode(response), "error", updateErr)
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "cregis_address_update_failed"}})
+		return
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	actor := edgeUser(r)
+	results, err := app.db.Batch(r.Context(),
+		d1.Statement{SQL: syncWalletAliasSQL, Params: []any{
+			customerID, now, walletID, app.tenantID, customerID, address,
+		}},
+		d1.Statement{SQL: auditWalletAliasSyncSQL, Params: []any{
+			randomID("audit"), customerID, actor,
+			mustJSON(map[string]string{"wallet_id": walletID, "previous_alias": previousAlias, "alias": customerID}),
+			now, walletID, app.tenantID, customerID, customerID, now,
+		}},
+	)
+	if err != nil || len(results) != 2 || resultChanges(results[:1]) != 1 || resultChanges(results[1:]) != 1 {
+		if err == nil {
+			err = errors.New("wallet alias update or audit write did not persist")
+		}
+		app.logger.Error("persist Cregis wallet alias update failed", "wallet_id", walletID,
+			"customer_id", customerID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": "wallet_alias_persistence_failed"}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": walletID, "customer_id": customerID, "alias": customerID, "updated": true,
+	})
 }
 
 func (app *application) createCregisWallet(w http.ResponseWriter, r *http.Request) {
