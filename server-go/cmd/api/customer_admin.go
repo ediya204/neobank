@@ -153,6 +153,10 @@ func automaticWalletIdempotency(customerID string) string {
 	return "auto-kyc-" + customerID
 }
 
+func automaticWalletAlias(customerID string) string {
+	return customerID
+}
+
 func walletProvisioningRetryMetadata(provisionErr *walletProvisionError) map[string]any {
 	return map[string]any{
 		"status":     "retry_required",
@@ -224,7 +228,7 @@ func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWrit
 	}
 
 	wallet, _, provisionErr := app.provisionCregisWallet(r.Context(), id,
-		"SCC automatic wallet", automaticWalletIdempotency(id), actor)
+		automaticWalletAlias(id), automaticWalletIdempotency(id), actor)
 	if provisionErr != nil {
 		if provisionErr.cause != nil {
 			app.logger.Error("automatic wallet provisioning failed after KYC approval",
