@@ -247,6 +247,8 @@ export function AuthProvider({ children }: Props) {
     }
     try {
       await logoutSession(getCsrfToken());
+    } catch (error) {
+      if (!(error instanceof AuthApiError && error.status === 401)) throw error;
     } finally {
       clearCsrfToken();
       dispatch({ type: Types.LOGOUT });

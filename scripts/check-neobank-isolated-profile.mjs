@@ -107,6 +107,7 @@ assert.match(
   provider,
   /if \(window\.location\.pathname\.startsWith\('\/customer'\)\) return null;/
 );
+assert.match(provider, /error instanceof AuthApiError && error\.status === 401/);
 assert.match(deploymentMode, /IS_FULL_ADMIN_WALLET_DEPLOYMENT/);
 assert.match(deploymentMode, /IS_NEOBANK_DEPLOYMENT/);
 for (const page of [adminPage, onboardingPage, financeWorkspace]) {
