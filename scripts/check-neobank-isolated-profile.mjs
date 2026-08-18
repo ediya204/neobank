@@ -122,8 +122,16 @@ assert.match(customerAdmin, /automaticWalletAlias\(id\)/);
 assert.match(customerAdmin, /provisionCregisWallet/);
 assert.match(portalCustomerContext, /neobankApi<[\s\S]*?>\('\/customer\/profile'\)/);
 assert.doesNotMatch(portalCustomerContext, /coreApi<[\s\S]*?>\('\/customer\/profile'\)/);
-assert.match(customerCryptoWallet, /neobankApi<\{ data: CustomerWalletRow\[\] \}>\('\/customer\/wallets'\)/);
+assert.match(
+  customerCryptoWallet,
+  /neobankApi<\{ data: CustomerWalletRow\[\] \}>\('\/customer\/wallets'\)/
+);
 assert.match(customerCryptoWallet, /neobankApi<CustomerHistory>\('\/customer\/history'\)/);
+assert.equal(packageJson.dependencies?.['qrcode.react'], '^4.2.0');
+assert.match(customerCryptoWallet, /import \{ QRCodeSVG \} from 'qrcode\.react'/);
+assert.match(customerCryptoWallet, /value=\{wallet\.walletAddress\}/);
+assert.match(customerCryptoWallet, /data-testid="deposit-address-qr"/);
+assert.doesNotMatch(customerCryptoWallet, /customerSession\) return;/);
 
 assert.match(worker, /proxyAPI\(request, env, 'application-session-edge'\)/);
 assert.match(worker, /proxyCoreAPI\(request, env\)/);
