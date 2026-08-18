@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   Alert,
   Box,
@@ -46,6 +47,7 @@ import {
   CryptoNetwork,
   CryptoTransfer,
   CryptoWallet,
+  neobankApi,
   supportedCryptoNetwork,
 } from 'src/features/finance/core-api';
 import {
@@ -150,25 +152,21 @@ function toCustomerTransfer(row: CustomerHistoryRow, wallet: CryptoWallet): Cryp
   };
 }
 
-function renderDepositQrCode(wallet: CryptoWallet, qrCode: string, customerSession: boolean) {
-  if (qrCode) {
-    return (
-      <Box
-        component="img"
-        src={qrCode}
-        alt={`${wallet.network} USDT 收币二维码`}
-        sx={{ width: 170, height: 170 }}
-      />
-    );
-  }
-  if (customerSession) {
-    return (
-      <Typography variant="caption" color="text.secondary" align="center" sx={{ px: 2 }}>
-        请复制并逐字核对上方 TRC20 地址
-      </Typography>
-    );
-  }
-  return <Skeleton variant="rectangular" width={170} height={170} />;
+function renderDepositQrCode(wallet: CryptoWallet) {
+  return (
+    <QRCodeSVG
+      value={wallet.walletAddress}
+      size={170}
+      level="M"
+      marginSize={4}
+      bgColor="#FFFFFF"
+      fgColor="#102C27"
+      title={`${wallet.network} ${wallet.tokenStandard} USDT 收币地址二维码`}
+      aria-label={`${wallet.network} ${wallet.tokenStandard} USDT 收币地址二维码`}
+      data-testid="deposit-address-qr"
+      style={{ width: '100%', height: '100%', maxWidth: 170, maxHeight: 170 }}
+    />
+  );
 }
 
 const networkMeta: Record<
@@ -194,8 +192,8 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
     try {
       if (user?.role === 'customer') {
         const [walletPayload, history] = await Promise.all([
-          coreApi<{ data: CustomerWalletRow[] }>('/customer/wallets'),
-          coreApi<CustomerHistory>('/customer/history'),
+          neobankApi<{ data: CustomerWalletRow[] }>('/customer/wallets'),
+          neobankApi<CustomerHistory>('/customer/history'),
         ]);
         const customerWallets = walletPayload.data.map(toCustomerWallet);
         const walletById = new Map(customerWallets.map((row) => [row.id, row]));
@@ -311,9 +309,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
               wallets={wallets}
               transfers={transfers.filter((row) => row.direction === 'DEPOSIT')}
               loading={loading}
-              customerId={customer?.id || ''}
               onOpenTransfer={setSelectedTransfer}
-              customerSession={user?.role === 'customer'}
             />
           )}
           {view === 'withdraw' && (
@@ -477,32 +473,19 @@ function DepositView({
   wallets,
   transfers,
   loading,
-  customerId,
   onOpenTransfer,
-  customerSession,
 }: {
   wallets: CryptoWallet[];
   transfers: CryptoTransfer[];
   loading: boolean;
-  customerId: string;
   onOpenTransfer: (transfer: CryptoTransfer) => void;
-  customerSession: boolean;
 }) {
   const [network, setNetwork] = useState<CryptoNetwork>('TRON');
-  const [qrCode, setQrCode] = useState('');
   const [copied, setCopied] = useState(false);
   const depositWallets = wallets.filter((row) => isDepositReady(row));
   const wallet = depositWallets.find((row) => row.network === network) || depositWallets[0];
   const depositWalletIds = new Set(depositWallets.map((row) => row.id));
   const visibleTransfers = transfers.filter((row) => depositWalletIds.has(row.walletId));
-
-  useEffect(() => {
-    if (!isDepositReady(wallet) || !customerId || customerSession) return;
-    setQrCode('');
-    coreApi<{ dataUrl: string }>(`/crypto-wallets/${wallet.id}/qr?customerId=${customerId}`)
-      .then((result) => setQrCode(result.dataUrl))
-      .catch(() => setQrCode(''));
-  }, [customerId, customerSession, wallet]);
 
   const copyAddress = async () => {
     if (!isDepositReady(wallet)) return;
@@ -533,9 +516,7 @@ function DepositView({
                     value="USDT  Tether"
                     InputProps={{
                       readOnly: true,
-                      startAdornment: (
-                        <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />
-                      ),
+                      startAdornment: <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />,
                     }}
                   />
                 </Box>
@@ -632,7 +613,7 @@ function DepositView({
                           bgcolor: 'common.white',
                         }}
                       >
-                        {renderDepositQrCode(wallet, qrCode, customerSession)}
+                        {renderDepositQrCode(wallet)}
                       </Box>
                     </Stack>
                   )}
@@ -814,9 +795,7 @@ function WithdrawView({
                     value="USDT  Tether"
                     InputProps={{
                       readOnly: true,
-                      startAdornment: (
-                        <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />
-                      ),
+                      startAdornment: <Iconify icon={USDT_ASSET_ICON} width={22} sx={{ mr: 1 }} />,
                     }}
                   />
                 </Box>

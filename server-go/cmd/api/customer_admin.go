@@ -35,7 +35,13 @@ const (
 	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id) AS wallet_count,
 	    (SELECT cw.status FROM cregis_wallets cw
 	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id
-	      ORDER BY cw.created_at DESC LIMIT 1) AS wallet_status`
+	      ORDER BY cw.created_at DESC LIMIT 1) AS wallet_status,
+	    (SELECT cw.id FROM cregis_wallets cw
+	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id
+	      ORDER BY cw.created_at DESC LIMIT 1) AS wallet_id,
+	    (SELECT cw.alias FROM cregis_wallets cw
+	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id
+	      ORDER BY cw.created_at DESC LIMIT 1) AS wallet_alias`
 	adminCustomerFrom = ` FROM customers c LEFT JOIN customer_applications ca
 	    ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id`
 	reviewCustomerKYCSQL = `UPDATE customers
@@ -153,6 +159,10 @@ func automaticWalletIdempotency(customerID string) string {
 	return "auto-kyc-" + customerID
 }
 
+func automaticWalletAlias(customerID string) string {
+	return customerID
+}
+
 func walletProvisioningRetryMetadata(provisionErr *walletProvisionError) map[string]any {
 	return map[string]any{
 		"status":     "retry_required",
@@ -224,7 +234,7 @@ func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWrit
 	}
 
 	wallet, _, provisionErr := app.provisionCregisWallet(r.Context(), id,
-		"SCC automatic wallet", automaticWalletIdempotency(id), actor)
+		automaticWalletAlias(id), automaticWalletIdempotency(id), actor)
 	if provisionErr != nil {
 		if provisionErr.cause != nil {
 			app.logger.Error("automatic wallet provisioning failed after KYC approval",

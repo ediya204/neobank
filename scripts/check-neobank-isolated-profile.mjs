@@ -22,6 +22,8 @@ const [
   onboardingPage,
   customerSync,
   customerAdmin,
+  portalCustomerContext,
+  customerCryptoWallet,
 ] = await Promise.all([
   read('package.json'),
   read('wrangler.neobank.jsonc'),
@@ -40,6 +42,8 @@ const [
   read('src/pages/dashboard/onboarding-workspace.tsx'),
   read('server/src/customers/neobank-customer-sync.ts'),
   read('server-go/cmd/api/customer_admin.go'),
+  read('src/features/finance/portal-customer-context.tsx'),
+  read('src/pages/portal/crypto-wallet.tsx'),
 ]);
 
 const packageJson = JSON.parse(packageSource);
@@ -114,7 +118,20 @@ assert.match(onboardingPage, /KYC 已通过，客户已自动激活并创建 USD
 assert.match(customerAdmin, /approveCustomerKYCAutomationSQL/);
 assert.match(customerAdmin, /operations_status='active'/);
 assert.match(customerAdmin, /automaticWalletIdempotency\(id\)/);
+assert.match(customerAdmin, /automaticWalletAlias\(id\)/);
 assert.match(customerAdmin, /provisionCregisWallet/);
+assert.match(portalCustomerContext, /neobankApi<[\s\S]*?>\('\/customer\/profile'\)/);
+assert.doesNotMatch(portalCustomerContext, /coreApi<[\s\S]*?>\('\/customer\/profile'\)/);
+assert.match(
+  customerCryptoWallet,
+  /neobankApi<\{ data: CustomerWalletRow\[\] \}>\('\/customer\/wallets'\)/
+);
+assert.match(customerCryptoWallet, /neobankApi<CustomerHistory>\('\/customer\/history'\)/);
+assert.equal(packageJson.dependencies?.['qrcode.react'], '^4.2.0');
+assert.match(customerCryptoWallet, /import \{ QRCodeSVG \} from 'qrcode\.react'/);
+assert.match(customerCryptoWallet, /value=\{wallet\.walletAddress\}/);
+assert.match(customerCryptoWallet, /data-testid="deposit-address-qr"/);
+assert.doesNotMatch(customerCryptoWallet, /customerSession\) return;/);
 
 assert.match(worker, /proxyAPI\(request, env, 'application-session-edge'\)/);
 assert.match(worker, /proxyCoreAPI\(request, env\)/);
