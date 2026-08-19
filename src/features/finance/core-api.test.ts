@@ -44,6 +44,35 @@ describe('coreApi response validation', () => {
     await expect(coreApi('/customers')).resolves.toEqual(payload);
   });
 
+  it('retries a transient gateway failure for an idempotent read', async () => {
+    jest.spyOn(window, 'setTimeout').mockImplementation((handler) => {
+      if (typeof handler === 'function') handler();
+      return 0;
+    });
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(
+        response({ ok: false, status: 502, payload: { error: { code: 'upstream_unavailable' } } })
+      )
+      .mockResolvedValueOnce(response({ payload: [{ id: 'customer_after_wake' }] }));
+
+    await expect(coreApi('/customers')).resolves.toEqual([{ id: 'customer_after_wake' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('never retries a financial write automatically', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        response({ ok: false, status: 502, payload: { error: { code: 'upstream_unavailable' } } })
+      );
+
+    await expect(
+      coreApi('/operations', { method: 'POST', body: JSON.stringify({ amount: '1' }) })
+    ).rejects.toThrow('upstream_unavailable');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps Go wallet routes separate from the Core administration origin', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(response({ payload: [] }));
 

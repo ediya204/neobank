@@ -324,6 +324,32 @@ export type CryptoTransfer = {
 };
 
 const coreBaseUrl = process.env.REACT_APP_CORE_API_URL || '/api/v1';
+const transientReadStatuses = new Set([502, 503, 504]);
+
+function retryDelay(attempt: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 750 * (attempt + 1));
+  });
+}
+
+async function fetchWithTransientReadRetry(
+  url: string,
+  init: RequestInit,
+  retryable: boolean,
+  attempt = 0
+): Promise<Response> {
+  try {
+    const response = await fetch(url, init);
+    if (!retryable || !transientReadStatuses.has(response.status) || attempt >= 2) {
+      return response;
+    }
+    await response.body?.cancel();
+  } catch (error) {
+    if (!retryable || attempt >= 2 || init.signal?.aborted) throw error;
+  }
+  await retryDelay(attempt);
+  return fetchWithTransientReadRetry(url, init, retryable, attempt + 1);
+}
 
 async function requestApi<T>(
   baseUrl: string,
@@ -333,17 +359,23 @@ async function requestApi<T>(
   const { userId = 'usr_admin', headers, ...requestInit } = init || {};
   const method = (requestInit.method || 'GET').toUpperCase();
   const csrfToken = getCsrfToken();
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...requestInit,
-    credentials: 'include',
-    cache: 'no-store',
-    headers: {
-      ...(requestInit.body ? { 'content-type': 'application/json' } : {}),
-      ...(process.env.NODE_ENV === 'development' ? { 'x-user-id': userId } : {}),
-      ...(method !== 'GET' && method !== 'HEAD' && csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
-      ...headers,
+  const response = await fetchWithTransientReadRetry(
+    `${baseUrl}${path}`,
+    {
+      ...requestInit,
+      credentials: 'include',
+      cache: 'no-store',
+      headers: {
+        ...(requestInit.body ? { 'content-type': 'application/json' } : {}),
+        ...(process.env.NODE_ENV === 'development' ? { 'x-user-id': userId } : {}),
+        ...(method !== 'GET' && method !== 'HEAD' && csrfToken
+          ? { 'X-CSRF-Token': csrfToken }
+          : {}),
+        ...headers,
+      },
     },
-  });
+    method === 'GET' || method === 'HEAD'
+  );
   const contentType = response.headers.get('content-type') || '';
   const payload = contentType.toLowerCase().includes('application/json')
     ? await response.json().catch(() => null)
