@@ -90,6 +90,7 @@ export type AssetSummary = {
 export type Customer = {
   id: string;
   organizationId: string;
+  externalId?: string;
   type: 'INDIVIDUAL' | 'BUSINESS';
   status: string;
   displayName: string;
@@ -117,6 +118,8 @@ export type Customer = {
   reviewerId?: string;
   reviewedAt?: string;
   reviewNote?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type VirtualAccountRequest = {
@@ -277,6 +280,8 @@ export type CryptoWallet = {
 export type WithdrawalFeeRule = {
   id: string;
   organizationId?: string;
+  customerId?: string;
+  scope: 'ORGANIZATION' | 'CUSTOMER';
   assetClass: 'FIAT' | 'CRYPTO';
   currency: Currency;
   method: 'VA' | 'POBO' | 'PLATFORM' | 'ON_CHAIN';
@@ -285,6 +290,9 @@ export type WithdrawalFeeRule = {
   amount: string;
   active: boolean;
   version: string;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt?: string;
   updatedAt: string;
 };
 

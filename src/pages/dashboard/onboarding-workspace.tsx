@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -32,6 +33,7 @@ import {
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
+import { paths } from 'src/routes/paths';
 import {
   coreApi,
   Currency,
@@ -143,6 +145,7 @@ const emptyCustomer: CustomerForm = {
 };
 
 export default function OnboardingWorkspace({ portal = false }: { portal?: boolean }) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<'customers' | 'va'>('customers');
   const userId = 'usr_admin';
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -411,7 +414,11 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
               <Tab value="va" label={`VA 申请 (${vaRequests.length})`} />
             </Tabs>
             {tab === 'customers' ? (
-              <CustomerTable rows={customers} loading={loading} onOpen={setSelectedCustomer} />
+              <CustomerTable
+                rows={customers}
+                loading={loading}
+                onOpen={(customer) => navigate(paths.dashboard.customers.details(customer.id))}
+              />
             ) : (
               <VaRequestTable
                 rows={vaRequests}

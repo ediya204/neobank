@@ -9,7 +9,7 @@ const admin = {
   role: 'ADMIN',
 };
 
-test('organization listing includes crypto rules stored under the production tenant scope', async () => {
+test('organization listing excludes customer overrides unless a customer is requested', async () => {
   let where;
   const service = new WithdrawalFeesService({
     user: { findUnique: async () => admin },
@@ -21,7 +21,10 @@ test('organization listing includes crypto rules stored under the production ten
     },
   });
   await service.list('org_test', admin.id);
-  assert.deepEqual(where, { organizationId: 'org_test' });
+  assert.deepEqual(where, {
+    organizationId: 'org_test',
+    scopeId: { in: ['org_test'] },
+  });
 });
 
 test('fiat fee rules are normalized by channel and stored in exact minor units', async () => {
@@ -77,17 +80,20 @@ test('fee resolution returns an immutable versioned snapshot', async () => {
   const result = await service.resolve(
     {
       withdrawalFeeRule: {
-        findFirst: async () => ({
-          id: 'fee_crypto',
-          assetClass: 'CRYPTO',
-          currency: 'USDT',
-          method: 'ON_CHAIN',
-          channelCode: 'CREGIS',
-          network: 'TRON',
-          feeAmountMinor: 5_000_000n,
-          feeDecimals: 6,
-          version: 7n,
-        }),
+        findMany: async () => [
+          {
+            id: 'fee_crypto',
+            scopeId: 'neobank',
+            assetClass: 'CRYPTO',
+            currency: 'USDT',
+            method: 'ON_CHAIN',
+            channelCode: 'CREGIS',
+            network: 'TRON',
+            feeAmountMinor: 5_000_000n,
+            feeDecimals: 6,
+            version: 7n,
+          },
+        ],
       },
     },
     {
@@ -120,17 +126,20 @@ test('stale fee confirmation is rejected before a new transfer can be created', 
     service.resolve(
       {
         withdrawalFeeRule: {
-          findFirst: async () => ({
-            id: 'fee_crypto',
-            assetClass: 'CRYPTO',
-            currency: 'USDT',
-            method: 'ON_CHAIN',
-            channelCode: 'CREGIS',
-            network: 'TRON',
-            feeAmountMinor: 5_000_000n,
-            feeDecimals: 6,
-            version: 8n,
-          }),
+          findMany: async () => [
+            {
+              id: 'fee_crypto',
+              scopeId: 'neobank',
+              assetClass: 'CRYPTO',
+              currency: 'USDT',
+              method: 'ON_CHAIN',
+              channelCode: 'CREGIS',
+              network: 'TRON',
+              feeAmountMinor: 5_000_000n,
+              feeDecimals: 6,
+              version: 8n,
+            },
+          ],
         },
       },
       {
@@ -144,5 +153,83 @@ test('stale fee confirmation is rejected before a new transfer can be created', 
       }
     ),
     /withdrawal_fee_changed/
+  );
+});
+
+test('customer fee override wins over the organization default', async () => {
+  let where;
+  const service = new WithdrawalFeesService({});
+  const result = await service.resolve(
+    {
+      withdrawalFeeRule: {
+        findMany: async (query) => {
+          where = query.where;
+          return [
+            {
+              id: 'fee_default',
+              scopeId: 'org_test',
+              assetClass: 'FIAT',
+              currency: 'USD',
+              method: 'POBO',
+              channelCode: 'BANK-OUT-1',
+              network: '',
+              feeAmountMinor: 1500n,
+              feeDecimals: 2,
+              version: 4n,
+            },
+            {
+              id: 'fee_customer',
+              scopeId: 'cus_test',
+              assetClass: 'FIAT',
+              currency: 'USD',
+              method: 'POBO',
+              channelCode: 'BANK-OUT-1',
+              network: '',
+              feeAmountMinor: 1000n,
+              feeDecimals: 2,
+              version: 2n,
+            },
+          ];
+        },
+      },
+    },
+    {
+      scopeId: 'org_test',
+      customerId: 'cus_test',
+      assetClass: 'FIAT',
+      currency: 'USD',
+      method: 'POBO',
+      channelCode: 'bank-out-1',
+    }
+  );
+
+  assert.deepEqual(where.scopeId, { in: ['cus_test', 'org_test'] });
+  assert.equal(result.snapshot.id, 'fee_customer');
+  assert.equal(result.snapshot.amount, '10.00');
+});
+
+test('customer fee override cannot cross organization boundaries', async () => {
+  const service = new WithdrawalFeesService({
+    user: { findUnique: async () => admin },
+    customer: {
+      findUnique: async () => ({ id: 'cus_other', organizationId: 'org_other' }),
+    },
+  });
+
+  await assert.rejects(
+    service.upsert(
+      {
+        organizationId: 'org_test',
+        customerId: 'cus_other',
+        assetClass: 'CRYPTO',
+        currency: 'USDT',
+        method: 'ON_CHAIN',
+        channelCode: 'CREGIS',
+        network: 'TRON',
+        amount: '5.00',
+      },
+      admin.id
+    ),
+    /customer_not_found/
   );
 });

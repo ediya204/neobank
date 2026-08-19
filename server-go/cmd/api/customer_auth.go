@@ -813,7 +813,7 @@ func (app *application) listCustomerWallets(w http.ResponseWriter, r *http.Reque
 		databaseError(app, w, err)
 		return
 	}
-	feeRule, err := app.activeWithdrawalFee(r.Context(), "CRYPTO", "USDT", "ON_CHAIN", "CREGIS", "TRON")
+	feeRule, err := app.activeWithdrawalFee(r.Context(), session.CustomerID, "CRYPTO", "USDT", "ON_CHAIN", "CREGIS", "TRON")
 	if err != nil {
 		if errors.Is(err, errWithdrawalFeeMissing) {
 			conflict(w, "fee_configuration_missing")

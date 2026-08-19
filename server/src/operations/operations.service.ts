@@ -211,6 +211,7 @@ export class OperationsService {
             }
             const resolvedFee = await this.withdrawalFees.resolve(tx, {
               scopeId: customer.organizationId,
+              customerId: input.customerId,
               assetClass: 'FIAT',
               currency: input.currency,
               method: input.payoutMethod,

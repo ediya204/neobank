@@ -6,9 +6,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Currency, Prisma, UserRole } from '@prisma/client';
-import { requireActiveUser, requireOrganizationAccess } from '../common/tenant-access';
+import {
+  requireActiveUser,
+  requireCustomerAccess,
+  requireOrganizationAccess,
+} from '../common/tenant-access';
 import { PrismaService } from '../prisma/prisma.service';
-import { isSupportedFiatCurrency, supportedCryptoAsset, supportedCryptoNetwork } from '../supported-assets';
+import {
+  isSupportedFiatCurrency,
+  supportedCryptoAsset,
+  supportedCryptoNetwork,
+} from '../supported-assets';
 
 export const withdrawalAssetClasses = ['FIAT', 'CRYPTO'] as const;
 export const withdrawalMethods = ['VA', 'POBO', 'PLATFORM', 'ON_CHAIN'] as const;
@@ -17,6 +25,7 @@ export type WithdrawalMethod = (typeof withdrawalMethods)[number];
 
 export type WithdrawalFeeRuleInput = {
   organizationId: string;
+  customerId?: string;
   assetClass: WithdrawalAssetClass;
   currency: Currency;
   method: WithdrawalMethod;
@@ -32,10 +41,24 @@ type FeeRuleClient = Pick<Prisma.TransactionClient, 'withdrawalFeeRule'>;
 export class WithdrawalFeesService {
   constructor(private readonly db: PrismaService) {}
 
-  async list(organizationId: string, userId: string, active?: boolean) {
+  async list(organizationId: string, userId: string, active?: boolean, customerId?: string) {
     await requireOrganizationAccess(this.db, userId, organizationId);
+    if (customerId) {
+      const { customer } = await requireCustomerAccess(this.db, userId, customerId);
+      if (customer.organizationId !== organizationId) {
+        throw new NotFoundException('customer_not_found');
+      }
+    }
+    const defaultScopeId = process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || organizationId;
+    const scopeIds = Array.from(
+      new Set([organizationId, defaultScopeId, ...(customerId ? [customerId] : [])])
+    );
     const rows = await this.db.withdrawalFeeRule.findMany({
-      where: { organizationId, ...(active === undefined ? {} : { active }) },
+      where: {
+        organizationId,
+        scopeId: { in: scopeIds },
+        ...(active === undefined ? {} : { active }),
+      },
       orderBy: [
         { assetClass: 'asc' },
         { currency: 'asc' },
@@ -44,7 +67,7 @@ export class WithdrawalFeesService {
         { network: 'asc' },
       ],
     });
-    return rows.map((row) => this.serialize(row));
+    return rows.map((row) => this.serialize(row, customerId));
   }
 
   async upsert(input: WithdrawalFeeRuleInput, userId: string) {
@@ -84,10 +107,14 @@ export class WithdrawalFeesService {
       }
       throw error;
     }
-    return this.serialize(row);
+    return this.serialize(row, input.customerId);
   }
 
-  async update(id: string, input: { amount?: string; active?: boolean; version: string }, userId: string) {
+  async update(
+    id: string,
+    input: { amount?: string; active?: boolean; version: string },
+    userId: string
+  ) {
     const user = await requireActiveUser(this.db, userId);
     if (user.role !== UserRole.ADMIN) throw new ForbiddenException('admin_role_required');
     const current = await this.db.withdrawalFeeRule.findUnique({ where: { id } });
@@ -101,7 +128,9 @@ export class WithdrawalFeesService {
       throw new BadRequestException('invalid_fee_rule_version');
     }
     const feeAmountMinor =
-      input.amount === undefined ? current.feeAmountMinor : this.toMinor(input.amount, current.feeDecimals);
+      input.amount === undefined
+        ? current.feeAmountMinor
+        : this.toMinor(input.amount, current.feeDecimals);
     const result = await this.db.withdrawalFeeRule.updateMany({
       where: { id, version: expectedVersion },
       data: {
@@ -113,13 +142,21 @@ export class WithdrawalFeesService {
     });
     if (result.count !== 1) throw new ConflictException('withdrawal_fee_changed');
     const updated = await this.db.withdrawalFeeRule.findUniqueOrThrow({ where: { id } });
-    return this.serialize(updated);
+    const defaultScopeIds = new Set([
+      user.organizationId,
+      process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || user.organizationId,
+    ]);
+    return this.serialize(
+      updated,
+      defaultScopeIds.has(updated.scopeId) ? undefined : updated.scopeId
+    );
   }
 
   async resolve(
     client: FeeRuleClient,
     scope: {
       scopeId: string;
+      customerId?: string;
       assetClass: WithdrawalAssetClass;
       currency: Currency;
       method: WithdrawalMethod;
@@ -128,9 +165,12 @@ export class WithdrawalFeesService {
       expectedVersion?: string;
     }
   ) {
-    const rule = await client.withdrawalFeeRule.findFirst({
+    const scopeIds = Array.from(
+      new Set([...(scope.customerId ? [scope.customerId] : []), scope.scopeId])
+    );
+    const rules = await client.withdrawalFeeRule.findMany({
       where: {
-        scopeId: scope.scopeId,
+        scopeId: { in: scopeIds },
         assetClass: scope.assetClass,
         currency: scope.currency,
         method: scope.method,
@@ -139,6 +179,10 @@ export class WithdrawalFeesService {
         active: true,
       },
     });
+    const rule =
+      (scope.customerId
+        ? rules.find((candidate) => candidate.scopeId === scope.customerId)
+        : undefined) || rules.find((candidate) => candidate.scopeId === scope.scopeId);
     if (!rule) throw new ConflictException('fee_configuration_missing');
     if (scope.expectedVersion !== undefined && rule.version.toString() !== scope.expectedVersion) {
       throw new ConflictException('withdrawal_fee_changed');
@@ -172,7 +216,11 @@ export class WithdrawalFeesService {
         where: { organizationId: input.organizationId, code: channelCode },
       });
       const expectedType = input.method === 'VA' ? 'VIRTUAL_ACCOUNT' : `${input.method}_PAYOUT`;
-      if (!channel || channel.type !== expectedType || !channel.supportedCurrencies.includes(input.currency)) {
+      if (
+        !channel ||
+        channel.type !== expectedType ||
+        !channel.supportedCurrencies.includes(input.currency)
+      ) {
         throw new BadRequestException('withdrawal_fee_channel_mismatch');
       }
     } else if (
@@ -183,10 +231,21 @@ export class WithdrawalFeesService {
       throw new BadRequestException('invalid_crypto_withdrawal_fee_scope');
     }
     const feeDecimals = input.assetClass === 'CRYPTO' ? 6 : 2;
-    const scopeId =
-      input.assetClass === 'CRYPTO'
-        ? process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || input.organizationId
-        : input.organizationId;
+    if (input.customerId) {
+      const customer = await this.db.customer.findUnique({
+        where: { id: input.customerId },
+        select: { id: true, organizationId: true },
+      });
+      if (!customer || customer.organizationId !== input.organizationId) {
+        throw new NotFoundException('customer_not_found');
+      }
+    }
+    let scopeId = input.organizationId;
+    if (input.customerId) {
+      scopeId = input.customerId;
+    } else if (input.assetClass === 'CRYPTO') {
+      scopeId = process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || input.organizationId;
+    }
     return {
       feeDecimals,
       key: {
@@ -216,30 +275,38 @@ export class WithdrawalFeesService {
   }
 
   private fromMinor(value: bigint, decimals: number) {
-    return new Prisma.Decimal(value.toString()).div(new Prisma.Decimal(10).pow(decimals)).toFixed(decimals);
+    return new Prisma.Decimal(value.toString())
+      .div(new Prisma.Decimal(10).pow(decimals))
+      .toFixed(decimals);
   }
 
-  private serialize(row: {
-    id: string;
-    scopeId: string;
-    organizationId: string | null;
-    assetClass: string;
-    currency: string;
-    method: string;
-    channelCode: string;
-    network: string;
-    feeAmountMinor: bigint;
-    feeDecimals: number;
-    active: boolean;
-    version: bigint;
-    createdBy: string;
-    updatedBy: string;
-    createdAt: Date;
-    updatedAt: Date;
-  }) {
+  private serialize(
+    row: {
+      id: string;
+      scopeId: string;
+      organizationId: string | null;
+      assetClass: string;
+      currency: string;
+      method: string;
+      channelCode: string;
+      network: string;
+      feeAmountMinor: bigint;
+      feeDecimals: number;
+      active: boolean;
+      version: bigint;
+      createdBy: string;
+      updatedBy: string;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    customerId?: string
+  ) {
+    const customerScoped = Boolean(customerId && row.scopeId === customerId);
     return {
       id: row.id,
       organizationId: row.organizationId,
+      scope: customerScoped ? 'CUSTOMER' : 'ORGANIZATION',
+      ...(customerScoped ? { customerId } : {}),
       assetClass: row.assetClass,
       currency: row.currency,
       method: row.method,
@@ -248,6 +315,8 @@ export class WithdrawalFeesService {
       amount: this.fromMinor(row.feeAmountMinor, row.feeDecimals),
       active: row.active,
       version: row.version.toString(),
+      createdBy: row.createdBy,
+      updatedBy: row.updatedBy,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

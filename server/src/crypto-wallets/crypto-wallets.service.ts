@@ -43,6 +43,7 @@ export class CryptoWalletsService {
     const customer = await this.requireCustomerTenant(customerId, userId);
     const resolvedFee = await this.withdrawalFees.resolve(this.db, {
       scopeId: process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || customer.organizationId,
+      customerId,
       assetClass: 'CRYPTO',
       currency: supportedCryptoAsset,
       method: 'ON_CHAIN',
@@ -177,6 +178,7 @@ export class CryptoWalletsService {
         }
         const resolvedFee = await this.withdrawalFees.resolve(tx, {
           scopeId: process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || customer.organizationId,
+          customerId: input.customerId,
           assetClass: 'CRYPTO',
           currency: supportedCryptoAsset,
           method: 'ON_CHAIN',
@@ -470,9 +472,7 @@ export class CryptoWalletsService {
 
   private validateAddress(network: CryptoNetwork, address: string) {
     const valid =
-      network === 'TRON'
-        ? isValidTronAddress(address)
-        : /^0x[a-fA-F0-9]{40}$/.test(address);
+      network === 'TRON' ? isValidTronAddress(address) : /^0x[a-fA-F0-9]{40}$/.test(address);
     if (!valid) throw new BadRequestException('invalid_destination_address');
   }
 

@@ -356,7 +356,7 @@ func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Re
 		databaseError(app, w, errors.New("duplicate withdrawal idempotency records"))
 		return
 	}
-	feeRule, err := app.activeWithdrawalFee(r.Context(), "CRYPTO", "USDT", "ON_CHAIN", "CREGIS", "TRON")
+	feeRule, err := app.activeWithdrawalFee(r.Context(), input.CustomerID, "CRYPTO", "USDT", "ON_CHAIN", "CREGIS", "TRON")
 	if err != nil {
 		if errors.Is(err, errWithdrawalFeeMissing) {
 			conflict(w, "fee_configuration_missing")

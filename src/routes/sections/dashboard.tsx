@@ -13,6 +13,7 @@ const VaApplicationDetailsPage = lazy(() => import('src/pages/dashboard/va-appli
 const FinanceWorkspace = lazy(() => import('src/pages/dashboard/finance-workspace'));
 const OnboardingWorkspace = lazy(() => import('src/pages/dashboard/onboarding-workspace'));
 const CustomerDetailDemoPage = lazy(() => import('src/pages/dashboard/customer-detail-demo'));
+const CustomerDetailPage = lazy(() => import('src/pages/dashboard/customer-detail'));
 const CoreOverview = lazy(() => import('src/pages/dashboard/core-overview'));
 const CryptoOperationsAdmin = lazy(() => import('src/pages/dashboard/crypto-operations'));
 
@@ -40,7 +41,7 @@ export const dashboardRoutes = [
         children: [
           { element: <Navigate to={paths.dashboard.onboarding} replace />, index: true },
           { path: 'demo/:variant', element: <CustomerDetailDemoPage /> },
-          { path: ':id', element: <Navigate to={paths.dashboard.onboarding} replace /> },
+          { path: ':id', element: <CustomerDetailPage /> },
         ],
       },
       {

@@ -1,4 +1,14 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { Currency } from '@prisma/client';
 import { IsBoolean, IsEnum, IsIn, IsNumberString, IsOptional, IsString } from 'class-validator';
 import type { Request } from 'express';
@@ -13,6 +23,7 @@ import {
 
 class UpsertWithdrawalFeeDto {
   @IsString() organizationId!: string;
+  @IsOptional() @IsString() customerId?: string;
   @IsIn(withdrawalAssetClasses) assetClass!: WithdrawalAssetClass;
   @IsEnum(Currency) currency!: Currency;
   @IsIn(withdrawalMethods) method!: WithdrawalMethod;
@@ -36,7 +47,8 @@ export class WithdrawalFeesController {
   list(
     @Query('organizationId') organizationId: string,
     @Req() request: Request,
-    @Query('active') active?: string
+    @Query('active') active?: string,
+    @Query('customerId') customerId?: string
   ) {
     if (active !== undefined && active !== 'true' && active !== 'false') {
       throw new BadRequestException('invalid_active_filter');
@@ -44,7 +56,8 @@ export class WithdrawalFeesController {
     return this.fees.list(
       organizationId,
       currentUserId(request),
-      active === undefined ? undefined : active === 'true'
+      active === undefined ? undefined : active === 'true',
+      customerId
     );
   }
 

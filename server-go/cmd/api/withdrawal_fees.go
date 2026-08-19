@@ -17,27 +17,55 @@ var errWithdrawalFeeMissing = errors.New("withdrawal fee configuration missing")
 
 func (app *application) activeWithdrawalFee(
 	ctx context.Context,
+	customerID string,
 	assetClass, currency, method, channelCode, network string,
 ) (withdrawalFeeRule, error) {
+	if customerID != "" {
+		rule, found, err := app.withdrawalFeeForScope(ctx, customerID, assetClass, currency, method, channelCode, network)
+		if err != nil {
+			return withdrawalFeeRule{}, err
+		}
+		if found {
+			return rule, nil
+		}
+	}
+	rule, found, err := app.withdrawalFeeForScope(ctx, app.tenantID, assetClass, currency, method, channelCode, network)
+	if err != nil {
+		return withdrawalFeeRule{}, err
+	}
+	if !found {
+		return withdrawalFeeRule{}, errWithdrawalFeeMissing
+	}
+	return rule, nil
+}
+
+func (app *application) withdrawalFeeForScope(
+	ctx context.Context,
+	scopeID string,
+	assetClass, currency, method, channelCode, network string,
+) (withdrawalFeeRule, bool, error) {
 	rows, err := app.db.Query(ctx, `SELECT id, CAST(fee_amount_minor AS TEXT) AS fee_amount_minor,
     fee_decimals, CAST(version AS TEXT) AS version
     FROM withdrawal_fee_rules
     WHERE scope_id=? AND asset_class=? AND currency=? AND method=?
       AND channel_code=? AND network=? AND active=TRUE`,
-		app.tenantID, assetClass, currency, method, channelCode, network)
+		scopeID, assetClass, currency, method, channelCode, network)
 	if err != nil {
-		return withdrawalFeeRule{}, err
+		return withdrawalFeeRule{}, false, err
+	}
+	if len(rows) == 0 {
+		return withdrawalFeeRule{}, false, nil
 	}
 	if len(rows) != 1 {
-		return withdrawalFeeRule{}, errWithdrawalFeeMissing
+		return withdrawalFeeRule{}, false, errors.New("duplicate withdrawal fee configuration")
 	}
 	amountMinor, amountErr := strconv.ParseInt(text(rows[0]["fee_amount_minor"]), 10, 64)
 	decimals, decimalsErr := strconv.Atoi(text(rows[0]["fee_decimals"]))
 	version, versionErr := strconv.ParseInt(text(rows[0]["version"]), 10, 64)
 	if amountErr != nil || decimalsErr != nil || versionErr != nil || amountMinor < 0 || decimals < 0 || decimals > 8 || version < 1 {
-		return withdrawalFeeRule{}, errors.New("invalid withdrawal fee configuration")
+		return withdrawalFeeRule{}, false, errors.New("invalid withdrawal fee configuration")
 	}
 	return withdrawalFeeRule{
 		ID: text(rows[0]["id"]), AmountMinor: amountMinor, Decimals: decimals, Version: version,
-	}, nil
+	}, true, nil
 }

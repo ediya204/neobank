@@ -250,6 +250,7 @@ const configurableChannelTypes: FundingChannel['type'][] = [
 export default function FinanceWorkspace({ section }: { section: FinanceSection }) {
   const copy = sectionCopy[section];
   const userId = 'usr_admin';
+  const requestedCustomerId = new URLSearchParams(window.location.search).get('customerId') || '';
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [withdrawalFees, setWithdrawalFees] = useState<WithdrawalFeeRule[]>([]);
@@ -259,7 +260,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState('');
   const [journals, setJournals] = useState<JournalEntry[]>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState(requestedCustomerId);
   const [selected, setSelected] = useState<Operation | null>(null);
   const [status, setStatus] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -270,7 +271,10 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [rejectReason, setRejectReason] = useState('');
   const [executeOpen, setExecuteOpen] = useState(false);
   const [externalReference, setExternalReference] = useState('');
-  const [form, setForm] = useState<OperationForm>(initialForm);
+  const [form, setForm] = useState<OperationForm>({
+    ...initialForm,
+    customerId: requestedCustomerId,
+  });
   const [customerDetail, setCustomerDetail] = useState<Customer | null>(null);
   const [beneficiaryOpen, setBeneficiaryOpen] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
@@ -289,10 +293,9 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         coreApi<FundingChannel[]>(`/funding-channels?organizationId=${demoOrganizationId}`, {
           userId,
         }),
-        coreApi<WithdrawalFeeRule[]>(
-          `/withdrawal-fees?organizationId=${demoOrganizationId}`,
-          { userId }
-        ),
+        coreApi<WithdrawalFeeRule[]>(`/withdrawal-fees?organizationId=${demoOrganizationId}`, {
+          userId,
+        }),
       ]);
       setCustomers(customerRows);
       setChannels(channelRows);
@@ -301,6 +304,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       const params = new URLSearchParams({ organizationId: demoOrganizationId });
       if (copy.type) params.set('type', copy.type);
       if (status !== 'all') params.set('status', status);
+      if (requestedCustomerId) params.set('customerId', requestedCustomerId);
       const operationRows =
         section === 'approvals'
           ? await coreApi<Operation[]>(
@@ -320,7 +324,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     } finally {
       setLoading(false);
     }
-  }, [copy.type, section, selectedCustomerId, status, userId]);
+  }, [copy.type, requestedCustomerId, section, selectedCustomerId, status, userId]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -402,7 +406,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const openCreate = () => {
     setForm({
       ...initialForm,
-      customerId: customers[0]?.id || '',
+      customerId: requestedCustomerId || selectedCustomerId || customers[0]?.id || '',
       quoteCurrency: copy.type === 'OTC' ? 'USDT' : initialForm.quoteCurrency,
     });
     setCreateOpen(true);
@@ -610,7 +614,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   };
 
   const saveWithdrawalFee = async (
-    scope: Omit<WithdrawalFeeRule, 'id' | 'amount' | 'active' | 'version' | 'updatedAt'>,
+    scope: WithdrawalFeeScope,
     amount: string,
     current?: WithdrawalFeeRule
   ) => {
@@ -1334,7 +1338,7 @@ function ChannelWorkspace({
   onEdit: (channel: FundingChannel) => void;
   onRefresh: () => void;
   onSaveFee: (
-    scope: Omit<WithdrawalFeeRule, 'id' | 'amount' | 'active' | 'version' | 'updatedAt'>,
+    scope: WithdrawalFeeScope,
     amount: string,
     current?: WithdrawalFeeRule
   ) => Promise<void>;
@@ -1373,7 +1377,8 @@ function ChannelWorkspace({
             <Box sx={{ textAlign: 'center', maxWidth: 520 }}>
               <Typography variant="h6">还没有资金通道</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                创建通道后，入账和出款表单才能选择对应路径。每个 VA 银行通道同时绑定开户和该 VA 的后续转出。
+                创建通道后，入账和出款表单才能选择对应路径。每个 VA 银行通道同时绑定开户和该 VA
+                的后续转出。
               </Typography>
             </Box>
             <Button
@@ -1394,9 +1399,7 @@ function ChannelWorkspace({
   const inboundCount = configuredChannels.filter(
     (channel) => channel.type === 'FIAT_INBOUND'
   ).length;
-  const vaCount = configuredChannels.filter(
-    (channel) => channel.type === 'VIRTUAL_ACCOUNT'
-  ).length;
+  const vaCount = configuredChannels.filter((channel) => channel.type === 'VIRTUAL_ACCOUNT').length;
   const payoutCount = configuredChannels.length - inboundCount - vaCount;
 
   return (
@@ -1452,7 +1455,8 @@ function ChannelWorkspace({
 
       {legacyVaPayoutCount > 0 && (
         <Alert severity="info">
-          已保留 {legacyVaPayoutCount} 条旧版 VA 出款通道供历史记录读取；新开户和新出款均改用对应的 VA 银行通道。
+          已保留 {legacyVaPayoutCount} 条旧版 VA 出款通道供历史记录读取；新开户和新出款均改用对应的
+          VA 银行通道。
         </Alert>
       )}
 
@@ -1579,10 +1583,10 @@ function ChannelWorkspace({
   );
 }
 
-type WithdrawalFeeScope = Omit<
+type WithdrawalFeeScope = Pick<
   WithdrawalFeeRule,
-  'id' | 'amount' | 'active' | 'version' | 'updatedAt'
->;
+  'assetClass' | 'currency' | 'method' | 'channelCode' | 'network'
+> & { organizationId: string };
 
 function WithdrawalFeeWorkspace({
   channels,
@@ -1591,11 +1595,7 @@ function WithdrawalFeeWorkspace({
 }: {
   channels: FundingChannel[];
   rules: WithdrawalFeeRule[];
-  onSave: (
-    scope: WithdrawalFeeScope,
-    amount: string,
-    current?: WithdrawalFeeRule
-  ) => Promise<void>;
+  onSave: (scope: WithdrawalFeeScope, amount: string, current?: WithdrawalFeeRule) => Promise<void>;
 }) {
   const fiatScopes: Array<{ key: string; label: string; scope: WithdrawalFeeScope }> = channels
     .filter((channel) =>
@@ -1679,11 +1679,7 @@ function WithdrawalFeeEditor({
   label: string;
   scope: WithdrawalFeeScope;
   current?: WithdrawalFeeRule;
-  onSave: (
-    scope: WithdrawalFeeScope,
-    amount: string,
-    current?: WithdrawalFeeRule
-  ) => Promise<void>;
+  onSave: (scope: WithdrawalFeeScope, amount: string, current?: WithdrawalFeeRule) => Promise<void>;
 }) {
   const [amount, setAmount] = useState(current?.amount || '');
   const [saving, setSaving] = useState(false);
@@ -2527,9 +2523,7 @@ function OperationDialog({
   let payoutChannelType: FundingChannel['type'] = 'PLATFORM_PAYOUT';
   if (form.payoutMethod === 'VA') payoutChannelType = 'VIRTUAL_ACCOUNT';
   if (form.payoutMethod === 'POBO') payoutChannelType = 'POBO_PAYOUT';
-  const selectedSourceForChannel = accounts.find(
-    (account) => account.id === form.sourceAccountId
-  );
+  const selectedSourceForChannel = accounts.find((account) => account.id === form.sourceAccountId);
   let validChannels: FundingChannel[] = [];
   if (type === 'DEPOSIT') {
     validChannels = channels.filter(
@@ -2545,8 +2539,7 @@ function OperationDialog({
         channel.type === payoutChannelType &&
         channel.active &&
         channel.supportedCurrencies.includes(form.currency) &&
-        (form.payoutMethod !== 'VA' ||
-          channel.id === selectedSourceForChannel?.fundingChannelId)
+        (form.payoutMethod !== 'VA' || channel.id === selectedSourceForChannel?.fundingChannelId)
     );
   }
   const selectedPayoutChannel = channels.find((channel) => channel.id === form.channelId);
@@ -2731,9 +2724,7 @@ function OperationDialog({
                     ...form,
                     sourceAccountId: value,
                     channelId:
-                      form.payoutMethod === 'VA'
-                        ? account?.fundingChannelId || ''
-                        : form.channelId,
+                      form.payoutMethod === 'VA' ? account?.fundingChannelId || '' : form.channelId,
                   });
                 }}
                 showAccountKind={type === 'PAYOUT'}
@@ -2772,9 +2763,7 @@ function OperationDialog({
                 </InputLabel>
                 <Select
                   label={
-                    type === 'PAYOUT' && form.payoutMethod === 'VA'
-                      ? '开户银行通道'
-                      : '资金通道'
+                    type === 'PAYOUT' && form.payoutMethod === 'VA' ? '开户银行通道' : '资金通道'
                   }
                   value={form.channelId}
                   disabled={type === 'PAYOUT' && form.payoutMethod === 'VA'}
