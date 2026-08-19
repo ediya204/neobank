@@ -195,8 +195,20 @@ function customerCoreRouteAllowed(
 async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
   const contentLength = Number(request.headers.get('content-length') || '0');
   if (contentLength > MAX_BODY_BYTES) return json({ error: { code: 'payload_too_large' } }, 413);
-  const body = await request.arrayBuffer();
-  if (body.byteLength > MAX_BODY_BYTES) return json({ error: { code: 'payload_too_large' } }, 413);
+  const incomingBody = await request.arrayBuffer();
+  if (incomingBody.byteLength > MAX_BODY_BYTES) {
+    return json({ error: { code: 'payload_too_large' } }, 413);
+  }
+  const contentType = request.headers.get('content-type') || '';
+  let body = incomingBody;
+  if (body.byteLength > 0 && contentType.toLowerCase().includes('application/json')) {
+    try {
+      body = new TextEncoder().encode(JSON.stringify(JSON.parse(new TextDecoder().decode(body))));
+    } catch {
+      // Preserve malformed JSON so the upstream rejects the exact submitted
+      // payload after edge authentication instead of silently rewriting it.
+    }
+  }
 
   const incoming = new URL(request.url);
   const session = await loadApplicationSession(request, env);
@@ -246,7 +258,6 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
     'x-core-edge-timestamp': timestamp,
     'x-core-edge-signature': signature,
   });
-  const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
   const idempotencyKey = request.headers.get('idempotency-key');
   if (idempotencyKey) headers.set('idempotency-key', idempotencyKey);

@@ -42,6 +42,14 @@ export function verifyEdgeSignature(input: EdgeSignatureInput): boolean {
   return expected.length === provided.length && timingSafeEqual(expected, provided);
 }
 
+function requestBodyForSignature(request: Request & { rawBody?: Buffer }): Buffer {
+  if (request.rawBody && request.rawBody.length > 0) return request.rawBody;
+  if (request.body === undefined || request.body === null) return Buffer.alloc(0);
+  if (Buffer.isBuffer(request.body)) return request.body;
+  if (typeof request.body === 'string') return Buffer.from(request.body);
+  return Buffer.from(JSON.stringify(request.body));
+}
+
 export function edgeAuthMiddleware(options: { adminUserId: string; secret: string }) {
   if (Buffer.byteLength(options.secret) < 32) {
     throw new Error('CORE_EDGE_SHARED_SECRET must be at least 32 bytes');
@@ -58,7 +66,12 @@ export function edgeAuthMiddleware(options: { adminUserId: string; secret: strin
     const identity = request.header('x-neobank-user')?.trim() || '';
     const timestamp = request.header('x-core-edge-timestamp')?.trim() || '';
     const signature = request.header('x-core-edge-signature')?.trim() || '';
-    const body = request.rawBody || Buffer.alloc(0);
+    // Nest's rawBody capture can be empty behind a chunked reverse proxy even
+    // though the JSON parser produced request.body. The Worker forwards
+    // canonical JSON, so re-serializing the parsed value preserves the signed
+    // bytes and keeps write requests authenticated without weakening the body
+    // integrity check.
+    const body = requestBodyForSignature(request);
     if (
       !verifyEdgeSignature({
         body,
