@@ -4,6 +4,9 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  NotFoundException,
+  Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -99,5 +102,17 @@ export class RatesController {
         },
       });
     });
+  }
+
+  @Patch(':id/deactivate')
+  async deactivate(@Req() request: Request, @Param('id') id: string) {
+    const user = await requireActiveUser(this.db, currentUserId(request));
+    if (user.role !== UserRole.ADMIN) throw new ForbiddenException('admin_role_required');
+    const result = await this.db.rateVersion.updateMany({
+      where: { id, active: true },
+      data: { active: false, effectiveUntil: new Date() },
+    });
+    if (!result.count) throw new NotFoundException('active_rate_not_found');
+    return this.db.rateVersion.findUniqueOrThrow({ where: { id } });
   }
 }

@@ -51,15 +51,16 @@ test('active customer standard fiat account provisioning is explicit and idempot
   const beforeIds = new Set(before.body.map((account) => account.id));
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const provisioned = await request(`/customers/${customerId}/standard-fiat-accounts`, 'usr_admin', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
-    assert.equal(provisioned.response.status, 201);
-    assert.deepEqual(
-      provisioned.body.map((account) => account.currency).sort(),
-      ['HKD', 'USD']
+    const provisioned = await request(
+      `/customers/${customerId}/standard-fiat-accounts`,
+      'usr_admin',
+      {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }
     );
+    assert.equal(provisioned.response.status, 201);
+    assert.deepEqual(provisioned.body.map((account) => account.currency).sort(), ['HKD', 'USD']);
     assert.ok(provisioned.body.every((account) => account.kind === 'SYSTEM_WALLET'));
   }
 
@@ -233,6 +234,41 @@ test('rate creation rejects same-currency and non-positive values without writin
     });
     assert.equal(result.response.status, 400, JSON.stringify(invalid));
   }
+});
+
+test('an administrator can explicitly deactivate an active rate without deleting history', async () => {
+  const created = await request('/rates', 'usr_admin', {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'FX',
+      baseCurrency: 'USD',
+      quoteCurrency: 'HKD',
+      buyRate: '7.8',
+      sellRate: '7.9',
+      feeBps: 0,
+      effectiveFrom: new Date().toISOString(),
+    }),
+  });
+  assert.equal(created.response.status, 201);
+  assert.equal(created.body.active, true);
+
+  const deactivated = await request(`/rates/${created.body.id}/deactivate`, 'usr_admin', {
+    method: 'PATCH',
+    body: JSON.stringify({}),
+  });
+  assert.equal(deactivated.response.status, 200);
+  assert.equal(deactivated.body.active, false);
+  assert.ok(deactivated.body.effectiveUntil);
+
+  const repeated = await request(`/rates/${created.body.id}/deactivate`, 'usr_admin', {
+    method: 'PATCH',
+    body: JSON.stringify({}),
+  });
+  assert.equal(repeated.response.status, 404);
+
+  const listed = await request('/rates', 'usr_admin');
+  const historical = listed.body.find((row) => row.id === created.body.id);
+  assert.equal(historical.active, false);
 });
 
 test('single-admin payout approval preserves idempotency, role isolation and frozen balance', async () => {

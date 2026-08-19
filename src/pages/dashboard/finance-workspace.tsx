@@ -286,6 +286,8 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [customerDetail, setCustomerDetail] = useState<Customer | null>(null);
   const [beneficiaryOpen, setBeneficiaryOpen] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
+  const [rateDeactivateTarget, setRateDeactivateTarget] = useState<RateVersion | null>(null);
+  const [rateDeactivating, setRateDeactivating] = useState(false);
   const [channelEditorOpen, setChannelEditorOpen] = useState(false);
   const [editingChannel, setEditingChannel] = useState<FundingChannel | null>(null);
   const [channelForm, setChannelForm] = useState<ChannelForm>(initialChannelForm);
@@ -767,6 +769,26 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     }
   };
 
+  const deactivateRate = async () => {
+    if (!rateDeactivateTarget) return;
+    setRateDeactivating(true);
+    setError('');
+    try {
+      await coreApi(`/rates/${rateDeactivateTarget.id}/deactivate`, {
+        method: 'PATCH',
+        userId,
+        body: JSON.stringify({}),
+      });
+      setRateDeactivateTarget(null);
+      setSuccess('汇率版本已停用；历史交易快照保持不变。');
+      await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : '汇率版本停用失败');
+    } finally {
+      setRateDeactivating(false);
+    }
+  };
+
   let workspaceContent = (
     <>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
@@ -865,6 +887,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         marketError={marketError}
         onRefreshMarket={loadMarketQuotes}
         onCreate={() => setRateOpen(true)}
+        onDeactivate={setRateDeactivateTarget}
       />
     );
   }
@@ -1072,6 +1095,39 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         }}
         userId={userId}
       />
+      <Dialog
+        open={Boolean(rateDeactivateTarget)}
+        onClose={() => !rateDeactivating && setRateDeactivateTarget(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>停用汇率版本</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mt: 1 }}>
+            停用后该版本不再用于新业务；历史交易保存的汇率快照不会改变。
+          </Alert>
+          {rateDeactivateTarget && (
+            <Typography sx={{ mt: 2 }}>
+              {rateDeactivateTarget.type} · {rateDeactivateTarget.baseCurrency}/
+              {rateDeactivateTarget.quoteCurrency} · 买入 {rateDeactivateTarget.buyRate} · 卖出{' '}
+              {rateDeactivateTarget.sellRate}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={rateDeactivating} onClick={() => setRateDeactivateTarget(null)}>
+            取消
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={rateDeactivating}
+            onClick={() => deactivateRate().catch(() => undefined)}
+          >
+            {rateDeactivating ? '停用中…' : '确认停用'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }
@@ -1166,6 +1222,7 @@ function RateWorkspace({
   marketError,
   onRefreshMarket,
   onCreate,
+  onDeactivate,
 }: {
   rows: RateVersion[];
   marketQuotes: MarketQuote[];
@@ -1173,6 +1230,7 @@ function RateWorkspace({
   marketError: string;
   onRefreshMarket: () => Promise<void>;
   onCreate: () => void;
+  onDeactivate: (row: RateVersion) => void;
 }) {
   return (
     <Stack spacing={2}>
@@ -1253,6 +1311,7 @@ function RateWorkspace({
                 <TableCell>费率</TableCell>
                 <TableCell>生效时间</TableCell>
                 <TableCell>状态</TableCell>
+                <TableCell align="right">操作</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -1270,6 +1329,13 @@ function RateWorkspace({
                     <Label color={row.active ? 'success' : 'default'}>
                       {row.active ? '生效中' : '历史'}
                     </Label>
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.active && (
+                      <Button size="small" color="error" onClick={() => onDeactivate(row)}>
+                        停用
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -1342,9 +1408,9 @@ function RateDialog({
   const [type, setType] = useState<'FX' | 'OTC'>('FX');
   const [baseCurrency, setBaseCurrency] = useState<Currency>('USD');
   const [quoteCurrency, setQuoteCurrency] = useState<Currency>('HKD');
-  const [buyRate, setBuyRate] = useState('1');
-  const [sellRate, setSellRate] = useState('1');
-  const [feeBps, setFeeBps] = useState('20');
+  const [buyRate, setBuyRate] = useState('');
+  const [sellRate, setSellRate] = useState('');
+  const [feeBps, setFeeBps] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   useEffect(() => {
@@ -1352,9 +1418,9 @@ function RateDialog({
     setType('FX');
     setBaseCurrency('USD');
     setQuoteCurrency('HKD');
-    setBuyRate('1');
-    setSellRate('1');
-    setFeeBps('20');
+    setBuyRate('');
+    setSellRate('');
+    setFeeBps('');
     setError('');
     setSubmitting(false);
   }, [open]);
