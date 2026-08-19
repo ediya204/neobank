@@ -1,5 +1,14 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Post, Query, Req } from '@nestjs/common';
-import { Currency, RateType, UserRole } from '@prisma/client';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
+import { Currency, Prisma, RateType, UserRole } from '@prisma/client';
 import type { Request } from 'express';
 import { IsDateString, IsEnum, IsInt, IsNumberString, IsOptional, Max, Min } from 'class-validator';
 import { currentUserId } from '../common/current-user';
@@ -29,7 +38,10 @@ export class RatesController {
       where: {
         ...(type ? { type } : {}),
         OR: [
-          { baseCurrency: { in: supportedFiatCurrencies }, quoteCurrency: { in: supportedFiatCurrencies } },
+          {
+            baseCurrency: { in: supportedFiatCurrencies },
+            quoteCurrency: { in: supportedFiatCurrencies },
+          },
           { baseCurrency: 'USDT', quoteCurrency: { in: supportedFiatCurrencies } },
           { baseCurrency: { in: supportedFiatCurrencies }, quoteCurrency: 'USDT' },
         ],
@@ -43,7 +55,27 @@ export class RatesController {
     const user = await requireActiveUser(this.db, currentUserId(request));
     if (user.role !== UserRole.ADMIN) throw new ForbiddenException('admin_role_required');
     const fiat = new Set<Currency>(supportedFiatCurrencies);
-    const isFx = dto.type === RateType.FX && fiat.has(dto.baseCurrency) && fiat.has(dto.quoteCurrency);
+    if (dto.baseCurrency === dto.quoteCurrency) {
+      throw new BadRequestException('rate_currencies_must_differ');
+    }
+    let buyRate: Prisma.Decimal;
+    let sellRate: Prisma.Decimal;
+    try {
+      buyRate = new Prisma.Decimal(dto.buyRate);
+      sellRate = new Prisma.Decimal(dto.sellRate);
+    } catch {
+      throw new BadRequestException('invalid_rate_value');
+    }
+    if (
+      !buyRate.isFinite() ||
+      !sellRate.isFinite() ||
+      buyRate.lessThanOrEqualTo(0) ||
+      sellRate.lessThanOrEqualTo(0)
+    ) {
+      throw new BadRequestException('rate_must_be_positive');
+    }
+    const isFx =
+      dto.type === RateType.FX && fiat.has(dto.baseCurrency) && fiat.has(dto.quoteCurrency);
     const isOtc =
       dto.type === RateType.OTC &&
       ((dto.baseCurrency === Currency.USDT && fiat.has(dto.quoteCurrency)) ||
@@ -51,7 +83,12 @@ export class RatesController {
     if (!isFx && !isOtc) throw new BadRequestException('unsupported_rate_pair');
     return this.db.$transaction(async (tx) => {
       await tx.rateVersion.updateMany({
-        where: { type: dto.type, baseCurrency: dto.baseCurrency, quoteCurrency: dto.quoteCurrency, active: true },
+        where: {
+          type: dto.type,
+          baseCurrency: dto.baseCurrency,
+          quoteCurrency: dto.quoteCurrency,
+          active: true,
+        },
         data: { active: false, effectiveUntil: new Date(dto.effectiveFrom) },
       });
       return tx.rateVersion.create({

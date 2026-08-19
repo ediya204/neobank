@@ -65,7 +65,7 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
           <Box>
             <Typography variant="h4">业务总览</Typography>
             <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-              客户开户、系统多货币法币账户、VA 账户、USDT-TRON 与资金审批的本地实时数据。
+              客户开户、系统多货币法币账户、VA 账户、USDT-TRON 与资金审批的平台实时数据。
             </Typography>
           </Box>
           {error && <Alert severity="error">{error}</Alert>}
@@ -115,7 +115,7 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
                 <Box>
                   <Typography variant="h6">数字钱包</Typography>
                   <Typography color="text.secondary">
-                    仅支持 USDT-TRON（TRC20）；本地审批与记账已启用，真实链上广播保持人工执行。
+                    仅支持 USDT-TRON（TRC20）；平台内审批与记账已启用，真实链上广播保持人工执行。
                   </Typography>
                 </Box>
                 <Button onClick={() => navigate('/dashboard/operations/crypto-wallets')}>

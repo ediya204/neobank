@@ -56,7 +56,10 @@ test('beneficiaries expose only supported bank or USDT-TRON destinations', async
       beneficiary.type === 'CRYPTO' &&
       beneficiary.currency === 'USDT' &&
       beneficiary.network === 'TRON';
-    assert.ok(supportedBank || supportedCrypto, `unsupported beneficiary exposed: ${beneficiary.id}`);
+    assert.ok(
+      supportedBank || supportedCrypto,
+      `unsupported beneficiary exposed: ${beneficiary.id}`
+    );
   }
 });
 
@@ -186,6 +189,26 @@ test('unsupported legacy products cannot create new operations or rates', async 
     }),
   });
   assert.equal(rate.response.status, 400);
+});
+
+test('rate creation rejects same-currency and non-positive values without writing a version', async () => {
+  const invalidRates = [
+    { baseCurrency: 'USD', quoteCurrency: 'USD', buyRate: '1', sellRate: '1' },
+    { baseCurrency: 'USD', quoteCurrency: 'HKD', buyRate: '0', sellRate: '1' },
+    { baseCurrency: 'USD', quoteCurrency: 'HKD', buyRate: '1', sellRate: '-1' },
+  ];
+  for (const invalid of invalidRates) {
+    const result = await request('/rates', 'usr_admin', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'FX',
+        ...invalid,
+        feeBps: 0,
+        effectiveFrom: new Date().toISOString(),
+      }),
+    });
+    assert.equal(result.response.status, 400, JSON.stringify(invalid));
+  }
 });
 
 test('single-admin payout approval preserves idempotency, role isolation and frozen balance', async () => {

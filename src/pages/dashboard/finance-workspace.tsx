@@ -254,6 +254,10 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [withdrawalFees, setWithdrawalFees] = useState<WithdrawalFeeRule[]>([]);
+  const [operationWithdrawalFees, setOperationWithdrawalFees] = useState<WithdrawalFeeRule[]>([]);
+  const [operationFeeCustomerId, setOperationFeeCustomerId] = useState('');
+  const [operationFeesLoading, setOperationFeesLoading] = useState(false);
+  const [operationFeesError, setOperationFeesError] = useState('');
   const [operations, setOperations] = useState<Operation[]>([]);
   const [rates, setRates] = useState<RateVersion[]>([]);
   const [marketQuotes, setMarketQuotes] = useState<MarketQuote[]>([]);
@@ -267,10 +271,13 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [operationFormError, setOperationFormError] = useState('');
+  const [operationSubmitting, setOperationSubmitting] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [executeOpen, setExecuteOpen] = useState(false);
   const [externalReference, setExternalReference] = useState('');
+  const [actionError, setActionError] = useState('');
   const [form, setForm] = useState<OperationForm>({
     ...initialForm,
     customerId: requestedCustomerId,
@@ -388,6 +395,40 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       .catch((value) => setError(value instanceof Error ? value.message : '客户详情加载失败'));
   }, [form.customerId, section, selectedCustomerId, userId]);
 
+  useEffect(() => {
+    if (copy.type !== 'PAYOUT' || !form.customerId || !createOpen) {
+      setOperationWithdrawalFees([]);
+      setOperationFeeCustomerId('');
+      setOperationFeesError('');
+      setOperationFeesLoading(false);
+      return undefined;
+    }
+    let active = true;
+    setOperationWithdrawalFees([]);
+    setOperationFeeCustomerId('');
+    setOperationFeesError('');
+    setOperationFeesLoading(true);
+    coreApi<WithdrawalFeeRule[]>(
+      `/withdrawal-fees?organizationId=${demoOrganizationId}&customerId=${form.customerId}&active=true`,
+      { userId }
+    )
+      .then((rows) => {
+        if (!active) return;
+        setOperationWithdrawalFees(rows);
+        setOperationFeeCustomerId(form.customerId);
+      })
+      .catch((value) => {
+        if (!active) return;
+        setOperationFeesError(value instanceof Error ? value.message : '转出手续费加载失败');
+      })
+      .finally(() => {
+        if (active) setOperationFeesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [copy.type, createOpen, form.customerId, userId]);
+
   const selectedCustomer =
     customers.find((customer) => customer.id === selectedCustomerId) || customers[0];
   const displayAccounts = selectedCustomer?.accounts || [];
@@ -404,6 +445,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   );
 
   const openCreate = () => {
+    setOperationFormError('');
     setForm({
       ...initialForm,
       customerId: requestedCustomerId || selectedCustomerId || customers[0]?.id || '',
@@ -412,14 +454,75 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     setCreateOpen(true);
   };
 
+  const updateOperationForm = useCallback((nextForm: OperationForm) => {
+    setOperationFormError('');
+    setForm(nextForm);
+  }, []);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!copy.type) return;
-    if (copy.type === 'PAYOUT' && form.payoutMethod === 'VA' && !form.channelId) {
-      setError('所选 VA 账户未绑定开户银行通道，不能提交 VA 出款。');
+    const sourceRequired =
+      ['PAYOUT', 'INTERNAL_TRANSFER', 'FX', 'OTC'].includes(copy.type) ||
+      (copy.type === 'ADJUSTMENT' && form.adjustmentDirection === 'DEBIT');
+    const targetRequired =
+      ['DEPOSIT', 'INTERNAL_TRANSFER', 'FX', 'OTC'].includes(copy.type) ||
+      (copy.type === 'ADJUSTMENT' && form.adjustmentDirection === 'CREDIT');
+    const amount = Number(form.amount);
+    if (!form.customerId) {
+      setOperationFormError('请选择客户。');
       return;
     }
-    setError('');
+    if (customerDetail?.id !== form.customerId) {
+      setOperationFormError('客户账户仍在加载，请稍后再提交。');
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setOperationFormError('请输入大于 0 的有效金额。');
+      return;
+    }
+    if (sourceRequired && !form.sourceAccountId) {
+      setOperationFormError('请选择扣款账户。');
+      return;
+    }
+    if (targetRequired && !form.targetAccountId) {
+      setOperationFormError('请选择入账账户。');
+      return;
+    }
+    if ((copy.type === 'FX' || copy.type === 'OTC') && form.currency === form.quoteCurrency) {
+      setOperationFormError('基础币种与目标币种不能相同。');
+      return;
+    }
+    if (copy.type === 'DEPOSIT') {
+      if (!form.channelId || !form.remitterName.trim() || !form.remittanceReference.trim()) {
+        setOperationFormError('请选择资金通道，并填写汇款人和银行流水号。');
+        return;
+      }
+      if (!form.receivedAt || Number.isNaN(new Date(form.receivedAt).getTime())) {
+        setOperationFormError('请输入有效的到账时间。');
+        return;
+      }
+    }
+    if (copy.type === 'PAYOUT') {
+      if (form.payoutMethod === 'VA' && !form.channelId) {
+        setOperationFormError('所选 VA 账户未绑定开户银行通道，不能提交 VA 出款。');
+        return;
+      }
+      if (!form.channelId || !form.beneficiaryId) {
+        setOperationFormError('请选择资金通道和收款人。');
+        return;
+      }
+      if (operationFeesLoading || operationFeeCustomerId !== form.customerId) {
+        setOperationFormError('客户转出手续费仍在加载，请稍后再提交。');
+        return;
+      }
+      if (operationFeesError) {
+        setOperationFormError(`客户转出手续费加载失败：${operationFeesError}`);
+        return;
+      }
+    }
+    setOperationFormError('');
+    setOperationSubmitting(true);
     try {
       const payload: Record<string, unknown> = {
         customerId: form.customerId,
@@ -453,8 +556,8 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       }
       if (copy.type === 'PAYOUT') {
         const selectedChannel = channels.find((channel) => channel.id === form.channelId);
-        const feeRule = selectedChannel
-          ? withdrawalFees.find(
+        const matchingFeeRules = selectedChannel
+          ? operationWithdrawalFees.filter(
               (rule) =>
                 rule.assetClass === 'FIAT' &&
                 rule.currency === form.currency &&
@@ -462,7 +565,11 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
                 rule.channelCode === selectedChannel.code &&
                 rule.active
             )
-          : undefined;
+          : [];
+        const feeRule =
+          matchingFeeRules.find(
+            (rule) => rule.scope === 'CUSTOMER' && rule.customerId === form.customerId
+          ) || matchingFeeRules.find((rule) => rule.scope === 'ORGANIZATION');
         if (!feeRule) throw new Error('当前渠道尚未配置生效的转出手续费');
         Object.assign(payload, {
           channelId: form.channelId,
@@ -479,13 +586,16 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       setSuccess('已提交，授权管理员可直接审批');
       await load();
     } catch (value) {
-      setError(value instanceof Error ? value.message : '提交失败');
+      setOperationFormError(value instanceof Error ? value.message : '提交失败');
+    } finally {
+      setOperationSubmitting(false);
     }
   };
 
   const perform = async (action: 'approve' | 'reject' | 'execute') => {
     if (!selected) return;
     setError('');
+    setActionError('');
     try {
       let body: string | undefined;
       if (action === 'reject') body = JSON.stringify({ reason: rejectReason });
@@ -506,7 +616,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       setSuccess(messages[action]);
       await load();
     } catch (value) {
-      setError(value instanceof Error ? value.message : '操作失败');
+      setActionError(value instanceof Error ? value.message : '操作失败');
     }
   };
 
@@ -805,14 +915,24 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
           open={createOpen}
           type={copy.type}
           form={form}
-          setForm={setForm}
+          setForm={updateOperationForm}
           customers={customers}
           accounts={availableAccounts}
           accountsCustomerId={customerDetail?.id}
           beneficiaries={beneficiaries}
           channels={channels}
-          withdrawalFees={withdrawalFees}
-          onClose={() => setCreateOpen(false)}
+          withdrawalFees={operationWithdrawalFees}
+          withdrawalFeesCustomerId={operationFeeCustomerId}
+          withdrawalFeesLoading={operationFeesLoading}
+          withdrawalFeesError={operationFeesError}
+          error={operationFormError}
+          submitting={operationSubmitting}
+          onClose={() => {
+            if (!operationSubmitting) {
+              setCreateOpen(false);
+              setOperationFormError('');
+            }
+          }}
           onSubmit={submit}
         />
       )}
@@ -821,19 +941,36 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         currentUserId={userId}
         onClose={() => setSelected(null)}
         onApprove={() => perform('approve').catch(() => undefined)}
-        onReject={() => setRejectOpen(true)}
-        onExecute={() => setExecuteOpen(true)}
+        onReject={() => {
+          setRejectReason('');
+          setActionError('');
+          setRejectOpen(true);
+        }}
+        onExecute={() => {
+          setExternalReference('');
+          setActionError('');
+          setExecuteOpen(true);
+        }}
       />
       <Dialog open={rejectOpen} onClose={() => setRejectOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>拒绝业务指令</DialogTitle>
         <DialogContent>
+          {actionError && (
+            <Alert severity="error" sx={{ mt: 1 }}>
+              {actionError}
+            </Alert>
+          )}
           <TextField
+            required
             fullWidth
             multiline
             minRows={3}
             label="拒绝原因"
             value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
+            onChange={(e) => {
+              setRejectReason(e.target.value);
+              setActionError('');
+            }}
             sx={{ mt: 1 }}
           />
         </DialogContent>
@@ -842,6 +979,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
           <Button
             color="error"
             variant="contained"
+            disabled={!rejectReason.trim()}
             onClick={() => perform('reject').catch(() => undefined)}
           >
             确认拒绝
@@ -851,17 +989,30 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       <Dialog open={executeOpen} onClose={() => setExecuteOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>完成银行出款</DialogTitle>
         <DialogContent>
+          {actionError && (
+            <Alert severity="error" sx={{ mt: 1 }}>
+              {actionError}
+            </Alert>
+          )}
           <TextField
+            required
             fullWidth
             label="银行/渠道流水号"
             value={externalReference}
-            onChange={(e) => setExternalReference(e.target.value)}
+            onChange={(e) => {
+              setExternalReference(e.target.value);
+              setActionError('');
+            }}
             sx={{ mt: 1 }}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setExecuteOpen(false)}>取消</Button>
-          <Button variant="contained" onClick={() => perform('execute').catch(() => undefined)}>
+          <Button
+            variant="contained"
+            disabled={!externalReference.trim()}
+            onClick={() => perform('execute').catch(() => undefined)}
+          >
             确认完成
           </Button>
         </DialogActions>
@@ -1173,8 +1324,37 @@ function RateDialog({
   const [sellRate, setSellRate] = useState('1');
   const [feeBps, setFeeBps] = useState('20');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setType('FX');
+    setBaseCurrency('USD');
+    setQuoteCurrency('HKD');
+    setBuyRate('1');
+    setSellRate('1');
+    setFeeBps('20');
+    setError('');
+    setSubmitting(false);
+  }, [open]);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const buy = Number(buyRate);
+    const sell = Number(sellRate);
+    const fee = Number(feeBps);
+    if (baseCurrency === quoteCurrency) {
+      setError('基础币种与报价币种不能相同。');
+      return;
+    }
+    if (!Number.isFinite(buy) || buy <= 0 || !Number.isFinite(sell) || sell <= 0) {
+      setError('买入价和卖出价必须是大于 0 的有效数字。');
+      return;
+    }
+    if (!Number.isInteger(fee) || fee < 0 || fee > 10000) {
+      setError('费率必须是 0 至 10000 之间的整数 bps。');
+      return;
+    }
+    setError('');
+    setSubmitting(true);
     try {
       await coreApi('/rates', {
         method: 'POST',
@@ -1192,11 +1372,13 @@ function RateDialog({
       onCreated();
     } catch (value) {
       setError(value instanceof Error ? value.message : '保存失败');
+    } finally {
+      setSubmitting(false);
     }
   };
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <Box component="form" onSubmit={submit}>
+      <Box component="form" onSubmit={submit} noValidate>
         <DialogTitle>新建汇率版本</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -1206,7 +1388,18 @@ function RateDialog({
               <Select
                 label="类型"
                 value={type}
-                onChange={(event) => setType(event.target.value as 'FX' | 'OTC')}
+                onChange={(event) => {
+                  const nextType = event.target.value as 'FX' | 'OTC';
+                  setType(nextType);
+                  setError('');
+                  if (nextType === 'OTC') {
+                    setBaseCurrency('USD');
+                    setQuoteCurrency('USDT');
+                  } else {
+                    setBaseCurrency('USD');
+                    setQuoteCurrency('HKD');
+                  }
+                }}
               >
                 <MenuItem value="FX">法币换汇</MenuItem>
                 <MenuItem value="OTC">OTC</MenuItem>
@@ -1218,7 +1411,18 @@ function RateDialog({
                 <Select
                   label="基础币种"
                   value={baseCurrency}
-                  onChange={(event) => setBaseCurrency(event.target.value as Currency)}
+                  onChange={(event) => {
+                    const nextBase = event.target.value as Currency;
+                    setBaseCurrency(nextBase);
+                    setError('');
+                    if (nextBase === quoteCurrency) {
+                      setQuoteCurrency(
+                        type === 'OTC'
+                          ? 'USDT'
+                          : supportedFiatCurrencies.find((item) => item !== nextBase) || 'USD'
+                      );
+                    }
+                  }}
                 >
                   {currencies.map((item) => (
                     <MenuItem key={item} value={item}>
@@ -1232,9 +1436,15 @@ function RateDialog({
                 <Select
                   label="报价币种"
                   value={quoteCurrency}
-                  onChange={(event) => setQuoteCurrency(event.target.value as Currency)}
+                  onChange={(event) => {
+                    setQuoteCurrency(event.target.value as Currency);
+                    setError('');
+                  }}
                 >
-                  {(type === 'OTC' ? ['USDT'] : currencies).map((item) => (
+                  {(type === 'OTC'
+                    ? ['USDT']
+                    : currencies.filter((item) => item !== baseCurrency)
+                  ).map((item) => (
                     <MenuItem key={item} value={item}>
                       {item}
                     </MenuItem>
@@ -1249,7 +1459,11 @@ function RateDialog({
                 type="number"
                 label="买入价"
                 value={buyRate}
-                onChange={(event) => setBuyRate(event.target.value)}
+                inputProps={{ min: 0, step: 'any' }}
+                onChange={(event) => {
+                  setBuyRate(event.target.value);
+                  setError('');
+                }}
               />
               <TextField
                 required
@@ -1257,7 +1471,11 @@ function RateDialog({
                 type="number"
                 label="卖出价"
                 value={sellRate}
-                onChange={(event) => setSellRate(event.target.value)}
+                inputProps={{ min: 0, step: 'any' }}
+                onChange={(event) => {
+                  setSellRate(event.target.value);
+                  setError('');
+                }}
               />
             </Stack>
             <TextField
@@ -1265,14 +1483,20 @@ function RateDialog({
               type="number"
               label="费率 (bps)"
               value={feeBps}
-              onChange={(event) => setFeeBps(event.target.value)}
+              inputProps={{ min: 0, max: 10000, step: 1 }}
+              onChange={(event) => {
+                setFeeBps(event.target.value);
+                setError('');
+              }}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="submit" variant="contained">
-            创建版本
+          <Button disabled={submitting} onClick={onClose}>
+            取消
+          </Button>
+          <Button type="submit" variant="contained" disabled={submitting}>
+            {submitting ? '创建中…' : '创建版本'}
           </Button>
         </DialogActions>
       </Box>
@@ -2497,6 +2721,11 @@ function OperationDialog({
   beneficiaries,
   channels,
   withdrawalFees,
+  withdrawalFeesCustomerId,
+  withdrawalFeesLoading,
+  withdrawalFeesError,
+  error,
+  submitting,
   onClose,
   onSubmit,
 }: {
@@ -2510,6 +2739,11 @@ function OperationDialog({
   beneficiaries: Beneficiary[];
   channels: FundingChannel[];
   withdrawalFees: WithdrawalFeeRule[];
+  withdrawalFeesCustomerId: string;
+  withdrawalFeesLoading: boolean;
+  withdrawalFeesError: string;
+  error: string;
+  submitting: boolean;
   onClose: () => void;
   onSubmit: (event: FormEvent) => void;
 }) {
@@ -2543,8 +2777,8 @@ function OperationDialog({
     );
   }
   const selectedPayoutChannel = channels.find((channel) => channel.id === form.channelId);
-  const selectedPayoutFee = selectedPayoutChannel
-    ? withdrawalFees.find(
+  const matchingPayoutFees = selectedPayoutChannel
+    ? withdrawalFees.filter(
         (rule) =>
           rule.assetClass === 'FIAT' &&
           rule.currency === form.currency &&
@@ -2552,7 +2786,11 @@ function OperationDialog({
           rule.channelCode === selectedPayoutChannel.code &&
           rule.active
       )
-    : undefined;
+    : [];
+  const selectedPayoutFee =
+    matchingPayoutFees.find(
+      (rule) => rule.scope === 'CUSTOMER' && rule.customerId === form.customerId
+    ) || matchingPayoutFees.find((rule) => rule.scope === 'ORGANIZATION');
   const validSources = useMemo(
     () =>
       accounts.filter(
@@ -2566,11 +2804,14 @@ function OperationDialog({
   );
   const validTargets = accounts.filter(
     (account) =>
+      account.customerId === form.customerId &&
       account.status === 'ACTIVE' &&
       account.currency === (type === 'FX' || type === 'OTC' ? form.quoteCurrency : form.currency)
   );
   const payoutSourceLabel = payoutAccountScopeLabel(form.payoutMethod);
   const payoutAccountsLoading = type === 'PAYOUT' && accountsCustomerId !== form.customerId;
+  const payoutFeesLoading =
+    type === 'PAYOUT' && (withdrawalFeesLoading || withdrawalFeesCustomerId !== form.customerId);
   useEffect(() => {
     if (type !== 'PAYOUT') return;
     const {
@@ -2616,17 +2857,27 @@ function OperationDialog({
       : '提交后将冻结相关余额并进入待审批；授权管理员可直接完成审批。';
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
-      <Box component="form" onSubmit={onSubmit}>
+      <Box component="form" onSubmit={onSubmit} noValidate>
         <DialogTitle>新建{operationTypeText(type)}</DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ mt: 1 }}>
             <Alert severity="info">{dialogNotice}</Alert>
+            {error && <Alert severity="error">{error}</Alert>}
             <FormControl fullWidth required>
               <InputLabel>客户</InputLabel>
               <Select
                 label="客户"
                 value={form.customerId}
-                onChange={(e) => set('customerId', e.target.value)}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    customerId: e.target.value,
+                    sourceAccountId: '',
+                    targetAccountId: '',
+                    beneficiaryId: '',
+                    channelId: '',
+                  })
+                }
               >
                 {customers.map((customer) => (
                   <MenuItem key={customer.id} value={customer.id}>
@@ -2675,7 +2926,24 @@ function OperationDialog({
                 <Select
                   label="币种"
                   value={form.currency}
-                  onChange={(e) => set('currency', e.target.value)}
+                  onChange={(e) => {
+                    const nextCurrency = e.target.value as Currency;
+                    let nextQuoteCurrency = form.quoteCurrency;
+                    if (type === 'OTC') nextQuoteCurrency = 'USDT';
+                    else if (form.quoteCurrency === nextCurrency) {
+                      nextQuoteCurrency =
+                        supportedFiatCurrencies.find((item) => item !== nextCurrency) || 'USD';
+                    }
+                    setForm({
+                      ...form,
+                      currency: nextCurrency,
+                      quoteCurrency: nextQuoteCurrency,
+                      sourceAccountId: '',
+                      targetAccountId: '',
+                      channelId: '',
+                      beneficiaryId: '',
+                    });
+                  }}
                 >
                   {currencies.map((currency) => (
                     <MenuItem key={currency} value={currency}>
@@ -2787,25 +3055,43 @@ function OperationDialog({
             {type === 'PAYOUT' && (
               <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
                 <CardContent sx={{ p: 2.5 }}>
-                  {selectedPayoutChannel && selectedPayoutFee ? (
-                    <Stack spacing={1}>
-                      <Detail label="转出渠道" value={selectedPayoutChannel.name} />
-                      <Detail
-                        label="固定手续费"
-                        value={formatMoney(selectedPayoutFee.amount, form.currency)}
-                      />
-                      <Divider />
-                      <Detail
-                        label="账户总冻结"
-                        value={formatMoney(
-                          String(Number(form.amount || 0) + Number(selectedPayoutFee.amount)),
-                          form.currency
-                        )}
-                      />
-                    </Stack>
-                  ) : (
-                    <Alert severity="warning">当前渠道尚未配置生效的转出手续费。</Alert>
+                  {payoutFeesLoading && (
+                    <Alert severity="info">正在加载当前客户的转出手续费…</Alert>
                   )}
+                  {!payoutFeesLoading && withdrawalFeesError && (
+                    <Alert severity="error">转出手续费加载失败：{withdrawalFeesError}</Alert>
+                  )}
+                  {!payoutFeesLoading &&
+                    !withdrawalFeesError &&
+                    selectedPayoutChannel &&
+                    selectedPayoutFee && (
+                      <Stack spacing={1}>
+                        <Detail label="转出渠道" value={selectedPayoutChannel.name} />
+                        <Detail
+                          label="固定手续费"
+                          value={formatMoney(selectedPayoutFee.amount, form.currency)}
+                        />
+                        <Detail
+                          label="费率范围"
+                          value={
+                            selectedPayoutFee.scope === 'CUSTOMER' ? '当前客户专属' : '机构默认'
+                          }
+                        />
+                        <Divider />
+                        <Detail
+                          label="账户总冻结"
+                          value={formatMoney(
+                            String(Number(form.amount || 0) + Number(selectedPayoutFee.amount)),
+                            form.currency
+                          )}
+                        />
+                      </Stack>
+                    )}
+                  {!payoutFeesLoading &&
+                    !withdrawalFeesError &&
+                    (!selectedPayoutChannel || !selectedPayoutFee) && (
+                      <Alert severity="warning">当前渠道尚未配置生效的转出手续费。</Alert>
+                    )}
                 </CardContent>
               </Card>
             )}
@@ -2875,9 +3161,11 @@ function OperationDialog({
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="submit" variant="contained">
-            提交审批
+          <Button disabled={submitting} onClick={onClose}>
+            取消
+          </Button>
+          <Button type="submit" variant="contained" disabled={submitting || payoutFeesLoading}>
+            {submitting ? '提交中…' : '提交审批'}
           </Button>
         </DialogActions>
       </Box>

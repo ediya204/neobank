@@ -19,12 +19,7 @@ import {
   Typography,
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
-import {
-  coreApi,
-  Currency,
-  supportedCryptoNetwork,
-  supportedFiatCurrencies,
-} from './core-api';
+import { coreApi, Currency, supportedCryptoNetwork, supportedFiatCurrencies } from './core-api';
 
 type BeneficiaryType = 'BANK' | 'CRYPTO';
 
@@ -56,13 +51,7 @@ const options: Array<{
   },
 ];
 
-export default function BeneficiaryDialog({
-  open,
-  customerId,
-  userId,
-  onClose,
-  onCreated,
-}: Props) {
+export default function BeneficiaryDialog({ open, customerId, userId, onClose, onCreated }: Props) {
   const [type, setType] = useState<BeneficiaryType>('BANK');
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState<Currency>('USD');
@@ -97,6 +86,30 @@ export default function BeneficiaryDialog({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const normalizedName = name.trim();
+    const normalizedCountryCode = countryCode.trim().toUpperCase();
+    const normalizedBankName = bankName.trim();
+    const normalizedAccountNumber = accountNumber.trim();
+    const normalizedWalletAddress = walletAddress.trim();
+    if (!customerId) {
+      setError('请选择客户后再新增收款人');
+      return;
+    }
+    if (!normalizedName) {
+      setError(type === 'BANK' ? '请输入收款人姓名或企业名称' : '请输入地址名称');
+      return;
+    }
+    if (
+      type === 'BANK' &&
+      (!/^[A-Z]{2}$/.test(normalizedCountryCode) || !normalizedBankName || !normalizedAccountNumber)
+    ) {
+      setError('请填写两位国家/地区代码、收款银行和银行账号');
+      return;
+    }
+    if (type === 'CRYPTO' && !normalizedWalletAddress) {
+      setError('请输入 TRC20 收币地址');
+      return;
+    }
     if (type === 'CRYPTO' && !addressConfirmed) {
       setError('请确认已核对收款网络和钱包地址');
       return;
@@ -112,20 +125,20 @@ export default function BeneficiaryDialog({
             ? {
                 customerId,
                 type,
-                name,
+                name: normalizedName,
                 currency,
-                bankName,
-                accountNumber,
-                swiftBic: swiftBic || undefined,
-                countryCode,
+                bankName: normalizedBankName,
+                accountNumber: normalizedAccountNumber,
+                swiftBic: swiftBic.trim().toUpperCase() || undefined,
+                countryCode: normalizedCountryCode,
               }
             : {
                 customerId,
                 type,
-                name,
+                name: normalizedName,
                 currency: 'USDT',
                 network: supportedCryptoNetwork,
-                walletAddress,
+                walletAddress: normalizedWalletAddress,
               }
         ),
       });
@@ -139,7 +152,7 @@ export default function BeneficiaryDialog({
 
   return (
     <Dialog open={open} onClose={submitting ? undefined : onClose} fullWidth maxWidth="sm">
-      <Box component="form" onSubmit={submit}>
+      <Box component="form" onSubmit={submit} noValidate>
         <DialogTitle sx={{ pb: 1 }}>新增第三方收款人</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
@@ -203,7 +216,10 @@ export default function BeneficiaryDialog({
               label={type === 'BANK' ? '收款人姓名 / 企业名称' : '地址名称'}
               placeholder={type === 'CRYPTO' ? '例如：供应商 TRON 钱包' : undefined}
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+                setError('');
+              }}
             />
 
             {type === 'BANK' ? (
@@ -214,7 +230,10 @@ export default function BeneficiaryDialog({
                     fullWidth
                     label="国家/地区代码"
                     value={countryCode}
-                    onChange={(event) => setCountryCode(event.target.value.toUpperCase())}
+                    onChange={(event) => {
+                      setCountryCode(event.target.value.toUpperCase());
+                      setError('');
+                    }}
                     inputProps={{ maxLength: 2 }}
                   />
                   <FormControl fullWidth>
@@ -236,13 +255,19 @@ export default function BeneficiaryDialog({
                   required
                   label="收款银行"
                   value={bankName}
-                  onChange={(event) => setBankName(event.target.value)}
+                  onChange={(event) => {
+                    setBankName(event.target.value);
+                    setError('');
+                  }}
                 />
                 <TextField
                   required
                   label="银行账号 / IBAN"
                   value={accountNumber}
-                  onChange={(event) => setAccountNumber(event.target.value)}
+                  onChange={(event) => {
+                    setAccountNumber(event.target.value);
+                    setError('');
+                  }}
                 />
                 <TextField
                   label="SWIFT / BIC"
@@ -269,13 +294,13 @@ export default function BeneficiaryDialog({
                   onChange={(event) => {
                     setWalletAddress(event.target.value.trim());
                     setAddressConfirmed(false);
+                    setError('');
                   }}
                   helperText="系统会验证 TRON Base58Check 地址格式；保存后仍请在付币前逐字核对。"
                   inputProps={{ spellCheck: false, autoComplete: 'off' }}
                 />
                 <Alert severity="warning">
-                  数字货币转账不可撤销。这里保存的是外部收款地址，不是 SSC/Cregis
-                  分配的充值地址。
+                  数字货币转账不可撤销。这里保存的是外部收款地址，不是 SSC/Cregis 分配的充值地址。
                 </Alert>
                 <FormControlLabel
                   control={
