@@ -71,3 +71,38 @@ test('authenticates canonical JSON when the reverse proxy leaves rawBody empty',
   assert.equal(request.headers['x-user-id'], 'admin-1');
   assert.equal(request.headers['x-authenticated-role'], 'admin');
 });
+
+test('authenticates canonical JSON when the reverse proxy preserves different formatting', () => {
+  const body = { amount: '10', currency: 'USD' };
+  const signedRequest = signed({
+    body: Buffer.from(JSON.stringify(body)),
+    requestTarget: '/api/v1/operations',
+    timestamp: String(Math.floor(Date.now() / 1000)),
+  });
+  const request = {
+    body,
+    headers: {
+      'x-neobank-user': signedRequest.identity,
+      'x-core-edge-timestamp': signedRequest.timestamp,
+      'x-core-edge-signature': signedRequest.signature,
+    },
+    method: 'POST',
+    originalUrl: signedRequest.requestTarget,
+    rawBody: Buffer.from('{ "amount": "10", "currency": "USD" }'),
+    header(name) {
+      return this.headers[name.toLowerCase()];
+    },
+  };
+  let nextCalled = false;
+  const response = {
+    status() {
+      assert.fail('canonical JSON signature should be accepted');
+    },
+  };
+
+  edgeAuthMiddleware({ adminUserId: 'admin-1', secret })(request, response, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+});

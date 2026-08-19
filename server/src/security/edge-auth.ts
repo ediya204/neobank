@@ -42,12 +42,15 @@ export function verifyEdgeSignature(input: EdgeSignatureInput): boolean {
   return expected.length === provided.length && timingSafeEqual(expected, provided);
 }
 
-function requestBodyForSignature(request: Request & { rawBody?: Buffer }): Buffer {
-  if (request.rawBody && request.rawBody.length > 0) return request.rawBody;
-  if (request.body === undefined || request.body === null) return Buffer.alloc(0);
-  if (Buffer.isBuffer(request.body)) return request.body;
-  if (typeof request.body === 'string') return Buffer.from(request.body);
-  return Buffer.from(JSON.stringify(request.body));
+function requestBodiesForSignature(request: Request & { rawBody?: Buffer }): Buffer[] {
+  const rawBody = request.rawBody || Buffer.alloc(0);
+  if (request.body === undefined || request.body === null) return [rawBody];
+  const canonicalBody = Buffer.isBuffer(request.body)
+    ? request.body
+    : Buffer.from(
+        typeof request.body === 'string' ? request.body : JSON.stringify(request.body)
+      );
+  return rawBody.equals(canonicalBody) ? [rawBody] : [rawBody, canonicalBody];
 }
 
 export function edgeAuthMiddleware(options: { adminUserId: string; secret: string }) {
@@ -66,14 +69,12 @@ export function edgeAuthMiddleware(options: { adminUserId: string; secret: strin
     const identity = request.header('x-neobank-user')?.trim() || '';
     const timestamp = request.header('x-core-edge-timestamp')?.trim() || '';
     const signature = request.header('x-core-edge-signature')?.trim() || '';
-    // Nest's rawBody capture can be empty behind a chunked reverse proxy even
-    // though the JSON parser produced request.body. The Worker forwards
-    // canonical JSON, so re-serializing the parsed value preserves the signed
-    // bytes and keeps write requests authenticated without weakening the body
-    // integrity check.
-    const body = requestBodyForSignature(request);
-    if (
-      !verifyEdgeSignature({
+    // Reverse proxies can preserve a differently formatted non-empty raw JSON
+    // body than the canonical bytes signed and forwarded by the Worker. Verify
+    // the exact raw bytes first, then the deterministic serialization of the
+    // parsed JSON. Both candidates remain fully covered by the same HMAC.
+    const verified = requestBodiesForSignature(request).some((body) =>
+      verifyEdgeSignature({
         body,
         identity,
         method: request.method,
@@ -82,7 +83,8 @@ export function edgeAuthMiddleware(options: { adminUserId: string; secret: strin
         signature,
         timestamp,
       })
-    ) {
+    );
+    if (!verified) {
       response.status(401).json({ error: { code: 'unauthorized_edge_request' } });
       return;
     }
