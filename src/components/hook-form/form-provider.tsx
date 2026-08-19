@@ -1,3 +1,4 @@
+import { FormEventHandler } from 'react';
 import { FormProvider as Form, UseFormReturn } from 'react-hook-form';
 
 // ----------------------------------------------------------------------
@@ -5,7 +6,7 @@ import { FormProvider as Form, UseFormReturn } from 'react-hook-form';
 type Props = {
   children: React.ReactNode;
   methods: UseFormReturn<any>;
-  onSubmit?: VoidFunction;
+  onSubmit?: FormEventHandler<HTMLFormElement>;
 };
 
 export default function FormProvider({ children, onSubmit, methods }: Props) {

@@ -1,5 +1,5 @@
 import * as Yup from 'yup';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -336,6 +336,33 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     }
   });
 
+  const handleCredentialsSubmit = (event: FormEvent<HTMLFormElement>) => {
+    const values = loginMethods.getValues();
+    let missing = false;
+    if (!values.email.trim()) {
+      loginMethods.setError('email', {
+        type: 'manual',
+        message: localPortalBypass
+          ? t('auth.validation.local_account_required')
+          : t('auth.validation.email_required'),
+      });
+      missing = true;
+    }
+    if (!values.password) {
+      loginMethods.setError('password', {
+        type: 'manual',
+        message: t('auth.validation.password_required'),
+      });
+      missing = true;
+    }
+    if (missing) {
+      event.preventDefault();
+      setErrorMessage('');
+      return;
+    }
+    handleCredentials(event);
+  };
+
   const handleSetup = setupMethods.handleSubmit(async (values) => {
     setErrorMessage('');
     if (!setupToken) {
@@ -574,7 +601,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   }
 
   const renderCredentials = (
-    <FormProvider methods={loginMethods} onSubmit={handleCredentials}>
+    <FormProvider methods={loginMethods} onSubmit={handleCredentialsSubmit}>
       <Stack spacing={2.5}>
         {localPortalBypass && <Alert severity="warning">{t('auth.local_dev.warning')}</Alert>}
         {sessionError && (
