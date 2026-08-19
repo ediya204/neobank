@@ -273,6 +273,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [createOpen, setCreateOpen] = useState(false);
   const [operationFormError, setOperationFormError] = useState('');
   const [operationSubmitting, setOperationSubmitting] = useState(false);
+  const [accountProvisioning, setAccountProvisioning] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [executeOpen, setExecuteOpen] = useState(false);
@@ -747,6 +748,25 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     }
   };
 
+  const provisionStandardFiatAccounts = async () => {
+    if (!selectedCustomer) return;
+    setError('');
+    setAccountProvisioning(true);
+    try {
+      await coreApi(`/customers/${selectedCustomer.id}/standard-fiat-accounts`, {
+        method: 'POST',
+        userId,
+        body: JSON.stringify({}),
+      });
+      setSuccess('USD/HKD 标准法币账户已创建；重复执行不会产生重复账户。');
+      await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : '标准法币账户创建失败');
+    } finally {
+      setAccountProvisioning(false);
+    }
+  };
+
   let workspaceContent = (
     <>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
@@ -819,6 +839,8 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         marketLoading={marketLoading}
         marketError={marketError}
         onRefresh={() => load().catch(() => undefined)}
+        onProvision={provisionStandardFiatAccounts}
+        provisioning={accountProvisioning}
         onRefreshMarket={loadMarketQuotes}
       />
     );
@@ -2171,6 +2193,8 @@ function AccountWorkspace({
   marketLoading,
   marketError,
   onRefresh,
+  onProvision,
+  provisioning,
   onRefreshMarket,
 }: {
   customers: Customer[];
@@ -2183,6 +2207,8 @@ function AccountWorkspace({
   marketLoading: boolean;
   marketError: string;
   onRefresh: () => void;
+  onProvision: () => Promise<void>;
+  provisioning: boolean;
   onRefreshMarket: () => Promise<void>;
 }) {
   const [selectedFiatKind, setSelectedFiatKind] = useState<
@@ -2229,7 +2255,12 @@ function AccountWorkspace({
         </Box>
       )}
       {!loading && accounts.length === 0 && (
-        <AccountEmptyState customer={selectedCustomer} onRefresh={onRefresh} />
+        <AccountEmptyState
+          customer={selectedCustomer}
+          onRefresh={onRefresh}
+          onProvision={onProvision}
+          provisioning={provisioning}
+        />
       )}
       {!loading && accounts.length > 0 && (
         <Box
@@ -2269,9 +2300,13 @@ function AccountWorkspace({
 function AccountEmptyState({
   customer,
   onRefresh,
+  onProvision,
+  provisioning,
 }: {
   customer?: Customer;
   onRefresh: () => void;
+  onProvision: () => Promise<void>;
+  provisioning: boolean;
 }) {
   let title = '暂无客户账户';
   let description = '当前还没有客户。客户完成 KYC 审核后，相关账户与钱包会显示在这里。';
@@ -2329,13 +2364,24 @@ function AccountEmptyState({
             <Chip size="small" variant="outlined" label={`客户状态 · ${customer.status}`} />
           </Stack>
         )}
-        <Button
-          variant="outlined"
-          startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
-          onClick={onRefresh}
-        >
-          刷新账户状态
-        </Button>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+          <Button
+            variant="outlined"
+            startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
+            onClick={onRefresh}
+          >
+            刷新账户状态
+          </Button>
+          {customer?.status === 'ACTIVE' && customer.kycStatus === 'APPROVED' && (
+            <Button
+              variant="contained"
+              disabled={provisioning}
+              onClick={() => onProvision().catch(() => undefined)}
+            >
+              {provisioning ? '创建中…' : '创建标准法币账户'}
+            </Button>
+          )}
+        </Stack>
       </Stack>
     </Card>
   );

@@ -284,6 +284,42 @@ export class CustomersService {
     );
   }
 
+  async provisionStandardFiatAccounts(id: string, userId: string) {
+    const { customer } = await requireCustomerAccess(this.db, userId, id);
+    const current = await this.db.customer.findUnique({
+      where: { id: customer.id },
+      select: { id: true, status: true, kycStatus: true },
+    });
+    if (!current || current.status !== 'ACTIVE' || current.kycStatus !== 'APPROVED') {
+      throw new ConflictException('active_kyc_approved_customer_required');
+    }
+
+    await this.db.$transaction(
+      supportedFiatCurrencies.map((currency) =>
+        this.db.account.upsert({
+          where: { accountNumber: `WALLET-${current.id}-${currency}` },
+          update: {},
+          create: {
+            customerId: current.id,
+            kind: 'SYSTEM_WALLET',
+            status: 'ACTIVE',
+            currency,
+            name: `${currency} 法币钱包`,
+            accountNumber: `WALLET-${current.id}-${currency}`,
+          },
+        })
+      )
+    );
+    return this.db.account.findMany({
+      where: {
+        customerId: current.id,
+        kind: 'SYSTEM_WALLET',
+        currency: { in: supportedFiatCurrencies },
+      },
+      orderBy: { currency: 'asc' },
+    });
+  }
+
   async requestVirtualAccount(
     customerId: string,
     input: { currency: Currency; channelId: string; purpose: string },

@@ -35,6 +35,12 @@ Recheck it before every cutover attempt.
 
 ## Runtime model
 
+For an active, KYC-approved source customer whose Core accounting profile has no fiat
+accounts yet, use the admin Accounts page action **Create standard fiat accounts**. The
+action is tenant-scoped, explicit, and idempotently creates only zero-balance USD and HKD
+`SYSTEM_WALLET` accounts for that customer. It never provisions a bank VA or a Cregis
+wallet and must not be treated as a deposit or settlement.
+
 - `DATABASE_BACKEND=d1` is the safe default and rollback value.
 - `DATABASE_BACKEND=postgres` selects PostgreSQL only after a verified copy.
 - `DATABASE_URL` on Render must use the database's internal connection string.

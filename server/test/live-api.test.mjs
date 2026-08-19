@@ -45,6 +45,30 @@ test('customer-facing assets are limited to USD, HKD and USDT-TRON', async () =>
   }
 });
 
+test('active customer standard fiat account provisioning is explicit and idempotent', async () => {
+  const before = await request(`/accounts?customerId=${customerId}`);
+  assert.equal(before.response.status, 200);
+  const beforeIds = new Set(before.body.map((account) => account.id));
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const provisioned = await request(`/customers/${customerId}/standard-fiat-accounts`, 'usr_admin', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    assert.equal(provisioned.response.status, 201);
+    assert.deepEqual(
+      provisioned.body.map((account) => account.currency).sort(),
+      ['HKD', 'USD']
+    );
+    assert.ok(provisioned.body.every((account) => account.kind === 'SYSTEM_WALLET'));
+  }
+
+  const after = await request(`/accounts?customerId=${customerId}`);
+  assert.equal(after.response.status, 200);
+  assert.equal(after.body.length, before.body.length);
+  assert.ok(after.body.every((account) => beforeIds.has(account.id)));
+});
+
 test('beneficiaries expose only supported bank or USDT-TRON destinations', async () => {
   const { response, body } = await request(`/customers/${customerId}`);
   assert.equal(response.status, 200);
