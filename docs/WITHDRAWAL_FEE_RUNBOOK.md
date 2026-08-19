@@ -4,7 +4,7 @@
 
 法币和数字货币转出不再共用单一全局费率。每条生效规则由以下维度唯一确定：
 
-- 机构或生产租户；
+- 机构、生产租户或客户；
 - 资产类别：`FIAT` 或 `CRYPTO`；
 - 币种；
 - 转出方式：`VA`、`POBO`、`PLATFORM` 或 `ON_CHAIN`；
@@ -18,10 +18,14 @@
 ## 配置与权限
 
 - Core 管理 API：
-  - `GET /api/v1/withdrawal-fees?organizationId=...`
+  - `GET /api/v1/withdrawal-fees?organizationId=...&customerId=...`
   - `POST /api/v1/withdrawal-fees`
   - `PATCH /api/v1/withdrawal-fees/:id`
 - 只有机构 `ADMIN` 可以创建或修改规则；查询仍经过机构隔离。
+- 不传 `customerId` 时返回机构/生产租户规则；传入 `customerId` 时同时返回该客户规则，
+  且服务端验证客户属于当前机构。客户规则优先于机构默认，停用后自动回退机构默认。
+- 新建客户规则时 `POST` 同时提交 `organizationId` 与 `customerId`；客户 ID 不能跨机构，
+  也不能借此读取或修改其他机构的费率。
 - 新规则使用 `POST`，已存在规则必须用当前 `version` 调用 `PATCH`。并发修改返回
   `409 withdrawal_fee_changed`，不得静默覆盖另一名管理员的更新。
 - 法币规则的渠道代码必须对应同机构的渠道，方式与渠道类型必须匹配：
@@ -29,8 +33,9 @@
   `PLATFORM -> PLATFORM_PAYOUT`。
 - Cregis 数字货币规则固定为 `CRYPTO / USDT / ON_CHAIN / CREGIS / TRON`。
 
-后台 `/dashboard/funding-channels` 在渠道列表下方提供逐规则固定费用编辑。停用或改价
-只影响之后的新申请，不能改写历史交易。
+后台 `/dashboard/funding-channels` 在渠道列表下方提供机构逐规则固定费用编辑；
+`/dashboard/customers/:id` 的“手续费与规则”页签提供客户覆盖编辑。停用或改价只影响
+之后的新申请，不能改写历史交易。
 
 ## 转出与快照
 
@@ -38,7 +43,8 @@
 
 1. 客户端读取当前规则并展示渠道、手续费与账户总扣款。
 2. 提交时发送 `expectedFeeAmount` 和 `expectedFeeRuleVersion`。
-3. 服务端在串行化事务内重新读取生效规则，忽略客户端提供的普通 `feeAmount`。
+3. 服务端在串行化事务内按“客户覆盖 > 机构默认”重新读取生效规则，忽略客户端提供的
+   普通 `feeAmount`。
 4. 手续费加入冻结总额，并将金额以及规则 ID、版本、渠道和方式写入交易快照。
 
 Cregis USDT/TRON 转出：

@@ -91,6 +91,11 @@ export default function JwtRegisterView({ loginPath }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const idempotencyKey = useRef(crypto.randomUUID());
 
+  const fieldError = (field: FieldName) => {
+    const key = errors[field];
+    return key ? t(key) : '';
+  };
+
   const steps = useMemo(
     () => [
       t('auth.registration.steps.account_type'),
@@ -117,12 +122,12 @@ export default function JwtRegisterView({ loginPath }: Props) {
     const nextErrors: Errors = {};
     const required = (field: FieldName) => {
       if (!String(form[field] || '').trim()) {
-        nextErrors[field] = t('auth.registration.validation.required');
+        nextErrors[field] = 'auth.registration.validation.required';
       }
     };
 
     if (activeStep === 0 && !form.accountType) {
-      nextErrors.accountType = t('auth.registration.validation.account_type');
+      nextErrors.accountType = 'auth.registration.validation.account_type';
     }
 
     if (activeStep === 1) {
@@ -132,7 +137,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
       required('phone');
       required('residenceCountry');
       if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) {
-        nextErrors.email = t('auth.registration.validation.email');
+        nextErrors.email = 'auth.registration.validation.email';
       }
       if (
         form.password &&
@@ -143,13 +148,13 @@ export default function JwtRegisterView({ loginPath }: Props) {
           !/\d/.test(form.password) ||
           !/[^A-Za-z0-9]/.test(form.password))
       ) {
-        nextErrors.password = t('auth.registration.validation.password');
+        nextErrors.password = 'auth.registration.validation.password';
       }
       if (form.confirmPassword && form.confirmPassword !== form.password) {
-        nextErrors.confirmPassword = t('auth.registration.validation.passwords_mismatch');
+        nextErrors.confirmPassword = 'auth.registration.validation.passwords_mismatch';
       }
       if (form.phone && form.phone.replace(/\D/g, '').length < 6) {
-        nextErrors.phone = t('auth.registration.validation.phone');
+        nextErrors.phone = 'auth.registration.validation.phone';
       }
 
       if (form.accountType === 'individual') {
@@ -161,7 +166,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
           const adultCutoff = new Date();
           adultCutoff.setUTCFullYear(adultCutoff.getUTCFullYear() - 18);
           if (Number.isNaN(birthDate.getTime()) || birthDate > adultCutoff) {
-            nextErrors.dateOfBirth = t('auth.registration.validation.adult');
+            nextErrors.dateOfBirth = 'auth.registration.validation.adult';
           }
         }
       } else {
@@ -174,17 +179,17 @@ export default function JwtRegisterView({ loginPath }: Props) {
         required('beneficialOwnerOwnership');
         const ownership = Number(form.beneficialOwnerOwnership);
         if (form.beneficialOwnerOwnership && (ownership <= 0 || ownership > 100)) {
-          nextErrors.beneficialOwnerOwnership = t('auth.registration.validation.ownership');
+          nextErrors.beneficialOwnerOwnership = 'auth.registration.validation.ownership';
         }
       }
     }
 
     if (activeStep === 2 && !form.kycConsent) {
-      nextErrors.kycConsent = t('auth.registration.validation.kyc_consent');
+      nextErrors.kycConsent = 'auth.registration.validation.kyc_consent';
     }
 
     if (activeStep === 3 && !form.termsAccepted) {
-      nextErrors.termsAccepted = t('auth.registration.validation.terms');
+      nextErrors.termsAccepted = 'auth.registration.validation.terms';
     }
 
     setErrors(nextErrors);
@@ -325,7 +330,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
       value={form[field]}
       onChange={handleTextChange(field)}
       error={Boolean(errors[field])}
-      helperText={errors[field]}
+      helperText={fieldError(field)}
     >
       {COUNTRIES.map((country) => (
         <MenuItem key={country.value} value={country.value}>
@@ -352,7 +357,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
         t('auth.registration.account_type.business.title'),
         t('auth.registration.account_type.business.description')
       )}
-      {errors.accountType && <Alert severity="error">{errors.accountType}</Alert>}
+      {errors.accountType && <Alert severity="error">{fieldError('accountType')}</Alert>}
     </Stack>
   );
 
@@ -370,7 +375,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
             value={form.fullName}
             onChange={handleTextChange('fullName')}
             error={Boolean(errors.fullName)}
-            helperText={errors.fullName}
+            helperText={fieldError('fullName')}
             autoComplete="name"
           />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -381,7 +386,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
               value={form.dateOfBirth}
               onChange={handleTextChange('dateOfBirth')}
               error={Boolean(errors.dateOfBirth)}
-              helperText={errors.dateOfBirth}
+              helperText={fieldError('dateOfBirth')}
               InputLabelProps={{ shrink: true }}
               inputProps={{ max: new Date().toISOString().slice(0, 10) }}
             />
@@ -396,7 +401,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
             value={form.legalName}
             onChange={handleTextChange('legalName')}
             error={Boolean(errors.legalName)}
-            helperText={errors.legalName}
+            helperText={fieldError('legalName')}
             autoComplete="organization"
           />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -406,7 +411,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
               value={form.registrationNumber}
               onChange={handleTextChange('registrationNumber')}
               error={Boolean(errors.registrationNumber)}
-              helperText={errors.registrationNumber}
+              helperText={fieldError('registrationNumber')}
             />
             {countrySelect(
               'incorporationCountry',
@@ -421,7 +426,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
               value={form.contactName}
               onChange={handleTextChange('contactName')}
               error={Boolean(errors.contactName)}
-              helperText={errors.contactName}
+              helperText={fieldError('contactName')}
               autoComplete="name"
             />
             <TextField
@@ -430,7 +435,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
               value={form.contactRole}
               onChange={handleTextChange('contactRole')}
               error={Boolean(errors.contactRole)}
-              helperText={errors.contactRole}
+              helperText={fieldError('contactRole')}
             />
           </Stack>
           <Divider>{t('auth.registration.details.beneficial_owner')}</Divider>
@@ -441,7 +446,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
               value={form.beneficialOwnerName}
               onChange={handleTextChange('beneficialOwnerName')}
               error={Boolean(errors.beneficialOwnerName)}
-              helperText={errors.beneficialOwnerName}
+              helperText={fieldError('beneficialOwnerName')}
             />
             <TextField
               fullWidth
@@ -450,7 +455,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
               value={form.beneficialOwnerOwnership}
               onChange={handleTextChange('beneficialOwnerOwnership')}
               error={Boolean(errors.beneficialOwnerOwnership)}
-              helperText={errors.beneficialOwnerOwnership}
+              helperText={fieldError('beneficialOwnerOwnership')}
               inputProps={{ min: 0.01, max: 100, step: 0.01 }}
             />
           </Stack>
@@ -465,7 +470,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
         value={form.email}
         onChange={handleTextChange('email')}
         error={Boolean(errors.email)}
-        helperText={errors.email || t('auth.registration.details.email_hint')}
+        helperText={fieldError('email') || t('auth.registration.details.email_hint')}
         autoComplete="email"
       />
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -476,7 +481,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
           value={form.password}
           onChange={handleTextChange('password')}
           error={Boolean(errors.password)}
-          helperText={errors.password || t('auth.registration.details.password_hint')}
+          helperText={fieldError('password') || t('auth.registration.details.password_hint')}
           autoComplete="new-password"
           inputProps={{ minLength: 14, maxLength: 128 }}
         />
@@ -487,7 +492,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
           value={form.confirmPassword}
           onChange={handleTextChange('confirmPassword')}
           error={Boolean(errors.confirmPassword)}
-          helperText={errors.confirmPassword}
+          helperText={fieldError('confirmPassword')}
           autoComplete="new-password"
           inputProps={{ minLength: 14, maxLength: 128 }}
         />
@@ -512,7 +517,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
           value={form.phone}
           onChange={handleTextChange('phone')}
           error={Boolean(errors.phone)}
-          helperText={errors.phone}
+          helperText={fieldError('phone')}
           autoComplete="tel-national"
           inputProps={{ inputMode: 'tel' }}
         />
@@ -589,7 +594,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
         label={t('auth.registration.kyc.consent')}
         sx={{ alignItems: 'flex-start', '.MuiCheckbox-root': { mt: -0.75 } }}
       />
-      {errors.kycConsent && <Alert severity="error">{errors.kycConsent}</Alert>}
+      {errors.kycConsent && <Alert severity="error">{fieldError('kycConsent')}</Alert>}
     </Stack>
   );
 
@@ -649,7 +654,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
         label={t('auth.registration.review.declaration')}
         sx={{ alignItems: 'flex-start', '.MuiCheckbox-root': { mt: -0.75 } }}
       />
-      {errors.termsAccepted && <Alert severity="error">{errors.termsAccepted}</Alert>}
+      {errors.termsAccepted && <Alert severity="error">{fieldError('termsAccepted')}</Alert>}
     </Stack>
   );
 

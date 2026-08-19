@@ -75,6 +75,15 @@ export class CustomersService {
   }
 
   async get(id: string, userId: string) {
+    const sourceTenantId = process.env.NEOBANK_SOURCE_TENANT_ID?.trim();
+    const organizationId = process.env.CORE_ORGANIZATION_ID?.trim();
+    if (sourceTenantId && organizationId) {
+      await syncNeobankCustomers(this.db, {
+        adminUserId: process.env.CORE_ADMIN_USER_ID?.trim() || userId,
+        organizationId,
+        tenantId: sourceTenantId,
+      });
+    }
     await requireCustomerAccess(this.db, userId, id);
     const customer = await this.db.customer.findUnique({
       where: { id },

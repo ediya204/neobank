@@ -1,9 +1,12 @@
-import { CustomerStatus, CustomerType, KycStatus, PrismaClient } from '@prisma/client';
+import { CustomerStatus, CustomerType, KycStatus, Prisma, PrismaClient } from '@prisma/client';
 
 type NeobankCustomer = {
   account_type: string | null;
   activated_at: string | null;
+  beneficial_owner_name: string | null;
+  beneficial_owner_ownership: string | null;
   contact_name: string | null;
+  contact_role: string | null;
   created_at: string;
   customer_id: string;
   date_of_birth: string | null;
@@ -19,6 +22,7 @@ type NeobankCustomer = {
   operations_status: string;
   phone: string | null;
   phone_country_code: string | null;
+  registration_number: string | null;
   residence_country: string | null;
   status: string;
 };
@@ -72,8 +76,12 @@ export async function syncNeobankCustomers(
       a.date_of_birth,
       a.nationality,
       a.legal_name,
+      a.registration_number,
       a.incorporation_country,
-      a.contact_name
+      a.contact_name,
+      a.contact_role,
+      a.beneficial_owner_name,
+      a.beneficial_owner_ownership
     FROM customers c
     LEFT JOIN customer_applications a
       ON a.customer_id = c.id AND a.tenant_id = c.tenant_id
@@ -84,8 +92,14 @@ export async function syncNeobankCustomers(
   for (const row of customers) {
     const type: CustomerType = row.account_type === 'business' ? 'BUSINESS' : 'INDIVIDUAL';
     const data = {
+      beneficialOwnerName: row.beneficial_owner_name,
+      beneficialOwnerOwnership: row.beneficial_owner_ownership
+        ? new Prisma.Decimal(row.beneficial_owner_ownership)
+        : null,
       contactName: row.contact_name,
+      contactRole: row.contact_role,
       countryCode: row.incorporation_country || row.residence_country || 'ZZ',
+      createdAt: date(row.created_at),
       creatorId: input.adminUserId,
       dateOfBirth: date(row.date_of_birth),
       displayName: row.display_name,
@@ -100,6 +114,7 @@ export async function syncNeobankCustomers(
       organizationId: input.organizationId,
       phone: row.phone,
       phoneCountryCode: row.phone_country_code,
+      registrationNo: row.registration_number,
       reviewedAt: date(row.activated_at),
       reviewerId: row.status === 'active' ? input.adminUserId : null,
       status: coreStatus(row),
