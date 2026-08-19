@@ -132,7 +132,10 @@ assert.match(customerAdmin, /automaticWalletAlias\(id\)/);
 assert.match(customerAdmin, /provisionCregisWallet/);
 assert.match(portalCustomerContext, /neobankApi<[\s\S]*?>\('\/customer\/profile'\)/);
 assert.doesNotMatch(portalCustomerContext, /coreApi<[\s\S]*?>\('\/customer\/profile'\)/);
-assert.match(customerCryptoWallet, /neobankApi<\{ data: CustomerWalletRow\[\] \}>\('\/customer\/wallets'\)/);
+assert.match(
+  customerCryptoWallet,
+  /neobankApi<\{ data: CustomerWalletRow\[\] \}>\('\/customer\/wallets'\)/
+);
 assert.match(customerCryptoWallet, /neobankApi<CustomerHistory>\('\/customer\/history'\)/);
 
 assert.match(worker, /proxyAPI\(request, env, 'application-session-edge'\)/);
@@ -143,6 +146,10 @@ assert.match(worker, /type'\) === 'VIRTUAL_ACCOUNT'/);
 assert.match(worker, /active'\) === 'true'/);
 assert.match(worker, /customers\/\$\{customerId\}\/virtual-account-requests/);
 assert.match(worker, /invalid_csrf_token/);
+assert.match(worker, /incoming\.pathname === '\/api\/core\/rates\/from-market'/);
+assert.match(worker, /new URL\('\/api\/v1\/admin\/market-rate'/);
+assert.match(worker, /quote\.provider !== 'fastforex'/);
+assert.match(worker, /referenceRate: quote\.rate/);
 assert.match(worker, /replace\(\/\^\\\/api\\\/core/);
 assert.doesNotMatch(worker, /handleAuthRequest/);
 assert.doesNotMatch(worker, /authorizeBrowserRequest/);

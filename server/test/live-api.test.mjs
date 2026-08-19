@@ -6,6 +6,23 @@ const organizationId = 'org_demo';
 const customerId = 'cus_demo_business';
 const marker = process.env.LINK_CHECK_MARKER || `LINK-CHECK-API-${Date.now()}`;
 
+function marketRatePayload(overrides = {}) {
+  const now = new Date().toISOString();
+  return {
+    type: 'FX',
+    baseCurrency: 'USD',
+    quoteCurrency: 'HKD',
+    feeBps: 20,
+    provider: 'fastforex',
+    priceType: 'midpoint_spot',
+    referenceOnly: true,
+    referenceRate: '7.8',
+    sourceUpdatedAt: now,
+    sourceFetchedAt: now,
+    ...overrides,
+  };
+}
+
 async function request(path, userId = 'usr_admin', init = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
@@ -165,7 +182,7 @@ test('withdrawal fee rules are tenant-scoped and expose versioned channel dimens
   assert.equal(crossTenant.response.status, 403);
 });
 
-test('unsupported legacy products cannot create new operations or rates', async () => {
+test('unsupported legacy products and manual rates cannot be created', async () => {
   const detail = (await request(`/customers/${customerId}`)).body;
   const usd = detail.accounts.find(
     (account) => account.kind === 'SYSTEM_WALLET' && account.currency === 'USD'
@@ -203,54 +220,78 @@ test('unsupported legacy products cannot create new operations or rates', async 
 
   const rate = await request('/rates', 'usr_admin', {
     method: 'POST',
-    body: JSON.stringify({
-      type: 'FX',
-      baseCurrency: 'EUR',
-      quoteCurrency: 'USD',
-      buyRate: '1',
-      sellRate: '1',
-      feeBps: 0,
-      effectiveFrom: new Date().toISOString(),
-    }),
+    body: JSON.stringify(marketRatePayload()),
   });
   assert.equal(rate.response.status, 400);
+  assert.equal(rate.body.message, 'manual_rate_creation_disabled');
+
+  const unsupportedMarketRate = await request('/rates/from-market', 'usr_admin', {
+    method: 'POST',
+    body: JSON.stringify(
+      marketRatePayload({ baseCurrency: 'EUR', quoteCurrency: 'USD', referenceRate: '1' })
+    ),
+  });
+  assert.equal(unsupportedMarketRate.response.status, 400);
+  assert.equal(unsupportedMarketRate.body.message, 'unsupported_rate_pair');
 });
 
-test('rate creation rejects same-currency and non-positive values without writing a version', async () => {
+test('market rate creation rejects invalid pairs and non-positive values without writing a version', async () => {
   const invalidRates = [
-    { baseCurrency: 'USD', quoteCurrency: 'USD', buyRate: '1', sellRate: '1' },
-    { baseCurrency: 'USD', quoteCurrency: 'HKD', buyRate: '0', sellRate: '1' },
-    { baseCurrency: 'USD', quoteCurrency: 'HKD', buyRate: '1', sellRate: '-1' },
+    { baseCurrency: 'USD', quoteCurrency: 'USD', referenceRate: '1' },
+    { baseCurrency: 'USD', quoteCurrency: 'HKD', referenceRate: '0' },
+    { baseCurrency: 'USD', quoteCurrency: 'HKD', referenceRate: '-1' },
   ];
   for (const invalid of invalidRates) {
-    const result = await request('/rates', 'usr_admin', {
+    const result = await request('/rates/from-market', 'usr_admin', {
       method: 'POST',
-      body: JSON.stringify({
-        type: 'FX',
-        ...invalid,
-        feeBps: 0,
-        effectiveFrom: new Date().toISOString(),
-      }),
+      body: JSON.stringify(marketRatePayload(invalid)),
     });
     assert.equal(result.response.status, 400, JSON.stringify(invalid));
   }
 });
 
-test('an administrator can explicitly deactivate an active rate without deleting history', async () => {
-  const created = await request('/rates', 'usr_admin', {
+test('market rate creation rejects forged, stale and fully consumed quotes', async () => {
+  const forged = await request('/rates/from-market', 'usr_admin', {
     method: 'POST',
-    body: JSON.stringify({
-      type: 'FX',
-      baseCurrency: 'USD',
-      quoteCurrency: 'HKD',
-      buyRate: '7.8',
-      sellRate: '7.9',
-      feeBps: 0,
-      effectiveFrom: new Date().toISOString(),
-    }),
+    body: JSON.stringify(marketRatePayload({ provider: 'manual' })),
+  });
+  assert.equal(forged.response.status, 400);
+  assert.equal(forged.body.message, 'invalid_market_rate_source');
+
+  const stale = await request('/rates/from-market', 'usr_admin', {
+    method: 'POST',
+    body: JSON.stringify(
+      marketRatePayload({ sourceFetchedAt: new Date(Date.now() - 3 * 60 * 1000).toISOString() })
+    ),
+  });
+  assert.equal(stale.response.status, 400);
+  assert.equal(stale.body.message, 'stale_market_rate_source');
+
+  const fullyConsumed = await request('/rates/from-market', 'usr_admin', {
+    method: 'POST',
+    body: JSON.stringify(marketRatePayload({ feeBps: 10000 })),
+  });
+  assert.equal(fullyConsumed.response.status, 400);
+});
+
+test('an administrator can explicitly deactivate an active rate without deleting history', async () => {
+  const payload = marketRatePayload();
+  const created = await request('/rates/from-market', 'usr_admin', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
   assert.equal(created.response.status, 201);
   assert.equal(created.body.active, true);
+  assert.equal(created.body.buyRate, created.body.sellRate);
+  assert.equal(created.body.sellRate, '7.8');
+  assert.equal(created.body.feeBps, 20);
+
+  const repeatedCreate = await request('/rates/from-market', 'usr_admin', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  assert.equal(repeatedCreate.response.status, 201);
+  assert.equal(repeatedCreate.body.id, created.body.id);
 
   const deactivated = await request(`/rates/${created.body.id}/deactivate`, 'usr_admin', {
     method: 'PATCH',

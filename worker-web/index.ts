@@ -240,6 +240,82 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
     }
   }
 
+  if (
+    role === 'admin' &&
+    request.method === 'POST' &&
+    incoming.pathname === '/api/core/rates/from-market'
+  ) {
+    let requested: {
+      type?: unknown;
+      baseCurrency?: unknown;
+      quoteCurrency?: unknown;
+      feeBps?: unknown;
+    };
+    try {
+      requested = JSON.parse(new TextDecoder().decode(body));
+    } catch {
+      return json({ error: { code: 'invalid_json' } }, 400);
+    }
+    if (
+      (requested.type !== 'FX' && requested.type !== 'OTC') ||
+      typeof requested.baseCurrency !== 'string' ||
+      typeof requested.quoteCurrency !== 'string' ||
+      !Number.isInteger(requested.feeBps) ||
+      Number(requested.feeBps) < 0 ||
+      Number(requested.feeBps) > 9999
+    ) {
+      return json({ error: { code: 'invalid_market_rate_request' } }, 400);
+    }
+    const marketURL = new URL('/api/v1/admin/market-rate', request.url);
+    marketURL.searchParams.set('base', requested.baseCurrency);
+    marketURL.searchParams.set('quote', requested.quoteCurrency);
+    const marketHeaders = new Headers({ accept: 'application/json' });
+    const cookie = request.headers.get('cookie');
+    if (cookie) marketHeaders.set('cookie', cookie);
+    const marketResponse = await proxyAPI(
+      new Request(marketURL, { method: 'GET', headers: marketHeaders }),
+      env,
+      'application-session-edge'
+    );
+    if (!marketResponse.ok) return marketResponse;
+    const quote = (await marketResponse.json()) as {
+      provider?: unknown;
+      baseCurrency?: unknown;
+      quoteCurrency?: unknown;
+      rate?: unknown;
+      updatedAt?: unknown;
+      fetchedAt?: unknown;
+      priceType?: unknown;
+      referenceOnly?: unknown;
+    };
+    if (
+      quote.provider !== 'fastforex' ||
+      quote.baseCurrency !== requested.baseCurrency ||
+      quote.quoteCurrency !== requested.quoteCurrency ||
+      typeof quote.rate !== 'string' ||
+      typeof quote.updatedAt !== 'string' ||
+      typeof quote.fetchedAt !== 'string' ||
+      quote.priceType !== 'midpoint_spot' ||
+      quote.referenceOnly !== true
+    ) {
+      return json({ error: { code: 'invalid_market_rate_response' } }, 502);
+    }
+    body = new TextEncoder().encode(
+      JSON.stringify({
+        type: requested.type,
+        baseCurrency: requested.baseCurrency,
+        quoteCurrency: requested.quoteCurrency,
+        feeBps: requested.feeBps,
+        provider: quote.provider,
+        priceType: quote.priceType,
+        referenceOnly: quote.referenceOnly,
+        referenceRate: quote.rate,
+        sourceUpdatedAt: quote.updatedAt,
+        sourceFetchedAt: quote.fetchedAt,
+      })
+    );
+  }
+
   const upstreamOrigin = new URL(env.CORE_API_BASE_URL);
   if (upstreamOrigin.protocol !== 'https:' || upstreamOrigin.pathname !== '/') {
     throw new Error('CORE_API_BASE_URL must be an HTTPS origin');

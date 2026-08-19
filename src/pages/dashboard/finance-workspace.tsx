@@ -353,7 +353,11 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
               .map((currency) => [currency, 'USD'] as const)
           : [
               ['USD', 'HKD'],
+              ['HKD', 'USD'],
               ['USD', 'USDT'],
+              ['USDT', 'USD'],
+              ['HKD', 'USDT'],
+              ['USDT', 'HKD'],
             ];
       const quotes = await Promise.all(
         pairs.map(([base, quote]) =>
@@ -370,7 +374,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       else if (value instanceof Error) {
         const { message: errorMessage } = value;
         if (errorMessage === 'market_data_not_configured') {
-          message = 'FastForex 参考行情尚未配置；手工结算汇率仍可正常维护。';
+          message = 'FastForex 行情尚未配置，暂时不能创建汇率版本。';
         } else if (errorMessage === 'market_data_unavailable') {
           message = 'FastForex 参考行情暂时不可用，请稍后重试。';
         } else {
@@ -1087,10 +1091,14 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       />
       <RateDialog
         open={rateOpen}
+        marketQuotes={marketQuotes}
+        marketLoading={marketLoading}
+        marketError={marketError}
+        onRefreshMarket={loadMarketQuotes}
         onClose={() => setRateOpen(false)}
         onCreated={() => {
           setRateOpen(false);
-          setSuccess('新汇率版本已生效，历史版本已保留');
+          setSuccess('FastForex 实时中间价与配置费率已生成新版本，历史版本已保留');
           load().catch(() => undefined);
         }}
         userId={userId}
@@ -1109,8 +1117,8 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
           {rateDeactivateTarget && (
             <Typography sx={{ mt: 2 }}>
               {rateDeactivateTarget.type} · {rateDeactivateTarget.baseCurrency}/
-              {rateDeactivateTarget.quoteCurrency} · 买入 {rateDeactivateTarget.buyRate} · 卖出{' '}
-              {rateDeactivateTarget.sellRate}
+              {rateDeactivateTarget.quoteCurrency} · 基准 {rateDeactivateTarget.sellRate} · 费率{' '}
+              {rateDeactivateTarget.feeBps} bps
             </Typography>
           )}
         </DialogContent>
@@ -1243,11 +1251,11 @@ function RateWorkspace({
         >
           <Box>
             <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-              <Typography variant="h6">FastForex 参考行情</Typography>
-              <Chip size="small" label="中间价 · 仅供参考" color="info" variant="outlined" />
+              <Typography variant="h6">FastForex 实时行情</Typography>
+              <Chip size="small" label="实时中间价" color="info" variant="outlined" />
             </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              行情由 Render 服务端安全获取，不会自动修改结算价或历史成交快照。
+              新建版本时由服务端重新获取所选币对，并在中间价上应用配置费率；刷新行情不会改动现有版本。
             </Typography>
           </Box>
           <Button
@@ -1267,7 +1275,11 @@ function RateWorkspace({
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(2, minmax(0, 1fr))',
+              lg: 'repeat(3, minmax(0, 1fr))',
+            },
             gap: 2,
             mt: 2,
           }}
@@ -1293,7 +1305,7 @@ function RateWorkspace({
           <Box>
             <Typography variant="h6">当前与历史汇率</Typography>
             <Typography variant="body2" color="text.secondary">
-              新建版本不会覆盖历史交易使用的汇率快照。
+              版本保存 FastForex 中间价快照、费率及最终含费率报价，不覆盖历史交易快照。
             </Typography>
           </Box>
           <Button variant="contained" onClick={onCreate}>
@@ -1306,39 +1318,53 @@ function RateWorkspace({
               <TableRow>
                 <TableCell>类型</TableCell>
                 <TableCell>币对</TableCell>
-                <TableCell>买入价</TableCell>
-                <TableCell>卖出价</TableCell>
+                <TableCell>报价来源</TableCell>
+                <TableCell>基准中间价</TableCell>
                 <TableCell>费率</TableCell>
-                <TableCell>生效时间</TableCell>
+                <TableCell>含费率报价</TableCell>
+                <TableCell>报价获取时间</TableCell>
                 <TableCell>状态</TableCell>
                 <TableCell align="right">操作</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>{row.type}</TableCell>
-                  <TableCell>
-                    {row.baseCurrency}/{row.quoteCurrency}
-                  </TableCell>
-                  <TableCell>{row.buyRate}</TableCell>
-                  <TableCell>{row.sellRate}</TableCell>
-                  <TableCell>{row.feeBps} bps</TableCell>
-                  <TableCell>{new Date(row.effectiveFrom).toLocaleString('zh-CN')}</TableCell>
-                  <TableCell>
-                    <Label color={row.active ? 'success' : 'default'}>
-                      {row.active ? '生效中' : '历史'}
-                    </Label>
-                  </TableCell>
-                  <TableCell align="right">
-                    {row.active && (
-                      <Button size="small" color="error" onClick={() => onDeactivate(row)}>
-                        停用
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {rows.map((row) => {
+                const isMarketSnapshot = row.buyRate === row.sellRate;
+                const baseline = Number(row.sellRate);
+                const netRate = baseline * (1 - row.feeBps / 10000);
+                const formattedNetRate = Number.isFinite(netRate)
+                  ? netRate.toFixed(12).replace(/\.?0+$/, '')
+                  : '—';
+                return (
+                  <TableRow key={row.id}>
+                    <TableCell>{row.type}</TableCell>
+                    <TableCell>
+                      {row.baseCurrency}/{row.quoteCurrency}
+                    </TableCell>
+                    <TableCell>{isMarketSnapshot ? 'FastForex 快照' : '旧版手工双边价'}</TableCell>
+                    <TableCell>
+                      {isMarketSnapshot ? row.sellRate : `买 ${row.buyRate} / 卖 ${row.sellRate}`}
+                    </TableCell>
+                    <TableCell>
+                      {row.feeBps} bps ({(row.feeBps / 100).toFixed(2)}%)
+                    </TableCell>
+                    <TableCell>{formattedNetRate}</TableCell>
+                    <TableCell>{new Date(row.effectiveFrom).toLocaleString('zh-CN')}</TableCell>
+                    <TableCell>
+                      <Label color={row.active ? 'success' : 'default'}>
+                        {row.active ? '生效中' : '历史'}
+                      </Label>
+                    </TableCell>
+                    <TableCell align="right">
+                      {row.active && (
+                        <Button size="small" color="error" onClick={() => onDeactivate(row)}>
+                          停用
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </TableContainer>
@@ -1397,64 +1423,82 @@ function LedgerWorkspace({ rows, loading }: { rows: JournalEntry[]; loading: boo
 function RateDialog({
   open,
   userId,
+  marketQuotes,
+  marketLoading,
+  marketError,
+  onRefreshMarket,
   onClose,
   onCreated,
 }: {
   open: boolean;
   userId: string;
+  marketQuotes: MarketQuote[];
+  marketLoading: boolean;
+  marketError: string;
+  onRefreshMarket: () => Promise<void>;
   onClose: () => void;
   onCreated: () => void;
 }) {
   const [type, setType] = useState<'FX' | 'OTC'>('FX');
   const [baseCurrency, setBaseCurrency] = useState<Currency>('USD');
   const [quoteCurrency, setQuoteCurrency] = useState<Currency>('HKD');
-  const [buyRate, setBuyRate] = useState('');
-  const [sellRate, setSellRate] = useState('');
   const [feeBps, setFeeBps] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const availableQuotes = useMemo(
+    () =>
+      marketQuotes.filter((quote) =>
+        type === 'FX'
+          ? quote.baseCurrency !== 'USDT' && quote.quoteCurrency !== 'USDT'
+          : quote.baseCurrency === 'USDT' || quote.quoteCurrency === 'USDT'
+      ),
+    [marketQuotes, type]
+  );
+  const selectedQuote = availableQuotes.find(
+    (quote) => quote.baseCurrency === baseCurrency && quote.quoteCurrency === quoteCurrency
+  );
   useEffect(() => {
     if (!open) return;
     setType('FX');
     setBaseCurrency('USD');
     setQuoteCurrency('HKD');
-    setBuyRate('');
-    setSellRate('');
     setFeeBps('');
     setError('');
     setSubmitting(false);
   }, [open]);
+  useEffect(() => {
+    if (!open || selectedQuote || !availableQuotes[0]) return;
+    setBaseCurrency(availableQuotes[0].baseCurrency);
+    setQuoteCurrency(availableQuotes[0].quoteCurrency);
+  }, [availableQuotes, open, selectedQuote]);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const buy = Number(buyRate);
-    const sell = Number(sellRate);
     const fee = Number(feeBps);
-    if (baseCurrency === quoteCurrency) {
-      setError('基础币种与报价币种不能相同。');
+    if (!selectedQuote) {
+      setError('所选币对没有可用的 FastForex 实时行情，请刷新后重试。');
       return;
     }
-    if (!Number.isFinite(buy) || buy <= 0 || !Number.isFinite(sell) || sell <= 0) {
-      setError('买入价和卖出价必须是大于 0 的有效数字。');
-      return;
-    }
-    if (!Number.isInteger(fee) || fee < 0 || fee > 10000) {
-      setError('费率必须是 0 至 10000 之间的整数 bps。');
+    if (!Number.isInteger(fee) || fee < 0 || fee > 9999) {
+      setError('费率必须是 0 至 9999 之间的整数 bps。');
       return;
     }
     setError('');
     setSubmitting(true);
     try {
-      await coreApi('/rates', {
+      await coreApi('/rates/from-market', {
         method: 'POST',
         userId,
         body: JSON.stringify({
           type,
           baseCurrency,
           quoteCurrency,
-          buyRate,
-          sellRate,
-          feeBps: Number(feeBps),
-          effectiveFrom: new Date().toISOString(),
+          feeBps: fee,
+          provider: selectedQuote.provider,
+          priceType: selectedQuote.priceType,
+          referenceOnly: selectedQuote.referenceOnly,
+          referenceRate: selectedQuote.rate,
+          sourceUpdatedAt: selectedQuote.updatedAt,
+          sourceFetchedAt: selectedQuote.fetchedAt,
         }),
       });
       onCreated();
@@ -1471,6 +1515,7 @@ function RateDialog({
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
+            {marketError && <Alert severity="warning">{marketError}</Alert>}
             <FormControl fullWidth>
               <InputLabel>类型</InputLabel>
               <Select
@@ -1480,110 +1525,94 @@ function RateDialog({
                   const nextType = event.target.value as 'FX' | 'OTC';
                   setType(nextType);
                   setError('');
-                  if (nextType === 'OTC') {
-                    setBaseCurrency('USD');
-                    setQuoteCurrency('USDT');
-                  } else {
-                    setBaseCurrency('USD');
-                    setQuoteCurrency('HKD');
-                  }
+                  const nextQuote = marketQuotes.find((quote) =>
+                    nextType === 'FX'
+                      ? quote.baseCurrency !== 'USDT' && quote.quoteCurrency !== 'USDT'
+                      : quote.baseCurrency === 'USDT' || quote.quoteCurrency === 'USDT'
+                  );
+                  setBaseCurrency(nextQuote?.baseCurrency || 'USD');
+                  setQuoteCurrency(
+                    nextQuote?.quoteCurrency || (nextType === 'OTC' ? 'USDT' : 'HKD')
+                  );
                 }}
               >
                 <MenuItem value="FX">法币换汇</MenuItem>
                 <MenuItem value="OTC">OTC</MenuItem>
               </Select>
             </FormControl>
-            <Stack direction="row" spacing={2}>
-              <FormControl fullWidth>
-                <InputLabel>基础币种</InputLabel>
-                <Select
-                  label="基础币种"
-                  value={baseCurrency}
-                  onChange={(event) => {
-                    const nextBase = event.target.value as Currency;
-                    setBaseCurrency(nextBase);
-                    setError('');
-                    if (nextBase === quoteCurrency) {
-                      setQuoteCurrency(
-                        type === 'OTC'
-                          ? 'USDT'
-                          : supportedFiatCurrencies.find((item) => item !== nextBase) || 'USD'
-                      );
-                    }
-                  }}
-                >
-                  {currencies.map((item) => (
-                    <MenuItem key={item} value={item}>
-                      {item}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth>
-                <InputLabel>报价币种</InputLabel>
-                <Select
-                  label="报价币种"
-                  value={quoteCurrency}
-                  onChange={(event) => {
-                    setQuoteCurrency(event.target.value as Currency);
-                    setError('');
-                  }}
-                >
-                  {(type === 'OTC'
-                    ? ['USDT']
-                    : currencies.filter((item) => item !== baseCurrency)
-                  ).map((item) => (
-                    <MenuItem key={item} value={item}>
-                      {item}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Stack>
-            <Stack direction="row" spacing={2}>
-              <TextField
-                required
-                fullWidth
-                type="number"
-                label="买入价"
-                value={buyRate}
-                inputProps={{ min: 0, step: 'any' }}
+            <FormControl fullWidth disabled={marketLoading || !availableQuotes.length}>
+              <InputLabel>FastForex 币对</InputLabel>
+              <Select
+                label="FastForex 币对"
+                value={`${baseCurrency}/${quoteCurrency}`}
                 onChange={(event) => {
-                  setBuyRate(event.target.value);
+                  const quote = availableQuotes.find(
+                    (item) => `${item.baseCurrency}/${item.quoteCurrency}` === event.target.value
+                  );
+                  if (quote) {
+                    setBaseCurrency(quote.baseCurrency);
+                    setQuoteCurrency(quote.quoteCurrency);
+                  }
                   setError('');
                 }}
-              />
-              <TextField
-                required
-                fullWidth
-                type="number"
-                label="卖出价"
-                value={sellRate}
-                inputProps={{ min: 0, step: 'any' }}
-                onChange={(event) => {
-                  setSellRate(event.target.value);
-                  setError('');
-                }}
-              />
-            </Stack>
+              >
+                {availableQuotes.map((quote) => (
+                  <MenuItem
+                    key={`${quote.baseCurrency}/${quote.quoteCurrency}`}
+                    value={`${quote.baseCurrency}/${quote.quoteCurrency}`}
+                  >
+                    {quote.baseCurrency}/{quote.quoteCurrency}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {selectedQuote && (
+              <Alert severity="info">
+                FastForex 中间价：1 {selectedQuote.baseCurrency} = {selectedQuote.rate}{' '}
+                {selectedQuote.quoteCurrency}
+                <br />
+                行情时间：{new Date(selectedQuote.updatedAt).toLocaleString('zh-CN')}
+              </Alert>
+            )}
             <TextField
               required
               type="number"
               label="费率 (bps)"
               value={feeBps}
-              inputProps={{ min: 0, max: 10000, step: 1 }}
+              helperText="最终报价 = FastForex 中间价 × (1 − 费率 / 10000)"
+              inputProps={{ min: 0, max: 9999, step: 1 }}
               onChange={(event) => {
                 setFeeBps(event.target.value);
                 setError('');
               }}
             />
+            {selectedQuote && feeBps !== '' && Number.isFinite(Number(feeBps)) && (
+              <Typography variant="body2" color="text.secondary">
+                含费率报价：
+                {(Number(selectedQuote.rate) * (1 - Number(feeBps) / 10000))
+                  .toFixed(12)
+                  .replace(/\.?0+$/, '')}{' '}
+                {selectedQuote.quoteCurrency}
+              </Typography>
+            )}
+            <Button
+              variant="text"
+              disabled={marketLoading}
+              onClick={() => onRefreshMarket().catch(() => undefined)}
+            >
+              {marketLoading ? '正在刷新 FastForex…' : '刷新 FastForex 行情'}
+            </Button>
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button disabled={submitting} onClick={onClose}>
             取消
           </Button>
-          <Button type="submit" variant="contained" disabled={submitting}>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={submitting || marketLoading || !selectedQuote}
+          >
             {submitting ? '创建中…' : '创建版本'}
           </Button>
         </DialogActions>

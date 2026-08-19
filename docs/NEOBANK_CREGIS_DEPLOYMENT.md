@@ -142,8 +142,21 @@ pins its upstream to the configured Cregis test gateway.
 `GET /api/v1/admin/market-rate?base=USD&quote=HKD` and the customer-session
 equivalent `GET /api/v1/customer/market-rate` read FastForex midpoint spot
 reference rates through the Render service. The endpoints are restricted to
-the product's USD, HKD, and USDT pairs, use a short server-side cache, and do
-not update settlement settings, create a rate version, or write a ledger entry.
+the product's USD, HKD, and USDT pairs and use a short server-side cache. A
+normal GET remains read-only and never writes settlement or ledger data.
+
+Administrators create a settlement rate version through
+`POST /api/core/rates/from-market`. The Worker validates the application
+session and CSRF token, fetches the selected pair from the signed Render
+FastForex endpoint, ignores any client-supplied quote, and forwards the fresh
+midpoint snapshot to Core. Core stores that midpoint in both rate columns and
+stores the configured fee in `feeBps`; conversion applies the fee once to the
+received amount. Direct/manual `POST /rates` creation is disabled. The market
+snapshot time is retained as the version effective time, while historical
+versions and transaction snapshots remain immutable. Repeating the same pair,
+snapshot, and fee payload returns the existing active version rather than
+creating a duplicate.
+
 Configure `FASTFOREX_API_KEY` only as a Render secret; never put its value in
 `render.yaml`, a frontend variable, a URL query parameter, or a Worker variable.
 

@@ -13,21 +13,32 @@ import {
 } from '@nestjs/common';
 import { Currency, Prisma, RateType, UserRole } from '@prisma/client';
 import type { Request } from 'express';
-import { IsDateString, IsEnum, IsInt, IsNumberString, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsNumberString,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 import { currentUserId } from '../common/current-user';
 import { requireActiveUser } from '../common/tenant-access';
 import { PrismaService } from '../prisma/prisma.service';
 import { supportedFiatCurrencies } from '../supported-assets';
 
-class CreateRateDto {
+class CreateMarketRateDto {
   @IsEnum(RateType) type!: RateType;
   @IsEnum(Currency) baseCurrency!: Currency;
   @IsEnum(Currency) quoteCurrency!: Currency;
-  @IsNumberString() buyRate!: string;
-  @IsNumberString() sellRate!: string;
-  @IsInt() @Min(0) @Max(10000) feeBps!: number;
-  @IsDateString() effectiveFrom!: string;
-  @IsOptional() @IsDateString() effectiveUntil?: string;
+  @IsInt() @Min(0) @Max(9999) feeBps!: number;
+  @IsString() provider!: string;
+  @IsString() priceType!: string;
+  @IsBoolean() referenceOnly!: boolean;
+  @IsNumberString() referenceRate!: string;
+  @IsDateString() sourceUpdatedAt!: string;
+  @IsDateString() sourceFetchedAt!: string;
 }
 
 @Controller('rates')
@@ -54,27 +65,34 @@ export class RatesController {
   }
 
   @Post()
-  async create(@Req() request: Request, @Body() dto: CreateRateDto) {
+  async rejectManualCreate(@Req() request: Request) {
     const user = await requireActiveUser(this.db, currentUserId(request));
     if (user.role !== UserRole.ADMIN) throw new ForbiddenException('admin_role_required');
+    throw new BadRequestException('manual_rate_creation_disabled');
+  }
+
+  @Post('from-market')
+  async createFromMarket(@Req() request: Request, @Body() dto: CreateMarketRateDto) {
+    const user = await requireActiveUser(this.db, currentUserId(request));
+    if (user.role !== UserRole.ADMIN) throw new ForbiddenException('admin_role_required');
+    if (
+      dto.provider !== 'fastforex' ||
+      dto.priceType !== 'midpoint_spot' ||
+      dto.referenceOnly !== true
+    ) {
+      throw new BadRequestException('invalid_market_rate_source');
+    }
     const fiat = new Set<Currency>(supportedFiatCurrencies);
     if (dto.baseCurrency === dto.quoteCurrency) {
       throw new BadRequestException('rate_currencies_must_differ');
     }
-    let buyRate: Prisma.Decimal;
-    let sellRate: Prisma.Decimal;
+    let referenceRate: Prisma.Decimal;
     try {
-      buyRate = new Prisma.Decimal(dto.buyRate);
-      sellRate = new Prisma.Decimal(dto.sellRate);
+      referenceRate = new Prisma.Decimal(dto.referenceRate);
     } catch {
       throw new BadRequestException('invalid_rate_value');
     }
-    if (
-      !buyRate.isFinite() ||
-      !sellRate.isFinite() ||
-      buyRate.lessThanOrEqualTo(0) ||
-      sellRate.lessThanOrEqualTo(0)
-    ) {
+    if (!referenceRate.isFinite() || referenceRate.lessThanOrEqualTo(0)) {
       throw new BadRequestException('rate_must_be_positive');
     }
     const isFx =
@@ -84,7 +102,35 @@ export class RatesController {
       ((dto.baseCurrency === Currency.USDT && fiat.has(dto.quoteCurrency)) ||
         (fiat.has(dto.baseCurrency) && dto.quoteCurrency === Currency.USDT));
     if (!isFx && !isOtc) throw new BadRequestException('unsupported_rate_pair');
+    const sourceFetchedAt = new Date(dto.sourceFetchedAt);
+    const sourceUpdatedAt = new Date(dto.sourceUpdatedAt);
+    const now = Date.now();
+    if (
+      !Number.isFinite(sourceFetchedAt.getTime()) ||
+      !Number.isFinite(sourceUpdatedAt.getTime()) ||
+      sourceFetchedAt.getTime() < now - 2 * 60 * 1000 ||
+      sourceFetchedAt.getTime() > now + 30 * 1000 ||
+      sourceUpdatedAt.getTime() > now + 30 * 1000
+    ) {
+      throw new BadRequestException('stale_market_rate_source');
+    }
     return this.db.$transaction(async (tx) => {
+      const duplicate = await tx.rateVersion.findFirst({
+        where: {
+          type: dto.type,
+          baseCurrency: dto.baseCurrency,
+          quoteCurrency: dto.quoteCurrency,
+          buyRate: referenceRate,
+          sellRate: referenceRate,
+          feeBps: dto.feeBps,
+          effectiveFrom: {
+            gte: new Date(sourceFetchedAt.getTime() - 1000),
+            lte: new Date(sourceFetchedAt.getTime() + 1000),
+          },
+          active: true,
+        },
+      });
+      if (duplicate) return duplicate;
       await tx.rateVersion.updateMany({
         where: {
           type: dto.type,
@@ -92,13 +138,17 @@ export class RatesController {
           quoteCurrency: dto.quoteCurrency,
           active: true,
         },
-        data: { active: false, effectiveUntil: new Date(dto.effectiveFrom) },
+        data: { active: false, effectiveUntil: sourceFetchedAt },
       });
       return tx.rateVersion.create({
         data: {
-          ...dto,
-          effectiveFrom: new Date(dto.effectiveFrom),
-          effectiveUntil: dto.effectiveUntil ? new Date(dto.effectiveUntil) : undefined,
+          type: dto.type,
+          baseCurrency: dto.baseCurrency,
+          quoteCurrency: dto.quoteCurrency,
+          buyRate: referenceRate,
+          sellRate: referenceRate,
+          feeBps: dto.feeBps,
+          effectiveFrom: sourceFetchedAt,
         },
       });
     });
