@@ -35,7 +35,7 @@ const modes: Array<{
     value: 'PLATFORM',
     title: '平台账户收款',
     description: '汇入 SSC 平台银行账户并填写专属附言',
-    icon: 'solar:bank-bold-duotone',
+    icon: 'solar:buildings-2-bold-duotone',
   },
   {
     value: 'VA',

@@ -16,10 +16,23 @@ const endpoints = [
     (payload) =>
       payload?.customerId === 'cus_demo_business' &&
       payload?.reportingCurrency === 'USD' &&
-      payload?.valuationStatus === 'complete' &&
+      payload?.valuationStatus === 'partial' &&
+      Array.isArray(payload?.missingRates) &&
+      payload.missingRates.length === 2 &&
+      payload.missingRates.includes('HKD') &&
+      payload.missingRates.includes('USDT') &&
       Number(payload?.totalBalance) > 0 &&
       Array.isArray(payload?.distribution) &&
+      payload.distribution.some(
+        (row) =>
+          row.currency === 'USD' &&
+          row.reportingRate === '1.000000000000' &&
+          Number(row.reportingValue) > 0
+      ) &&
       payload.distribution.some((row) => row.currency === 'USDT') &&
+      payload.distribution
+        .filter((row) => row.currency !== 'USD')
+        .every((row) => row.reportingRate === null && row.reportingValue === null) &&
       payload.distribution.every((row) => ['USD', 'HKD', 'USDT'].includes(row.currency)),
   ],
   [

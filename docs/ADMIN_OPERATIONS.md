@@ -25,48 +25,53 @@
 
 ## 2. 角色与权限边界
 
-| 角色 | 可执行操作 | 不可执行操作 |
-| --- | --- | --- |
-| Ethan / Portal 用户 | 查看其客户、账户、余额和交易；发起开户、法币转出、USDT 转出和 OTC | 确认实际到账；手工增加余额；直接完成申请；修改账本；查看其他合作方数据 |
-| Partner API | 完成与 Portal 等价的查询和发起操作；OTC 校验通过后即时完成 | 创建入账；直接完成转出；绕过余额校验；直接写账本 |
-| 管理员 | 核实和录入入账；处理开户；审核并完成转出；只读核对 OTC；配置手续费和 API 安全；查看审计 | 直接编辑余额；审批或修改 OTC；修改或删除已完成账本记录；把终态记录重新打开 |
-| 系统 | 校验权限和余额；占用或释放转出可用余额；原子完成 OTC；记录账本与审计 | 在未收到管理员确认时推断外部资金已到账或已转出 |
+| 角色                | 可执行操作                                                                              | 不可执行操作                                                               |
+| ------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Ethan / Portal 用户 | 查看其客户、账户、余额和交易；发起开户、法币转出、USDT 转出和 OTC                       | 确认实际到账；手工增加余额；直接完成申请；修改账本；查看其他合作方数据     |
+| Partner API         | 完成与 Portal 等价的查询和发起操作；OTC 校验通过后即时完成                              | 创建入账；直接完成转出；绕过余额校验；直接写账本                           |
+| 管理员              | 核实和录入入账；处理开户；审核并完成转出；只读核对 OTC；配置手续费和 API 安全；查看审计 | 直接编辑余额；审批或修改 OTC；修改或删除已完成账本记录；把终态记录重新打开 |
+| 系统                | 校验权限和余额；占用或释放转出可用余额；原子完成 OTC；记录账本与审计                    | 在未收到管理员确认时推断外部资金已到账或已转出                             |
 
 ## 3. Admin 信息架构
 
-| 导航分组 | 页面 | 路由 | 页面职责 |
-| --- | --- | --- | --- |
-| 工作台 | 运营总览 | `/dashboard/overview` | 汇总客户、待办、余额和近期交易；提供运营快捷入口 |
-| 客户与开户 | 客户管理 | `/dashboard/customers` | 罗列全部客户及基本状态；进入单一客户全景 |
-| 客户与开户 | 客户详情 | `/dashboard/customers/:id` | 查看开户资料、VA 账户、分链余额、申请和交易历史 |
-| 客户与开户 | 开户申请 | `/dashboard/va-applications` | 仅处理尚未开户成功的申请 |
-| 客户与开户 | 新建开户 | `/dashboard/va-applications/new` | 管理员代录开户申请 |
-| 客户与开户 | 开户详情 | `/dashboard/va-applications/:id` | 回传 Sumsub 链接、确认 KYC、录入 VA 银行账户 |
-| 资金运营 | 资金对账 | `/dashboard/operations/reconciliation` | 按上海时区汇总入账、自动兑换、已完成归集、当前资金与账本平衡，并下钻当日明细 |
-| 资金运营 | 入账录入 | `/dashboard/operations/deposits` | 人工录入并完成法币或 USDT 实际到账 |
-| 资金运营 | 转出审核 | `/dashboard/operations/withdrawals` | 审核 Portal/API 发起的银行或链上转出 |
-| 资金运营 | OTC 兑换记录 | `/dashboard/operations/otc` | 对账和审计已自动完成的 USD 与 USDT 双向兑换 |
-| 资金运营 | 客户余额 | `/dashboard/operations/balances` | 按客户查看 USD 与各网络 USDT 的账本、占用和可用余额 |
-| 资金运营 | 交易历史 | `/dashboard/operations/transactions` | 按客户、类型、状态、资产、网络和日期检索业务交易 |
-| 资金运营 | 账本 | `/dashboard/operations/ledger` | 查看不可变的借贷分录及其来源业务记录 |
-| 系统配置 | 手续费 | `/dashboard/settings/fees` | 配置法币转出和 USDT 转出手续费 |
-| 系统配置 | API 管理 | `/dashboard/settings/api-integration` | 分区管理接入申请、API 凭证与密钥、生效配置及 Webhook 投递 |
-| 系统配置 | API 安全 | `/dashboard/settings/api-security` | 管理 API 开关、IP 白名单和安全策略 |
-| 系统配置 | 审计日志 | `/dashboard/audit-logs` | 查询管理员、Portal 和 API 的关键操作轨迹 |
+| 导航分组   | 页面        | 路由                                         | 页面职责                                                                     |
+| ---------- | ----------- | -------------------------------------------- | ---------------------------------------------------------------------------- |
+| 工作台     | 运营总览    | `/dashboard/overview`                        | 汇总客户、待办、余额和近期交易；提供运营快捷入口                             |
+| 客户与账户 | 客户管理    | `/dashboard/customers`                       | 仅罗列 KYC 已通过的正式客户；展示标准法币账户、数字钱包、余额与同步状态      |
+| 客户与账户 | 开户与 KYC  | `/dashboard/onboarding`                      | 罗列待审核和已拒绝的开户申请；搜索、筛选并进入独立审核界面                   |
+| 客户与账户 | KYC 审核    | `/dashboard/onboarding/:id/review`           | 核对申请资料与合规清单，记录通过或拒绝决定及可审计意见                       |
+| 客户与账户 | VA 申请     | `/dashboard/operations/virtual-accounts`     | 处理已开户客户提交的 VA 申请，筛选待办并查看历史结果                         |
+| 客户与账户 | VA 申请详情 | `/dashboard/operations/virtual-accounts/:id` | 核对客户所选银行、币种和用途，录入实际账号或填写客户可见拒绝原因             |
+| 客户与账户 | 客户账户    | `/dashboard/accounts`                        | 按系统钱包、VA 钱包、数字货币钱包查看账户与资产状态                          |
+| 客户与账户 | 收款人      | `/dashboard/operations/beneficiaries`        | 维护已核对的银行收款账户与 USDT/TRON 地址                                    |
+| 资金处理   | 入账处理    | `/dashboard/operations/deposits`             | 人工录入并完成法币或 USDT 实际到账                                           |
+| 资金处理   | 法币出款    | `/dashboard/operations/withdrawals`          | 审核 Portal/API 发起的银行转出并回填银行参考号                               |
+| 资金处理   | USDT 出款   | `/dashboard/operations/crypto-wallets`       | 审批 USDT 付币指令；仅显式提交至 Cregis，回调决定最终状态                    |
+| 资金处理   | 调账处理    | `/dashboard/operations/adjustments`          | 通过补偿流水提交余额更正，不直接编辑余额                                     |
+| 资金处理   | 资金通道    | `/dashboard/funding-channels`                | 管理启用的入账、VA 银行、POBO、平台代付通道及机构手续费                      |
+| 换汇管理   | 法币换汇    | `/dashboard/operations/fx`                   | 按 FastForex 实时中间价与版本费率处理法币换汇                                |
+| 换汇管理   | 自动兑换    | `/dashboard/operations/otc`                  | 对账和审计已自动完成的法币与 USDT 双向兑换                                   |
+| 换汇管理   | 汇率与报价  | `/dashboard/settings/rates`                  | 管理加点/费率策略；运行时报价始终基于 FastForex 实时行情                     |
+| 账务查询   | 资金对账    | `/dashboard/operations/reconciliation`       | 按上海时区汇总入账、自动兑换、已完成归集、当前资金与账本平衡，并下钻当日明细 |
+| 账务查询   | 交易记录    | `/dashboard/operations/transactions`         | 按客户、类型、状态、资产、网络和日期检索业务交易                             |
+| 账务查询   | 账本分录    | `/dashboard/operations/ledger`               | 查看不可变的借贷分录及其来源业务记录                                         |
 
-兼容路由 `/dashboard/operations` 应跳转到 `/dashboard/operations/deposits`；`/dashboard` 应跳转到 `/dashboard/overview`。
+兼容路由 `/dashboard/operations` 应跳转到 `/dashboard/operations/deposits`；`/dashboard` 应跳转到 `/dashboard/overview`。重复入口 `/dashboard/operations/balances` 统一跳转到 `/dashboard/accounts`，旧 `/dashboard/usdt-sweeps` 统一跳转到 `/dashboard/operations/crypto-wallets`；导航不得再为同一页面提供不同名称的入口。独立的 `/dashboard/operations/approvals` 不再作为业务页面或导航入口，旧链接统一跳转到带 `status=SUBMITTED` 筛选的交易记录。旧 `/dashboard/audit-logs` 依赖已停用的历史 Admin API，在 Render-only 版本中进入明确的 404，且不得出现在导航中；在 Render PostgreSQL 审计存储与接口落地前不得恢复该入口。
+
+运营总览的待处理、执行中和失败提醒分别进入带对应 `status` 筛选的交易记录；每个业务列表和交易记录详情都保留批准、拒绝或执行入口，并复用同一业务状态与审计接口，不再维护独立审批队列页面。
 
 ## 4. Portal → Admin 管理闭环
 
-| Portal / API 行为 | Admin 待办 | 管理员动作 | 系统结果 |
-| --- | --- | --- | --- |
-| 发起开户 | 开户申请 | 校验客户资料，录入 Sumsub 链接；KYC 通过后录入 VA 账户 | Portal/API 可查询最新开户状态和账户资料 |
-| 查看或报告外部法币到账 | 入账录入 | 核对银行流水，创建法币转入并确认完成 | 新增 USD 账本贷记，余额和交易历史同步更新 |
-| 查看或报告外部 USDT 到账 | 入账录入 | 核对网络和 Tx Hash，创建 USDT 转入并确认完成 | 仅增加指定网络 USDT 余额 |
-| 发起法币转出 | 转出审核 | 审核收款资料；处理中执行银行转账；录入银行参考号并完成 | 提交时占用 USD；完成后扣账并记录手续费；拒绝或取消则释放占用 |
-| 发起 USDT 转出 | 转出审核 | 审核网络和地址；执行链上转账；录入 Tx Hash 并完成 | 提交时占用指定网络 USDT；完成后仅扣该网络；拒绝或取消则释放占用 |
-| 发起 USD → USDT OTC | OTC 兑换记录 | 系统校验报价、余额和目标网络后即时完成；管理员只读核对 | 扣 USD，按所选网络增加扣除 0.5% 手续费后的 USDT |
-| 发起 USDT → USD OTC | OTC 兑换记录 | 系统校验报价、余额和卖出网络后即时完成；管理员只读核对 | 仅扣所选网络 USDT，增加扣除 0.5% 手续费后的 USD |
+| Portal / API 行为        | Admin 待办 | 管理员动作                                                                              | 系统结果                                                          |
+| ------------------------ | ---------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 发起开户                 | 开户与 KYC | 校验客户资料和合规清单；KYC 通过后自动激活并分配标准账户与数字钱包                      | Portal/API 可查询最新开户状态和账户资料                           |
+| 已开户客户申请 VA        | VA 申请    | 核对客户、银行、币种和用途；按银行实际回执录入账户名称、账号和可选 IBAN，或填写拒绝原因 | Portal 显示审核中、已开通账号或客户可见拒绝原因；不改变余额和账本 |
+| 查看或报告外部法币到账   | 入账处理   | 核对银行流水，创建法币转入并确认完成                                                    | 新增对应币种账本贷记，余额和交易记录同步更新                      |
+| 查看或报告外部 USDT 到账 | 入账处理   | 核对网络和 Tx Hash，创建 USDT 转入并确认完成                                            | 仅增加指定网络 USDT 余额                                          |
+| 发起法币转出             | 法币出款   | 审核收款资料；处理中执行银行转账；录入银行参考号并完成                                  | 提交时占用对应法币；完成后扣账并记录手续费；拒绝或取消则释放占用  |
+| 发起 USDT 转出           | USDT 出款  | 审核网络和地址；显式提交 Cregis；由签名回调决定完成或失败                               | 提交时占用指定网络 USDT；完成后仅扣该网络；拒绝或失败则释放占用   |
+| 发起 USD → USDT OTC      | 自动兑换   | 系统校验报价、余额和目标网络后即时完成；管理员只读核对                                  | 扣 USD，按所选网络增加扣除 0.5% 手续费后的 USDT                   |
+| 发起 USDT → USD OTC      | 自动兑换   | 系统校验报价、余额和卖出网络后即时完成；管理员只读核对                                  | 仅扣所选网络 USDT，增加扣除 0.5% 手续费后的 USD                   |
 
 ## 5. 页面职责与交互要求
 
@@ -81,7 +86,23 @@
 - 最近交易及状态。
 - 跳转到开户、入账、转出、OTC 和客户管理的快捷入口。
 
+Render 版本的运营总览以 Core 账户快照和追加式账本为唯一数据来源，并按以下口径展示：
+
+- USD、HKD、USDT-TRON 分币种显示可用、冻结、账面合计与账户数量；不同币种禁止直接
+  相加形成无汇率依据的“总资产”。
+- 近 7 日资金流动只汇总客户账户侧的账本分录，分别展示流入和流出；内部划转的客户
+  双边分录不计入平台资金流入或流出。
+- 资金承载分布在当前选择币种内按系统钱包、VA 钱包、数字货币钱包展开，不跨币种比较。
+- 近 30 日业务分布按真实业务记录类型统计笔数；运营待办分别展示 KYC、VA、待处理业务、
+  执行中和失败异常，不把已拒绝的正常业务决定当作系统失败。
+- “今日完成”按香港时区统计当日已产生客户侧账本分录的唯一业务，重复费用分录不得重复
+  计算业务笔数；页面必须显示数据快照时间并提供显式刷新。
+
 浏览器数据接口：`GET /api/browser/v1/admin/overview`。
+
+当前 Render Core 页面使用同租户的 `GET /customers`、`GET /operations`、
+`GET /virtual-account-requests` 与 `GET /ledger` 聚合上述视图；所有接口都必须通过
+组织权限校验。历史浏览器总览接口不作为 Render Core 的数据回退。
 
 ### 5.1.1 资金对账
 
@@ -123,22 +144,32 @@ Partner 数据。
 
 ### 5.2 客户管理与客户详情
 
-客户列表应一页概览：
+客户列表只接收 KYC 已通过的客户，应一页概览：
 
-- 客户名称、邮箱、国家区号、电话号码。
-- 开户状态、KYC 状态、VA 状态。
-- USD 可用余额、USDT 汇总可用余额。
-- 最近活动时间和待处理申请数量。
+- 客户名称、类型、国家/地区、邮箱、国家区号、电话号码和客户编号。
+- KYC 完成时间与审核人、开户/同步状态。
+- USD/HKD 标准法币账户是否已幂等分配。
+- USDT-TRON 钱包状态，以及 USD/HKD/USDT 实际可用余额。
 
 客户详情应以一个客户为上下文，组合展示：
 
 - 基本资料与开户状态。
+- “账户与 VA”按系统钱包、VA 钱包、数字货币钱包三行展示；每行直接显示对应账户的
+  账面、可用、冻结资产和状态，不能把底层枚举当成面向运营的产品分类。
+- 三行账户明细上方按 USD、HKD、USDT 分币种汇总客户账面资产、可用余额、冻结余额和
+  资金账户数量；不同币种不得直接相加，未完成实时估值时不得展示误导性的单一总额。
+- 系统钱包行展示 USD/HKD 标准余额账户；VA 钱包行展示银行、账号、IBAN、SWIFT/BIC
+  及该 VA 的法币资产；数字货币钱包行展示 USDT、TRON/TRC20、链上地址及资产。
 - VA 账户名称、账号、币种、SWIFT/BIC、银行名称和银行地址。
 - USD 余额。
 - USDT 汇总余额和各网络明细。
 - 待处理占用、可用余额。
 - 最近入账、转出、OTC 和账本记录。
 - 跳转到对应 Admin 处理页的操作入口。
+
+Neobank 客户完成 KYC 并进入 `active` 后，系统在 Core 客户同步时幂等分配零余额
+USD/HKD 标准法币账户。Admin 不提供“创建标准法币账户”按钮；重复同步不得产生
+重复账户，也不得借自动分配写入余额、银行 VA、账本或结算记录。
 
 管理员可在客户上下文中修正开户基础资料、Sumsub 链接和已录入的 VA
 账户资料。修正只能通过业务 API 完成，不得直接改 D1；每次修正必须写入审计日志，
@@ -151,29 +182,40 @@ Partner 数据。
 
 ### 5.3 开户申请
 
-列表默认只展示未达到 `active` 的客户；已开户成功客户由“客户管理”查看。
+`/dashboard/onboarding` 默认只展示 KYC 待审核和已拒绝的申请。点击行或“开始审核”
+必须进入 `/dashboard/onboarding/:id/review`，不得跳转到通用客户管理或客户详情。
+KYC 已通过的记录从该队列移出并由“客户管理”查看。
+
+独立 KYC 审核界面必须：
+
+- 展示真实个人/企业申请字段、申请编号、提交时间、授权时间和条款接受时间；
+- 要求审核人逐项确认身份/登记资料、资料完整性、制裁/PEP/负面信息筛查和授权记录；
+- 通过时要求全部检查完成、至少 10 个字符的审核意见和最终确认；
+- 拒绝时要求结构化拒绝原因、至少 10 个字符的说明和最终确认；
+- 已完成记录只读，禁止重复提交审核决定；
+- 将决定、审核人、时间和审核意见写入 PostgreSQL 审计记录。
 
 开户最小输入字段：
 
-| 分组 | 字段 | 规则 |
-| --- | --- | --- |
-| 手机 | `phone_country_code` | 必填；从统一的“支持的国家/地区”区号列表选择并独立保存，如 `+65`；仍需完成客户及制裁名单筛查 |
-| 手机 | `phone_number` | 必填；不重复包含国家区号 |
-| 联系方式 | `email` | 必填；有效邮箱 |
-| 客户 | `customer_name` | 必填 |
+| 分组     | 字段                 | 规则                                                                                        |
+| -------- | -------------------- | ------------------------------------------------------------------------------------------- |
+| 手机     | `phone_country_code` | 必填；从统一的“支持的国家/地区”区号列表选择并独立保存，如 `+65`；仍需完成客户及制裁名单筛查 |
+| 手机     | `phone_number`       | 必填；不重复包含国家区号                                                                    |
+| 联系方式 | `email`              | 必填；有效邮箱                                                                              |
+| 客户     | `customer_name`      | 必填                                                                                        |
 
 管理员处理字段：
 
-| 阶段 | 字段 | 规则 |
-| --- | --- | --- |
-| KYC | `kyc_url` | 必填 HTTPS Sumsub 链接，回传给 Portal/API |
-| VA 开通 | `account_name` | 必填 |
-| VA 开通 | `account_number` | 必填 |
-| VA 开通 | `iban` | 选填；与 `account_number` 同级的另一账户标识 |
-| VA 开通 | `currency` | V1 固定 `USD` |
-| VA 开通 | `swift_bic` | 必填 |
-| VA 开通 | `bank_name` | 必填 |
-| VA 开通 | `bank_address` | 必填 |
+| 阶段    | 字段             | 规则                                         |
+| ------- | ---------------- | -------------------------------------------- |
+| KYC     | `kyc_url`        | 必填 HTTPS Sumsub 链接，回传给 Portal/API    |
+| VA 开通 | `account_name`   | 必填                                         |
+| VA 开通 | `account_number` | 必填                                         |
+| VA 开通 | `iban`           | 选填；与 `account_number` 同级的另一账户标识 |
+| VA 开通 | `currency`       | V1 固定 `USD`                                |
+| VA 开通 | `swift_bic`      | 必填                                         |
+| VA 开通 | `bank_name`      | 必填                                         |
+| VA 开通 | `bank_address`   | 必填                                         |
 
 开户基础资料修正仍只允许 `phone_country_code`、`phone_number`、`email` 和
 `customer_name` 四个字段。已激活客户如需更正 Sumsub 链接或 VA 账户，状态保持
@@ -188,7 +230,7 @@ Partner API 或 Webhook。Partner 修改四项基础资料后须携带最新
 若要求补正 KYC 文件，管理员应先保存仍可用的新 Sumsub HTTPS 链接，再发出补正；
 Portal 会在补正提示中展示该链接，供 Partner 完成文件操作后重提。
 
-### 5.4 入账录入
+### 5.4 入账处理
 
 入账不是 Ethan 发起的资金申请，而是管理员对外部实际到账的核实和录入。
 
@@ -217,12 +259,12 @@ Portal 会在补正提示中展示该链接，供 Partner 完成文件操作后�
 
 USDT 网络值：
 
-| 标准值 | 显示名称 |
-| --- | --- |
-| `TRON` | TRON（TRC20） |
-| `ETHEREUM` | Ethereum（ERC20） |
-| `SOLANA` | Solana |
-| `BSC` | BNB Smart Chain（BEP20） |
+| 标准值     | 显示名称                 |
+| ---------- | ------------------------ |
+| `TRON`     | TRON（TRC20）            |
+| `ETHEREUM` | Ethereum（ERC20）        |
+| `SOLANA`   | Solana                   |
+| `BSC`      | BNB Smart Chain（BEP20） |
 
 ### 5.5 转出审核
 
@@ -292,7 +334,7 @@ V1 仅允许：
 0.5% 手续费，并在同一 D1 batch 中完成卖出扣账和买入净额入账；任一步失败都不
 改变余额。Admin 页面只用于对账和审计，不提供审批、处理或修改入口。
 
-### 5.7 余额、交易历史和账本
+### 5.7 客户账户、交易记录和账本分录
 
 余额页显示三种金额：
 
@@ -302,7 +344,7 @@ V1 仅允许：
 
 USD 单独汇总；USDT 需要同时显示一个汇总金额和各网络明细。汇总只用于概览，任何转出和 OTC 校验仍按网络进行。
 
-交易历史使用业务记录展示，支持 Data Grid、日期范围、客户、类型、状态、资产、
+交易记录使用业务记录展示，支持 Data Grid、日期范围、客户、类型、状态、资产、
 网络筛选和详情抽屉。详情抽屉按交易类型展示对应字段，不应对法币交易显示钱包地址，
 也不应对链上交易显示银行资料。Admin 资金交易详情必须包含
 `external_reference`、`transaction_reference`、`operator_note`；Admin OTC
@@ -373,29 +415,29 @@ OTC 不使用上述人工状态机。创建请求校验通过后直接进入 `co
 
 ## 8. Admin API 映射
 
-| 能力 | 接口 |
-| --- | --- |
-| 运营总览 | `GET /api/browser/v1/admin/overview` |
-| 开户列表 / 创建 | `GET/POST /api/browser/v1/admin/va-applications` |
-| 开户详情 / 更新 | `GET/PATCH /api/browser/v1/admin/va-applications/:id` |
-| 驳回并要求补正 | `POST /api/browser/v1/admin/va-applications/:id/request-changes` |
-| 客户列表 | `GET /api/browser/v1/admin/customers` |
-| 客户详情 | `GET /api/browser/v1/admin/customers/:id` |
-| 资金记录列表 / 管理员入账 | `GET/POST /api/browser/v1/admin/fund-transactions` |
-| 资金记录状态处理 | `PATCH /api/browser/v1/admin/fund-transactions/:id` |
-| OTC 自动兑换记录 | `GET /api/browser/v1/admin/otc-orders` |
-| 客户余额 | `GET /api/browser/v1/admin/balances?application_id=:id` |
-| 交易历史 | `GET /api/browser/v1/admin/transactions` |
-| 账本 | `GET /api/browser/v1/admin/ledger` |
-| 手续费配置 | `GET /api/browser/v1/admin/withdrawal-fees` |
-| 修改单项手续费 | `PATCH /api/browser/v1/admin/withdrawal-fees/:type` |
-| API 接入配置、申请与投递 | `GET /api/browser/v1/admin/api-integration` |
-| 批准 / 拒绝接入申请 | `POST /api/browser/v1/admin/api-integration/requests/:id/approve`、`POST /api/browser/v1/admin/api-integration/requests/:id/reject` |
-| 批准 / 拒绝 API 凭证轮换 | `POST /api/browser/v1/admin/api-integration/credential-rotation-requests/:id/approve`、`POST /api/browser/v1/admin/api-integration/credential-rotation-requests/:id/reject` |
-| 人工重试 Webhook 投递 | `POST /api/browser/v1/admin/api-integration/deliveries/:id/retry` |
-| 通用补发 Webhook | `POST /api/browser/v1/admin/api-integration/webhook-replays` |
-| API 安全配置 | `GET/PATCH /api/browser/v1/admin/api-security` |
-| 新增 IP 白名单 | `POST /api/browser/v1/admin/api-security/ip-allowlist` |
+| 能力                      | 接口                                                                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 运营总览                  | `GET /api/browser/v1/admin/overview`                                                                                                                                        |
+| 开户列表 / 创建           | `GET/POST /api/browser/v1/admin/va-applications`                                                                                                                            |
+| 开户详情 / 更新           | `GET/PATCH /api/browser/v1/admin/va-applications/:id`                                                                                                                       |
+| 驳回并要求补正            | `POST /api/browser/v1/admin/va-applications/:id/request-changes`                                                                                                            |
+| 客户列表                  | `GET /api/browser/v1/admin/customers`                                                                                                                                       |
+| 客户详情                  | `GET /api/browser/v1/admin/customers/:id`                                                                                                                                   |
+| 资金记录列表 / 管理员入账 | `GET/POST /api/browser/v1/admin/fund-transactions`                                                                                                                          |
+| 资金记录状态处理          | `PATCH /api/browser/v1/admin/fund-transactions/:id`                                                                                                                         |
+| OTC 自动兑换记录          | `GET /api/browser/v1/admin/otc-orders`                                                                                                                                      |
+| 客户余额                  | `GET /api/browser/v1/admin/balances?application_id=:id`                                                                                                                     |
+| 交易记录                  | `GET /api/browser/v1/admin/transactions`                                                                                                                                    |
+| 账本                      | `GET /api/browser/v1/admin/ledger`                                                                                                                                          |
+| 手续费配置                | `GET /api/browser/v1/admin/withdrawal-fees`                                                                                                                                 |
+| 修改单项手续费            | `PATCH /api/browser/v1/admin/withdrawal-fees/:type`                                                                                                                         |
+| API 接入配置、申请与投递  | `GET /api/browser/v1/admin/api-integration`                                                                                                                                 |
+| 批准 / 拒绝接入申请       | `POST /api/browser/v1/admin/api-integration/requests/:id/approve`、`POST /api/browser/v1/admin/api-integration/requests/:id/reject`                                         |
+| 批准 / 拒绝 API 凭证轮换  | `POST /api/browser/v1/admin/api-integration/credential-rotation-requests/:id/approve`、`POST /api/browser/v1/admin/api-integration/credential-rotation-requests/:id/reject` |
+| 人工重试 Webhook 投递     | `POST /api/browser/v1/admin/api-integration/deliveries/:id/retry`                                                                                                           |
+| 通用补发 Webhook          | `POST /api/browser/v1/admin/api-integration/webhook-replays`                                                                                                                |
+| API 安全配置              | `GET/PATCH /api/browser/v1/admin/api-security`                                                                                                                              |
+| 新增 IP 白名单            | `POST /api/browser/v1/admin/api-security/ip-allowlist`                                                                                                                      |
 
 客户列表接口同时供客户总览和余额总览使用，支持 `q`（客户名称、编号或邮箱）、
 `status`、`balance_state=all|with_balance|with_reserved`、`page` 与 `limit`（最大 100）。
@@ -419,19 +461,19 @@ OTC 只能由 Ethan 通过 Portal 或 Partner API 发起；Admin 页面只读查
 
 Admin 列表过滤和状态录入契约：
 
-| 场景 | 查询或请求体 |
-| --- | --- |
-| 修正客户基本资料 | `PATCH .../va-applications/:id`，body 为 `profile: { phone_country_code, phone_number, email, customer_name }` |
-| 驳回并要求补正 | `POST .../va-applications/:id/request-changes`，body 为客户可见 `reason_code`、`reason_text`、`required_fields`、可选内部 `internal_note` 和 `expected_version` |
-| 新增或修正 Sumsub 链接 | `PATCH .../va-applications/:id`，body 为 `kyc_url`；`submitted` 首次保存进入 `kyc_link_ready`，后续修正保持状态 |
-| 推进开户状态 | `PATCH .../va-applications/:id`，body 为 `status`；不能单独把状态改为 `active` |
-| 新增或修正 VA 账户 | `PATCH .../va-applications/:id`，body 为完整 `va_account`；允许从 `kyc_approved` / `va_processing` 激活或在 `active` 状态修正 |
-| 入账队列 | `GET .../fund-transactions?direction=deposit&application_id=&status=&type=` |
-| 转出队列 | `GET .../fund-transactions?direction=withdrawal&application_id=&status=&type=` |
-| OTC 记录 | `GET .../otc-orders?application_id=&status=` |
-| 资金处理 | `PATCH .../fund-transactions/:id`，body 为 `status`、可选 `operator_note`、可选 `transaction_reference`；完成转出时参考号必填 |
-| 交易历史 | `GET .../transactions?application_id=&category=&status=&wallet=&date_from=&date_to=&page=&limit=` |
-| 审计日志 | `GET .../audit-logs?application_id=&actor_type=&action=&page=&limit=`；`actor_type` 仅支持 `operator` 或 `partner`，`limit` 最大 200 |
+| 场景                   | 查询或请求体                                                                                                                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 修正客户基本资料       | `PATCH .../va-applications/:id`，body 为 `profile: { phone_country_code, phone_number, email, customer_name }`                                                  |
+| 驳回并要求补正         | `POST .../va-applications/:id/request-changes`，body 为客户可见 `reason_code`、`reason_text`、`required_fields`、可选内部 `internal_note` 和 `expected_version` |
+| 新增或修正 Sumsub 链接 | `PATCH .../va-applications/:id`，body 为 `kyc_url`；`submitted` 首次保存进入 `kyc_link_ready`，后续修正保持状态                                                 |
+| 推进开户状态           | `PATCH .../va-applications/:id`，body 为 `status`；不能单独把状态改为 `active`                                                                                  |
+| 新增或修正 VA 账户     | `PATCH .../va-applications/:id`，body 为完整 `va_account`；允许从 `kyc_approved` / `va_processing` 激活或在 `active` 状态修正                                   |
+| 入账队列               | `GET .../fund-transactions?direction=deposit&application_id=&status=&type=`                                                                                     |
+| 转出队列               | `GET .../fund-transactions?direction=withdrawal&application_id=&status=&type=`                                                                                  |
+| OTC 记录               | `GET .../otc-orders?application_id=&status=`                                                                                                                    |
+| 资金处理               | `PATCH .../fund-transactions/:id`，body 为 `status`、可选 `operator_note`、可选 `transaction_reference`；完成转出时参考号必填                                   |
+| 交易记录               | `GET .../transactions?application_id=&category=&status=&wallet=&date_from=&date_to=&page=&limit=`                                                               |
+| 审计日志               | `GET .../audit-logs?application_id=&actor_type=&action=&page=&limit=`；`actor_type` 仅支持 `operator` 或 `partner`，`limit` 最大 200                            |
 
 开户 PATCH 每次必须且只能提交 `profile`、`kyc_url`、`status`、`va_account`
 中的一种变更；空请求或混合多种变更由服务端返回 `422 validation_error`。
@@ -535,7 +577,7 @@ Partner 机器 API Service Token。新页面和人工联调统一使用
 - 法币转入录入后默认处于“待清算”。Admin 可改为“调单”，只有选择“已清算”
   才会读取当前后台固定净汇率，并在同一 D1 batch 中完成 USD 入账、USD 扣减、
   零手续费 OTC 和 USDT/TRON 入账。
-- 清算后统一交易历史必须保留原“法币转入”，并显示新 OTC 与“法币扣款”三条
+- 清算后统一交易记录必须保留原“法币转入”，并显示新 OTC 与“法币扣款”三条
   关联记录。“法币扣款”只是现有 USD 负账本的只读投影，不得再次写入负账本。
   三条记录通过来源法币交易 ID 和 OTC ID 双向追溯。
 - 固定净汇率默认是 `1 USD = 0.995 USDT`。在
@@ -562,9 +604,9 @@ Partner 机器 API Service Token。新页面和人工联调统一使用
 
 Portal 登录会话通过以下浏览器 API 读取和标记通知：
 
-| 能力 | 接口 |
-| --- | --- |
-| 通知列表 | `GET /api/browser/v1/portal/notifications?limit=50` |
+| 能力         | 接口                                                 |
+| ------------ | ---------------------------------------------------- |
+| 通知列表     | `GET /api/browser/v1/portal/notifications?limit=50`  |
 | 标记单条已读 | `POST /api/browser/v1/portal/notifications/:id/read` |
 | 全部标记已读 | `POST /api/browser/v1/portal/notifications/read-all` |
 
@@ -578,7 +620,7 @@ Portal 登录会话通过以下浏览器 API 读取和标记通知：
 
 ## 10. V1 验收场景
 
-1. 访问 `/dashboard` 进入运营总览；旧 `/dashboard/operations` 进入入账录入；侧栏分组和各新路由可用。
+1. 访问 `/dashboard` 进入运营总览；旧 `/dashboard/operations` 进入入账处理；侧栏使用“客户与账户 / 资金处理 / 换汇管理 / 账务查询 / 系统管理”分组且不提供独立业务审批入口；旧审批链接进入筛选后的交易记录，页面标题与菜单名称一致。
 2. Ethan 仅提交国家区号、号码、邮箱和客户名称；Admin 回传 Sumsub 链接，KYC 通过后录入完整 VA 账户，Portal 最终显示账户资料。
 3. Admin 核实一笔 USD 实际到账，录入银行流水号并完成；完成前余额不变，完成后 USD 增加且交易、账本、审计均可追溯。
 4. Admin 分别录入 TRON 与 BSC 的 USDT 入账；只有对应网络余额增加，USDT 汇总为各链合计。
@@ -594,7 +636,7 @@ Portal 登录会话通过以下浏览器 API 读取和标记通知：
     待办状态不会因为切换栏目而隐藏或串到其他业务队列。
 14. 转出从 `processing` 进入 `completed` 时，空银行参考号或空 Tx Hash 返回
     `422 transaction_reference_required`；补齐后完成，处理备注和参考号可在详情中追溯。
-15. OTC 请求返回 `completed` 后，在订单详情、统一交易历史和账本核对卖出、
+15. OTC 请求返回 `completed` 后，在订单详情、统一交易记录和账本核对卖出、
     手续费与净买入字段；Admin 页面不得出现审批或处理按钮。
 16. 审计日志可按客户、actor 和 action 查询；白名单总开关在无有效规则及试图
     删除最后一条有效规则时分别触发防锁死错误。

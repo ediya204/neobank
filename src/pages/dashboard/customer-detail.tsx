@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -31,6 +31,7 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import Iconify from 'src/components/iconify';
+import AssetIcon from 'src/components/asset-icon';
 import Label from 'src/components/label';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import {
@@ -40,20 +41,18 @@ import {
   Currency,
   Customer,
   FundingChannel,
+  MoneyAccount,
   neobankApi,
   Operation,
+  supportedFiatCurrencies,
   VirtualAccountRequest,
   WithdrawalFeeRule,
 } from 'src/features/finance/core-api';
 import { paths } from 'src/routes/paths';
+import { ACTION_ICONS } from 'src/theme/iconography';
 
 type DetailTab = 'overview' | 'profile' | 'accounts' | 'transactions' | 'fees' | 'audit';
-type ReviewAction = 'KYC_APPROVE' | 'KYC_REJECT' | 'ACTIVATE' | 'REJECT_ACCOUNT';
-
-type NeobankKycReviewResult = {
-  wallet?: { id: string };
-  wallet_provisioning?: { status: 'retry_required'; error_code: string };
-};
+type ReviewAction = 'ACTIVATE' | 'REJECT_ACCOUNT';
 
 type LoadResult<T> = {
   label: string;
@@ -68,6 +67,18 @@ type AuditEvent = {
   time: string;
   icon: string;
   color: string;
+};
+
+type WithdrawalFeeScope = Pick<
+  WithdrawalFeeRule,
+  'assetClass' | 'currency' | 'method' | 'channelCode' | 'network'
+>;
+
+type CustomerFeeRow = WithdrawalFeeScope & {
+  key: string;
+  channelName: string;
+  channelActive: boolean;
+  defaultRule?: WithdrawalFeeRule;
 };
 
 const panelSx = {
@@ -262,13 +273,13 @@ function formatDate(value?: string) {
   }).format(date);
 }
 
-function feeKey(rule: WithdrawalFeeRule) {
+function feeKey(rule: WithdrawalFeeScope) {
   return [rule.assetClass, rule.currency, rule.method, rule.channelCode, rule.network || ''].join(
     '|'
   );
 }
 
-function feeServiceName(rule: WithdrawalFeeRule) {
+function feeServiceName(rule: WithdrawalFeeScope) {
   if (rule.assetClass === 'CRYPTO') return `${rule.currency}-${rule.network || ''} 链上提币`;
   const methods: Record<string, string> = {
     VA: 'VA 出款',
@@ -276,6 +287,11 @@ function feeServiceName(rule: WithdrawalFeeRule) {
     PLATFORM: '平台代付',
   };
   return `${rule.currency} ${methods[rule.method] || rule.method}`;
+}
+
+function validFeeAmount(value: string, currency: Currency) {
+  const match = value.trim().match(/^\d+(?:\.(\d+))?$/);
+  return Boolean(match && (match[1]?.length || 0) <= currencyDecimals(currency));
 }
 
 function CustomerIdentity({ customer }: { customer: Customer }) {
@@ -465,7 +481,7 @@ export default function CustomerDetailPage() {
   const [wallets, setWallets] = useState<CryptoWallet[]>([]);
   const [cryptoTransfers, setCryptoTransfers] = useState<CryptoTransfer[]>([]);
   const [feeRules, setFeeRules] = useState<WithdrawalFeeRule[]>([]);
-  const [vaChannels, setVaChannels] = useState<FundingChannel[]>([]);
+  const [fundingChannels, setFundingChannels] = useState<FundingChannel[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [partialErrors, setPartialErrors] = useState<string[]>([]);
@@ -475,7 +491,7 @@ export default function CustomerDetailPage() {
   const [reviewNote, setReviewNote] = useState('');
   const [reviewing, setReviewing] = useState(false);
   const [editingFee, setEditingFee] = useState<{
-    base: WithdrawalFeeRule;
+    feeScope: CustomerFeeRow;
     override?: WithdrawalFeeRule;
     amount: string;
   } | null>(null);
@@ -538,11 +554,9 @@ export default function CustomerDetailPage() {
             []
           ),
           safeLoad(
-            'VA 银行渠道',
+            '资金通道',
             coreApi<FundingChannel[]>(
-              `/funding-channels?organizationId=${encodeURIComponent(
-                customerRow.organizationId
-              )}&type=VIRTUAL_ACCOUNT`,
+              `/funding-channels?organizationId=${encodeURIComponent(customerRow.organizationId)}`,
               { userId }
             ),
             []
@@ -553,10 +567,15 @@ export default function CustomerDetailPage() {
       setWallets(walletResult.value);
       setCryptoTransfers(transferResult.value);
       setFeeRules(feeResult.value);
-      setVaChannels(channelResult.value);
-      const firstActiveChannel = channelResult.value.find((channel) => channel.active);
+      setFundingChannels(channelResult.value);
+      const firstActiveChannel = channelResult.value.find(
+        (channel) => channel.active && channel.type === 'VIRTUAL_ACCOUNT'
+      );
       setVaChannelId((current) =>
-        channelResult.value.some((channel) => channel.active && channel.id === current)
+        channelResult.value.some(
+          (channel) =>
+            channel.active && channel.type === 'VIRTUAL_ACCOUNT' && channel.id === current
+        )
           ? current
           : firstActiveChannel?.id || ''
       );
@@ -581,8 +600,13 @@ export default function CustomerDetailPage() {
     load().catch(() => undefined);
   }, [load]);
 
-  const defaultFeeRules = useMemo(
-    () => feeRules.filter((rule) => rule.scope === 'ORGANIZATION' && rule.active),
+  const organizationFeesByKey = useMemo(
+    () =>
+      new Map(
+        feeRules
+          .filter((rule) => rule.scope === 'ORGANIZATION')
+          .map((rule) => [feeKey(rule), rule] as const)
+      ),
     [feeRules]
   );
   const overridesByKey = useMemo(
@@ -594,6 +618,52 @@ export default function CustomerDetailPage() {
       ),
     [feeRules]
   );
+  const customerFeeRows = useMemo<CustomerFeeRow[]>(() => {
+    const scopes: CustomerFeeRow[] = fundingChannels
+      .filter((channel) =>
+        ['VIRTUAL_ACCOUNT', 'POBO_PAYOUT', 'PLATFORM_PAYOUT'].includes(channel.type)
+      )
+      .flatMap((channel) => {
+        const method =
+          channel.type === 'VIRTUAL_ACCOUNT'
+            ? 'VA'
+            : (channel.type.replace('_PAYOUT', '') as 'POBO' | 'PLATFORM');
+        return channel.supportedCurrencies
+          .filter((currency) => supportedFiatCurrencies.includes(currency))
+          .map((currency) => {
+            const scope: WithdrawalFeeScope = {
+              assetClass: 'FIAT',
+              currency,
+              method,
+              channelCode: channel.code,
+            };
+            const key = feeKey(scope);
+            return {
+              ...scope,
+              key,
+              channelName: channel.name,
+              channelActive: channel.active,
+              defaultRule: organizationFeesByKey.get(key),
+            };
+          });
+      });
+    const cryptoScope: WithdrawalFeeScope = {
+      assetClass: 'CRYPTO',
+      currency: 'USDT',
+      method: 'ON_CHAIN',
+      channelCode: 'CREGIS',
+      network: 'TRON',
+    };
+    const cryptoKey = feeKey(cryptoScope);
+    scopes.push({
+      ...cryptoScope,
+      key: cryptoKey,
+      channelName: 'Cregis',
+      channelActive: true,
+      defaultRule: organizationFeesByKey.get(cryptoKey),
+    });
+    return Array.from(new Map(scopes.map((scope) => [scope.key, scope])).values());
+  }, [fundingChannels, organizationFeesByKey]);
 
   const auditEvents = useMemo<AuditEvent[]>(() => {
     if (!customer) return [];
@@ -646,46 +716,13 @@ export default function CustomerDetailPage() {
 
   const submitReview = async () => {
     if (!customer || !reviewAction) return;
-    if (
-      (reviewAction === 'KYC_REJECT' || reviewAction === 'REJECT_ACCOUNT') &&
-      !reviewNote.trim()
-    ) {
+    if (reviewAction === 'REJECT_ACCOUNT' && !reviewNote.trim()) {
       setLoadError('拒绝操作必须填写原因');
       return;
     }
     setReviewing(true);
     setLoadError('');
     try {
-      if (reviewAction === 'KYC_APPROVE' || reviewAction === 'KYC_REJECT') {
-        const approved = reviewAction === 'KYC_APPROVE';
-        const note = reviewNote.trim() || 'KYC 资料人工核验通过';
-        let neobankResult: NeobankKycReviewResult | null = null;
-        if (IS_NEOBANK_DEPLOYMENT) {
-          neobankResult = await neobankApi<NeobankKycReviewResult>(
-            `/admin/customers/${customer.id}/kyc`,
-            {
-              method: 'PATCH',
-              userId,
-              body: JSON.stringify({ decision: approved ? 'approve' : 'reject', note }),
-            }
-          );
-        } else {
-          await coreApi(`/customers/${customer.id}/kyc`, {
-            method: 'PATCH',
-            userId,
-            body: JSON.stringify({ decision: approved ? 'APPROVE' : 'REJECT', note }),
-          });
-        }
-        if (!approved) {
-          setSuccess('KYC 审核已拒绝');
-        } else if (!IS_NEOBANK_DEPLOYMENT) {
-          setSuccess('KYC 审核已通过，等待运营开户审核');
-        } else if (neobankResult?.wallet) {
-          setSuccess('KYC 已通过，客户已自动激活并创建 USDT-TRC20 钱包');
-        } else {
-          setSuccess('KYC 已通过，客户已自动激活；钱包生成失败并已标记为待重试');
-        }
-      }
       if (reviewAction === 'ACTIVATE') {
         const endpoint = IS_NEOBANK_DEPLOYMENT
           ? `/admin/customers/${customer.id}/activate`
@@ -741,11 +778,11 @@ export default function CustomerDetailPage() {
           body: JSON.stringify({
             organizationId: customer.organizationId,
             customerId: customer.id,
-            assetClass: editingFee.base.assetClass,
-            currency: editingFee.base.currency,
-            method: editingFee.base.method,
-            channelCode: editingFee.base.channelCode,
-            network: editingFee.base.network,
+            assetClass: editingFee.feeScope.assetClass,
+            currency: editingFee.feeScope.currency,
+            method: editingFee.feeScope.method,
+            channelCode: editingFee.feeScope.channelCode,
+            network: editingFee.feeScope.network,
             amount: editingFee.amount,
             active: true,
           }),
@@ -821,7 +858,7 @@ export default function CustomerDetailPage() {
         <Alert
           severity="error"
           action={
-            <Button onClick={() => navigate(paths.dashboard.onboarding)}>返回客户管理</Button>
+            <Button onClick={() => navigate(paths.dashboard.customers.root)}>返回客户管理</Button>
           }
         >
           {loadError || '未找到客户'}
@@ -833,7 +870,9 @@ export default function CustomerDetailPage() {
   const activeOverrides = feeRules.filter(
     (rule) => rule.scope === 'CUSTOMER' && rule.active
   ).length;
-  const activeVaChannels = vaChannels.filter((channel) => channel.active);
+  const activeVaChannels = fundingChannels.filter(
+    (channel) => channel.active && channel.type === 'VIRTUAL_ACCOUNT'
+  );
   const selectedVaChannel = activeVaChannels.find((channel) => channel.id === vaChannelId);
 
   return (
@@ -848,7 +887,7 @@ export default function CustomerDetailPage() {
               <Button
                 color="inherit"
                 startIcon={<Iconify icon="solar:arrow-left-linear" />}
-                onClick={() => navigate(paths.dashboard.onboarding)}
+                onClick={() => navigate(paths.dashboard.customers.root)}
                 sx={{ ml: -1, mb: 0.75 }}
               >
                 返回客户管理
@@ -981,24 +1020,28 @@ export default function CustomerDetailPage() {
                     />
                   </Stack>
                   {customer.status === 'PENDING_REVIEW' && customer.kycStatus === 'PENDING' && (
-                    <Stack spacing={1} sx={{ mt: 2 }}>
-                      <Button variant="contained" onClick={() => setReviewAction('KYC_APPROVE')}>
-                        KYC 通过
-                      </Button>
-                      <Button
-                        color="error"
-                        variant="outlined"
-                        onClick={() => setReviewAction('KYC_REJECT')}
-                      >
-                        KYC 不通过
-                      </Button>
-                    </Stack>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      sx={{ mt: 2 }}
+                      endIcon={<Iconify icon="solar:arrow-right-linear" />}
+                      onClick={() => navigate(paths.dashboard.onboardingReview(customer.id))}
+                    >
+                      进入 KYC 审核
+                    </Button>
                   )}
                   {customer.status === 'PENDING_REVIEW' && customer.kycStatus === 'APPROVED' && (
                     <Stack spacing={1} sx={{ mt: 2 }}>
-                      <Button variant="contained" onClick={() => setReviewAction('ACTIVATE')}>
-                        运营批准开户
-                      </Button>
+                      {IS_NEOBANK_DEPLOYMENT ? (
+                        <Alert severity="warning">
+                          KYC 已通过但开户仍在同步。请刷新状态；若持续不变，检查自动开户与 Core
+                          同步日志。
+                        </Alert>
+                      ) : (
+                        <Button variant="contained" onClick={() => setReviewAction('ACTIVATE')}>
+                          运营批准开户
+                        </Button>
+                      )}
                       {!IS_NEOBANK_DEPLOYMENT && (
                         <Button
                           color="error"
@@ -1053,17 +1096,44 @@ export default function CustomerDetailPage() {
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
                   {customer.kycReviewNote || '暂无审核备注'}
                 </Typography>
+                <Button
+                  variant="outlined"
+                  sx={{ mt: 2 }}
+                  endIcon={<Iconify icon="solar:arrow-right-linear" />}
+                  onClick={() => navigate(paths.dashboard.onboardingReview(customer.id))}
+                >
+                  查看 KYC 审核记录
+                </Button>
               </Paper>
             </Stack>
           )}
 
           {tab === 'accounts' && (
             <Stack spacing={2.25}>
-              <Paper sx={{ ...panelSx, overflow: 'hidden' }}>
+              <Paper data-testid="account-asset-overview" sx={{ ...panelSx, overflow: 'hidden' }}>
                 <Box sx={{ px: 2.25, py: 1.8 }}>
-                  <Typography variant="h6">账户与钱包</Typography>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ sm: 'flex-start' }}
+                    gap={1}
+                  >
+                    <Box>
+                      <Typography variant="h6">账户与钱包</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.4 }}>
+                        先看分币种资产全貌，再按三类账户核对资金来源和账户资料。
+                      </Typography>
+                    </Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                      账本快照更新于 {formatDate(customer.updatedAt)}
+                    </Typography>
+                  </Stack>
                 </Box>
-                <AccountTable customer={customer} wallets={wallets} />
+                <AccountAssetOverview
+                  customer={customer}
+                  wallets={wallets}
+                  vaRequests={vaRequests}
+                />
               </Paper>
               <Paper sx={{ ...panelSx, overflow: 'hidden' }}>
                 <Box sx={{ px: 2.25, py: 1.8 }}>
@@ -1100,19 +1170,43 @@ export default function CustomerDetailPage() {
           {tab === 'fees' && (
             <Paper sx={{ ...panelSx, overflow: 'hidden' }}>
               <Box sx={{ p: 2.25 }}>
-                <Typography variant="h6">客户专属手续费</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.6 }}>
-                  客户覆盖优先于机构默认。变更仅影响之后的新提交，历史交易继续保留原费用和规则版本快照。
-                </Typography>
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  justifyContent="space-between"
+                  alignItems={{ sm: 'flex-start' }}
+                  gap={1.5}
+                >
+                  <Box>
+                    <Typography variant="h6">客户专属手续费</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.6 }}>
+                      法币与数字货币转出均按“机构默认 →
+                      客户专属”生效。变更只影响之后的新提交，历史交易保留原费用和规则版本快照。
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<Iconify icon={ACTION_ICONS.settings} />}
+                    onClick={() => navigate(paths.dashboard.fundingChannels)}
+                    sx={{ flex: '0 0 auto' }}
+                  >
+                    管理机构默认
+                  </Button>
+                </Stack>
               </Box>
               <FeeTable
-                defaults={defaultFeeRules}
+                rows={customerFeeRows}
                 overrides={overridesByKey}
                 saving={feeSaving}
-                onEdit={(base, override) =>
-                  setEditingFee({ base, override, amount: override?.amount || base.amount })
+                onEdit={(feeScope, override) =>
+                  setEditingFee({
+                    feeScope,
+                    override,
+                    amount: override?.amount || feeScope.defaultRule?.amount || '',
+                  })
                 }
                 onDisable={(rule) => disableFee(rule).catch(() => undefined)}
+                onManageDefaults={() => navigate(paths.dashboard.fundingChannels)}
               />
             </Paper>
           )}
@@ -1267,15 +1361,24 @@ export default function CustomerDetailPage() {
           {editingFee && (
             <Stack spacing={2} sx={{ mt: 1 }}>
               <Alert severity="info">
-                {feeServiceName(editingFee.base)} · 机构默认 {editingFee.base.amount}{' '}
-                {editingFee.base.currency}
+                {feeServiceName(editingFee.feeScope)} ·{' '}
+                {editingFee.feeScope.defaultRule?.active
+                  ? `机构默认 ${editingFee.feeScope.defaultRule.amount} ${editingFee.feeScope.currency}`
+                  : '机构默认尚未启用；保存客户专属规则后，仅该客户可以使用此费率'}
               </Alert>
               <TextField
                 autoFocus
                 fullWidth
-                label={`客户手续费（${editingFee.base.currency}）`}
+                label={`客户手续费（${editingFee.feeScope.currency}）`}
                 value={editingFee.amount}
                 onChange={(event) => setEditingFee({ ...editingFee, amount: event.target.value })}
+                error={
+                  Boolean(editingFee.amount) &&
+                  !validFeeAmount(editingFee.amount, editingFee.feeScope.currency)
+                }
+                helperText={`固定金额，不得为负；最多 ${currencyDecimals(
+                  editingFee.feeScope.currency
+                )} 位小数。`}
                 inputProps={{ inputMode: 'decimal' }}
               />
               <Typography variant="caption" color="text.secondary">
@@ -1291,7 +1394,11 @@ export default function CustomerDetailPage() {
           <Button
             variant="contained"
             onClick={() => saveFee().catch(() => undefined)}
-            disabled={feeSaving || !editingFee?.amount}
+            disabled={
+              feeSaving ||
+              !editingFee ||
+              !validFeeAmount(editingFee.amount, editingFee.feeScope.currency)
+            }
           >
             {feeSaving ? '保存中…' : '保存规则'}
           </Button>
@@ -1339,69 +1446,568 @@ function StatusLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AccountTable({ customer, wallets }: { customer: Customer; wallets: CryptoWallet[] }) {
-  const walletByCurrency = new Map(
-    wallets.map((wallet) => [`${wallet.asset}-${wallet.network}`, wallet])
+function formattedAssetBalance(value: string, currency: Currency) {
+  const decimals = currencyDecimals(currency);
+  return formatScaledDigits(toScaledDigits(value, decimals), decimals);
+}
+
+function totalAssetBalance(available: string, frozen: string, currency: Currency) {
+  const decimals = currencyDecimals(currency);
+  return formatScaledDigits(
+    addDigitStrings(toScaledDigits(available, decimals), toScaledDigits(frozen, decimals)),
+    decimals
   );
+}
+
+type BalanceSource = {
+  currency: Currency;
+  availableBalance: string;
+  frozenBalance: string;
+  status: string;
+};
+
+type AssetBalanceSnapshot = {
+  currency: Currency;
+  available: string;
+  frozen: string;
+  count: number;
+  unavailableCount: number;
+};
+
+const assetCurrencyOrder: Currency[] = ['USD', 'HKD', 'USDT', 'SGD', 'EUR', 'GBP'];
+
+function balanceSnapshots(items: BalanceSource[]): AssetBalanceSnapshot[] {
+  const sumValues = (currency: Currency, values: string[]) => {
+    const decimals = currencyDecimals(currency);
+    let total = '0';
+    values.forEach((value) => {
+      total = addDigitStrings(total, toScaledDigits(value, decimals));
+    });
+    return formatScaledDigits(total, decimals).replace(/,/g, '');
+  };
+
+  const snapshots = assetCurrencyOrder
+    .map((currency) => {
+      const matching = items.filter((item) => item.currency === currency);
+      return {
+        currency,
+        available: sumValues(
+          currency,
+          matching.map((item) => item.availableBalance)
+        ),
+        frozen: sumValues(
+          currency,
+          matching.map((item) => item.frozenBalance)
+        ),
+        count: matching.length,
+        unavailableCount: matching.filter((item) => item.status !== 'ACTIVE').length,
+      };
+    })
+    .filter((snapshot) => snapshot.count > 0);
+  return snapshots;
+}
+
+function hasBalance(value: string, currency: Currency) {
+  return toScaledDigits(value, currencyDecimals(currency)) !== '0';
+}
+
+function AssetSnapshotCard({ snapshot }: { snapshot: AssetBalanceSnapshot }) {
+  const frozen = hasBalance(snapshot.frozen, snapshot.currency);
+  let status = <Label color="success">状态正常</Label>;
+  if (frozen) status = <Label color="warning">含冻结</Label>;
+  if (snapshot.unavailableCount) {
+    status = <Label color="error">{snapshot.unavailableCount} 个状态异常</Label>;
+  }
+
   return (
-    <TableContainer>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>账户</TableCell>
-            <TableCell>类型</TableCell>
-            <TableCell>币种/网络</TableCell>
-            <TableCell>银行/账号</TableCell>
-            <TableCell align="right">可用</TableCell>
-            <TableCell align="right">冻结</TableCell>
-            <TableCell align="right">状态</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {customer.accounts.map((account) => {
-            const wallet =
-              account.currency === 'USDT'
-                ? walletByCurrency.get(`USDT-${account.network || 'TRON'}`)
-                : undefined;
-            return (
-              <TableRow key={account.id} hover>
-                <TableCell>
-                  <Typography variant="body2" fontWeight={700}>
-                    {account.name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {account.id}
-                  </Typography>
-                </TableCell>
-                <TableCell>{account.kind}</TableCell>
-                <TableCell>
-                  {account.currency}
-                  {account.network ? ` / ${account.network}` : ''}
-                </TableCell>
-                <TableCell>
-                  <Typography variant="body2">{account.bankName || '-'}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {account.accountNumber || account.iban || '-'}
-                  </Typography>
-                </TableCell>
-                <TableCell align="right">{account.availableBalance}</TableCell>
-                <TableCell align="right">{account.frozenBalance}</TableCell>
-                <TableCell align="right">
-                  <Stack alignItems="flex-end" spacing={0.5}>
-                    {operationStatus(account.status)}
-                    {wallet?.withdrawalFee && (
-                      <Typography variant="caption" color="text.secondary">
-                        提币费 {wallet.withdrawalFee}
-                      </Typography>
-                    )}
-                  </Stack>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <Box
+      sx={{
+        p: 1.75,
+        minWidth: 0,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1.25,
+        bgcolor: 'background.paper',
+      }}
+    >
+      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.5}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <AssetIcon asset={snapshot.currency} size={28} />
+          <Box>
+            <Typography variant="subtitle2">{snapshot.currency} 资产</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {snapshot.count} 个资金账户
+            </Typography>
+          </Box>
+        </Stack>
+        {status}
+      </Stack>
+
+      <Typography
+        sx={{ mt: 1.5, fontSize: { xs: 22, md: 25 }, fontWeight: 780, letterSpacing: '-0.035em' }}
+      >
+        {totalAssetBalance(snapshot.available, snapshot.frozen, snapshot.currency)}
+        <Typography component="span" variant="caption" color="text.secondary" fontWeight={750}>
+          {' '}
+          {snapshot.currency}
+        </Typography>
+      </Typography>
+
+      <Stack
+        direction="row"
+        divider={<Divider orientation="vertical" flexItem />}
+        spacing={1.5}
+        sx={{ mt: 1.25 }}
+      >
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            可用
+          </Typography>
+          <Typography variant="body2" fontWeight={750} noWrap>
+            {formattedAssetBalance(snapshot.available, snapshot.currency)}
+          </Typography>
+        </Box>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            冻结
+          </Typography>
+          <Typography
+            variant="body2"
+            fontWeight={750}
+            color={frozen ? 'warning.dark' : 'text.primary'}
+            noWrap
+          >
+            {formattedAssetBalance(snapshot.frozen, snapshot.currency)}
+          </Typography>
+        </Box>
+      </Stack>
+    </Box>
+  );
+}
+
+function CustomerAssetSnapshot({ snapshots }: { snapshots: AssetBalanceSnapshot[] }) {
+  return (
+    <Box
+      data-testid="customer-asset-snapshot"
+      sx={{ px: { xs: 1.5, md: 2.25 }, py: 2, bgcolor: 'background.neutral' }}
+    >
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ sm: 'center' }}
+        gap={0.75}
+        sx={{ mb: 1.5 }}
+      >
+        <Box>
+          <Typography variant="subtitle1" fontWeight={750}>
+            分币种资产快照
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            汇总系统余额、VA 与数字货币钱包；不同币种不合并估值。
+          </Typography>
+        </Box>
+        <Label color="default">账面资产 = 可用 + 冻结</Label>
+      </Stack>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: '1fr',
+            sm: 'repeat(2, minmax(0, 1fr))',
+            lg: 'repeat(3, minmax(0, 1fr))',
+          },
+          gap: 1.25,
+        }}
+      >
+        {snapshots.map((snapshot) => (
+          <AssetSnapshotCard key={snapshot.currency} snapshot={snapshot} />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+function AssetColumn({
+  title,
+  description,
+  icon,
+  count,
+  snapshots,
+  children,
+}: {
+  title: string;
+  description: string;
+  icon: string;
+  count: number;
+  snapshots: AssetBalanceSnapshot[];
+  children: React.ReactNode;
+}) {
+  return (
+    <Box sx={{ minWidth: 0 }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1.5}
+        sx={{
+          px: 2.25,
+          py: 2,
+          bgcolor: 'action.hover',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              flexShrink: 0,
+              borderRadius: '50%',
+              bgcolor: 'background.paper',
+              display: 'grid',
+              placeItems: 'center',
+              border: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Iconify icon={icon} width={23} />
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="subtitle1" fontWeight={750}>
+              {title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {description}
+            </Typography>
+          </Box>
+        </Stack>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="flex-end"
+          flexWrap="wrap"
+          useFlexGap
+          gap={1}
+        >
+          {snapshots.map((snapshot) => (
+            <Typography key={snapshot.currency} variant="body2" fontWeight={750} noWrap>
+              {snapshot.currency}{' '}
+              {totalAssetBalance(snapshot.available, snapshot.frozen, snapshot.currency)}
+            </Typography>
+          ))}
+          <Label color={count ? 'info' : 'default'}>{count} 个账户</Label>
+        </Stack>
+      </Stack>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: 'repeat(auto-fit, minmax(280px, 1fr))' },
+          gap: 1.5,
+          p: { xs: 1.5, md: 2 },
+          bgcolor: 'background.paper',
+        }}
+      >
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+function BalanceSummary({
+  currency,
+  available,
+  frozen,
+}: {
+  currency: Currency;
+  available: string;
+  frozen: string;
+}) {
+  return (
+    <Box sx={{ mt: 1.75 }}>
+      <Typography variant="caption" color="text.secondary">
+        账面资产
+      </Typography>
+      <Typography sx={{ mt: 0.15, fontSize: 22, fontWeight: 780, letterSpacing: '-0.03em' }}>
+        {totalAssetBalance(available, frozen, currency)}{' '}
+        <Typography component="span" variant="caption" color="text.secondary" fontWeight={750}>
+          {currency}
+        </Typography>
+      </Typography>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          mt: 1.25,
+          py: 1.1,
+          borderTop: '1px solid',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        <Box sx={{ pr: 1.25 }}>
+          <Typography variant="caption" color="text.secondary">
+            可用
+          </Typography>
+          <Typography variant="body2" fontWeight={750} noWrap>
+            {formattedAssetBalance(available, currency)}
+          </Typography>
+        </Box>
+        <Box sx={{ pl: 1.25, borderLeft: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="caption" color="text.secondary">
+            冻结
+          </Typography>
+          <Typography
+            variant="body2"
+            fontWeight={750}
+            color={hasBalance(frozen, currency) ? 'warning.dark' : 'text.primary'}
+            noWrap
+          >
+            {formattedAssetBalance(frozen, currency)}
+          </Typography>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+function AccountFact({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string;
+  value: string;
+  wide?: boolean;
+}) {
+  return (
+    <Box sx={{ minWidth: 0, gridColumn: wide ? '1 / -1' : 'auto' }}>
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+      <Typography
+        variant="body2"
+        fontWeight={650}
+        sx={{ mt: 0.15, wordBreak: wide ? 'break-all' : 'break-word' }}
+      >
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
+function FiatAccountAsset({ account }: { account: MoneyAccount }) {
+  const isVa = account.kind === 'VIRTUAL_ACCOUNT';
+  return (
+    <Box
+      sx={{
+        p: 2,
+        minWidth: 0,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1.25,
+        bgcolor: 'background.paper',
+      }}
+    >
+      <Stack direction="row" justifyContent="space-between" spacing={1.5} alignItems="flex-start">
+        <Stack direction="row" spacing={1.15} alignItems="center" sx={{ minWidth: 0 }}>
+          <AssetIcon asset={account.currency} size={28} />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="subtitle2" noWrap>
+              {account.name}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {account.currency} · {isVa ? '专属收款账户' : '系统余额账户'}
+            </Typography>
+          </Box>
+        </Stack>
+        {operationStatus(account.status)}
+      </Stack>
+
+      <BalanceSummary
+        currency={account.currency}
+        available={account.availableBalance}
+        frozen={account.frozenBalance}
+      />
+
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+          gap: 1.15,
+          mt: 1.5,
+        }}
+      >
+        {isVa && <AccountFact label="开户银行" value={account.bankName || '银行资料待同步'} />}
+        {isVa && <AccountFact label="银行国家/地区" value={account.bankCountry || '-'} />}
+        <AccountFact
+          label={isVa ? '收款账号' : '系统账户编号'}
+          value={account.accountNumber || '账户编号待分配'}
+          wide={!isVa}
+        />
+        {isVa && account.iban && <AccountFact label="IBAN" value={account.iban} wide />}
+        {isVa && account.swiftBic && <AccountFact label="SWIFT / BIC" value={account.swiftBic} />}
+        {isVa && account.branchName && <AccountFact label="分行" value={account.branchName} />}
+      </Box>
+    </Box>
+  );
+}
+
+function CryptoWalletAsset({ wallet }: { wallet: CryptoWallet }) {
+  return (
+    <Box
+      sx={{
+        p: 2,
+        minWidth: 0,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1.25,
+        bgcolor: 'background.paper',
+      }}
+    >
+      <Stack direction="row" justifyContent="space-between" spacing={1.5} alignItems="flex-start">
+        <Stack direction="row" spacing={1.15} alignItems="center" sx={{ minWidth: 0 }}>
+          <AssetIcon asset={wallet.asset} network={wallet.network} size={30} />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="subtitle2">
+              {wallet.asset} · {wallet.networkLabel}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {wallet.tokenStandard} 数字货币钱包
+            </Typography>
+          </Box>
+        </Stack>
+        {operationStatus(wallet.status)}
+      </Stack>
+
+      <BalanceSummary
+        currency={wallet.asset}
+        available={wallet.availableBalance}
+        frozen={wallet.frozenBalance}
+      />
+
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+          gap: 1.15,
+          mt: 1.5,
+        }}
+      >
+        <AccountFact label="链上地址" value={wallet.walletAddress || '链上地址待生成'} wide />
+        <AccountFact label="托管渠道" value={wallet.custodyProvider || '-'} />
+        <AccountFact label="网络标准" value={`${wallet.networkLabel} · ${wallet.tokenStandard}`} />
+        <AccountFact
+          label="最低充值"
+          value={`${formattedAssetBalance(wallet.minimumDeposit, wallet.asset)} ${wallet.asset}`}
+        />
+        <AccountFact
+          label="转出手续费"
+          value={`${formattedAssetBalance(wallet.withdrawalFee, wallet.asset)} ${wallet.asset}`}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+function AssetEmptyState({ icon, title, detail }: { icon: string; title: string; detail: string }) {
+  return (
+    <Stack alignItems="center" textAlign="center" spacing={0.8} sx={{ px: 2.5, py: 5 }}>
+      <Iconify icon={icon} width={36} sx={{ color: 'text.disabled' }} />
+      <Typography variant="subtitle2">{title}</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 260 }}>
+        {detail}
+      </Typography>
+    </Stack>
+  );
+}
+
+function AccountAssetOverview({
+  customer,
+  wallets,
+  vaRequests,
+}: {
+  customer: Customer;
+  wallets: CryptoWallet[];
+  vaRequests: VirtualAccountRequest[];
+}) {
+  const systemAccounts = customer.accounts.filter((account) => account.kind === 'SYSTEM_WALLET');
+  const vaAccounts = customer.accounts.filter((account) => account.kind === 'VIRTUAL_ACCOUNT');
+  const pendingVaCount = vaRequests.filter((request) => request.status === 'SUBMITTED').length;
+  const walletBalances: BalanceSource[] = wallets.map((wallet) => ({
+    currency: wallet.asset,
+    availableBalance: wallet.availableBalance,
+    frozenBalance: wallet.frozenBalance,
+    status: wallet.status,
+  }));
+  const systemSnapshots = balanceSnapshots(systemAccounts);
+  const vaSnapshots = balanceSnapshots(vaAccounts);
+  const cryptoSnapshots = balanceSnapshots(walletBalances);
+  const customerSnapshots = balanceSnapshots([...systemAccounts, ...vaAccounts, ...walletBalances]);
+
+  return (
+    <Box sx={{ borderTop: '1px solid', borderColor: 'divider' }}>
+      <CustomerAssetSnapshot snapshots={customerSnapshots} />
+      <Stack data-testid="account-asset-rows" divider={<Divider flexItem />}>
+        <AssetColumn
+          title="系统钱包"
+          description="平台账本中的标准法币余额账户"
+          icon={ACTION_ICONS.accounts}
+          count={systemAccounts.length}
+          snapshots={systemSnapshots}
+        >
+          {systemAccounts.length ? (
+            systemAccounts.map((account) => <FiatAccountAsset key={account.id} account={account} />)
+          ) : (
+            <AssetEmptyState
+              icon="solar:wallet-money-linear"
+              title="系统钱包尚未同步"
+              detail="KYC 开户完成后应自动分配 USD 与 HKD 标准账户。"
+            />
+          )}
+        </AssetColumn>
+
+        <AssetColumn
+          title="VA 钱包"
+          description="银行分配的专属收款账户与法币资产"
+          icon="solar:buildings-2-bold-duotone"
+          count={vaAccounts.length}
+          snapshots={vaSnapshots}
+        >
+          {vaAccounts.length ? (
+            vaAccounts.map((account) => <FiatAccountAsset key={account.id} account={account} />)
+          ) : (
+            <AssetEmptyState
+              icon="solar:buildings-linear"
+              title={pendingVaCount ? `${pendingVaCount} 笔 VA 申请处理中` : '尚未开通 VA 钱包'}
+              detail={
+                pendingVaCount
+                  ? '银行实际账号回执录入后，账户与对应资产会显示在这里。'
+                  : '客户提交 VA 申请并由运营录入银行实际账号后显示。'
+              }
+            />
+          )}
+        </AssetColumn>
+
+        <AssetColumn
+          title="数字货币钱包"
+          description="托管的 USDT-TRON 链上钱包与资产"
+          icon={ACTION_ICONS.cryptoWallet}
+          count={wallets.length}
+          snapshots={cryptoSnapshots}
+        >
+          {wallets.length ? (
+            wallets.map((wallet) => <CryptoWalletAsset key={wallet.id} wallet={wallet} />)
+          ) : (
+            <AssetEmptyState
+              icon="solar:wallet-2-linear"
+              title="数字货币钱包尚未就绪"
+              detail="钱包创建并完成托管归属验证后，会显示网络、地址和 USDT 资产。"
+            />
+          )}
+        </AssetColumn>
+      </Stack>
+    </Box>
   );
 }
 
@@ -1491,18 +2097,25 @@ function CryptoTransferTable({ rows }: { rows: CryptoTransfer[] }) {
 }
 
 function FeeTable({
-  defaults,
+  rows,
   overrides,
   saving,
   onEdit,
   onDisable,
+  onManageDefaults,
 }: {
-  defaults: WithdrawalFeeRule[];
+  rows: CustomerFeeRow[];
   overrides: Map<string, WithdrawalFeeRule>;
   saving: boolean;
-  onEdit: (base: WithdrawalFeeRule, override?: WithdrawalFeeRule) => void;
+  onEdit: (feeScope: CustomerFeeRow, override?: WithdrawalFeeRule) => void;
   onDisable: (rule: WithdrawalFeeRule) => void;
+  onManageDefaults: () => void;
 }) {
+  const assetGroups = [
+    { assetClass: 'FIAT' as const, label: '法币转出' },
+    { assetClass: 'CRYPTO' as const, label: '数字货币转出' },
+  ];
+
   return (
     <TableContainer>
       <Table size="small">
@@ -1517,67 +2130,136 @@ function FeeTable({
           </TableRow>
         </TableHead>
         <TableBody>
-          {defaults.map((base) => {
-            const override = overrides.get(feeKey(base));
-            const effective = override?.active ? override.amount : base.amount;
+          {assetGroups.map(({ assetClass, label }) => {
+            const groupRows = rows.filter((row) => row.assetClass === assetClass);
             return (
-              <TableRow key={base.id} hover>
-                <TableCell>
-                  <Typography variant="body2" fontWeight={700}>
-                    {feeServiceName(base)}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    固定费用
-                  </Typography>
-                </TableCell>
-                <TableCell>{base.channelCode}</TableCell>
-                <TableCell>
-                  {base.amount} {base.currency}
-                </TableCell>
-                <TableCell>
-                  <Typography variant="body2" fontWeight={750}>
-                    {effective} {base.currency}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {override?.active
-                      ? `客户版本 v${override.version}`
-                      : `默认版本 v${base.version}`}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  {override?.active ? (
-                    <Label color="info">客户覆盖</Label>
-                  ) : (
-                    <Label color="default">机构默认</Label>
-                  )}
-                </TableCell>
-                <TableCell align="right">
-                  <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
-                    <Button size="small" disabled={saving} onClick={() => onEdit(base, override)}>
-                      设置
-                    </Button>
-                    {override?.active && (
-                      <Button
-                        size="small"
-                        color="error"
-                        disabled={saving}
-                        onClick={() => onDisable(override)}
-                      >
-                        恢复默认
-                      </Button>
-                    )}
-                  </Stack>
-                </TableCell>
-              </TableRow>
+              <Fragment key={assetClass}>
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    sx={{ py: 1.1, bgcolor: 'background.neutral', borderBottomColor: 'divider' }}
+                  >
+                    <Typography variant="overline" color="text.secondary" fontWeight={800}>
+                      {label}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+                {groupRows.map((row) => {
+                  const base = row.defaultRule;
+                  const override = overrides.get(row.key);
+                  let effective: string | null = null;
+                  let effectiveVersion = '';
+                  let ruleStatus = <Label color="warning">待配置</Label>;
+                  if (override?.active) {
+                    effective = override.amount;
+                    effectiveVersion = `客户版本 v${override.version}`;
+                    ruleStatus = <Label color="info">客户专属</Label>;
+                  } else if (base?.active) {
+                    effective = base.amount;
+                    effectiveVersion = `默认版本 v${base.version}`;
+                    ruleStatus = <Label color="default">机构默认</Label>;
+                  }
+                  return (
+                    <TableRow key={row.key} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={700}>
+                          {feeServiceName(row)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          每笔固定费用
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{row.channelName}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {row.channelCode}
+                          {!row.channelActive ? ' · 通道已停用' : ''}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {base ? (
+                          <>
+                            <Typography
+                              variant="body2"
+                              color={base.active ? 'text.primary' : 'text.disabled'}
+                            >
+                              {base.amount} {base.currency}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              v{base.version} · {base.active ? '生效中' : '已停用'}
+                            </Typography>
+                          </>
+                        ) : (
+                          <Typography variant="body2" color="warning.main" fontWeight={650}>
+                            未配置
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {effective ? (
+                          <>
+                            <Typography variant="body2" fontWeight={750}>
+                              {effective} {row.currency}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {effectiveVersion}
+                            </Typography>
+                          </>
+                        ) : (
+                          <Typography variant="body2" color="warning.main" fontWeight={650}>
+                            暂不可转出
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>{ruleStatus}</TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
+                          <Button
+                            size="small"
+                            disabled={saving}
+                            onClick={() => onEdit(row, override)}
+                          >
+                            设置专属
+                          </Button>
+                          {override?.active && (
+                            <Button
+                              size="small"
+                              color="error"
+                              disabled={saving}
+                              onClick={() => onDisable(override)}
+                            >
+                              {base?.active ? '恢复默认' : '停用专属'}
+                            </Button>
+                          )}
+                          {!base?.active && (
+                            <Button size="small" color="inherit" onClick={onManageDefaults}>
+                              配置默认
+                            </Button>
+                          )}
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {!groupRows.length && (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 3.5 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        {assetClass === 'FIAT'
+                          ? '尚未配置法币转出通道，需先在资金通道中创建 VA、POBO 或平台代付路径。'
+                          : '尚无可管理的数字货币转出规则。'}
+                      </Typography>
+                      {assetClass === 'FIAT' && (
+                        <Button size="small" sx={{ mt: 1 }} onClick={onManageDefaults}>
+                          管理资金通道
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
             );
           })}
-          {!defaults.length && (
-            <TableRow>
-              <TableCell colSpan={6} align="center" sx={{ py: 7, color: 'text.secondary' }}>
-                机构尚未配置可覆盖的转出手续费规则
-              </TableCell>
-            </TableRow>
-          )}
         </TableBody>
       </Table>
     </TableContainer>
@@ -1651,12 +2333,10 @@ function ReviewDialog({
   onSubmit: () => void;
 }) {
   const titles: Record<ReviewAction, string> = {
-    KYC_APPROVE: '确认 KYC 通过',
-    KYC_REJECT: 'KYC 不通过',
     ACTIVATE: '运营批准开户',
     REJECT_ACCOUNT: '拒绝开户',
   };
-  const requiresReason = action === 'KYC_REJECT' || action === 'REJECT_ACCOUNT';
+  const requiresReason = action === 'REJECT_ACCOUNT';
   return (
     <Dialog open={Boolean(action)} onClose={() => !reviewing && onClose()} fullWidth maxWidth="sm">
       <DialogTitle>{action ? titles[action] : ''}</DialogTitle>

@@ -53,7 +53,7 @@ function PortalFrame() {
   if (user?.role === 'customer') {
     visibleNavItems = [
       ['USDT 钱包', '/portal/home', 'solar:wallet-2-bold-duotone'],
-      ['VA 账户', '/portal/virtual-accounts', 'solar:bank-bold-duotone'],
+      ['VA 账户', '/portal/virtual-accounts', 'solar:buildings-2-bold-duotone'],
     ];
   } else if (user) {
     visibleNavItems = navItems.filter(([, path]) => canAccessPortalPath(user, path));

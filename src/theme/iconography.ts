@@ -28,6 +28,7 @@ export const UI_ICONS = {
 
 export const ACTION_ICONS = {
   accounts: 'solar:wallet-money-bold-duotone',
+  bankAccount: 'solar:buildings-2-bold-duotone',
   beneficiaries: 'solar:user-id-bold-duotone',
   copy: 'solar:copy-linear',
   cryptoWallet: 'solar:wallet-2-bold-duotone',
@@ -36,6 +37,7 @@ export const ACTION_ICONS = {
   exchange: 'solar:refresh-square-bold-duotone',
   fundsIn: 'solar:download-minimalistic-bold-duotone',
   fundsOut: 'solar:upload-minimalistic-bold-duotone',
+  fundingChannel: 'solar:card-transfer-bold-duotone',
   history: 'solar:history-bold-duotone',
   home: 'solar:home-2-bold-duotone',
   internalTransfer: 'solar:transfer-horizontal-bold-duotone',
@@ -64,6 +66,7 @@ const LEGACY_UI_ICON_ALIASES: Record<string, string> = {
   'mingcute:add-line': UI_ICONS.add,
   'mingcute:close-line': UI_ICONS.close,
   'solar:add-circle-bold': UI_ICONS.add,
+  'solar:bank-bold-duotone': ACTION_ICONS.bankAccount,
   'solar:copy-bold': ACTION_ICONS.copy,
   'solar:copy-bold-duotone': ACTION_ICONS.copy,
   'solar:copy-outline': ACTION_ICONS.copy,

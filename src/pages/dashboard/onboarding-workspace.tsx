@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -6,109 +6,35 @@ import {
   Box,
   Button,
   Card,
-  CardContent,
-  Chip,
   Container,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Drawer,
   FormControl,
+  InputAdornment,
   InputLabel,
   MenuItem,
   Select,
   Stack,
-  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
-import { paths } from 'src/routes/paths';
 import {
-  coreApi,
-  Currency,
-  Customer,
-  demoOrganizationId,
-  FundingChannel,
-  neobankApi,
-  VirtualAccountRequest,
-} from 'src/features/finance/core-api';
-
-type NeobankCustomer = {
-  id: string;
-  email: string;
-  display_name: string;
-  status: string;
-  kyc_status: string;
-  operations_status: string;
-  account_type?: 'individual' | 'business';
-  phone_country_code?: string;
-  phone?: string;
-  residence_country?: string;
-  full_name?: string;
-  date_of_birth?: string;
-  nationality?: string;
-  legal_name?: string;
-  registration_number?: string;
-  incorporation_country?: string;
-  contact_name?: string;
-  contact_role?: string;
-  beneficial_owner_name?: string;
-  beneficial_owner_ownership?: string;
-  wallet_count?: number;
-  wallet_status?: string | null;
-};
-
-type NeobankKycReviewResult = {
-  wallet?: { id: string };
-  wallet_provisioning?: {
-    status: 'retry_required';
-    error_code: string;
-  };
-};
-
-function mapNeobankCustomer(row: NeobankCustomer): Customer {
-  let status: Customer['status'] = 'PENDING_REVIEW';
-  let kycStatus: Customer['kycStatus'] = 'PENDING';
-  if (row.kyc_status === 'rejected') status = 'REJECTED';
-  if (row.kyc_status === 'rejected') kycStatus = 'REJECTED';
-  if (row.kyc_status === 'approved') kycStatus = 'APPROVED';
-  if (row.status === 'suspended' || row.status === 'closed') status = 'SUSPENDED';
-  if (row.status === 'active' && row.operations_status === 'active') status = 'ACTIVE';
-  return {
-    id: row.id,
-    organizationId: demoOrganizationId,
-    type: row.account_type === 'business' ? 'BUSINESS' : 'INDIVIDUAL',
-    status,
-    displayName: row.display_name,
-    legalName: row.legal_name || row.full_name || row.display_name,
-    email: row.email,
-    phone: row.phone,
-    phoneCountryCode: row.phone_country_code,
-    countryCode: row.incorporation_country || row.residence_country || '--',
-    registrationNo: row.registration_number,
-    dateOfBirth: row.date_of_birth,
-    nationality: row.nationality,
-    contactName: row.contact_name,
-    contactRole: row.contact_role,
-    beneficialOwnerName: row.beneficial_owner_name,
-    beneficialOwnerOwnership: row.beneficial_owner_ownership,
-    kycStatus,
-    accounts: [],
-    walletCount: Number(row.wallet_count) || 0,
-    walletStatus: row.wallet_status || undefined,
-  };
-}
+  loadNeobankCustomerRecords,
+  mapNeobankCustomer,
+} from 'src/features/customers/neobank-customer';
+import { paths } from 'src/routes/paths';
+import { coreApi, Customer, demoOrganizationId } from 'src/features/finance/core-api';
 
 type CustomerForm = {
   type: 'INDIVIDUAL' | 'BUSINESS';
@@ -144,62 +70,32 @@ const emptyCustomer: CustomerForm = {
   beneficialOwnerOwnership: '',
 };
 
-export default function OnboardingWorkspace({ portal = false }: { portal?: boolean }) {
+export default function OnboardingWorkspace() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'customers' | 'va'>('customers');
   const userId = 'usr_admin';
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [vaRequests, setVaRequests] = useState<VirtualAccountRequest[]>([]);
-  const [vaChannels, setVaChannels] = useState<FundingChannel[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerOpen, setCustomerOpen] = useState(false);
-  const [vaOpen, setVaOpen] = useState(false);
   const [customerForm, setCustomerForm] = useState<CustomerForm>(emptyCustomer);
-  const [vaCurrency, setVaCurrency] = useState<Currency>('USD');
-  const [vaChannelId, setVaChannelId] = useState('');
-  const [vaPurpose, setVaPurpose] = useState('跨境贸易收款');
-  const [approvalRequest, setApprovalRequest] = useState<VirtualAccountRequest | null>(null);
-  const [vaAccountName, setVaAccountName] = useState('');
-  const [vaAccountNumber, setVaAccountNumber] = useState('');
-  const [vaIban, setVaIban] = useState('');
+  const [query, setQuery] = useState('');
+  const [kycFilter, setKycFilter] = useState<'ALL' | 'PENDING' | 'REJECTED'>('ALL');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(true);
-  const [reviewingCustomerId, setReviewingCustomerId] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [customerRows, requestRows, channelRows] = await Promise.all([
-        IS_NEOBANK_DEPLOYMENT
-          ? neobankApi<{ data: NeobankCustomer[] }>('/admin/customers', { userId }).then(
-              (payload) => payload.data.map(mapNeobankCustomer)
-            )
-          : coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`, { userId }),
-        coreApi<VirtualAccountRequest[]>(
-          `/virtual-account-requests?organizationId=${demoOrganizationId}`,
-          { userId }
-        ),
-        coreApi<FundingChannel[]>(
-          `/funding-channels?organizationId=${demoOrganizationId}&type=VIRTUAL_ACCOUNT`,
-          { userId }
-        ),
-      ]);
+      const customerRows = IS_NEOBANK_DEPLOYMENT
+        ? await loadNeobankCustomerRecords(userId).then((rows) => rows.map(mapNeobankCustomer))
+        : await coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`, { userId });
       setCustomers(customerRows);
-      setVaRequests(requestRows);
-      setVaChannels(channelRows);
-      const available = channelRows.find((channel) => channel.active);
-      if (available && !channelRows.some((channel) => channel.id === vaChannelId)) {
-        setVaChannelId(available.id);
-        if (available.supportedCurrencies[0]) setVaCurrency(available.supportedCurrencies[0]);
-      }
     } catch (value) {
       setError(value instanceof Error ? value.message : '加载失败');
     } finally {
       setLoading(false);
     }
-  }, [userId, vaChannelId]);
+  }, []);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -245,144 +141,41 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
     }
   };
 
-  const reviewKyc = async (customer: Customer, decision: 'APPROVE' | 'REJECT') => {
-    setReviewingCustomerId(customer.id);
-    setError('');
-    setSuccess('');
-    try {
-      const note = decision === 'APPROVE' ? 'KYC 资料人工核验通过' : 'KYC 资料未通过人工核验';
-      let neobankResult: NeobankKycReviewResult | null = null;
-      if (IS_NEOBANK_DEPLOYMENT) {
-        neobankResult = await neobankApi<NeobankKycReviewResult>(
-          `/admin/customers/${customer.id}/kyc`,
-          {
-            method: 'PATCH',
-            userId,
-            body: JSON.stringify({ decision: decision.toLowerCase(), note }),
-          }
-        );
-      } else {
-        await coreApi(`/customers/${customer.id}/kyc`, {
-          method: 'PATCH',
-          userId,
-          body: JSON.stringify({ decision, note }),
-        });
-      }
-      let reviewMessage = 'KYC 未通过，申请已拒绝';
-      if (decision === 'APPROVE') {
-        if (!IS_NEOBANK_DEPLOYMENT) {
-          reviewMessage = 'KYC 已通过，申请进入运营开户审核';
-        } else if (neobankResult?.wallet) {
-          reviewMessage = 'KYC 已通过，客户已自动激活并创建 USDT-TRC20 钱包';
-        } else {
-          reviewMessage = 'KYC 已通过，客户已自动激活；钱包生成失败，已标记为待重试';
-        }
-      }
-      setSuccess(reviewMessage);
-      setSelectedCustomer(null);
-      await load();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : '审核失败');
-    } finally {
-      setReviewingCustomerId('');
-    }
-  };
-
-  const approveCustomer = async (customer: Customer) => {
-    try {
-      if (IS_NEOBANK_DEPLOYMENT) {
-        await neobankApi(`/admin/customers/${customer.id}/activate`, {
-          method: 'PATCH',
-          userId,
-          body: JSON.stringify({}),
-        });
-      } else {
-        await coreApi(`/customers/${customer.id}/approve`, {
-          method: 'PATCH',
-          userId,
-          body: JSON.stringify({ note: 'KYC 已通过，运营批准开户' }),
-        });
-      }
-      setSuccess(
-        IS_NEOBANK_DEPLOYMENT
-          ? '运营已批准开户；客户登录状态已按现有凭据流程更新。'
-          : '运营已批准开户，USD/HKD 与 USDT-TRON 钱包已创建'
+  const applicationRows = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return customers.filter((customer) => {
+      if (customer.kycStatus === 'APPROVED') return false;
+      if (kycFilter !== 'ALL' && customer.kycStatus !== kycFilter) return false;
+      return (
+        !keyword ||
+        [
+          customer.displayName,
+          customer.legalName,
+          customer.email,
+          customer.phone,
+          customer.id,
+        ].some((value) =>
+          String(value || '')
+            .toLowerCase()
+            .includes(keyword)
+        )
       );
-      setSelectedCustomer(null);
-      await load();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : '运营审核失败');
-    }
-  };
-
-  const requestVa = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!selectedCustomer) return;
-    try {
-      await coreApi(`/customers/${selectedCustomer.id}/virtual-account-requests`, {
-        method: 'POST',
-        userId,
-        body: JSON.stringify({
-          channelId: vaChannelId,
-          currency: vaCurrency,
-          purpose: vaPurpose,
-        }),
-      });
-      setVaOpen(false);
-      setSelectedCustomer(null);
-      setTab('va');
-      setSuccess('VA 申请已提交，管理员可直接完成审批');
-      await load();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : 'VA 申请失败');
-    }
-  };
-
-  const reviewVa = async (
-    request: VirtualAccountRequest,
-    action: 'approve' | 'reject',
-    account?: { accountName: string; accountNumber: string; iban?: string }
-  ) => {
-    try {
-      await coreApi(`/virtual-account-requests/${request.id}/${action}`, {
-        method: 'PATCH',
-        userId,
-        body:
-          action === 'reject'
-            ? JSON.stringify({ reason: '银行资料需要补充' })
-            : JSON.stringify(account),
-      });
-      setApprovalRequest(null);
-      setVaAccountName('');
-      setVaAccountNumber('');
-      setVaIban('');
-      setSuccess(action === 'approve' ? 'VA 已开通并建立独立余额账户' : 'VA 申请已拒绝');
-      await load();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : '审批失败');
-    }
-  };
-
-  const openVaApproval = (request: VirtualAccountRequest) => {
-    setApprovalRequest(request);
-    setVaAccountName(request.customer.displayName);
-    setVaAccountNumber('');
-    setVaIban('');
-  };
+    });
+  }, [customers, kycFilter, query]);
 
   return (
     <>
       <Helmet>
-        <title>客户开户与 VA | SSC Digital Bank</title>
+        <title>开户与 KYC | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={2}>
             <Box>
-              <Typography variant="h4">客户开户与 VA</Typography>
+              <Typography variant="h4">开户与 KYC</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
                 {IS_NEOBANK_DEPLOYMENT
-                  ? '显示 Render PostgreSQL 中的真实客户申请；KYC 通过后自动激活并创建 USDT-TRC20 钱包。'
+                  ? '集中处理 Render PostgreSQL 中待审核和已拒绝的申请；KYC 通过后自动开户并进入客户管理。'
                   : '支持个人和企业开户；先完成人工 KYC，再由运营批准开户。只有运营批准后才创建钱包。'}
               </Typography>
             </Box>
@@ -409,25 +202,41 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
             </Alert>
           )}
           <Card>
-            <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ px: 2.5 }}>
-              <Tab value="customers" label={`开户申请 (${customers.length})`} />
-              <Tab value="va" label={`VA 申请 (${vaRequests.length})`} />
-            </Tabs>
-            {tab === 'customers' ? (
-              <CustomerTable
-                rows={customers}
-                loading={loading}
-                onOpen={(customer) => navigate(paths.dashboard.customers.details(customer.id))}
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ p: 2 }}>
+              <TextField
+                fullWidth
+                size="small"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索申请人、邮箱、电话或申请编号"
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Iconify icon="solar:magnifier-linear" />
+                    </InputAdornment>
+                  ),
+                }}
               />
-            ) : (
-              <VaRequestTable
-                rows={vaRequests}
-                currentUserId={userId}
-                portal={portal}
-                onApprove={openVaApproval}
-                onReject={(request) => reviewVa(request, 'reject')}
-              />
-            )}
+              <TextField
+                select
+                size="small"
+                label="审核状态"
+                value={kycFilter}
+                onChange={(event) =>
+                  setKycFilter(event.target.value as 'ALL' | 'PENDING' | 'REJECTED')
+                }
+                sx={{ minWidth: 180 }}
+              >
+                <MenuItem value="ALL">全部申请</MenuItem>
+                <MenuItem value="PENDING">待审核</MenuItem>
+                <MenuItem value="REJECTED">已拒绝</MenuItem>
+              </TextField>
+            </Stack>
+            <CustomerTable
+              rows={applicationRows}
+              loading={loading}
+              onOpen={(customer) => navigate(paths.dashboard.onboardingReview(customer.id))}
+            />
           </Card>
         </Stack>
       </Container>
@@ -439,147 +248,6 @@ export default function OnboardingWorkspace({ portal = false }: { portal?: boole
         onClose={() => setCustomerOpen(false)}
         onSubmit={createCustomer}
       />
-      <CustomerDrawer
-        customer={selectedCustomer}
-        currentUserId={userId}
-        portal={portal}
-        error={error}
-        reviewing={reviewingCustomerId === selectedCustomer?.id}
-        onClose={() => setSelectedCustomer(null)}
-        onReviewKyc={reviewKyc}
-        onApproveCustomer={approveCustomer}
-        onRequestVa={() => setVaOpen(true)}
-      />
-      <Dialog open={vaOpen} onClose={() => setVaOpen(false)} fullWidth maxWidth="sm">
-        <Box component="form" onSubmit={requestVa}>
-          <DialogTitle>申请独立 VA</DialogTitle>
-          <DialogContent>
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <FormControl fullWidth required>
-                <InputLabel>银行渠道</InputLabel>
-                <Select
-                  label="银行渠道"
-                  value={vaChannelId}
-                  onChange={(event) => {
-                    const nextId = event.target.value;
-                    const channel = vaChannels.find((item) => item.id === nextId);
-                    setVaChannelId(nextId);
-                    if (channel?.supportedCurrencies[0]) {
-                      setVaCurrency(channel.supportedCurrencies[0]);
-                    }
-                  }}
-                >
-                  {vaChannels
-                    .filter((channel) => channel.active)
-                    .map((channel) => (
-                      <MenuItem key={channel.id} value={channel.id}>
-                        {channel.settlementBankName || channel.name}
-                      </MenuItem>
-                    ))}
-                </Select>
-              </FormControl>
-              {vaChannels.find((channel) => channel.id === vaChannelId) ? (
-                <Alert severity="info">
-                  支持币种：
-                  {vaChannels
-                    .find((channel) => channel.id === vaChannelId)
-                    ?.supportedCurrencies.join(' / ')}
-                </Alert>
-              ) : (
-                <Alert severity="warning">暂无已启用的 VA 银行渠道。</Alert>
-              )}
-              <FormControl fullWidth required disabled={!vaChannelId}>
-                <InputLabel>币种</InputLabel>
-                <Select
-                  label="币种"
-                  value={vaCurrency}
-                  onChange={(event) => setVaCurrency(event.target.value as Currency)}
-                >
-                  {(
-                    vaChannels.find((channel) => channel.id === vaChannelId)?.supportedCurrencies ||
-                    []
-                  ).map((currency) => (
-                    <MenuItem key={currency} value={currency}>
-                      {currency}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <TextField
-                required
-                multiline
-                minRows={2}
-                label="账户用途"
-                value={vaPurpose}
-                onChange={(event) => setVaPurpose(event.target.value)}
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setVaOpen(false)}>取消</Button>
-            <Button type="submit" variant="contained" disabled={!vaChannelId}>
-              提交 VA 申请
-            </Button>
-          </DialogActions>
-        </Box>
-      </Dialog>
-      <Dialog
-        open={Boolean(approvalRequest)}
-        onClose={() => setApprovalRequest(null)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <Box
-          component="form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!approvalRequest) return;
-            reviewVa(approvalRequest, 'approve', {
-              accountName: vaAccountName,
-              accountNumber: vaAccountNumber,
-              iban: vaIban || undefined,
-            }).catch(() => undefined);
-          }}
-        >
-          <DialogTitle>录入 VA 银行账号</DialogTitle>
-          <DialogContent>
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <Alert severity="info">
-                {approvalRequest?.channel?.settlementBankName || '未绑定银行'} ·{' '}
-                {approvalRequest?.currency}
-                <br />
-                银行地址和 SWIFT/BIC 固定取自渠道配置，不能在这里覆盖。
-              </Alert>
-              <TextField
-                required
-                label="账户名称"
-                value={vaAccountName}
-                inputProps={{ maxLength: 160 }}
-                onChange={(event) => setVaAccountName(event.target.value)}
-              />
-              <TextField
-                required
-                label="银行账号"
-                value={vaAccountNumber}
-                inputProps={{ maxLength: 80 }}
-                onChange={(event) => setVaAccountNumber(event.target.value)}
-              />
-              <TextField
-                label="IBAN（如适用）"
-                value={vaIban}
-                inputProps={{ maxLength: 80 }}
-                onChange={(event) => setVaIban(event.target.value.toUpperCase())}
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setApprovalRequest(null)}>取消</Button>
-            <Button type="submit" variant="contained">
-              确认开通 VA
-            </Button>
-          </DialogActions>
-        </Box>
-      </Dialog>
     </>
   );
 }
@@ -598,13 +266,13 @@ function CustomerTable({
       <Table>
         <TableHead>
           <TableRow>
-            <TableCell>客户</TableCell>
-            <TableCell>类型</TableCell>
+            <TableCell>申请人</TableCell>
+            <TableCell>主体类型</TableCell>
             <TableCell>国家/地区</TableCell>
-            <TableCell>邮箱</TableCell>
-            <TableCell>KYC</TableCell>
-            <TableCell>状态</TableCell>
-            <TableCell>钱包/VA</TableCell>
+            <TableCell>联系方式</TableCell>
+            <TableCell>提交时间</TableCell>
+            <TableCell>KYC 状态</TableCell>
+            <TableCell align="right">操作</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -623,12 +291,32 @@ function CustomerTable({
               </TableCell>
               <TableCell>{customer.type === 'BUSINESS' ? '企业' : '个人'}</TableCell>
               <TableCell>{customer.countryCode}</TableCell>
-              <TableCell>{customer.email}</TableCell>
-              <TableCell>{kycStatusLabel(customer.kycStatus, customer.status)}</TableCell>
               <TableCell>
-                <CustomerStatus status={customer.status} />
+                <Typography variant="body2">{customer.email}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {[customer.phoneCountryCode, customer.phone].filter(Boolean).join(' ') ||
+                    '未填写电话'}
+                </Typography>
               </TableCell>
-              <TableCell>{walletSummary(customer)}</TableCell>
+              <TableCell>{formatDate(customer.createdAt)}</TableCell>
+              <TableCell>
+                <Label color={customer.kycStatus === 'REJECTED' ? 'error' : 'warning'}>
+                  {customer.kycStatus === 'REJECTED' ? '已拒绝' : '待人工审核'}
+                </Label>
+              </TableCell>
+              <TableCell align="right">
+                <Button
+                  size="small"
+                  variant={customer.kycStatus === 'PENDING' ? 'contained' : 'text'}
+                  endIcon={<Iconify icon="solar:arrow-right-linear" />}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpen(customer);
+                  }}
+                >
+                  {customer.kycStatus === 'PENDING' ? '开始审核' : '查看结果'}
+                </Button>
+              </TableCell>
             </TableRow>
           ))}
           {!rows.length && (
@@ -644,83 +332,17 @@ function CustomerTable({
   );
 }
 
-function VaRequestTable({
-  rows,
-  currentUserId,
-  portal,
-  onApprove,
-  onReject,
-}: {
-  rows: VirtualAccountRequest[];
-  currentUserId: string;
-  portal: boolean;
-  onApprove: (request: VirtualAccountRequest) => void;
-  onReject: (request: VirtualAccountRequest) => Promise<void>;
-}) {
-  return (
-    <TableContainer>
-      <Table>
-        <TableHead>
-          <TableRow>
-            <TableCell>客户</TableCell>
-            <TableCell>币种</TableCell>
-            <TableCell>银行</TableCell>
-            <TableCell>用途</TableCell>
-            <TableCell>状态/账户</TableCell>
-            <TableCell align="right">操作</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.map((request) => (
-            <TableRow key={request.id}>
-              <TableCell>{request.customer.displayName}</TableCell>
-              <TableCell>{request.currency}</TableCell>
-              <TableCell>
-                <Typography variant="body2">
-                  {request.channel?.settlementBankName || request.channel?.name || '历史申请'}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  支持 {request.channel?.supportedCurrencies.join(' / ') || request.currency}
-                </Typography>
-              </TableCell>
-              <TableCell>{request.purpose}</TableCell>
-              <TableCell>
-                <Stack alignItems="flex-start" gap={0.5}>
-                  <CustomerStatus status={request.status} />
-                  {request.assignedAccount && (
-                    <Typography variant="caption">
-                      {request.assignedAccount.accountNumber}
-                    </Typography>
-                  )}
-                </Stack>
-              </TableCell>
-              <TableCell align="right">
-                {!portal && request.status === 'SUBMITTED' && (
-                  <Stack direction="row" justifyContent="flex-end" spacing={1}>
-                    <Button
-                      size="small"
-                      color="error"
-                      onClick={() => onReject(request).catch(() => undefined)}
-                    >
-                      拒绝
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      disabled={request.makerId === currentUserId && currentUserId !== 'usr_admin'}
-                      onClick={() => onApprove(request)}
-                    >
-                      录入账号
-                    </Button>
-                  </Stack>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
-  );
+function formatDate(value?: string) {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
 }
 
 function CustomerDialog({
@@ -885,184 +507,5 @@ function CustomerDialog({
         </DialogActions>
       </Box>
     </Dialog>
-  );
-}
-
-function CustomerDrawer({
-  customer,
-  currentUserId,
-  portal,
-  error,
-  reviewing,
-  onClose,
-  onReviewKyc,
-  onApproveCustomer,
-  onRequestVa,
-}: {
-  customer: Customer | null;
-  currentUserId: string;
-  portal: boolean;
-  error: string;
-  reviewing: boolean;
-  onClose: () => void;
-  onReviewKyc: (customer: Customer, decision: 'APPROVE' | 'REJECT') => Promise<void>;
-  onApproveCustomer: (customer: Customer) => Promise<void>;
-  onRequestVa: () => void;
-}) {
-  if (!customer) return null;
-  return (
-    <Drawer
-      anchor="right"
-      open
-      onClose={onClose}
-      PaperProps={{ sx: { width: { xs: 1, sm: 520 }, p: 3 } }}
-    >
-      <Stack spacing={3}>
-        {error && <Alert severity="error">{error}</Alert>}
-        <Stack direction="row" justifyContent="space-between">
-          <Box>
-            <Typography variant="h5">{customer.displayName}</Typography>
-            <Typography color="text.secondary">
-              {customer.type === 'BUSINESS' ? '企业客户' : '个人客户'} · {customer.countryCode}
-            </Typography>
-          </Box>
-          <CustomerStatus status={customer.status} />
-        </Stack>
-        <Info label="法定名称" value={customer.legalName} />
-        <Info label="邮箱" value={customer.email} />
-        <Info
-          label="电话"
-          value={`${customer.phoneCountryCode || ''} ${customer.phone || ''}`.trim() || '-'}
-        />
-        <Info label="KYC 状态" value={kycStatusLabel(customer.kycStatus, customer.status)} />
-        {customer.type === 'INDIVIDUAL' ? (
-          <>
-            <Info label="出生日期" value={customer.dateOfBirth?.slice(0, 10) || '-'} />
-            <Info label="国籍" value={customer.nationality || '-'} />
-          </>
-        ) : (
-          <>
-            <Info label="企业注册号" value={customer.registrationNo || '-'} />
-            <Info label="授权联系人" value={customer.contactName || '-'} />
-            <Info label="联系人职务" value={customer.contactRole || '-'} />
-            <Info label="最终受益人" value={customer.beneficialOwnerName || '-'} />
-            <Info
-              label="持股或控制比例"
-              value={
-                customer.beneficialOwnerOwnership ? `${customer.beneficialOwnerOwnership}%` : '-'
-              }
-            />
-          </>
-        )}
-        <Info label="客户编号" value={customer.id} />
-        <Info label="钱包状态" value={walletSummary(customer)} />
-        <Alert severity="info">
-          {IS_NEOBANK_DEPLOYMENT
-            ? 'KYC 通过会自动激活客户并幂等创建一个经 Cregis 归属验证的 USDT-TRC20 钱包。'
-            : 'KYC 通过不代表开户完成。运营批准后才创建 USD、HKD 法币钱包和 USDT-TRON 数字钱包。'}
-        </Alert>
-        {customer.status === 'ACTIVE' && (
-          <>
-            <Typography variant="h6">已开通账户</Typography>
-            <Stack spacing={1}>
-              {customer.accounts?.map((account) => (
-                <Card key={account.id} variant="outlined">
-                  <CardContent sx={{ py: 1.5 }}>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Box>
-                        <Typography variant="subtitle2">{account.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {account.accountNumber}
-                        </Typography>
-                      </Box>
-                      <Chip size="small" label={account.currency} />
-                    </Stack>
-                  </CardContent>
-                </Card>
-              ))}
-            </Stack>
-            <Button variant="contained" onClick={onRequestVa}>
-              申请新的独立 VA
-            </Button>
-          </>
-        )}
-        {!portal && customer.status === 'PENDING_REVIEW' && customer.kycStatus === 'PENDING' && (
-          <Stack direction="row" spacing={1}>
-            <Button
-              fullWidth
-              color="error"
-              variant="outlined"
-              disabled={reviewing}
-              onClick={() => onReviewKyc(customer, 'REJECT').catch(() => undefined)}
-            >
-              {reviewing ? '处理中…' : 'KYC 不通过'}
-            </Button>
-            <Button
-              fullWidth
-              variant="contained"
-              disabled={
-                reviewing || (customer.creatorId === currentUserId && currentUserId !== 'usr_admin')
-              }
-              onClick={() => onReviewKyc(customer, 'APPROVE').catch(() => undefined)}
-            >
-              {reviewing ? '处理中…' : 'KYC 通过'}
-            </Button>
-          </Stack>
-        )}
-        {!IS_NEOBANK_DEPLOYMENT &&
-          !portal &&
-          customer.status === 'PENDING_REVIEW' &&
-          customer.kycStatus === 'APPROVED' && (
-            <Button
-              fullWidth
-              variant="contained"
-              disabled={customer.creatorId === currentUserId && currentUserId !== 'usr_admin'}
-              onClick={() => onApproveCustomer(customer).catch(() => undefined)}
-            >
-              运营批准开户
-            </Button>
-          )}
-      </Stack>
-    </Drawer>
-  );
-}
-
-function CustomerStatus({ status }: { status: string }) {
-  let color: 'success' | 'error' | 'warning' = 'warning';
-  if (status === 'ACTIVE' || status === 'APPROVED') color = 'success';
-  if (status === 'REJECTED') color = 'error';
-  const labels: Record<string, string> = {
-    ACTIVE: '已开通',
-    PENDING_REVIEW: '待审核',
-    REJECTED: '已拒绝',
-    SUSPENDED: '已暂停',
-    SUBMITTED: '待审批',
-    APPROVED: '已开通',
-  };
-  return <Label color={color}>{labels[status] || status}</Label>;
-}
-function kycStatusLabel(status: Customer['kycStatus'], customerStatus: Customer['status']) {
-  if (status === 'APPROVED') {
-    return customerStatus === 'PENDING_REVIEW' ? '已通过，待运营审核' : '已通过';
-  }
-  return { PENDING: '待人工审核', REJECTED: '未通过' }[status];
-}
-
-function walletSummary(customer: Customer) {
-  const count = customer.walletCount || 0;
-  if (!count) return '0';
-  if (customer.walletStatus === 'error') return `${count} · 待重试`;
-  if (customer.walletStatus === 'creating') return `${count} · 生成中`;
-  if (customer.walletStatus === 'active') return `${count} · 已启用`;
-  return String(count);
-}
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <Stack direction="row" justifyContent="space-between" gap={2}>
-      <Typography color="text.secondary">{label}</Typography>
-      <Typography variant="subtitle2" textAlign="right">
-        {value}
-      </Typography>
-    </Stack>
   );
 }

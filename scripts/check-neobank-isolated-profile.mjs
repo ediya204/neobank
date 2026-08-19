@@ -19,6 +19,15 @@ const [
   coreMain,
   coreEdgeAuth,
   onboardingPage,
+  kycReviewPage,
+  customerManagementPage,
+  customerDetailPage,
+  neobankCustomerHelper,
+  vaRequestManagement,
+  vaRequestReview,
+  dashboardRoutes,
+  dashboardNavigation,
+  dashboardPaths,
   customerSync,
   customerAdmin,
   portalCustomerContext,
@@ -42,6 +51,15 @@ const [
   read('server/src/main.ts'),
   read('server/src/security/edge-auth.ts'),
   read('src/pages/dashboard/onboarding-workspace.tsx'),
+  read('src/pages/dashboard/kyc-review-workspace.tsx'),
+  read('src/pages/dashboard/customer-management.tsx'),
+  read('src/pages/dashboard/customer-detail.tsx'),
+  read('src/features/customers/neobank-customer.ts'),
+  read('src/pages/dashboard/va-request-management.tsx'),
+  read('src/pages/dashboard/va-request-review.tsx'),
+  read('src/routes/sections/dashboard.tsx'),
+  read('src/layouts/dashboard/config-navigation.tsx'),
+  read('src/routes/paths.ts'),
   read('server/src/customers/neobank-customer-sync.ts'),
   read('server-go/cmd/api/customer_admin.go'),
   read('src/features/finance/portal-customer-context.tsx'),
@@ -120,13 +138,60 @@ assert.match(coreApi, /userId = 'usr_admin'/);
 assert.doesNotMatch(coreApi, /提交人 Maker|复核人 Checker|出款操作员|demoUsers/);
 assert.match(adminPage, /IS_NEOBANK_DEPLOYMENT/);
 assert.match(adminPage, /neobankApi/);
-assert.match(adminPage, /\/admin\/customers\/\$\{customer\.id\}\/kyc/);
+assert.match(adminPage, /paths\.dashboard\.onboardingReview\(customer\.id\)/);
+assert.doesNotMatch(adminPage, /\/admin\/customers\/\$\{customer\.id\}\/kyc/);
 assert.doesNotMatch(adminPage, /\/admin\/customers\/\$\{customer\.id\}\/activate/);
 assert.doesNotMatch(adminPage, /customerReadyForWallet\(customer\)/);
 assert.doesNotMatch(adminPage, /创建 Cregis 钱包/);
-assert.match(onboardingPage, /neobankApi<\{ data: NeobankCustomer\[\] \}>/);
-assert.match(onboardingPage, /decision: decision\.toLowerCase\(\)/);
-assert.match(onboardingPage, /KYC 已通过，客户已自动激活并创建 USDT-TRC20 钱包/);
+assert.match(neobankCustomerHelper, /neobankApi<\{ data: NeobankCustomerRecord\[\] \}>/);
+assert.match(onboardingPage, /loadNeobankCustomerRecords/);
+assert.match(onboardingPage, /paths\.dashboard\.onboardingReview\(customer\.id\)/);
+assert.doesNotMatch(onboardingPage, /\/admin\/customers\/\$\{customer\.id\}\/kyc/);
+assert.match(kycReviewPage, /\/admin\/customers\/\$\{customer\.id\}\/kyc/);
+assert.match(kycReviewPage, /reviewChecks\.every/);
+assert.match(kycReviewPage, /note\.trim\(\)\.length >= 10/);
+assert.match(customerManagementPage, /row\.kyc_status === 'approved'/);
+assert.match(customerManagementPage, /customer\.kycStatus === 'APPROVED'/);
+assert.match(customerDetailPage, /title="系统钱包"/);
+assert.match(customerDetailPage, /title="VA 钱包"/);
+assert.match(customerDetailPage, /title="数字货币钱包"/);
+assert.match(customerDetailPage, /账面资产/);
+assert.match(customerDetailPage, /data-testid="account-asset-rows"/);
+assert.match(customerDetailPage, /supportedFiatCurrencies/);
+assert.match(customerDetailPage, /法币转出/);
+assert.match(customerDetailPage, /设置专属/);
+assert.match(customerDetailPage, /配置默认/);
+assert.match(customerDetailPage, /管理机构默认/);
+assert.doesNotMatch(
+  customerDetailPage,
+  /funding-channels\?organizationId=\$\{encodeURIComponent\([\s\S]*?\)&type=VIRTUAL_ACCOUNT/
+);
+assert.doesNotMatch(onboardingPage, /virtual-account-requests/);
+assert.match(dashboardPaths, /operations\/virtual-accounts/);
+assert.match(dashboardRoutes, /path: 'virtual-accounts'/);
+assert.match(dashboardRoutes, /path: 'virtual-accounts\/:id'/);
+assert.match(dashboardNavigation, /navigation\.vaApplications/);
+assert.match(dashboardNavigation, /navigation\.customerAccounts/);
+assert.match(dashboardNavigation, /navigation\.fundProcessing/);
+assert.match(dashboardNavigation, /navigation\.fxManagement/);
+assert.match(dashboardNavigation, /navigation\.accountingQueries/);
+assert.doesNotMatch(dashboardNavigation, /paths\.dashboard\.fundOperations\.balances/);
+assert.doesNotMatch(dashboardNavigation, /navigation\.businessApprovals/);
+assert.doesNotMatch(dashboardPaths, /approvals:/);
+assert.match(dashboardRoutes, /path: 'approvals',[\s\S]*?\?status=SUBMITTED/);
+assert.match(financeWorkspace, /useSearchParams/);
+assert.match(financeWorkspace, /operationActionText/);
+assert.doesNotMatch(financeWorkspace, /section === 'approvals'/);
+assert.match(dashboardRoutes, /<ReconciliationPage scope="admin" \/>/);
+assert.doesNotMatch(dashboardRoutes, /<OperationsPage section="audit" \/>/);
+assert.match(dashboardRoutes, /path: 'audit-logs',[\s\S]*?paths\.dashboard\.notFound/);
+assert.match(dashboardRoutes, /path: 'balances',[\s\S]*?paths\.dashboard\.accounts/);
+assert.match(vaRequestManagement, /\/virtual-account-requests\?organizationId=/);
+assert.match(vaRequestManagement, /virtualAccountDetails\(request\.id\)/);
+assert.match(vaRequestReview, /\/virtual-account-requests\/\$\{request\.id\}\/approve/);
+assert.match(vaRequestReview, /\/virtual-account-requests\/\$\{request\.id\}\/reject/);
+assert.match(vaRequestReview, /客户所选银行与币种/);
+assert.doesNotMatch(vaRequestReview, /setChannelId|setCurrency|setPurpose/);
 assert.match(customerAdmin, /approveCustomerKYCAutomationSQL/);
 assert.match(customerAdmin, /operations_status='active'/);
 assert.match(customerAdmin, /automaticWalletIdempotency\(id\)/);

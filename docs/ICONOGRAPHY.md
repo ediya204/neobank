@@ -25,16 +25,16 @@
 
 ## 尺寸
 
-| 场景 | 尺寸 |
-| --- | ---: |
-| 行内辅助 | 16px |
-| 小按钮 | 16px |
-| 普通按钮 | 18px |
-| 默认独立图标 | 20px |
-| 导航 | 24px |
+| 场景              | 尺寸 |
+| ----------------- | ---: |
+| 行内辅助          | 16px |
+| 小按钮            | 16px |
+| 普通按钮          | 18px |
+| 默认独立图标      | 20px |
+| 导航              | 24px |
 | 功能入口/资产列表 | 28px |
-| 重点资产 | 32px |
-| 空状态 | 40px |
+| 重点资产          | 32px |
+| 空状态            | 40px |
 
 使用 `ICON_SIZES`，不要为相同层级新增近似尺寸。MUI Button 内的图标由主题按按钮大小统一。
 
@@ -48,18 +48,20 @@
 
 同一个操作在所有页面使用同一个图标，不因入口、角色或卡片样式改变：
 
-| 操作 | 标准图标 |
-| --- | --- |
+| 操作                    | 标准图标                                   |
+| ----------------------- | ------------------------------------------ |
+| 银行/VA 账户            | `solar:buildings-2-bold-duotone`           |
+| 资金通道                | `solar:card-transfer-bold-duotone`         |
 | 资金转入（法币与 USDT） | `solar:download-minimalistic-bold-duotone` |
-| 资金转出（法币与 USDT） | `solar:upload-minimalistic-bold-duotone` |
-| 内部划转 | `solar:transfer-horizontal-bold-duotone` |
-| 换汇 | `solar:refresh-square-bold-duotone` |
-| OTC | `solar:hand-money-bold-duotone` |
-| 新增 | `solar:add-circle-linear` |
-| 编辑 | `solar:pen-bold` |
-| 复制 | `solar:copy-linear` |
-| 刷新 | `solar:refresh-linear` |
-| 历史记录 | `solar:history-bold-duotone` |
+| 资金转出（法币与 USDT） | `solar:upload-minimalistic-bold-duotone`   |
+| 内部划转                | `solar:transfer-horizontal-bold-duotone`   |
+| 换汇                    | `solar:refresh-square-bold-duotone`        |
+| OTC                     | `solar:hand-money-bold-duotone`            |
+| 新增                    | `solar:add-circle-linear`                  |
+| 编辑                    | `solar:pen-bold`                           |
+| 复制                    | `solar:copy-linear`                        |
+| 刷新                    | `solar:refresh-linear`                     |
+| 历史记录                | `solar:history-bold-duotone`               |
 
 `src/theme/iconography.ts` 是唯一语义目录。修改或新增图标后必须运行
 `npm run icons:check`；该检查会拒绝历史变体和产品页面中的非标准图标集。

@@ -269,7 +269,7 @@ test('generic operation lists and approval queues exclude mirrored crypto operat
     },
     operation: {
       findMany: async (query) => {
-        observed.push(query.where);
+        observed.push(query);
         return [];
       },
     },
@@ -277,10 +277,11 @@ test('generic operation lists and approval queues exclude mirrored crypto operat
   await service.list({ organizationId: customer.organizationId }, maker.id);
   await service.approvals(customer.organizationId, maker.id);
   assert.equal(observed.length, 2);
-  for (const where of observed) {
-    assert.deepEqual(where.metadata, {
+  for (const query of observed) {
+    assert.deepEqual(query.where.metadata, {
       path: ['cryptoTransferId'],
       equals: Prisma.AnyNull,
     });
   }
+  assert.deepEqual(observed[1].orderBy, { submittedAt: 'desc' });
 });

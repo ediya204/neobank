@@ -141,6 +141,8 @@ export type VirtualAccountRequest = {
   maker?: { id: string; displayName: string };
   checker?: { id: string; displayName: string };
   createdAt: string;
+  reviewedAt?: string;
+  updatedAt?: string;
 };
 
 export type Beneficiary = {

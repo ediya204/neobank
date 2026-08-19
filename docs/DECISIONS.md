@@ -21,6 +21,10 @@ that the assumption no longer applies.
 - Withdrawal fees are versioned by asset class, currency, payout method, channel,
   and network. Fiat and crypto creation must resolve the server-side active rule and
   store a transaction snapshot; later fee changes affect only new submissions.
+- Customer fee management enumerates every configured fiat payout path and currency,
+  even when no active organization default exists. Missing defaults remain an explicit
+  blocking state with a management link; the UI never invents a zero fee. An isolated
+  customer override may be configured for that scope and becomes the effective rule.
 - Fiat payout amounts represent the beneficiary principal and the fee is added to
   the account reservation. Cregis customer input represents the total wallet debit;
   only the stored net amount is submitted on-chain. Stale fee confirmation requires
@@ -36,9 +40,33 @@ that the assumption no longer applies.
   including USDT. Missing provider data produces an explicit partial valuation;
   stored fee-policy snapshots and assumed stablecoin parity are not fallbacks.
 - In the Neobank profile, manual KYC approval is the final account-opening gate.
-  Approval automatically activates the customer and idempotently provisions one
-  Cregis-verified USDT-TRC20 wallet. This removes the separate Operations and wallet
-  approval clicks, but does not approve, execute, or settle any withdrawal.
+  Approval automatically activates the customer, assigns zero-balance USD and HKD
+  standard fiat accounts, and idempotently provisions one Cregis-verified
+  USDT-TRC20 wallet. Core customer synchronization repairs any missing standard fiat
+  account idempotently; no manual fiat-account opening action is exposed. This
+  removes the separate Operations, fiat-account, and wallet approval clicks, but
+  does not approve, execute, or settle any withdrawal.
+- Admin KYC decisions are made only in the dedicated
+  `/dashboard/onboarding/:id/review` workspace. The workspace records an explicit
+  decision, reviewer checklist, reason/note, reviewer identity, and review time;
+  generic customer-detail views may link to that record but must not expose direct
+  KYC approve/reject shortcuts. `/dashboard/onboarding` contains pending and
+  rejected applications, while `/dashboard/customers` contains only KYC-approved
+  customers and presents their actual account, wallet, balance, and sync state.
+- Customer detail groups holdings by product dimension rather than database enum:
+  system wallets, VA wallets, and digital-currency wallets are three explicit
+  vertically stacked rows. Each row shows its own account metadata, book/available/frozen assets,
+  and operational state; fiat and USDT balances are never combined into an
+  unlabelled cross-currency total.
+- Admin navigation uses one canonical entry per business capability. The visible
+  groups are Workbench, Customers & Accounts, Fund Processing, FX Management, and
+  Accounting Queries. Duplicate balance and USDT routes remain redirects only;
+  reconciliation renders the reconciliation workspace. A single administrator does
+  not use a standalone business-approval page: overview reminders link to status-
+  filtered transaction records, whose existing detail view retains explicit approve,
+  reject, and execute actions and the complete audit trail. The old approval route is
+  a compatibility redirect. The legacy audit page is not exposed in the Render-only
+  navigation and resolves to 404 until a PostgreSQL audit store and API exist.
 
 ## Partner integration
 
@@ -59,6 +87,12 @@ that the assumption no longer applies.
 - `VIRTUAL_ACCOUNT` 是同一家银行的统一 VA 能力配置：开户批准后账户保存
   `fundingChannelId`，VA 出款必须复用该账户绑定的银行渠道，不能另选独立
   `VA_PAYOUT`。旧 `VA_PAYOUT` 仅保留历史读取兼容，禁止新建或重新启用。
+- 客户开户完成后可从 Portal 选择已启用的 VA 银行、受支持币种和账户用途提交
+  `SUBMITTED` 申请。Admin 只在独立的
+  `/dashboard/operations/virtual-accounts` 队列及其详情页处理：批准时只能录入银行
+  实际分配的账户名称、账号和可选 IBAN，不能改变客户所选银行、币种或用途；拒绝
+  必须记录客户可见原因。KYC 开户队列、通用资金记录页和客户详情均不得提供
+  VA 快捷批准动作。
 
 ## Security and operations
 

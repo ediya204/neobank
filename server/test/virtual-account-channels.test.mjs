@@ -112,3 +112,47 @@ test('admin must enter the assigned account while bank details come from the cha
   assert.equal(accountData.swiftBic, channel.swiftBic);
   assert.equal(accountData.fundingChannelId, channel.id);
 });
+
+test('VA rejection trims a customer-visible reason and rejects whitespace-only input', async () => {
+  let rejectionData;
+  const request = {
+    id: 'va_request_reject_001',
+    customerId: customer.id,
+    customer: { ...customer, email: 'client@example.com', displayName: 'Client Ltd' },
+    currency: 'USD',
+    status: 'SUBMITTED',
+    makerId: 'usr_neobank_admin',
+  };
+  const transaction = {
+    virtualAccountRequest: {
+      findUnique: async () => request,
+      update: async ({ data }) => {
+        rejectionData = data;
+        return { ...request, ...data };
+      },
+    },
+    user: {
+      findUnique: async () => ({
+        id: 'usr_neobank_admin',
+        organizationId: 'org_neobank',
+        active: true,
+        role: 'ADMIN',
+      }),
+    },
+  };
+  const service = new CustomersService({
+    $transaction: async (operation) => operation(transaction),
+  });
+
+  await assert.rejects(
+    service.rejectVirtualAccountRequest(request.id, 'usr_neobank_admin', '   '),
+    /virtual_account_rejection_reason_required/
+  );
+  await service.rejectVirtualAccountRequest(
+    request.id,
+    'usr_neobank_admin',
+    '  The requested purpose is not supported.  '
+  );
+
+  assert.equal(rejectionData.rejectionReason, 'The requested purpose is not supported.');
+});

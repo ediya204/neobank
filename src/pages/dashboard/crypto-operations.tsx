@@ -32,6 +32,7 @@ import {
   demoOrganizationId,
   neobankApi,
 } from 'src/features/finance/core-api';
+import { paths } from 'src/routes/paths';
 
 type CregisHistoryRow = {
   id: string;
@@ -87,21 +88,6 @@ type AdminCustomer = {
   application_submitted_at?: string;
   wallet_count?: number;
   wallet_status?: string | null;
-};
-
-type AdminCustomerActivation = AdminCustomer & {
-  setup_url?: string;
-  setup_expires_at?: string;
-  login_ready?: boolean;
-  wallet?: {
-    id: string;
-    address: string;
-    currency: string;
-  };
-  wallet_provisioning?: {
-    status: 'retry_required';
-    error_code: string;
-  };
 };
 
 function normalizedCregisStatus(status: string): CryptoTransfer['status'] {
@@ -177,16 +163,6 @@ export default function CryptoOperationsAdmin() {
   const [customerEmail, setCustomerEmail] = useState('');
   const [provisioning, setProvisioning] = useState(false);
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
-  const [applicationReview, setApplicationReview] = useState<AdminCustomer | null>(null);
-  const [customerActionId, setCustomerActionId] = useState('');
-  const [kycNote, setKycNote] = useState('');
-  const [activation, setActivation] = useState<AdminCustomerActivation | null>(null);
-  const [createdWallet, setCreatedWallet] = useState<{
-    id: string;
-    address: string;
-    currency: string;
-    customerId: string;
-  } | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -297,8 +273,6 @@ export default function CryptoOperationsAdmin() {
       });
       setCustomerName('');
       setCustomerEmail('');
-      setActivation(null);
-      setCreatedWallet(null);
       setSuccess('客户档案已创建；KYC 通过后将自动激活并创建 USDT-TRC20 钱包。');
       await load();
     } catch (value) {
@@ -308,60 +282,16 @@ export default function CryptoOperationsAdmin() {
     }
   };
 
-  const reviewCustomerKyc = async (customer: AdminCustomer, decision: 'approve' | 'reject') => {
-    if (decision === 'reject' && !kycNote.trim()) return;
-    setCustomerActionId(customer.id);
-    setError('');
-    try {
-      const result = await neobankApi<AdminCustomerActivation>(
-        `/admin/customers/${customer.id}/kyc`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify({
-            decision,
-            ...(kycNote.trim() ? { note: kycNote.trim() } : {}),
-          }),
-          userId,
-        }
-      );
-      setKycNote('');
-      if (decision === 'approve') {
-        setActivation(result);
-        if (result.wallet) {
-          setCreatedWallet({ ...result.wallet, customerId: customer.id });
-        }
-      }
-      let reviewMessage = 'KYC 已拒绝并记录原因。';
-      if (decision === 'approve') {
-        reviewMessage = result.wallet
-          ? 'KYC 已批准；客户已自动激活，USDT-TRC20 钱包已创建并通过 Cregis 归属验证。'
-          : 'KYC 已批准且客户已自动激活；钱包生成失败，已标记为待重试。';
-      }
-      setSuccess(reviewMessage);
-      await load();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : 'KYC 审核失败');
-    } finally {
-      setCustomerActionId('');
-    }
-  };
-
   return (
     <>
       <Helmet>
-        <title>
-          {IS_NEOBANK_DEPLOYMENT
-            ? '数字钱包审批 | SSC Digital Bank'
-            : '数字钱包复核 | SSC Digital Bank'}
-        </title>
+        <title>USDT 出款 | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={2}>
             <Box>
-              <Typography variant="h4">
-                {IS_NEOBANK_DEPLOYMENT ? '数字钱包审批' : '数字钱包复核'}
-              </Typography>
+              <Typography variant="h4">USDT 出款</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
                 {IS_NEOBANK_DEPLOYMENT
                   ? '单人审批 USDT 付币指令，并在人工执行后登记链上交易哈希。'
@@ -374,7 +304,7 @@ export default function CryptoOperationsAdmin() {
                 startIcon={<Iconify icon="solar:user-plus-bold-duotone" />}
                 onClick={() => setProvisionOpen(true)}
               >
-                客户审核与激活
+                创建测试客户
               </Button>
             )}
           </Stack>
@@ -558,13 +488,9 @@ export default function CryptoOperationsAdmin() {
                 {provisioning ? '创建中…' : '创建客户档案'}
               </Button>
             </Stack>
-            <TextField
-              label="KYC 拒绝原因（仅拒绝时必填）"
-              value={kycNote}
-              onChange={(event) => setKycNote(event.target.value)}
-              multiline
-              minRows={2}
-            />
+            <Alert severity="info">
+              KYC 审核统一在独立审核工作台完成；本页仅保留测试客户创建和数字钱包运营。
+            </Alert>
             <TableContainer component={Card} variant="outlined">
               <Table size="small">
                 <TableHead>
@@ -577,78 +503,54 @@ export default function CryptoOperationsAdmin() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {customers.map((customer) => {
-                    const busy = customerActionId === customer.id;
-                    return (
-                      <TableRow key={customer.id}>
-                        <TableCell>
-                          <Typography variant="subtitle2">{customer.display_name}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {customer.email}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>{customer.status}</TableCell>
-                        <TableCell>{customer.kyc_status}</TableCell>
-                        <TableCell>{customer.operations_status}</TableCell>
-                        <TableCell align="right">
-                          <Stack
-                            direction="row"
-                            spacing={1}
-                            justifyContent="flex-end"
-                            flexWrap="wrap"
-                            useFlexGap
-                          >
-                            {customer.kyc_status === 'pending' && (
-                              <>
-                                {customer.application_reference && (
-                                  <Button
-                                    size="small"
-                                    color="inherit"
-                                    onClick={() => setApplicationReview(customer)}
-                                  >
-                                    查看申请
-                                  </Button>
-                                )}
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    reviewCustomerKyc(customer, 'approve').catch(() => undefined)
-                                  }
-                                >
-                                  {busy ? '处理中…' : 'KYC 通过'}
-                                </Button>
-                                <Button
-                                  size="small"
-                                  color="error"
-                                  variant="outlined"
-                                  disabled={busy || !kycNote.trim()}
-                                  onClick={() =>
-                                    reviewCustomerKyc(customer, 'reject').catch(() => undefined)
-                                  }
-                                >
-                                  {busy ? '处理中…' : 'KYC 拒绝'}
-                                </Button>
-                              </>
+                  {customers.map((customer) => (
+                    <TableRow key={customer.id}>
+                      <TableCell>
+                        <Typography variant="subtitle2">{customer.display_name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {customer.email}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>{customer.status}</TableCell>
+                      <TableCell>{customer.kyc_status}</TableCell>
+                      <TableCell>{customer.operations_status}</TableCell>
+                      <TableCell align="right">
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          justifyContent="flex-end"
+                          flexWrap="wrap"
+                          useFlexGap
+                        >
+                          {customer.kyc_status === 'pending' && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() =>
+                                window.location.assign(
+                                  paths.dashboard.onboardingReview(customer.id)
+                                )
+                              }
+                            >
+                              进入 KYC 审核
+                            </Button>
+                          )}
+                          {customer.kyc_status === 'approved' &&
+                            customer.operations_status === 'active' && (
+                              <Typography variant="caption" color="success.main">
+                                {automaticWalletStatusLabel(customer)}
+                              </Typography>
                             )}
-                            {customer.kyc_status === 'approved' &&
-                              customer.operations_status === 'active' && (
-                                <Typography variant="caption" color="success.main">
-                                  {automaticWalletStatusLabel(customer)}
-                                </Typography>
-                              )}
-                            {customer.operations_status === 'active' &&
-                              customer.status === 'pending_setup' && (
-                                <Typography variant="caption" color="text.secondary">
-                                  等待客户完成密码与 TOTP
-                                </Typography>
-                              )}
-                          </Stack>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                          {customer.operations_status === 'active' &&
+                            customer.status === 'pending_setup' && (
+                              <Typography variant="caption" color="text.secondary">
+                                等待客户完成密码与 TOTP
+                              </Typography>
+                            )}
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                   {!customers.length && (
                     <TableRow>
                       <TableCell colSpan={5} align="center">
@@ -659,31 +561,6 @@ export default function CryptoOperationsAdmin() {
                 </TableBody>
               </Table>
             </TableContainer>
-            {activation?.setup_url && (
-              <Stack spacing={1}>
-                <Alert severity="success">
-                  一次性链接有效至{' '}
-                  {activation.setup_expires_at
-                    ? new Date(activation.setup_expires_at).toLocaleString('zh-CN')
-                    : '服务端设定时间'}
-                  。关闭窗口后不再保留在前端。
-                </Alert>
-                <TextField
-                  label="一次性激活链接（仅通过批准的安全渠道发送）"
-                  value={activation.setup_url}
-                  multiline
-                  InputProps={{ readOnly: true }}
-                />
-              </Stack>
-            )}
-            {createdWallet && (
-              <Alert severity="success">
-                客户 {createdWallet.customerId} 的新地址：
-                <Box component="span" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                  {createdWallet.address}
-                </Box>
-              </Alert>
-            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -692,76 +569,10 @@ export default function CryptoOperationsAdmin() {
               setProvisionOpen(false);
               setCustomerName('');
               setCustomerEmail('');
-              setKycNote('');
-              setActivation(null);
-              setCreatedWallet(null);
             }}
           >
             关闭
           </Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog
-        open={Boolean(applicationReview)}
-        onClose={() => setApplicationReview(null)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>开户申请资料</DialogTitle>
-        <DialogContent dividers>
-          {applicationReview && (
-            <Stack spacing={0.5}>
-              <Alert severity="warning" sx={{ mb: 1.5 }}>
-                本页资料仅用于人工 KYC / KYB 审核。查看资料不代表审核通过；只有点击 KYC
-                通过后，系统才会自动激活客户并创建钱包。
-              </Alert>
-              <Info label="申请编号" value={applicationReview.application_reference || '-'} mono />
-              <Info
-                label="申请类型"
-                value={applicationReview.account_type === 'business' ? '企业账户' : '个人账户'}
-              />
-              <Info label="申请人 / 企业" value={applicationReview.display_name} />
-              <Info label="联系邮箱" value={applicationReview.email} />
-              <Info
-                label="联系电话"
-                value={
-                  `${applicationReview.phone_country_code || ''} ${
-                    applicationReview.phone || ''
-                  }`.trim() || '-'
-                }
-              />
-              <Info label="常住 / 营业地区" value={applicationReview.residence_country || '-'} />
-              {applicationReview.account_type === 'individual' ? (
-                <>
-                  <Info label="出生日期" value={applicationReview.date_of_birth || '-'} />
-                  <Info label="国籍" value={applicationReview.nationality || '-'} />
-                </>
-              ) : (
-                <>
-                  <Info label="企业注册编号" value={applicationReview.registration_number || '-'} />
-                  <Info label="注册地区" value={applicationReview.incorporation_country || '-'} />
-                  <Info
-                    label="授权联系人"
-                    value={`${applicationReview.contact_name || '-'} / ${
-                      applicationReview.contact_role || '-'
-                    }`}
-                  />
-                  <Info
-                    label="最终受益人"
-                    value={`${applicationReview.beneficial_owner_name || '-'} / ${
-                      applicationReview.beneficial_owner_ownership || '-'
-                    }%`}
-                  />
-                </>
-              )}
-              <Info label="资料处理授权" value={applicationReview.kyc_consent_at || '-'} />
-              <Info label="条款确认" value={applicationReview.terms_accepted_at || '-'} />
-              <Info label="提交时间" value={applicationReview.application_submitted_at || '-'} />
-            </Stack>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setApplicationReview(null)}>关闭</Button>
         </DialogActions>
       </Dialog>
     </>

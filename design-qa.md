@@ -57,6 +57,46 @@
 
 final result: passed
 
+## Admin navigation normalization — 2026-08-19
+
+**Source visual truth**
+
+- Screenshot: `/Users/edi/.codex/visualizations/2026/08/19/neobook-navigation-audit/01-current-navigation.png`
+- Route: `https://portal.sscdigitalbank.com/dashboard/operations/crypto-wallets`
+- State: production Admin sidebar before this local change. It mixes customer, balance, transaction,
+  accounting, payout, channel, and sweep capabilities in overlapping groups and labels the USDT payout
+  workflow as `数字钱包审批`.
+
+**Implementation evidence**
+
+- Screenshot: `/Users/edi/.codex/visualizations/2026/08/19/neobook-navigation-audit/02-normalized-navigation.png`
+- Route: `http://localhost:3002/dashboard/overview`
+- State: local authenticated Admin with the canonical navigation groups and normalized overview shortcuts.
+- Browser DOM assertions covered all 18 visible routes plus three compatibility routes.
+
+**Audit steps and health**
+
+1. Navigation hierarchy — passed: one capability appears once under `客户与账户`, `资金处理`,
+   `换汇管理`, or `账务查询`; the separate single-item sweep and system groups are removed.
+2. Naming consistency — passed: sidebar, overview shortcuts, document title, and page heading agree for
+   onboarding, VA applications, customer accounts, deposits, fiat payouts, USDT payouts, approvals,
+   adjustments, automatic conversion, transactions, and ledger entries.
+3. Route semantics — passed: reconciliation renders `ReconciliationPage` instead of aliasing the ledger.
+   The legacy D1-backed audit route is excluded from the Render-only navigation and resolves to 404.
+4. Duplicate compatibility — passed: `/dashboard/operations/balances` redirects to
+   `/dashboard/accounts`; `/dashboard/usdt-sweeps` redirects to
+   `/dashboard/operations/crypto-wallets` without producing a second menu entry.
+5. Runtime rendering — passed for navigation scope: all visible pages rendered without a development
+   error overlay; the removed legacy audit URL resolves to the explicit not-found page.
+
+**Visual comparison**
+
+- The existing logo, typography, icon family, spacing, selection color, and sidebar width are preserved.
+- The change is information architecture and nomenclature only; it introduces no new visual system.
+- No actionable P0, P1, or P2 visual mismatch remains in the audited desktop state.
+
+final result: passed
+
 ---
 
 **Withdrawal whitelist and OTP QA — 2026-08-18**
@@ -117,5 +157,89 @@ final result: passed
 - [x] Empty-state add action remains available
 - [x] Confirmation includes whitelist name and immutable address
 - [x] Responsive and console checks
+
+final result: passed
+
+---
+
+# Customer asset rows design QA — 2026-08-19
+
+**Source visual truth**
+
+- Path: `/var/folders/1v/wprpp7c56hg5_qzt15k1t2240000gn/T/codex-clipboard-f3489e8b-2969-462c-9c54-cde90b24085b.png`
+- Source pixels: 1048 x 721.
+- State: existing Admin customer detail, `账户与 VA` selected, table-based account presentation.
+- Product requirement layered onto the source: replace the database-oriented table with three
+  vertically stacked product rows named `系统钱包`, `VA 钱包`, and `数字货币钱包`, with the
+  corresponding asset state shown inside each row.
+
+**Implementation evidence**
+
+- Screenshot: `/Users/edi/.codex/visualizations/2026/08/19/neobook-customer-assets/02-three-wallet-rows.png`
+- Route: `http://localhost:3002/dashboard/customers/cus_demo_individual`
+- Browser viewport: 1356 CSS pixels wide; document client and scroll widths were both 1341 pixels.
+- Screenshot pixels: 1341 x 1845 full-page capture.
+- State: local isolated Admin customer, `账户与 VA` selected, populated system, VA, and USDT/TRON
+  wallet data.
+- Browser page: no development error overlay after loading and selecting the asset tab; ESLint,
+  TypeScript, iconography and production-build gates passed. The current browser-control surface
+  did not expose historical console messages.
+
+**Full-view comparison evidence**
+
+- Information architecture intentionally changes from a seven-column technical table to three
+  vertically stacked product rows while preserving the source page shell, tabs, border radius, typography,
+  neutral surfaces, semantic status colors, and VA request history.
+- System wallets show separate USD and HKD assets; VA wallets show their bank-assigned account
+  metadata and fiat assets; the digital-currency wallet shows USDT/TRON network, address state,
+  balance, minimum deposit, and fee.
+- Each account exposes labelled book, available, and frozen balances. No cross-currency total is
+  calculated.
+
+**Focused region comparison evidence**
+
+- A separate crop was not required: the implementation full-page screenshot preserves the wallet
+  panel at 1341 physical pixels, where headers, amounts, status labels, account numbers, bank data,
+  and network metadata remain readable.
+
+**Required fidelity surfaces**
+
+- Fonts and typography: inherited from the existing MUI theme; heading, label, metric, and metadata
+  weights follow the source hierarchy without introducing a new font.
+- Spacing and layout rhythm: the panel keeps the source outer spacing and radius; equal desktop
+  rows use internal separators, while multiple accounts inside one row use equal-width cards.
+- Colors and visual tokens: existing `background`, `action.hover`, `divider`, and semantic Label
+  tokens are reused; there are no decorative gradients or unapproved palette changes.
+- Image and icon quality: existing AssetIcon mappings provide real currency and TRON icons; existing
+  semantic iconography provides wallet and bank icons. No placeholder, emoji, custom SVG, or CSS
+  drawing replaces an asset.
+- Copy and content: product-facing Chinese labels replace raw `SYSTEM_WALLET` and similar database
+  enums. Empty states explain when each product will appear.
+
+**Findings**
+
+- No actionable P0, P1, or P2 mismatch remains. The intentional structural difference is the user
+  requirement, not design drift.
+
+**Comparison history**
+
+- Pass 1: source and implementation were opened together. The three requested product dimensions,
+  associated assets, metadata readability, theme consistency, and desktop overflow were verified;
+  no P0/P1/P2 visual fix was required after capture.
+
+**Implementation checklist**
+
+- [x] Three vertically stacked product rows at desktop width.
+- [x] Multiple accounts remain grouped inside their product row.
+- [ ] Narrow-viewport runtime capture was not available in the current in-app browser; the source
+      breakpoint stacks account cards to one column below the MUI `md` breakpoint.
+- [x] System, VA, and digital-wallet data remain separated.
+- [x] Book, available, and frozen balances are labelled per asset.
+- [x] Bank, account, IBAN, SWIFT/BIC, network, address, minimum deposit, and fee render when applicable.
+- [x] Existing VA request history remains available below the asset view.
+
+**Follow-up polish**
+
+- None required for this pass.
 
 final result: passed

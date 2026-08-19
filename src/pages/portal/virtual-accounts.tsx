@@ -130,7 +130,7 @@ export default function VirtualAccountsPage() {
             </Box>
             <Button
               variant={applying ? 'outlined' : 'contained'}
-              startIcon={<Iconify icon="solar:bank-bold-duotone" />}
+              startIcon={<Iconify icon="solar:buildings-2-bold-duotone" />}
               onClick={() => setApplying((value) => !value)}
             >
               {applying ? '收起申请' : '申请 VA'}
@@ -288,7 +288,7 @@ export default function VirtualAccountsPage() {
                 bgcolor: 'background.paper',
               }}
             >
-              <Iconify icon="solar:bank-bold-duotone" width={36} color="primary.main" />
+              <Iconify icon="solar:buildings-2-bold-duotone" width={36} color="primary.main" />
               <Typography variant="h6" sx={{ mt: 1.5 }}>
                 尚未申请 VA
               </Typography>

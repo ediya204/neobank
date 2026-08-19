@@ -208,6 +208,42 @@ test('customer fee override wins over the organization default', async () => {
   assert.equal(result.snapshot.amount, '10.00');
 });
 
+test('an active customer fiat fee remains resolvable when the organization default is missing', async () => {
+  const service = new WithdrawalFeesService({});
+  const result = await service.resolve(
+    {
+      withdrawalFeeRule: {
+        findMany: async () => [
+          {
+            id: 'fee_customer_only',
+            scopeId: 'cus_test',
+            assetClass: 'FIAT',
+            currency: 'HKD',
+            method: 'VA',
+            channelCode: 'VA-BOCHK-HK',
+            network: '',
+            feeAmountMinor: 8800n,
+            feeDecimals: 2,
+            version: 3n,
+          },
+        ],
+      },
+    },
+    {
+      scopeId: 'org_test',
+      customerId: 'cus_test',
+      assetClass: 'FIAT',
+      currency: 'HKD',
+      method: 'VA',
+      channelCode: 'va-bochk-hk',
+    }
+  );
+
+  assert.equal(result.snapshot.id, 'fee_customer_only');
+  assert.equal(result.snapshot.amount, '88.00');
+  assert.equal(result.snapshot.version, '3');
+});
+
 test('customer fee override cannot cross organization boundaries', async () => {
   const service = new WithdrawalFeesService({
     user: { findUnique: async () => admin },

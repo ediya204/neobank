@@ -72,8 +72,10 @@ Browser-supplied identity headers are never trusted.
 The production customer list and onboarding actions continue to read and write
 the lowercase Go tables. Core synchronizes those customer identities and status
 fields into its quoted Prisma `Customer` table by stable customer ID before
-serving finance views. This synchronization does not invent balances, accounts,
-ledger entries, or settlement state.
+serving finance views. For an active, KYC-approved customer, that synchronization
+idempotently assigns zero-balance USD and HKD `SYSTEM_WALLET` accounts so account
+opening never depends on an Admin creation button. It does not invent balances,
+bank VAs, ledger entries, or settlement state.
 
 The first administrator is provisioned through the bootstrap-secret protected
 `POST /api/auth/setup-token` flow and completes password and TOTP enrollment at
@@ -306,8 +308,9 @@ The Core administration rollout order is mandatory:
    `Idempotency-Key` header. The admin-created route does not issue credentials.
 6. Review the customer with `PATCH /api/v1/admin/customers/:id/kyc`, recording a
    reason for rejection. Approval atomically sets Operations active and starts
-   idempotent Cregis wallet provisioning; there is no separate account or wallet
-   approval click.
+   idempotent Cregis wallet provisioning. The following Core customer sync
+   idempotently assigns the standard USD/HKD fiat accounts; there is no separate
+   Operations, fiat-account, or wallet approval click.
 7. Approval changes a public applicant with a stored password to `active`; the
    customer can then sign in directly with the registration email and password.
    For admin-created `pending_setup` customers without a password, deliver the

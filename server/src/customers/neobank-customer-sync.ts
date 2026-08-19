@@ -1,4 +1,5 @@
 import { CustomerStatus, CustomerType, KycStatus, Prisma, PrismaClient } from '@prisma/client';
+import { supportedFiatCurrencies } from '../supported-assets';
 
 type NeobankCustomer = {
   account_type: string | null;
@@ -120,11 +121,29 @@ export async function syncNeobankCustomers(
       status: coreStatus(row),
       type,
     };
+    const status = coreStatus(row);
+    const kycStatus = coreKycStatus(row.kyc_status);
     await db.customer.upsert({
       where: { id: row.customer_id },
       update: data,
       create: { id: row.customer_id, ...data },
     });
+    if (status === 'ACTIVE' && kycStatus === 'APPROVED') {
+      for (const currency of supportedFiatCurrencies) {
+        await db.account.upsert({
+          where: { accountNumber: `WALLET-${row.customer_id}-${currency}` },
+          update: {},
+          create: {
+            customerId: row.customer_id,
+            kind: 'SYSTEM_WALLET',
+            status: 'ACTIVE',
+            currency,
+            name: `${currency} 法币钱包`,
+            accountNumber: `WALLET-${row.customer_id}-${currency}`,
+          },
+        });
+      }
+    }
   }
 
   return customers.length;

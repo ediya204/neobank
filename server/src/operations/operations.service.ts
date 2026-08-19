@@ -107,7 +107,7 @@ export class OperationsService {
         ...(user.role === 'ADMIN' ? {} : { makerId: { not: userId } }),
       },
       include: operationInclude,
-      orderBy: { submittedAt: 'asc' },
+      orderBy: { submittedAt: 'desc' },
     });
   }
 

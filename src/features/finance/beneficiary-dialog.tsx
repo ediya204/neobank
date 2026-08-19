@@ -41,7 +41,7 @@ const options: Array<{
     type: 'BANK',
     title: '银行账户',
     description: 'USD / HKD 法币付款',
-    icon: 'solar:bank-bold-duotone',
+    icon: 'solar:buildings-2-bold-duotone',
   },
   {
     type: 'CRYPTO',

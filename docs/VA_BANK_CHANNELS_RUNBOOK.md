@@ -55,7 +55,10 @@
 
 - `/dashboard/funding-channels`：创建和维护统一的 `VIRTUAL_ACCOUNT` 银行渠道；
   下拉不再提供独立“VA 出款”类型。
-- `/dashboard/onboarding` 的 VA 申请页：查看所选银行与支持币种，录入账号并批准。
+- `/dashboard/operations/virtual-accounts`：独立 VA 申请队列，查看待处理、已开通和已拒绝记录。
+- `/dashboard/operations/virtual-accounts/:id`：只读核对客户所选银行、币种与用途，
+  录入银行实际分配的账户名称、账号和可选 IBAN，或填写客户可见拒绝原因。
+- `/dashboard/onboarding` 只处理 KYC 开户申请，不再混入 VA 审批。
 
 客户：
 
@@ -82,6 +85,15 @@ Core API：
 3. 发布 `neobank-core`，验证渠道校验与账号录入。
 4. 发布 `neobank-web`，验证客户选择银行、支持币种展示和自有申请隔离。
 5. 分别验证 Admin、客户 A、客户 B；客户 A 访问客户 B 的申请必须失败。
+
+Admin 验收还必须确认：
+
+- Portal 提交后独立 VA 队列待处理计数增加，来源显示为“客户 Portal”；
+- 详情中的银行、币种、用途和固定银行资料不可编辑；
+- 账号不足 4 位、空白拒绝原因、重复批准或重复拒绝均被拒绝；
+- 批准后创建 `VIRTUAL_ACCOUNT`，余额保持为零且不产生账本分录；
+- 拒绝后 Portal 显示客户可见原因，内部管理员身份不泄露；
+- 已完成记录只读，刷新后状态、处理人、处理时间和账号资料保持一致。
 
 本地代码完成或 Cloudflare dry-run 不代表上述生产迁移、Render 发布、Cloudflare 发布
 或真实银行开户已经完成。

@@ -68,6 +68,34 @@ The source includes:
 - FastForex-backed FX/OTC fee policies: active quotes are recomputed from live
   midpoint data, and each submitted conversion locks a server-fetched market and
   customer-rate snapshot before approval.
+- Automatic account-opening completion: an active, KYC-approved customer receives
+  idempotent zero-balance USD/HKD standard fiat accounts during Core synchronization;
+  the Admin UI has no manual standard-fiat-account creation action.
+- Dedicated Admin KYC workflow: pending/rejected applications live at
+  `/dashboard/onboarding`, decisions are made at
+  `/dashboard/onboarding/:id/review`, and `/dashboard/customers` contains only
+  KYC-approved customers with real account, wallet, balance, and sync fields.
+- Dedicated Admin VA fulfilment: Portal customers submit bank/currency/purpose
+  requests after activation; Admin processes them at
+  `/dashboard/operations/virtual-accounts` and its detail route, where customer
+  selections are read-only and only real assigned account details or a
+  customer-visible rejection reason can be recorded.
+- Customer-specific withdrawal-fee management now lists every configured fiat
+  payout channel/currency alongside Cregis USDT/TRON. Missing or disabled institution
+  defaults are visible blocking states, and admins can either manage the institution
+  rule or enable an isolated customer override without inventing a zero fee.
+- Customer detail asset presentation: `/dashboard/customers/:id` groups the
+  account view into system wallets, VA wallets, and digital-currency wallets;
+  every product row shows its own account metadata and book, available, and
+  frozen assets without combining currencies.
+- Admin navigation normalization: canonical business names are shared by the
+  sidebar, overview shortcuts, and page headings. Duplicate balance and USDT
+  entries are redirects only, and reconciliation resolves to its actual workspace.
+  The standalone business-approval entry is removed for the single-admin model;
+  overview queue links open status-filtered transaction records, where explicit
+  approve, reject, and execute actions remain available in the record detail.
+  The old D1-backed audit page is intentionally absent from the Render-only sidebar
+  and its legacy route resolves to 404 pending a PostgreSQL implementation.
 - Responsive Portal layouts and en-US/zh-CN copy across desktop, tablet, mobile,
   and short landscape viewports.
 - Local transaction-history and Webhook demo fixtures used by the travel setup.

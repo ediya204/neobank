@@ -1,10 +1,12 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Box,
   Button,
   Card,
+  CardActionArea,
   CardContent,
   Checkbox,
   Chip,
@@ -71,38 +73,37 @@ export type FinanceSection =
   | 'transfers'
   | 'fx'
   | 'otc'
-  | 'adjustments'
-  | 'approvals';
+  | 'adjustments';
 
 const sectionCopy: Record<
   FinanceSection,
   { title: string; description: string; type?: OperationType }
 > = {
   accounts: {
-    title: '账户与钱包',
+    title: '客户账户',
     description: '查看客户的 VA 账户、系统多货币法币账户和数字钱包状态。',
   },
   channels: { title: '资金通道', description: '查看法币入账、VA 银行、POBO 和平台代付通道。' },
   beneficiaries: {
-    title: '收款人管理',
+    title: '收款人',
     description: '维护客户银行账户和 USDT-TRON 地址，并在付款时复用已核对资料。',
   },
   rates: {
     title: '汇率与报价',
     description: '维护 FX 与 OTC 的版本化费率策略；报价始终跟随 FastForex 实时行情。',
   },
-  ledger: { title: '复式总账', description: '查询不可修改的借贷流水；更正必须通过补偿调账完成。' },
+  ledger: { title: '账本分录', description: '查询不可修改的借贷流水；更正必须通过补偿调账完成。' },
   transactions: {
     title: '交易记录',
     description: '统一查询所有入账、转账、换汇、OTC、出款和调账。',
   },
   deposits: {
-    title: '法币入账',
+    title: '入账处理',
     description: '录入银行到账，经授权管理员审批后记入指定钱包或 VA。',
     type: 'DEPOSIT',
   },
   payouts: {
-    title: '出款管理',
+    title: '法币出款',
     description: '通过 VA、POBO 或平台账户发起出款并回填银行流水。',
     type: 'PAYOUT',
   },
@@ -117,17 +118,26 @@ const sectionCopy: Record<
     type: 'FX',
   },
   otc: {
-    title: 'OTC',
+    title: '自动兑换',
     description: '法币与 USDT 的内部 OTC 订单；链上操作等待 Cregis。',
     type: 'OTC',
   },
   adjustments: {
-    title: '调账管理',
+    title: '调账处理',
     description: '所有余额增减都通过补偿流水和管理员审批完成。',
     type: 'ADJUSTMENT',
   },
-  approvals: { title: '审批中心', description: '由一名授权管理员审批入账、出款、调账与兑换。' },
 };
+
+const operationStatusFilters = [
+  'SUBMITTED',
+  'APPROVED',
+  'PROCESSING',
+  'COMPLETED',
+  'REJECTED',
+  'FAILED',
+  'CANCELLED',
+] as const;
 
 const currencies: Currency[] = [...supportedFiatCurrencies];
 
@@ -253,7 +263,14 @@ const configurableChannelTypes: FundingChannel['type'][] = [
 export default function FinanceWorkspace({ section }: { section: FinanceSection }) {
   const copy = sectionCopy[section];
   const userId = 'usr_admin';
-  const requestedCustomerId = new URLSearchParams(window.location.search).get('customerId') || '';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedCustomerId = searchParams.get('customerId') || '';
+  const requestedStatus = searchParams.get('status');
+  const status = operationStatusFilters.includes(
+    requestedStatus as (typeof operationStatusFilters)[number]
+  )
+    ? requestedStatus!
+    : 'all';
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [withdrawalFees, setWithdrawalFees] = useState<WithdrawalFeeRule[]>([]);
@@ -269,14 +286,12 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [journals, setJournals] = useState<JournalEntry[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState(requestedCustomerId);
   const [selected, setSelected] = useState<Operation | null>(null);
-  const [status, setStatus] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [operationFormError, setOperationFormError] = useState('');
   const [operationSubmitting, setOperationSubmitting] = useState(false);
-  const [accountProvisioning, setAccountProvisioning] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [executeOpen, setExecuteOpen] = useState(false);
@@ -318,13 +333,9 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       if (copy.type) params.set('type', copy.type);
       if (status !== 'all') params.set('status', status);
       if (requestedCustomerId) params.set('customerId', requestedCustomerId);
-      const operationRows =
-        section === 'approvals'
-          ? await coreApi<Operation[]>(
-              `/operations/approvals?organizationId=${demoOrganizationId}`,
-              { userId }
-            )
-          : await coreApi<Operation[]>(`/operations?${params.toString()}`, { userId });
+      const operationRows = await coreApi<Operation[]>(`/operations?${params.toString()}`, {
+        userId,
+      });
       setOperations(operationRows);
       if (section === 'rates') setRates(await coreApi<RateVersion[]>('/rates', { userId }));
       if (section === 'ledger') {
@@ -453,6 +464,13 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     }),
     [operations]
   );
+
+  const setOperationStatus = (nextStatus: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextStatus === 'all') next.delete('status');
+    else next.set('status', nextStatus);
+    setSearchParams(next, { replace: true });
+  };
 
   const openCreate = () => {
     setOperationFormError('');
@@ -757,25 +775,6 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     }
   };
 
-  const provisionStandardFiatAccounts = async () => {
-    if (!selectedCustomer) return;
-    setError('');
-    setAccountProvisioning(true);
-    try {
-      await coreApi(`/customers/${selectedCustomer.id}/standard-fiat-accounts`, {
-        method: 'POST',
-        userId,
-        body: JSON.stringify({}),
-      });
-      setSuccess('USD/HKD 标准法币账户已创建；重复执行不会产生重复账户。');
-      await load();
-    } catch (value) {
-      setError(value instanceof Error ? value.message : '标准法币账户创建失败');
-    } finally {
-      setAccountProvisioning(false);
-    }
-  };
-
   const deactivateRate = async () => {
     if (!rateDeactivateTarget) return;
     setRateDeactivating(true);
@@ -804,41 +803,52 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
           value={summary.submitted}
           color="warning"
           icon="solar:clipboard-check-bold-duotone"
+          onClick={() => setOperationStatus('SUBMITTED')}
         />
         <Metric
           title="执行中"
           value={summary.processing}
           color="info"
           icon="solar:hourglass-line-bold-duotone"
+          onClick={() => setOperationStatus('PROCESSING')}
         />
         <Metric
           title="已完成"
           value={summary.completed}
           color="success"
           icon="solar:check-circle-bold-duotone"
+          onClick={() => setOperationStatus('COMPLETED')}
         />
       </Stack>
       <Card>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ p: 2.5 }}>
           <Typography variant="h6">业务记录</Typography>
-          {section !== 'approvals' && (
-            <FormControl size="small" sx={{ minWidth: 140 }}>
-              <InputLabel>状态</InputLabel>
-              <Select
-                label="状态"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <MenuItem value="all">全部</MenuItem>
-                <MenuItem value="SUBMITTED">待审批</MenuItem>
-                <MenuItem value="PROCESSING">执行中</MenuItem>
-                <MenuItem value="COMPLETED">已完成</MenuItem>
-                <MenuItem value="REJECTED">已拒绝</MenuItem>
-              </Select>
-            </FormControl>
-          )}
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel>状态</InputLabel>
+            <Select
+              label="状态"
+              value={status}
+              onChange={(event) => setOperationStatus(event.target.value)}
+            >
+              <MenuItem value="all">全部</MenuItem>
+              <MenuItem value="SUBMITTED">待审批</MenuItem>
+              <MenuItem value="APPROVED">已批准</MenuItem>
+              <MenuItem value="PROCESSING">执行中</MenuItem>
+              <MenuItem value="COMPLETED">已完成</MenuItem>
+              <MenuItem value="REJECTED">已拒绝</MenuItem>
+              <MenuItem value="FAILED">失败</MenuItem>
+              <MenuItem value="CANCELLED">已取消</MenuItem>
+            </Select>
+          </FormControl>
         </Stack>
-        <OperationTable rows={operations} loading={loading} onOpen={setSelected} />
+        <OperationTable
+          rows={operations}
+          loading={loading}
+          onOpen={(operation) => {
+            setActionError('');
+            setSelected(operation);
+          }}
+        />
       </Card>
     </>
   );
@@ -868,8 +878,6 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         marketLoading={marketLoading}
         marketError={marketError}
         onRefresh={() => load().catch(() => undefined)}
-        onProvision={provisionStandardFiatAccounts}
-        provisioning={accountProvisioning}
         onRefreshMarket={loadMarketQuotes}
       />
     );
@@ -991,6 +999,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       <OperationDrawer
         operation={selected}
         currentUserId={userId}
+        actionError={actionError}
         onClose={() => setSelected(null)}
         onApprove={() => perform('approve').catch(() => undefined)}
         onReject={() => {
@@ -1638,39 +1647,43 @@ function Metric({
   value,
   color,
   icon,
+  onClick,
 }: {
   title: string;
   value: number;
   color: 'warning' | 'info' | 'success';
   icon: string;
+  onClick: () => void;
 }) {
   return (
     <Card sx={{ flex: 1 }}>
-      <CardContent>
-        <Stack direction="row" justifyContent="space-between">
-          <Box>
-            <Typography color="text.secondary" variant="body2">
-              {title}
-            </Typography>
-            <Typography variant="h3" sx={{ mt: 1 }}>
-              {value}
-            </Typography>
-          </Box>
-          <Box
-            sx={{
-              width: 48,
-              height: 48,
-              borderRadius: 2,
-              bgcolor: `${color}.lighter`,
-              color: `${color}.dark`,
-              display: 'grid',
-              placeItems: 'center',
-            }}
-          >
-            <Iconify icon={icon} width={26} />
-          </Box>
-        </Stack>
-      </CardContent>
+      <CardActionArea onClick={onClick} aria-label={`筛选${title}业务`}>
+        <CardContent>
+          <Stack direction="row" justifyContent="space-between">
+            <Box>
+              <Typography color="text.secondary" variant="body2">
+                {title}
+              </Typography>
+              <Typography variant="h3" sx={{ mt: 1 }}>
+                {value}
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                width: 48,
+                height: 48,
+                borderRadius: 2,
+                bgcolor: `${color}.lighter`,
+                color: `${color}.dark`,
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              <Iconify icon={icon} width={26} />
+            </Box>
+          </Stack>
+        </CardContent>
+      </CardActionArea>
     </Card>
   );
 }
@@ -1725,7 +1738,7 @@ function ChannelWorkspace({
                 placeItems: 'center',
               }}
             >
-              <Iconify icon="solar:bank-bold-duotone" width={30} />
+              <Iconify icon="solar:buildings-2-bold-duotone" width={30} />
             </Box>
             <Box sx={{ textAlign: 'center', maxWidth: 520 }}>
               <Typography variant="h6">还没有资金通道</Typography>
@@ -2300,8 +2313,6 @@ function AccountWorkspace({
   marketLoading,
   marketError,
   onRefresh,
-  onProvision,
-  provisioning,
   onRefreshMarket,
 }: {
   customers: Customer[];
@@ -2314,8 +2325,6 @@ function AccountWorkspace({
   marketLoading: boolean;
   marketError: string;
   onRefresh: () => void;
-  onProvision: () => Promise<void>;
-  provisioning: boolean;
   onRefreshMarket: () => Promise<void>;
 }) {
   const [selectedFiatKind, setSelectedFiatKind] = useState<
@@ -2362,12 +2371,7 @@ function AccountWorkspace({
         </Box>
       )}
       {!loading && accounts.length === 0 && (
-        <AccountEmptyState
-          customer={selectedCustomer}
-          onRefresh={onRefresh}
-          onProvision={onProvision}
-          provisioning={provisioning}
-        />
+        <AccountEmptyState customer={selectedCustomer} onRefresh={onRefresh} />
       )}
       {!loading && accounts.length > 0 && (
         <Box
@@ -2407,13 +2411,9 @@ function AccountWorkspace({
 function AccountEmptyState({
   customer,
   onRefresh,
-  onProvision,
-  provisioning,
 }: {
   customer?: Customer;
   onRefresh: () => void;
-  onProvision: () => Promise<void>;
-  provisioning: boolean;
 }) {
   let title = '暂无客户账户';
   let description = '当前还没有客户。客户完成 KYC 审核后，相关账户与钱包会显示在这里。';
@@ -2426,9 +2426,9 @@ function AccountEmptyState({
     title = 'KYC 审核尚未完成';
     description = '客户通过 KYC 审核前不会开通账户或钱包。请在客户管理中查看审核进度。';
   } else if (customer?.kycStatus === 'APPROVED') {
-    title = '账户尚未创建或同步';
+    title = '标准法币账户正在自动同步';
     description =
-      '该客户已通过 KYC，但目前没有可显示的账户或钱包。请刷新状态；如仍未出现，请检查开户与钱包创建记录。';
+      '开户成功后系统会自动分配 USD/HKD 标准法币账户，不需要人工开户。请刷新状态；持续未显示时按同步异常处理。';
   }
 
   return (
@@ -2471,24 +2471,13 @@ function AccountEmptyState({
             <Chip size="small" variant="outlined" label={`客户状态 · ${customer.status}`} />
           </Stack>
         )}
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-          <Button
-            variant="outlined"
-            startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
-            onClick={onRefresh}
-          >
-            刷新账户状态
-          </Button>
-          {customer?.status === 'ACTIVE' && customer.kycStatus === 'APPROVED' && (
-            <Button
-              variant="contained"
-              disabled={provisioning}
-              onClick={() => onProvision().catch(() => undefined)}
-            >
-              {provisioning ? '创建中…' : '创建标准法币账户'}
-            </Button>
-          )}
-        </Stack>
+        <Button
+          variant="outlined"
+          startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
+          onClick={onRefresh}
+        >
+          刷新账户状态
+        </Button>
       </Stack>
     </Card>
   );
@@ -2809,6 +2798,12 @@ function DigitalWalletCard({ account }: { account: MoneyAccount }) {
   );
 }
 
+function operationActionText(status: Operation['status']) {
+  if (status === 'SUBMITTED') return '审批';
+  if (status === 'PROCESSING') return '执行';
+  return '查看';
+}
+
 function OperationTable({
   rows,
   loading,
@@ -2831,6 +2826,7 @@ function OperationTable({
             <TableCell>状态</TableCell>
             <TableCell>提交人</TableCell>
             <TableCell>时间</TableCell>
+            <TableCell align="right">操作</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -2848,11 +2844,23 @@ function OperationTable({
               </TableCell>
               <TableCell>{row.maker.displayName}</TableCell>
               <TableCell>{new Date(row.createdAt).toLocaleString('zh-CN')}</TableCell>
+              <TableCell align="right">
+                <Button
+                  size="small"
+                  variant={['SUBMITTED', 'PROCESSING'].includes(row.status) ? 'outlined' : 'text'}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpen(row);
+                  }}
+                >
+                  {operationActionText(row.status)}
+                </Button>
+              </TableCell>
             </TableRow>
           ))}
           {!rows.length && (
             <TableRow>
-              <TableCell colSpan={8} align="center" sx={{ py: 8, color: 'text.secondary' }}>
+              <TableCell colSpan={9} align="center" sx={{ py: 8, color: 'text.secondary' }}>
                 {loading ? '加载中…' : '暂无记录'}
               </TableCell>
             </TableRow>
@@ -3367,6 +3375,7 @@ function AccountSelect({
 function OperationDrawer({
   operation,
   currentUserId,
+  actionError,
   onClose,
   onApprove,
   onReject,
@@ -3374,6 +3383,7 @@ function OperationDrawer({
 }: {
   operation: Operation | null;
   currentUserId: string;
+  actionError: string;
   onClose: () => void;
   onApprove: () => void;
   onReject: () => void;
@@ -3403,6 +3413,7 @@ function OperationDrawer({
         {isOwn && operation.status === 'SUBMITTED' && !isAdmin && (
           <Alert severity="warning">该身份没有自审批权限，请切换为平台管理员。</Alert>
         )}
+        {actionError && <Alert severity="error">{actionError}</Alert>}
         <Detail label="客户" value={operation.customer.displayName} />
         <Detail label="金额" value={formatMoney(operation.amount, operation.currency)} />
         <Detail label="手续费" value={formatMoney(operation.feeAmount, operation.currency)} />

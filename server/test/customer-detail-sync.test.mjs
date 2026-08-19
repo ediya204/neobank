@@ -51,6 +51,69 @@ test('PostgreSQL customer sync preserves business profile and original creation 
   assert.equal(upsert.create.createdAt.toISOString(), '2026-08-18T01:02:03.000Z');
 });
 
+test('PostgreSQL customer sync automatically assigns standard fiat accounts after opening', async () => {
+  const accountUpserts = [];
+  const customerUpserts = [];
+  const activeCustomer = {
+    account_type: 'individual',
+    activated_at: '2026-08-19T02:03:04.000Z',
+    beneficial_owner_name: null,
+    beneficial_owner_ownership: null,
+    contact_name: null,
+    contact_role: null,
+    created_at: '2026-08-19T01:02:03.000Z',
+    customer_id: 'cus_active',
+    date_of_birth: '1990-01-01',
+    display_name: 'Active Customer',
+    email: 'active@example.test',
+    full_name: 'Active Customer',
+    incorporation_country: null,
+    kyc_review_note: 'approved',
+    kyc_reviewed_at: '2026-08-19T02:00:00.000Z',
+    kyc_status: 'approved',
+    legal_name: null,
+    nationality: 'HK',
+    operations_status: 'active',
+    phone: '5550001',
+    phone_country_code: '+852',
+    registration_number: null,
+    residence_country: 'HK',
+    status: 'active',
+  };
+  const db = {
+    $queryRaw: async () => [activeCustomer],
+    customer: {
+      upsert: async (input) => customerUpserts.push(input),
+    },
+    account: {
+      upsert: async (input) => accountUpserts.push(input),
+    },
+  };
+
+  await syncNeobankCustomers(db, {
+    adminUserId: 'usr_admin',
+    organizationId: 'org_neobank',
+    tenantId: 'neobank',
+  });
+  await syncNeobankCustomers(db, {
+    adminUserId: 'usr_admin',
+    organizationId: 'org_neobank',
+    tenantId: 'neobank',
+  });
+
+  assert.equal(customerUpserts.length, 2);
+  assert.deepEqual(
+    accountUpserts.map((input) => input.create.currency),
+    ['USD', 'HKD', 'USD', 'HKD']
+  );
+  assert.deepEqual(
+    new Set(accountUpserts.map((input) => input.where.accountNumber)),
+    new Set(['WALLET-cus_active-USD', 'WALLET-cus_active-HKD'])
+  );
+  assert.ok(accountUpserts.every((input) => input.create.kind === 'SYSTEM_WALLET'));
+  assert.ok(accountUpserts.every((input) => input.create.status === 'ACTIVE'));
+});
+
 test('customer detail refreshes the PostgreSQL source customer before reading the Core view', async () => {
   const previousTenant = process.env.NEOBANK_SOURCE_TENANT_ID;
   const previousOrganization = process.env.CORE_ORGANIZATION_ID;

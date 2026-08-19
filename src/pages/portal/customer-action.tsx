@@ -55,7 +55,7 @@ const payoutMethods: Array<{
     value: 'PLATFORM',
     title: '代付',
     description: '平台银行通道代为执行付款',
-    icon: 'solar:bank-bold-duotone',
+    icon: 'solar:buildings-2-bold-duotone',
   },
   {
     value: 'POBO',
@@ -751,7 +751,7 @@ function BeneficiaryPage({
                         icon={
                           cryptoRecipient
                             ? 'solar:wallet-money-bold-duotone'
-                            : 'solar:bank-bold-duotone'
+                            : 'solar:buildings-2-bold-duotone'
                         }
                         color={cryptoRecipient ? 'success.main' : 'primary.main'}
                         width={24}

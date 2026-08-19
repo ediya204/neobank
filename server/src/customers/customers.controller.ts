@@ -104,11 +104,6 @@ export class CustomersController {
     return this.customers.reject(id, currentUserId(request), dto.reason);
   }
 
-  @Post(':id/standard-fiat-accounts')
-  provisionStandardFiatAccounts(@Param('id') id: string, @Req() request: Request) {
-    return this.customers.provisionStandardFiatAccounts(id, currentUserId(request));
-  }
-
   @Post(':id/virtual-account-requests')
   requestVa(@Param('id') id: string, @Body() dto: CreateVaRequestDto, @Req() request: Request) {
     return this.customers.requestVirtualAccount(id, dto, requestActor(request));
