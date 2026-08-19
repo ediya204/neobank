@@ -65,6 +65,9 @@ The source includes:
   tenant resolution, and password + TOTP invitation activation.
 - Real password change with TOTP, credential-version race protection, other-session
   revocation, and audit logging.
+- FastForex-backed FX/OTC fee policies: active quotes are recomputed from live
+  midpoint data, and each submitted conversion locks a server-fetched market and
+  customer-rate snapshot before approval.
 - Responsive Portal layouts and en-US/zh-CN copy across desktop, tablet, mobile,
   and short landscape viewports.
 - Local transaction-history and Webhook demo fixtures used by the travel setup.

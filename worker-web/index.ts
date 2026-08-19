@@ -131,6 +131,17 @@ type ApplicationSessionPayload = {
   user?: { id?: unknown; email?: unknown; role?: unknown };
 };
 
+type LiveMarketQuote = {
+  provider: 'fastforex';
+  baseCurrency: string;
+  quoteCurrency: string;
+  rate: string;
+  updatedAt: string;
+  fetchedAt: string;
+  priceType: 'midpoint_spot';
+  referenceOnly: true;
+};
+
 function constantTimeTextEqual(left: string, right: string): boolean {
   const leftBytes = new TextEncoder().encode(left);
   const rightBytes = new TextEncoder().encode(right);
@@ -180,6 +191,42 @@ async function loadApplicationSession(
     await new Promise((resolve) => setTimeout(resolve, 75 * (attempt + 1)));
   }
   return null;
+}
+
+async function fetchLiveMarketQuote(
+  request: Request,
+  env: Env,
+  role: string,
+  baseCurrency: string,
+  quoteCurrency: string
+): Promise<LiveMarketQuote> {
+  const route = role === 'customer' ? '/api/v1/customer/market-rate' : '/api/v1/admin/market-rate';
+  const marketURL = new URL(route, request.url);
+  marketURL.searchParams.set('base', baseCurrency);
+  marketURL.searchParams.set('quote', quoteCurrency);
+  const marketHeaders = new Headers({ accept: 'application/json' });
+  const cookie = request.headers.get('cookie');
+  if (cookie) marketHeaders.set('cookie', cookie);
+  const response = await proxyAPI(
+    new Request(marketURL, { method: 'GET', headers: marketHeaders }),
+    env,
+    'application-session-edge'
+  );
+  if (!response.ok) throw new Error(`market_data_unavailable:${response.status}`);
+  const quote = (await response.json()) as Partial<LiveMarketQuote>;
+  if (
+    quote.provider !== 'fastforex' ||
+    quote.baseCurrency !== baseCurrency ||
+    quote.quoteCurrency !== quoteCurrency ||
+    typeof quote.rate !== 'string' ||
+    typeof quote.updatedAt !== 'string' ||
+    typeof quote.fetchedAt !== 'string' ||
+    quote.priceType !== 'midpoint_spot' ||
+    quote.referenceOnly !== true
+  ) {
+    throw new Error('invalid_market_rate_response');
+  }
+  return quote as LiveMarketQuote;
 }
 
 function customerCoreRouteAllowed(
@@ -266,39 +313,17 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
     ) {
       return json({ error: { code: 'invalid_market_rate_request' } }, 400);
     }
-    const marketURL = new URL('/api/v1/admin/market-rate', request.url);
-    marketURL.searchParams.set('base', requested.baseCurrency);
-    marketURL.searchParams.set('quote', requested.quoteCurrency);
-    const marketHeaders = new Headers({ accept: 'application/json' });
-    const cookie = request.headers.get('cookie');
-    if (cookie) marketHeaders.set('cookie', cookie);
-    const marketResponse = await proxyAPI(
-      new Request(marketURL, { method: 'GET', headers: marketHeaders }),
-      env,
-      'application-session-edge'
-    );
-    if (!marketResponse.ok) return marketResponse;
-    const quote = (await marketResponse.json()) as {
-      provider?: unknown;
-      baseCurrency?: unknown;
-      quoteCurrency?: unknown;
-      rate?: unknown;
-      updatedAt?: unknown;
-      fetchedAt?: unknown;
-      priceType?: unknown;
-      referenceOnly?: unknown;
-    };
-    if (
-      quote.provider !== 'fastforex' ||
-      quote.baseCurrency !== requested.baseCurrency ||
-      quote.quoteCurrency !== requested.quoteCurrency ||
-      typeof quote.rate !== 'string' ||
-      typeof quote.updatedAt !== 'string' ||
-      typeof quote.fetchedAt !== 'string' ||
-      quote.priceType !== 'midpoint_spot' ||
-      quote.referenceOnly !== true
-    ) {
-      return json({ error: { code: 'invalid_market_rate_response' } }, 502);
+    let quote: LiveMarketQuote;
+    try {
+      quote = await fetchLiveMarketQuote(
+        request,
+        env,
+        role,
+        requested.baseCurrency,
+        requested.quoteCurrency
+      );
+    } catch {
+      return json({ error: { code: 'market_data_unavailable' } }, 503);
     }
     body = new TextEncoder().encode(
       JSON.stringify({
@@ -314,6 +339,47 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
         sourceFetchedAt: quote.fetchedAt,
       })
     );
+  }
+
+  if (
+    role === 'admin' &&
+    request.method === 'POST' &&
+    incoming.pathname === '/api/core/operations'
+  ) {
+    let operation: Record<string, unknown>;
+    try {
+      operation = JSON.parse(new TextDecoder().decode(body)) as Record<string, unknown>;
+    } catch {
+      return json({ error: { code: 'invalid_json' } }, 400);
+    }
+    if (operation.type === 'FX' || operation.type === 'OTC') {
+      if (typeof operation.currency !== 'string' || typeof operation.quoteCurrency !== 'string') {
+        return json({ error: { code: 'invalid_conversion_pair' } }, 400);
+      }
+      let quote: LiveMarketQuote;
+      try {
+        quote = await fetchLiveMarketQuote(
+          request,
+          env,
+          role,
+          operation.currency,
+          operation.quoteCurrency
+        );
+      } catch {
+        return json({ error: { code: 'market_data_unavailable' } }, 503);
+      }
+      body = new TextEncoder().encode(
+        JSON.stringify({
+          ...operation,
+          marketProvider: quote.provider,
+          marketPriceType: quote.priceType,
+          marketReferenceOnly: quote.referenceOnly,
+          marketRate: quote.rate,
+          marketUpdatedAt: quote.updatedAt,
+          marketFetchedAt: quote.fetchedAt,
+        })
+      );
+    }
   }
 
   const upstreamOrigin = new URL(env.CORE_API_BASE_URL);
@@ -352,6 +418,171 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
   });
   if (response.status >= 300 && response.status < 400) {
     throw new Error(`Core API redirect rejected (${response.status})`);
+  }
+  if (
+    request.method === 'GET' &&
+    incoming.pathname === '/api/core/accounts/summary' &&
+    response.ok
+  ) {
+    const summary = (await response.json()) as {
+      distribution?: Array<{
+        currency?: unknown;
+        availableBalance?: unknown;
+        frozenBalance?: unknown;
+        [key: string]: unknown;
+      }>;
+      [key: string]: unknown;
+    };
+    if (!Array.isArray(summary.distribution)) {
+      return json({ error: { code: 'invalid_core_summary_response' } }, 502);
+    }
+    type ValuedSummaryItem = {
+      currency?: unknown;
+      reportingRate: string | null;
+      reportingValue: string | null;
+      shareBps: number;
+      liveAvailableValue?: number;
+      liveFrozenValue?: number;
+      marketUpdatedAt?: string;
+      [key: string]: unknown;
+    };
+    const quoteCache = new Map<string, Promise<LiveMarketQuote>>();
+    const valued: ValuedSummaryItem[] = await Promise.all(
+      summary.distribution.map(async (item) => {
+        if (
+          typeof item.currency !== 'string' ||
+          typeof item.availableBalance !== 'string' ||
+          typeof item.frozenBalance !== 'string'
+        ) {
+          return { ...item, reportingRate: null, reportingValue: null, shareBps: 0 };
+        }
+        let reportingRate = 1;
+        let marketUpdatedAt = new Date().toISOString();
+        if (item.currency !== 'USD') {
+          let pending = quoteCache.get(item.currency);
+          if (!pending) {
+            pending = fetchLiveMarketQuote(request, env, role, item.currency, 'USD');
+            quoteCache.set(item.currency, pending);
+          }
+          try {
+            const quote = await pending;
+            reportingRate = Number(quote.rate);
+            marketUpdatedAt = quote.updatedAt;
+          } catch {
+            return { ...item, reportingRate: null, reportingValue: null, shareBps: 0 };
+          }
+        }
+        const available = Number(item.availableBalance);
+        const frozen = Number(item.frozenBalance);
+        if (
+          !Number.isFinite(available) ||
+          !Number.isFinite(frozen) ||
+          !Number.isFinite(reportingRate) ||
+          reportingRate <= 0
+        ) {
+          return { ...item, reportingRate: null, reportingValue: null, shareBps: 0 };
+        }
+        return {
+          ...item,
+          reportingRate: reportingRate.toFixed(12).replace(/\.?0+$/, ''),
+          reportingValue: ((available + frozen) * reportingRate).toFixed(8),
+          shareBps: 0,
+          marketUpdatedAt,
+          liveAvailableValue: available * reportingRate,
+          liveFrozenValue: frozen * reportingRate,
+        };
+      })
+    );
+    const totalAvailable = valued.reduce(
+      (sum, item) =>
+        sum + (typeof item.liveAvailableValue === 'number' ? item.liveAvailableValue : 0),
+      0
+    );
+    const totalFrozen = valued.reduce(
+      (sum, item) => sum + (typeof item.liveFrozenValue === 'number' ? item.liveFrozenValue : 0),
+      0
+    );
+    const totalBalance = totalAvailable + totalFrozen;
+    const missingRates = valued
+      .filter((item) => item.reportingRate === null && typeof item.currency === 'string')
+      .map((item) => item.currency);
+    const ratesAsOf = valued
+      .flatMap((item) =>
+        typeof item.marketUpdatedAt === 'string' ? [Date.parse(item.marketUpdatedAt)] : []
+      )
+      .filter(Number.isFinite);
+    return json({
+      ...summary,
+      valuationStatus: missingRates.length ? 'partial' : 'complete',
+      missingRates,
+      asOf: new Date().toISOString(),
+      ratesAsOf: ratesAsOf.length ? new Date(Math.min(...ratesAsOf)).toISOString() : null,
+      totalAvailable: totalAvailable.toFixed(8),
+      totalFrozen: totalFrozen.toFixed(8),
+      totalBalance: totalBalance.toFixed(8),
+      distribution: valued.map(
+        ({
+          liveAvailableValue: _available,
+          liveFrozenValue: _frozen,
+          marketUpdatedAt: _at,
+          ...item
+        }) => ({
+          ...item,
+          shareBps:
+            item.reportingValue !== null && totalBalance > 0
+              ? Math.round((Number(item.reportingValue) / totalBalance) * 10000)
+              : 0,
+        })
+      ),
+    });
+  }
+  if (request.method === 'GET' && incoming.pathname === '/api/core/rates' && response.ok) {
+    const rows = (await response.json()) as Array<{
+      active?: unknown;
+      baseCurrency?: unknown;
+      quoteCurrency?: unknown;
+      feeBps?: unknown;
+      [key: string]: unknown;
+    }>;
+    const quoteCache = new Map<string, Promise<LiveMarketQuote>>();
+    const decorated = await Promise.all(
+      rows.map(async (row) => {
+        if (
+          row.active !== true ||
+          typeof row.baseCurrency !== 'string' ||
+          typeof row.quoteCurrency !== 'string' ||
+          typeof row.feeBps !== 'number'
+        ) {
+          return row;
+        }
+        const key = `${row.baseCurrency}/${row.quoteCurrency}`;
+        let pending = quoteCache.get(key);
+        if (!pending) {
+          pending = fetchLiveMarketQuote(request, env, role, row.baseCurrency, row.quoteCurrency);
+          quoteCache.set(key, pending);
+        }
+        try {
+          const quote = await pending;
+          const marketRate = Number(quote.rate);
+          const customerRate = marketRate * (1 - row.feeBps / 10000);
+          if (!Number.isFinite(marketRate) || marketRate <= 0 || customerRate <= 0) {
+            throw new Error('invalid_market_rate_response');
+          }
+          return {
+            ...row,
+            marketProvider: quote.provider,
+            marketPriceType: quote.priceType,
+            marketRate: quote.rate,
+            customerRate: customerRate.toFixed(12).replace(/\.?0+$/, ''),
+            marketUpdatedAt: quote.updatedAt,
+            marketFetchedAt: quote.fetchedAt,
+          };
+        } catch {
+          return { ...row, marketUnavailable: true };
+        }
+      })
+    );
+    return json(decorated);
   }
   return new Response(response.body, {
     status: response.status,

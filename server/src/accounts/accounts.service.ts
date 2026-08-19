@@ -123,31 +123,11 @@ export class AccountsService {
       bucket.sources.add('digital_wallet');
     }
 
-    const currencies = [...buckets.keys()].filter(
-      (currency): currency is Exclude<Currency, 'USD' | 'USDT'> =>
-        currency !== 'USD' && currency !== 'USDT'
-    );
-    const rates = await this.db.rateVersion.findMany({
-      where: {
-        type: 'FX',
-        quoteCurrency: 'USD',
-        baseCurrency: { in: currencies },
-        active: true,
-        effectiveFrom: { lte: new Date() },
-      },
-      orderBy: { effectiveFrom: 'desc' },
-    });
     const ratesByCurrency = new Map<Currency, { rate: Prisma.Decimal; effectiveFrom: Date }>();
-    for (const rate of rates) {
-      if (!ratesByCurrency.has(rate.baseCurrency)) {
-        ratesByCurrency.set(rate.baseCurrency, {
-          rate: rate.buyRate.add(rate.sellRate).div(2),
-          effectiveFrom: rate.effectiveFrom,
-        });
-      }
-    }
+    // Core returns materialized balances and USD parity only. The authenticated
+    // Worker decorates non-USD valuations with live FastForex quotes; fixed rate
+    // policy snapshots must never be used for current portfolio valuation.
     ratesByCurrency.set('USD', { rate: new Prisma.Decimal(1), effectiveFrom: new Date() });
-    ratesByCurrency.set('USDT', { rate: new Prisma.Decimal(1), effectiveFrom: new Date() });
 
     let totalAvailable = new Prisma.Decimal(0);
     let totalFrozen = new Prisma.Decimal(0);
@@ -243,9 +223,7 @@ export class AccountsService {
   }) {
     if (
       assetAccountKinds.includes(account.kind) &&
-      supportedFiatCurrencies.includes(
-        account.currency as (typeof supportedFiatCurrencies)[number]
-      )
+      supportedFiatCurrencies.includes(account.currency as (typeof supportedFiatCurrencies)[number])
     ) {
       return true;
     }

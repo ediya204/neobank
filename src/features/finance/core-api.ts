@@ -229,6 +229,13 @@ export type RateVersion = {
   effectiveFrom: string;
   effectiveUntil?: string;
   active: boolean;
+  marketProvider?: 'fastforex';
+  marketPriceType?: 'midpoint_spot';
+  marketRate?: string;
+  customerRate?: string;
+  marketUpdatedAt?: string;
+  marketFetchedAt?: string;
+  marketUnavailable?: boolean;
 };
 
 export type MarketQuote = {

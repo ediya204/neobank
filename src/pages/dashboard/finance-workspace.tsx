@@ -87,7 +87,10 @@ const sectionCopy: Record<
     title: '收款人管理',
     description: '维护客户银行账户和 USDT-TRON 地址，并在付款时复用已核对资料。',
   },
-  rates: { title: '汇率与报价', description: '维护 FX 与 OTC 的版本化汇率和费率快照。' },
+  rates: {
+    title: '汇率与报价',
+    description: '维护 FX 与 OTC 的版本化费率策略；报价始终跟随 FastForex 实时行情。',
+  },
   ledger: { title: '复式总账', description: '查询不可修改的借贷流水；更正必须通过补偿调账完成。' },
   transactions: {
     title: '交易记录',
@@ -1255,7 +1258,8 @@ function RateWorkspace({
               <Chip size="small" label="实时中间价" color="info" variant="outlined" />
             </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              新建版本时由服务端重新获取所选币对，并在中间价上应用配置费率；刷新行情不会改动现有版本。
+              版本只配置费率策略。页面展示和指令提交都会由服务端获取 FastForex
+              实时中间价，再动态计算含费率报价。
             </Typography>
           </Box>
           <Button
@@ -1305,7 +1309,7 @@ function RateWorkspace({
           <Box>
             <Typography variant="h6">当前与历史汇率</Typography>
             <Typography variant="body2" color="text.secondary">
-              版本保存 FastForex 中间价快照、费率及最终含费率报价，不覆盖历史交易快照。
+              生效版本按实时行情动态报价；创建时行情仅作为审计快照。每笔交易在提交时重新取价并保存成交快照。
             </Typography>
           </Box>
           <Button variant="contained" onClick={onCreate}>
@@ -1318,11 +1322,11 @@ function RateWorkspace({
               <TableRow>
                 <TableCell>类型</TableCell>
                 <TableCell>币对</TableCell>
-                <TableCell>报价来源</TableCell>
-                <TableCell>基准中间价</TableCell>
+                <TableCell>版本性质</TableCell>
+                <TableCell>实时 / 审计中间价</TableCell>
                 <TableCell>费率</TableCell>
                 <TableCell>含费率报价</TableCell>
-                <TableCell>报价获取时间</TableCell>
+                <TableCell>行情 / 版本时间</TableCell>
                 <TableCell>状态</TableCell>
                 <TableCell align="right">操作</TableCell>
               </TableRow>
@@ -1330,26 +1334,34 @@ function RateWorkspace({
             <TableBody>
               {rows.map((row) => {
                 const isMarketSnapshot = row.buyRate === row.sellRate;
-                const baseline = Number(row.sellRate);
-                const netRate = baseline * (1 - row.feeBps / 10000);
-                const formattedNetRate = Number.isFinite(netRate)
-                  ? netRate.toFixed(12).replace(/\.?0+$/, '')
-                  : '—';
+                const displayedRate = row.active ? row.marketRate : row.sellRate;
+                const displayedCustomerRate = row.active ? row.customerRate : undefined;
+                let versionNature = '旧版手工双边价';
+                if (row.active) versionNature = 'FastForex 实时 + 费率策略';
+                else if (isMarketSnapshot) versionNature = '历史审计快照';
                 return (
                   <TableRow key={row.id}>
                     <TableCell>{row.type}</TableCell>
                     <TableCell>
                       {row.baseCurrency}/{row.quoteCurrency}
                     </TableCell>
-                    <TableCell>{isMarketSnapshot ? 'FastForex 快照' : '旧版手工双边价'}</TableCell>
+                    <TableCell>{versionNature}</TableCell>
                     <TableCell>
-                      {isMarketSnapshot ? row.sellRate : `买 ${row.buyRate} / 卖 ${row.sellRate}`}
+                      {row.active && row.marketUnavailable
+                        ? '实时行情暂不可用'
+                        : displayedRate || '—'}
                     </TableCell>
                     <TableCell>
                       {row.feeBps} bps ({(row.feeBps / 100).toFixed(2)}%)
                     </TableCell>
-                    <TableCell>{formattedNetRate}</TableCell>
-                    <TableCell>{new Date(row.effectiveFrom).toLocaleString('zh-CN')}</TableCell>
+                    <TableCell>
+                      {displayedCustomerRate || (row.active ? '—' : '历史交易各自留存')}
+                    </TableCell>
+                    <TableCell>
+                      {row.active && row.marketUpdatedAt
+                        ? new Date(row.marketUpdatedAt).toLocaleString('zh-CN')
+                        : new Date(row.effectiveFrom).toLocaleString('zh-CN')}
+                    </TableCell>
                     <TableCell>
                       <Label color={row.active ? 'success' : 'default'}>
                         {row.active ? '生效中' : '历史'}
@@ -1511,7 +1523,7 @@ function RateDialog({
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <Box component="form" onSubmit={submit} noValidate>
-        <DialogTitle>新建汇率版本</DialogTitle>
+        <DialogTitle>新建费率策略版本</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
@@ -1579,7 +1591,7 @@ function RateDialog({
               type="number"
               label="费率 (bps)"
               value={feeBps}
-              helperText="最终报价 = FastForex 中间价 × (1 − 费率 / 10000)"
+              helperText="动态报价 = 提交时 FastForex 实时中间价 × (1 − 费率 / 10000)"
               inputProps={{ min: 0, max: 9999, step: 1 }}
               onChange={(event) => {
                 setFeeBps(event.target.value);
@@ -1588,7 +1600,7 @@ function RateDialog({
             />
             {selectedQuote && feeBps !== '' && Number.isFinite(Number(feeBps)) && (
               <Typography variant="body2" color="text.secondary">
-                含费率报价：
+                当前预览（提交时会重新取价）：
                 {(Number(selectedQuote.rate) * (1 - Number(feeBps) / 10000))
                   .toFixed(12)
                   .replace(/\.?0+$/, '')}{' '}

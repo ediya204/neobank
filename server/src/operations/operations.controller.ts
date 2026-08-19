@@ -7,7 +7,14 @@ import {
   PayoutMethod,
 } from '@prisma/client';
 import type { Request } from 'express';
-import { IsEnum, IsISO8601, IsNumberString, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsISO8601,
+  IsNumberString,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { currentUserId } from '../common/current-user';
 import { OperationsService } from './operations.service';
 
@@ -33,6 +40,12 @@ class CreateOperationDto {
   @IsOptional() @IsString() remittanceReference?: string;
   @IsOptional() @IsISO8601() receivedAt?: string;
   @IsOptional() @IsString() proofUrl?: string;
+  @IsOptional() @IsString() marketProvider?: string;
+  @IsOptional() @IsString() marketPriceType?: string;
+  @IsOptional() @IsBoolean() marketReferenceOnly?: boolean;
+  @IsOptional() @IsNumberString() marketRate?: string;
+  @IsOptional() @IsISO8601() marketUpdatedAt?: string;
+  @IsOptional() @IsISO8601() marketFetchedAt?: string;
 }
 
 class RejectOperationDto {

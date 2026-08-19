@@ -25,6 +25,16 @@ that the assumption no longer applies.
   the account reservation. Cregis customer input represents the total wallet debit;
   only the stored net amount is submitted on-chain. Stale fee confirmation requires
   explicit customer reconfirmation.
+- FX/OTC rate versions configure only a fee policy for a supported currency pair.
+  Customer quotes must be calculated from the current FastForex midpoint plus that
+  fee on every display and refreshed again at operation submission. The submitted
+  operation stores the provider midpoint, fee, final rate, amount, and timestamps;
+  later approval posts that immutable transaction snapshot. A rate version's
+  creation-time midpoint is audit evidence only and must never become the runtime
+  pricing baseline.
+- USD portfolio valuations use current FastForex quotes for every non-USD asset,
+  including USDT. Missing provider data produces an explicit partial valuation;
+  stored fee-policy snapshots and assumed stablecoin parity are not fallbacks.
 - In the Neobank profile, manual KYC approval is the final account-opening gate.
   Approval automatically activates the customer and idempotently provisions one
   Cregis-verified USDT-TRC20 wallet. This removes the separate Operations and wallet

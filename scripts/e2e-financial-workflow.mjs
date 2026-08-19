@@ -54,7 +54,10 @@ await expectPatchStatus(`/operations/${selfApprovalCandidate.id}/approve`, 'usr_
 await patch(`/operations/${selfApprovalCandidate.id}/reject`, 'usr_admin', {
   reason: `${marker} 单人审批拒绝路径`,
 });
-assert(true, 'non-admin cannot approve and the submitting admin can reject with reservation released');
+assert(
+  true,
+  'non-admin cannot approve and the submitting admin can reject with reservation released'
+);
 
 const platformResult = await completePayout('PLATFORM', platform, systemHkd, '2.00');
 const poboResult = await completePayout('POBO', pobo, systemHkd, '2.00');
@@ -86,14 +89,30 @@ const fx = await submitAndApprove({
   amount: '1.00',
   sourceAccountId: systemUsd.id,
   targetAccountId: systemHkd.id,
+  ...liveMarketQuote('7.81234'),
 });
 const fxDetail = await get(`/operations/${fx.id}`, 'usr_admin');
 assert(
-  fx.status === 'COMPLETED' && fxDetail.journals.length === 1,
-  'USD/HKD FX uses a versioned rate and balanced journal'
+  fx.status === 'COMPLETED' &&
+    fxDetail.journals.length === 1 &&
+    fxDetail.metadata?.marketQuote?.marketRate === '7.81234' &&
+    fxDetail.rate === fxDetail.metadata?.marketQuote?.customerRate,
+  'USD/HKD FX snapshots a fresh market quote plus the active fee and posts a balanced journal'
 );
 
 console.log('PASS all local fiat financial workflows');
+
+function liveMarketQuote(rate) {
+  const now = new Date().toISOString();
+  return {
+    marketProvider: 'fastforex',
+    marketPriceType: 'midpoint_spot',
+    marketReferenceOnly: true,
+    marketRate: rate,
+    marketUpdatedAt: now,
+    marketFetchedAt: now,
+  };
+}
 
 async function submitDeposit(target, label) {
   const operation = await post('/operations', 'usr_admin', {
@@ -156,7 +175,7 @@ async function completePayout(method, fundingChannel, source, amount) {
 function assertPayoutFee(result, method, fundingChannel) {
   const snapshot = result.metadata?.withdrawalFee;
   assert(
-      snapshot?.method === method &&
+    snapshot?.method === method &&
       snapshot.channelCode === fundingChannel.code &&
       Number(snapshot.amount) === Number(result.feeAmount) &&
       Boolean(snapshot.version),

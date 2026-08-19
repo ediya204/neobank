@@ -40,6 +40,9 @@ D1-related note in this history.
   for automatic conversion and completed sweep effects.
 - Authentication and local development were hardened so Admin local testing uses a
   separate local identity, password, TOTP, session, CSRF, and recovery setup.
+- FX/OTC rate versions were clarified as fee-policy versions rather than fixed
+  quotes. The UI uses live FastForex midpoint data plus the active fee, while the
+  server refreshes and locks the exact transaction quote at submission.
 
 ## Partner notification and reconciliation
 

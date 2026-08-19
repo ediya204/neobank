@@ -26,6 +26,7 @@ const [
   virtualAccountsPage,
   financeWorkspace,
   coreApi,
+  accountsService,
 ] = await Promise.all([
   read('package.json'),
   read('wrangler.neobank.jsonc'),
@@ -48,6 +49,7 @@ const [
   read('src/pages/portal/virtual-accounts.tsx'),
   read('src/pages/dashboard/finance-workspace.tsx'),
   read('src/features/finance/core-api.ts'),
+  read('server/src/accounts/accounts.service.ts'),
 ]);
 
 const packageJson = JSON.parse(packageSource);
@@ -147,9 +149,17 @@ assert.match(worker, /active'\) === 'true'/);
 assert.match(worker, /customers\/\$\{customerId\}\/virtual-account-requests/);
 assert.match(worker, /invalid_csrf_token/);
 assert.match(worker, /incoming\.pathname === '\/api\/core\/rates\/from-market'/);
-assert.match(worker, /new URL\('\/api\/v1\/admin\/market-rate'/);
+assert.match(worker, /fetchLiveMarketQuote/);
+assert.match(worker, /role === 'customer' \? '\/api\/v1\/customer\/market-rate'/);
 assert.match(worker, /quote\.provider !== 'fastforex'/);
 assert.match(worker, /referenceRate: quote\.rate/);
+assert.match(worker, /incoming\.pathname === '\/api\/core\/operations'/);
+assert.match(worker, /marketRate: quote\.rate/);
+assert.match(worker, /incoming\.pathname === '\/api\/core\/rates'/);
+assert.match(worker, /customerRate: customerRate\.toFixed/);
+assert.match(worker, /incoming\.pathname === '\/api\/core\/accounts\/summary'/);
+assert.match(worker, /fetchLiveMarketQuote\(request, env, role, item\.currency, 'USD'\)/);
+assert.doesNotMatch(accountsService, /rateVersion\./);
 assert.match(worker, /replace\(\/\^\\\/api\\\/core/);
 assert.doesNotMatch(worker, /handleAuthRequest/);
 assert.doesNotMatch(worker, /authorizeBrowserRequest/);

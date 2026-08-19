@@ -48,6 +48,12 @@ type CreateOperationInput = {
   remittanceReference?: string;
   receivedAt?: string;
   proofUrl?: string;
+  marketProvider?: string;
+  marketPriceType?: string;
+  marketReferenceOnly?: boolean;
+  marketRate?: string;
+  marketUpdatedAt?: string;
+  marketFetchedAt?: string;
 };
 
 const operationInclude = {
@@ -205,6 +211,14 @@ export class OperationsService {
           }
           let feeAmount = requestedFeeAmount;
           let withdrawalFeeSnapshot: Record<string, string> | undefined;
+          let conversionSnapshot:
+            | {
+                rateVersionId: string;
+                customerRate: Prisma.Decimal;
+                quoteAmount: Prisma.Decimal;
+                metadata: Record<string, string | number | boolean>;
+              }
+            | undefined;
           if (input.type === 'PAYOUT') {
             if (!channel || !input.payoutMethod) {
               throw new BadRequestException('payout_details_required');
@@ -226,6 +240,70 @@ export class OperationsService {
             ) {
               throw new ConflictException('withdrawal_fee_changed');
             }
+          }
+          if (input.type === 'FX' || input.type === 'OTC') {
+            if (!input.quoteCurrency) throw new BadRequestException('quote_currency_required');
+            if (
+              input.marketProvider !== 'fastforex' ||
+              input.marketPriceType !== 'midpoint_spot' ||
+              input.marketReferenceOnly !== true ||
+              !input.marketRate ||
+              !input.marketUpdatedAt ||
+              !input.marketFetchedAt
+            ) {
+              throw new BadRequestException('live_market_quote_required');
+            }
+            const fetchedAt = new Date(input.marketFetchedAt);
+            const updatedAt = new Date(input.marketUpdatedAt);
+            const now = Date.now();
+            if (
+              !Number.isFinite(fetchedAt.getTime()) ||
+              !Number.isFinite(updatedAt.getTime()) ||
+              fetchedAt.getTime() < now - 2 * 60 * 1000 ||
+              fetchedAt.getTime() > now + 30 * 1000 ||
+              updatedAt.getTime() > now + 30 * 1000
+            ) {
+              throw new ConflictException('live_market_quote_expired');
+            }
+            let marketRate: Prisma.Decimal;
+            try {
+              marketRate = new Prisma.Decimal(input.marketRate);
+            } catch {
+              throw new BadRequestException('invalid_market_rate');
+            }
+            if (!marketRate.isFinite() || marketRate.lessThanOrEqualTo(0)) {
+              throw new BadRequestException('invalid_market_rate');
+            }
+            const rateVersion = await tx.rateVersion.findFirst({
+              where: {
+                type: input.type,
+                baseCurrency: input.currency,
+                quoteCurrency: input.quoteCurrency,
+                active: true,
+                effectiveFrom: { lte: new Date() },
+                OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: new Date() } }],
+              },
+              orderBy: { effectiveFrom: 'desc' },
+            });
+            if (!rateVersion) throw new ConflictException('active_rate_not_found');
+            const customerRate = marketRate
+              .mul(new Prisma.Decimal(1).sub(new Prisma.Decimal(rateVersion.feeBps).div(10000)))
+              .toDecimalPlaces(12);
+            conversionSnapshot = {
+              rateVersionId: rateVersion.id,
+              customerRate,
+              quoteAmount: amount.mul(customerRate).toDecimalPlaces(8),
+              metadata: {
+                provider: input.marketProvider,
+                priceType: input.marketPriceType,
+                referenceOnly: input.marketReferenceOnly,
+                marketRate: marketRate.toString(),
+                customerRate: customerRate.toString(),
+                feeBps: rateVersion.feeBps,
+                updatedAt: updatedAt.toISOString(),
+                fetchedAt: fetchedAt.toISOString(),
+              },
+            };
           }
           const reserve = amount.add(feeAmount);
           if (frozen && source) {
@@ -251,6 +329,9 @@ export class OperationsService {
               payoutMethod: input.payoutMethod,
               adjustmentDirection: input.adjustmentDirection,
               quoteCurrency: input.quoteCurrency,
+              quoteAmount: conversionSnapshot?.quoteAmount,
+              rate: conversionSnapshot?.customerRate,
+              rateVersionId: conversionSnapshot?.rateVersionId,
               makerId,
               narrative: input.narrative,
               remitterName: input.remitterName,
@@ -258,9 +339,13 @@ export class OperationsService {
               remittanceReference: input.remittanceReference?.trim(),
               receivedAt: input.receivedAt ? new Date(input.receivedAt) : undefined,
               proofUrl: input.proofUrl,
-              metadata: withdrawalFeeSnapshot
-                ? { withdrawalFee: withdrawalFeeSnapshot }
-                : undefined,
+              metadata:
+                withdrawalFeeSnapshot || conversionSnapshot
+                  ? {
+                      ...(withdrawalFeeSnapshot ? { withdrawalFee: withdrawalFeeSnapshot } : {}),
+                      ...(conversionSnapshot ? { marketQuote: conversionSnapshot.metadata } : {}),
+                    }
+                  : undefined,
               submittedAt: new Date(),
             },
             include: operationInclude,
@@ -609,22 +694,10 @@ export class OperationsService {
     if (!operation.sourceAccountId || !operation.targetAccountId || !operation.quoteCurrency) {
       throw new BadRequestException('conversion_accounts_required');
     }
-    const rateType = operation.type === 'FX' ? 'FX' : 'OTC';
-    const rate = await tx.rateVersion.findFirst({
-      where: {
-        type: rateType,
-        baseCurrency: operation.currency,
-        quoteCurrency: operation.quoteCurrency,
-        active: true,
-        effectiveFrom: { lte: new Date() },
-        OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: new Date() } }],
-      },
-      orderBy: { effectiveFrom: 'desc' },
-    });
-    if (!rate) throw new ConflictException('active_rate_not_found');
-    const quoteAmount = operation.amount
-      .mul(rate.sellRate)
-      .mul(new Prisma.Decimal(1).sub(new Prisma.Decimal(rate.feeBps).div(10000)));
+    if (!operation.rate || !operation.quoteAmount || !operation.rateVersionId) {
+      throw new ConflictException('conversion_quote_snapshot_missing');
+    }
+    const quoteAmount = operation.quoteAmount;
     const sourceClearing = await this.clearingAccount(tx, operation.currency);
     const targetClearing = await this.clearingAccount(tx, operation.quoteCurrency);
     await this.consumeFrozen(
@@ -651,7 +724,7 @@ export class OperationsService {
     ]);
     await tx.operation.update({
       where: { id: operation.id },
-      data: { quoteAmount, rate: rate.sellRate, rateVersionId: rate.id },
+      data: { quoteAmount, rate: operation.rate, rateVersionId: operation.rateVersionId },
     });
     await this.postFee(tx, operation);
   }

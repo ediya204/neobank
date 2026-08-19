@@ -115,21 +115,18 @@ export class RatesController {
       throw new BadRequestException('stale_market_rate_source');
     }
     return this.db.$transaction(async (tx) => {
-      const duplicate = await tx.rateVersion.findFirst({
+      const candidates = await tx.rateVersion.findMany({
         where: {
           type: dto.type,
           baseCurrency: dto.baseCurrency,
           quoteCurrency: dto.quoteCurrency,
-          buyRate: referenceRate,
-          sellRate: referenceRate,
           feeBps: dto.feeBps,
-          effectiveFrom: {
-            gte: new Date(sourceFetchedAt.getTime() - 1000),
-            lte: new Date(sourceFetchedAt.getTime() + 1000),
-          },
           active: true,
         },
       });
+      const duplicate = candidates.find((candidate) =>
+        candidate.buyRate.equals(candidate.sellRate)
+      );
       if (duplicate) return duplicate;
       await tx.rateVersion.updateMany({
         where: {
@@ -138,7 +135,7 @@ export class RatesController {
           quoteCurrency: dto.quoteCurrency,
           active: true,
         },
-        data: { active: false, effectiveUntil: sourceFetchedAt },
+        data: { active: false, effectiveUntil: new Date() },
       });
       return tx.rateVersion.create({
         data: {
@@ -148,7 +145,9 @@ export class RatesController {
           buyRate: referenceRate,
           sellRate: referenceRate,
           feeBps: dto.feeBps,
-          effectiveFrom: sourceFetchedAt,
+          // buyRate/sellRate retain only the provider quote observed when the
+          // fee policy was created. Runtime pricing never reads this snapshot.
+          effectiveFrom: new Date(),
         },
       });
     });

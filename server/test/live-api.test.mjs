@@ -283,15 +283,17 @@ test('an administrator can explicitly deactivate an active rate without deleting
   assert.equal(created.response.status, 201);
   assert.equal(created.body.active, true);
   assert.equal(created.body.buyRate, created.body.sellRate);
-  assert.equal(created.body.sellRate, '7.8');
+  assert.ok(Number(created.body.sellRate) > 0);
   assert.equal(created.body.feeBps, 20);
+  const creationAuditRate = created.body.sellRate;
 
   const repeatedCreate = await request('/rates/from-market', 'usr_admin', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(marketRatePayload({ referenceRate: '7.9' })),
   });
   assert.equal(repeatedCreate.response.status, 201);
   assert.equal(repeatedCreate.body.id, created.body.id);
+  assert.equal(repeatedCreate.body.sellRate, creationAuditRate);
 
   const deactivated = await request(`/rates/${created.body.id}/deactivate`, 'usr_admin', {
     method: 'PATCH',

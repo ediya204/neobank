@@ -156,13 +156,31 @@ Administrators create a settlement rate version through
 `POST /api/core/rates/from-market`. The Worker validates the application
 session and CSRF token, fetches the selected pair from the signed Render
 FastForex endpoint, ignores any client-supplied quote, and forwards the fresh
-midpoint snapshot to Core. Core stores that midpoint in both rate columns and
-stores the configured fee in `feeBps`; conversion applies the fee once to the
-received amount. Direct/manual `POST /rates` creation is disabled. The market
-snapshot time is retained as the version effective time, while historical
-versions and transaction snapshots remain immutable. Repeating the same pair,
-snapshot, and fee payload returns the existing active version rather than
-creating a duplicate.
+midpoint snapshot to Core. The version is a fee policy, not a fixed customer
+quote: Core stores `feeBps`, while the midpoint in the legacy rate columns is
+retained only as creation-time audit evidence. Direct/manual `POST /rates`
+creation is disabled. Repeating the same active pair and fee returns the
+existing policy even when the live midpoint has moved.
+
+Every active `GET /api/core/rates` row is decorated at the Worker with a fresh
+or short-TTL FastForex `marketRate` and a dynamically computed `customerRate`.
+The UI must not fall back to the creation-time audit columns if live market
+data is unavailable. For FX/OTC submission, the Worker ignores browser quote
+fields, fetches FastForex again, and injects the authenticated live midpoint.
+Core then resolves the active fee policy, computes
+`customerRate = marketRate * (1 - feeBps / 10000)`, and stores the provider
+midpoint, fee, final rate, quote amount, and timestamps on the operation before
+funds are reserved. Approval posts that immutable operation quote; it never
+reuses the policy's creation-time midpoint. This keeps the displayed price
+dynamic while preserving an auditable point-in-time transaction price.
+
+Portfolio USD valuations follow the same rule. Core returns materialized account
+balances without using any stored rate-version snapshot. The Worker decorates
+`GET /api/core/accounts/summary` with current FastForex HKD/USD and USDT/USD
+quotes and recomputes totals and distribution percentages. If a required market
+quote is unavailable, that currency is explicitly listed in `missingRates` and
+the valuation is `partial`; the UI must not silently fall back to a fixed book
+rate or assumed USDT parity.
 
 Configure `FASTFOREX_API_KEY` only as a Render secret; never put its value in
 `render.yaml`, a frontend variable, a URL query parameter, or a Worker variable.

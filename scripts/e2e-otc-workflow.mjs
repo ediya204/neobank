@@ -99,6 +99,7 @@ const rejected = await request('/operations', 'usr_admin', {
     targetAccountId: systemUsd.id,
     idempotencyKey: crypto.randomUUID(),
     narrative: `${marker} OTC reject`,
+    ...liveMarketQuote('0.9991'),
   }),
 });
 await request(`/operations/${rejected.id}/reject`, 'usr_admin', {
@@ -134,12 +135,30 @@ async function submitAndApprove(target) {
       targetAccountId: target.id,
       idempotencyKey: crypto.randomUUID(),
       narrative: `${marker} OTC to ${target.kind}`,
+      ...liveMarketQuote(target.currency === 'USD' ? '0.9992' : '7.805'),
     }),
   });
   assert(operation.status === 'SUBMITTED', `OTC to ${target.kind} submitted for approval`);
+  assert(
+    operation.metadata?.marketQuote?.marketRate &&
+      operation.rate === operation.metadata.marketQuote.customerRate,
+    `OTC to ${target.kind} locks the live market quote plus fee at submission`
+  );
   const approved = await request(`/operations/${operation.id}/approve`, 'usr_admin', {
     method: 'PATCH',
   });
   assert(approved.status === 'COMPLETED', `OTC to ${target.kind} completed after admin approval`);
   return approved;
+}
+
+function liveMarketQuote(rate) {
+  const now = new Date().toISOString();
+  return {
+    marketProvider: 'fastforex',
+    marketPriceType: 'midpoint_spot',
+    marketReferenceOnly: true,
+    marketRate: rate,
+    marketUpdatedAt: now,
+    marketFetchedAt: now,
+  };
 }

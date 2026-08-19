@@ -35,7 +35,6 @@ import {
   Currency,
   demoOrganizationId,
   FundingChannel,
-  MarketQuote,
   MoneyAccount,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
@@ -51,8 +50,6 @@ export default function CustomerAccounts() {
   const [summary, setSummary] = useState<AssetSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState('');
-  const [marketQuotes, setMarketQuotes] = useState<MarketQuote[]>([]);
-  const [marketLoading, setMarketLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -83,37 +80,6 @@ export default function CustomerAccounts() {
     };
   }, [customer?.id]);
 
-  useEffect(() => {
-    let active = true;
-    if (!customer?.id) {
-      setMarketQuotes([]);
-      setMarketLoading(false);
-      return () => {
-        active = false;
-      };
-    }
-
-    setMarketLoading(true);
-    Promise.allSettled(
-      (['HKD', 'USDT'] as const).map((currency) =>
-        coreApi<MarketQuote>(`/customer/market-rate?base=${currency}&quote=USD`)
-      )
-    )
-      .then((results) => {
-        if (!active) return;
-        setMarketQuotes(
-          results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
-        );
-      })
-      .finally(() => {
-        if (active) setMarketLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [customer?.id]);
-
   const usdRates = useMemo(() => {
     const rates = new Map<Currency, UsdRate>();
     rates.set('USD', { rate: 1, source: 'parity' });
@@ -121,14 +87,8 @@ export default function CustomerAccounts() {
       const rate = Number(item.reportingRate);
       if (Number.isFinite(rate) && rate > 0) rates.set(item.currency, { rate, source: 'book' });
     });
-    marketQuotes.forEach((quote) => {
-      const rate = Number(quote.rate);
-      if (quote.quoteCurrency === 'USD' && Number.isFinite(rate) && rate > 0) {
-        rates.set(quote.baseCurrency, { rate, source: 'market' });
-      }
-    });
     return rates;
-  }, [marketQuotes, summary]);
+  }, [summary]);
 
   const accounts = (customer?.accounts || []).filter((row) => {
     if (tab === 'wallet') return row.kind === 'SYSTEM_WALLET';
@@ -219,7 +179,7 @@ export default function CustomerAccounts() {
                 key={account.id}
                 account={account}
                 usdValuation={accountUsdValuation(account, usdRates)}
-                valuationLoading={summaryLoading || marketLoading}
+                valuationLoading={summaryLoading}
                 divider={index < accounts.length - 1}
                 onOpen={() => setSelected(account)}
               />

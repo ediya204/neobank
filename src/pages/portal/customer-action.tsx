@@ -33,6 +33,7 @@ import {
   Customer,
   FundingChannel,
   isSupportedPortalAccount,
+  Operation,
   OperationType,
   RateVersion,
   WithdrawalFeeRule,
@@ -201,8 +202,8 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
         row.baseCurrency === source.currency &&
         row.quoteCurrency === target.currency
     );
-    if (!rate) return null;
-    const received = Number(amount) * Number(rate.sellRate) * (1 - Number(rate.feeBps) / 10000);
+    if (!rate || !rate.marketRate || !rate.customerRate || rate.marketUnavailable) return null;
+    const received = Number(amount) * Number(rate.customerRate);
     return { rate, target, received };
   }, [accounts, action, amount, rates, source, targetId]);
 
@@ -289,12 +290,24 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
         });
       }
       payload.type = type;
-      await coreApi('/operations', { method: 'POST', body: JSON.stringify(payload) });
-      setSuccess(
-        action === 'payout'
-          ? '付款已提交。平台管理员审批后将由银行或支付通道执行。'
-          : '指令已提交审批，完成后余额会自动更新。'
-      );
+      const created = await coreApi<Operation>('/operations', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      let successMessage = '指令已提交审批，完成后余额会自动更新。';
+      if (action === 'payout') {
+        successMessage = '付款已提交。平台管理员审批后将由银行或支付通道执行。';
+      } else if (
+        (action === 'fx' || action === 'otc') &&
+        created.rate &&
+        created.quoteAmount &&
+        created.quoteCurrency
+      ) {
+        successMessage = `指令已按提交时实时行情锁定：1 ${created.currency} = ${created.rate} ${
+          created.quoteCurrency
+        }，预计到账 ${money(created.quoteAmount, created.quoteCurrency)}。`;
+      }
+      setSuccess(successMessage);
       setAmount('');
       setNote('');
       await Promise.all([loadDetail(), refresh()]);
@@ -577,7 +590,8 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                                 当前汇率
                               </Typography>
                               <Typography variant="subtitle2">
-                                1 {source.currency} = {Number(quote.rate.sellRate).toLocaleString()}{' '}
+                                1 {source.currency} ={' '}
+                                {Number(quote.rate.marketRate).toLocaleString()}{' '}
                                 {quote.target.currency}
                               </Typography>
                             </Stack>
@@ -589,6 +603,15 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                                 {(quote.rate.feeBps / 100).toFixed(2)}%
                               </Typography>
                             </Stack>
+                            <Typography variant="caption" color="text.secondary">
+                              FastForex 实时中间价
+                              {quote.rate.marketUpdatedAt
+                                ? ` · 行情时间 ${new Date(
+                                    quote.rate.marketUpdatedAt
+                                  ).toLocaleString('zh-CN')}`
+                                : ''}
+                              。提交时服务端会再次取价，并把最终含费率成交价锁定到指令。
+                            </Typography>
                             <Divider />
                             <Stack direction="row" justifyContent="space-between" gap={2}>
                               <Typography variant="subtitle2">预计到账</Typography>
@@ -749,9 +772,7 @@ function BeneficiaryPage({
                     </Box>
                     <Button
                       href={
-                        cryptoRecipient
-                          ? '/portal/crypto-wallet/withdraw'
-                          : '/portal/money/payouts'
+                        cryptoRecipient ? '/portal/crypto-wallet/withdraw' : '/portal/money/payouts'
                       }
                       endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}
                       sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, flexShrink: 0 }}
