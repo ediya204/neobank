@@ -168,11 +168,18 @@ async function loadApplicationSession(
   });
   const cookie = request.headers.get('cookie');
   if (cookie) headers.set('cookie', cookie);
-  const response = await fetch(upstream, { headers, redirect: 'manual' });
-  if (!response.ok) return null;
-  const contentType = response.headers.get('content-type') || '';
-  if (!contentType.toLowerCase().includes('application/json')) return null;
-  return (await response.json()) as ApplicationSessionPayload;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(upstream, { headers, redirect: 'manual' });
+    if (response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.toLowerCase().includes('application/json')) return null;
+      return (await response.json()) as ApplicationSessionPayload;
+    }
+    const retryable = response.status === 401 || [502, 503, 504].includes(response.status);
+    if (!retryable || attempt === 2) return null;
+    await new Promise((resolve) => setTimeout(resolve, 75 * (attempt + 1)));
+  }
+  return null;
 }
 
 function customerCoreRouteAllowed(

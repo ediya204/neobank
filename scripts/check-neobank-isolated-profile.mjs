@@ -160,7 +160,12 @@ assert.match(goMain, /databaseBackend != "postgres"/);
 assert.doesNotMatch(goMain, /case "d1"/);
 assert.match(coreMain, /edgeAuthMiddleware/);
 assert.match(coreMain, /CORE_EDGE_AUTH_REQUIRED/);
-assert.match(coreMain, /rawBody: true/);
+assert.match(coreMain, /bodyParser: false/);
+assert.match(coreMain, /expressJson\(\{ limit: '128kb', verify: captureRawBody \}\)/);
+assert.ok(
+  coreMain.indexOf('app.use(expressJson') < coreMain.indexOf('app.use(edgeAuthMiddleware'),
+  'Core JSON body parser must run before edge signature verification'
+);
 assert.match(coreEdgeAuth, /timingSafeEqual/);
 assert.match(coreEdgeAuth, /request\.headers\['x-user-id'\] = options\.adminUserId/);
 assert.match(coreEdgeAuth, /x-authenticated-customer-id/);
