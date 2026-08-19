@@ -132,6 +132,13 @@ Configure these on `neobank-web`, not on Render:
 
 The Neobank Worker must have no D1 binding.
 
+Admin and customer session reads extend idle expiry at most once every 30
+seconds. The PostgreSQL touch is conditional, and a concurrent zero-row touch
+must revalidate the still-active session instead of returning `session_expired`.
+This prevents parallel dashboard requests from contending on one serializable
+session row while preserving revocation, absolute expiry, idle expiry, and
+credential-version checks.
+
 `CREGIS_RELAY_URL` affects only the Cregis client. Do not configure a global
 `HTTP_PROXY` or `HTTPS_PROXY`.
 The relay accepts only the Cregis address-create, address-ownership,

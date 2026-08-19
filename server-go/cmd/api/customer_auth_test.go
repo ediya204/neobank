@@ -22,6 +22,29 @@ type customerLoginDatabase struct {
 	statements []d1.Statement
 }
 
+type sessionTouchDatabase struct {
+	rows         []map[string]any
+	batchChanges float64
+	queryCalls   int
+	batchCalls   int
+	statements   []d1.Statement
+}
+
+func (db *sessionTouchDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+	db.queryCalls++
+	return db.rows, nil
+}
+
+func (db *sessionTouchDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
+	db.batchCalls++
+	db.statements = append(db.statements, statements...)
+	results := make([]d1.Result, len(statements))
+	for index := range results {
+		results[index] = d1.Result{Meta: map[string]any{"changes": db.batchChanges}}
+	}
+	return results, nil
+}
+
 func (db *customerLoginDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
 	return db.rows, nil
 }
@@ -54,6 +77,31 @@ func TestDatabaseTimestampSortsLexically(t *testing.T) {
 	second := first.Add(20 * time.Millisecond)
 	if databaseTimestamp(first) >= databaseTimestamp(second) {
 		t.Fatal("database timestamps must preserve chronological text ordering")
+	}
+}
+
+func TestCustomerSessionConcurrentTouchRemainsAuthenticated(t *testing.T) {
+	now := time.Now().UTC()
+	token := strings.Repeat("t", 32)
+	csrf := strings.Repeat("c", 32)
+	db := &sessionTouchDatabase{batchChanges: 0, rows: []map[string]any{{
+		"id": "session_test", "customer_id": "customer_test", "csrf_hash": tokenHash(csrf),
+		"credential_version": int64(1), "current_credential_version": int64(1),
+		"expires_at":      databaseTimestamp(now.Add(time.Hour)),
+		"idle_expires_at": databaseTimestamp(now.Add(30 * time.Minute)),
+		"last_seen_at":    databaseTimestamp(now.Add(-time.Minute)),
+		"email":           "customer@example.test", "display_name": "Customer", "status": "active",
+	}}}
+	app := &application{db: db, portalURL: "http://localhost:3000", tenantID: "neobank"}
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	request.AddCookie(&http.Cookie{Name: app.customerCookieName(), Value: token})
+	request.AddCookie(&http.Cookie{Name: app.customerCSRFCookieName(), Value: csrf})
+	session, _, err := app.loadCustomerSession(request)
+	if err != nil || session == nil {
+		t.Fatalf("concurrent customer session touch must remain valid: %v", err)
+	}
+	if db.batchCalls != 1 || db.queryCalls != 2 || !strings.Contains(db.statements[0].SQL, "last_seen_at<?") {
+		t.Fatalf("expected conditional touch plus validity recheck, batch=%d query=%d", db.batchCalls, db.queryCalls)
 	}
 }
 

@@ -34,6 +34,52 @@ func TestAdminPasswordDerivationIsDomainSeparated(t *testing.T) {
 	}
 }
 
+func TestAdminSessionRecentReadsDoNotContendOnTouch(t *testing.T) {
+	now := time.Now().UTC()
+	token := strings.Repeat("t", 32)
+	csrf := strings.Repeat("c", 32)
+	db := &sessionTouchDatabase{rows: []map[string]any{{
+		"id": "admin_session_test", "user_id": "admin_test", "csrf_hash": tokenHash(csrf),
+		"credential_version": int64(1), "current_credential_version": int64(1),
+		"expires_at": databaseTimestamp(now.Add(time.Hour)), "last_seen_at": databaseTimestamp(now),
+		"email": "admin@example.test", "display_name": "Admin",
+	}}}
+	app := &application{db: db, portalURL: "http://localhost:3000"}
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	request.AddCookie(&http.Cookie{Name: app.adminCookieName(), Value: token})
+	request.AddCookie(&http.Cookie{Name: app.adminCSRFCookieName(), Value: csrf})
+	session, _, err := app.loadAdminSession(request)
+	if err != nil || session == nil {
+		t.Fatalf("recent admin session must remain valid: %v", err)
+	}
+	if db.batchCalls != 0 || db.queryCalls != 1 {
+		t.Fatalf("recent parallel reads must not write the session row, batch=%d query=%d", db.batchCalls, db.queryCalls)
+	}
+}
+
+func TestAdminSessionConcurrentTouchRevalidatesZeroChange(t *testing.T) {
+	now := time.Now().UTC()
+	token := strings.Repeat("t", 32)
+	csrf := strings.Repeat("c", 32)
+	db := &sessionTouchDatabase{batchChanges: 0, rows: []map[string]any{{
+		"id": "admin_session_test", "user_id": "admin_test", "csrf_hash": tokenHash(csrf),
+		"credential_version": int64(1), "current_credential_version": int64(1),
+		"expires_at": databaseTimestamp(now.Add(time.Hour)), "last_seen_at": databaseTimestamp(now.Add(-time.Minute)),
+		"email": "admin@example.test", "display_name": "Admin",
+	}}}
+	app := &application{db: db, portalURL: "http://localhost:3000"}
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	request.AddCookie(&http.Cookie{Name: app.adminCookieName(), Value: token})
+	request.AddCookie(&http.Cookie{Name: app.adminCSRFCookieName(), Value: csrf})
+	session, _, err := app.loadAdminSession(request)
+	if err != nil || session == nil {
+		t.Fatalf("concurrent admin session touch must remain valid: %v", err)
+	}
+	if db.batchCalls != 1 || db.queryCalls != 2 || !strings.Contains(db.statements[0].SQL, "last_seen_at<?") {
+		t.Fatalf("expected conditional touch plus validity recheck, batch=%d query=%d", db.batchCalls, db.queryCalls)
+	}
+}
+
 func TestAdminAuthPostgresIntegration(t *testing.T) {
 	databaseURL := os.Getenv("POSTGRES_TEST_DATABASE_URL")
 	if databaseURL == "" {

@@ -23,6 +23,7 @@ const (
 	adminCSRFCookie          = "__Host-neobank_admin_csrf"
 	adminSessionDuration     = 12 * time.Hour
 	adminSessionIdleDuration = time.Hour
+	sessionTouchInterval     = 30 * time.Second
 	adminChallengeDuration   = 5 * time.Minute
 	adminEnrollmentDuration  = 10 * time.Minute
 	adminSetupDuration       = 30 * time.Minute
@@ -390,7 +391,7 @@ func (app *application) loadAdminSession(r *http.Request) (*adminSession, string
 		return nil, "", errors.New("session cookie missing")
 	}
 	now := time.Now().UTC()
-	rows, err := app.db.Query(r.Context(), `SELECT s.id, s.user_id, s.csrf_hash, s.credential_version, s.expires_at,
+	rows, err := app.db.Query(r.Context(), `SELECT s.id, s.user_id, s.csrf_hash, s.credential_version, s.expires_at, s.last_seen_at,
 	  u.email, u.display_name, u.credential_version AS current_credential_version
 	  FROM admin_sessions s JOIN admin_users u ON u.id=s.user_id
 	  WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND s.idle_expires_at>?
@@ -406,16 +407,34 @@ func (app *application) loadAdminSession(r *http.Request) (*adminSession, string
 	if err != nil {
 		return nil, "", err
 	}
+	lastSeen, err := time.Parse(time.RFC3339Nano, text(rows[0]["last_seen_at"]))
+	if err != nil || lastSeen.After(now.Add(30*time.Second)) {
+		return nil, "", errors.New("session last seen invalid")
+	}
+	session := &adminSession{ID: text(rows[0]["id"]), UserID: text(rows[0]["user_id"]), Email: text(rows[0]["email"]), DisplayName: text(rows[0]["display_name"]), CSRFHash: text(rows[0]["csrf_hash"]), CredentialVersion: integer(rows[0]["credential_version"]), ExpiresAt: expires}
+	if now.Sub(lastSeen) < sessionTouchInterval {
+		return session, csrfCookie.Value, nil
+	}
 	idle := now.Add(adminSessionIdleDuration)
 	if idle.After(expires) {
 		idle = expires
 	}
-	results, err := app.db.Batch(r.Context(), d1.Statement{SQL: `UPDATE admin_sessions SET last_seen_at=?, idle_expires_at=?
-	  WHERE id=? AND revoked_at IS NULL AND expires_at>? AND idle_expires_at>?`, Params: []any{databaseTimestamp(now), databaseTimestamp(idle), text(rows[0]["id"]), databaseTimestamp(now), databaseTimestamp(now)}})
-	if err != nil || len(results) != 1 || resultChanges(results) != 1 {
-		return nil, "", errors.New("session touch failed")
+	results, touchErr := app.db.Batch(r.Context(), d1.Statement{SQL: `UPDATE admin_sessions SET last_seen_at=?, idle_expires_at=?
+	  WHERE id=? AND revoked_at IS NULL AND expires_at>? AND idle_expires_at>? AND last_seen_at<?`, Params: []any{
+		databaseTimestamp(now), databaseTimestamp(idle), session.ID, databaseTimestamp(now), databaseTimestamp(now),
+		databaseTimestamp(now.Add(-sessionTouchInterval)),
+	}})
+	if touchErr != nil || len(results) != 1 || resultChanges(results) != 1 {
+		verified, verifyErr := app.db.Query(r.Context(), `SELECT s.id
+		  FROM admin_sessions s JOIN admin_users u ON u.id=s.user_id
+		  WHERE s.id=? AND s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND s.idle_expires_at>?
+		    AND s.credential_version=u.credential_version AND u.status='active' AND u.totp_enabled=TRUE`,
+			session.ID, tokenHash(cookie.Value), databaseTimestamp(now), databaseTimestamp(now))
+		if verifyErr != nil || len(verified) != 1 {
+			return nil, "", errors.New("session touch failed")
+		}
 	}
-	return &adminSession{ID: text(rows[0]["id"]), UserID: text(rows[0]["user_id"]), Email: text(rows[0]["email"]), DisplayName: text(rows[0]["display_name"]), CSRFHash: text(rows[0]["csrf_hash"]), CredentialVersion: integer(rows[0]["credential_version"]), ExpiresAt: expires}, csrfCookie.Value, nil
+	return session, csrfCookie.Value, nil
 }
 
 func (app *application) deriveAdminPassword(password string, salt []byte) []byte {

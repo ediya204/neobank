@@ -929,7 +929,7 @@ func (app *application) loadCustomerSession(r *http.Request) (*customerSession, 
 	}
 	now := time.Now().UTC()
 	rows, err := app.db.Query(r.Context(), `SELECT s.id, s.customer_id, s.csrf_hash, s.credential_version,
-	      s.expires_at, s.idle_expires_at,
+	      s.expires_at, s.idle_expires_at, s.last_seen_at,
 	      c.email, c.display_name, c.status, cc.credential_version AS current_credential_version
 	    FROM customer_sessions s JOIN customers c ON c.id=s.customer_id
 	    JOIN customer_credentials cc ON cc.customer_id=c.id
@@ -955,24 +955,42 @@ func (app *application) loadCustomerSession(r *http.Request) (*customerSession, 
 	if err != nil || csrfCookie.Value == "" || subtle.ConstantTimeCompare([]byte(tokenHash(csrfCookie.Value)), []byte(text(rows[0]["csrf_hash"]))) != 1 {
 		return nil, "", errors.New("csrf cookie invalid")
 	}
+	lastSeenAt, err := time.Parse(time.RFC3339Nano, text(rows[0]["last_seen_at"]))
+	if err != nil || lastSeenAt.After(now.Add(30*time.Second)) {
+		return nil, "", errors.New("session last seen invalid")
+	}
+	session := &customerSession{
+		ID: text(rows[0]["id"]), CustomerID: text(rows[0]["customer_id"]), Email: text(rows[0]["email"]),
+		DisplayName: text(rows[0]["display_name"]), Status: text(rows[0]["status"]), CSRFHash: text(rows[0]["csrf_hash"]),
+		CredentialVersion: integer(rows[0]["credential_version"]), ExpiresAt: expiresAt, IdleExpiresAt: idleExpiresAt,
+	}
+	if now.Sub(lastSeenAt) < sessionTouchInterval {
+		return session, csrfCookie.Value, nil
+	}
 	nextIdleExpiry := now.Add(customerSessionIdleDuration)
 	if nextIdleExpiry.After(expiresAt) {
 		nextIdleExpiry = expiresAt
 	}
 	touchResults, err := app.db.Batch(r.Context(), d1.Statement{SQL: `UPDATE customer_sessions
 	  SET last_seen_at=?, idle_expires_at=?
-	  WHERE id=? AND revoked_at IS NULL AND expires_at>? AND idle_expires_at>?`, Params: []any{
+	  WHERE id=? AND revoked_at IS NULL AND expires_at>? AND idle_expires_at>? AND last_seen_at<?`, Params: []any{
 		databaseTimestamp(now), databaseTimestamp(nextIdleExpiry), text(rows[0]["id"]),
-		databaseTimestamp(now), databaseTimestamp(now),
+		databaseTimestamp(now), databaseTimestamp(now), databaseTimestamp(now.Add(-sessionTouchInterval)),
 	}})
 	if err != nil || len(touchResults) != 1 || resultChanges(touchResults) != 1 {
-		return nil, "", errors.New("session touch failed")
+		verified, verifyErr := app.db.Query(r.Context(), `SELECT s.id
+		  FROM customer_sessions s JOIN customers c ON c.id=s.customer_id
+		  JOIN customer_credentials cc ON cc.customer_id=c.id
+		  WHERE s.id=? AND c.tenant_id=? AND s.token_hash=? AND s.revoked_at IS NULL
+		    AND s.expires_at>? AND s.idle_expires_at>? AND c.status='active'
+		    AND c.kyc_status='approved' AND c.operations_status='active'
+		    AND s.credential_version=cc.credential_version`,
+			session.ID, app.tenantID, tokenHash(cookie.Value), databaseTimestamp(now), databaseTimestamp(now))
+		if verifyErr != nil || len(verified) != 1 {
+			return nil, "", errors.New("session touch failed")
+		}
 	}
-	return &customerSession{
-		ID: text(rows[0]["id"]), CustomerID: text(rows[0]["customer_id"]), Email: text(rows[0]["email"]),
-		DisplayName: text(rows[0]["display_name"]), Status: text(rows[0]["status"]), CSRFHash: text(rows[0]["csrf_hash"]),
-		CredentialVersion: integer(rows[0]["credential_version"]), ExpiresAt: expiresAt, IdleExpiresAt: idleExpiresAt,
-	}, csrfCookie.Value, nil
+	return session, csrfCookie.Value, nil
 }
 
 func (app *application) requireCustomerMutation(r *http.Request) (*customerSession, string, error) {
