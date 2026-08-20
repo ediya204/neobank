@@ -191,7 +191,7 @@ func main() {
 		adminPasswordPepper: adminPasswordPepper, adminTOTPKey: adminTOTPKey, adminBootstrapSecret: adminBootstrapSecret,
 		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"),
 		coreOrganizationID: envOr("CORE_ORGANIZATION_ID", "org_neobank"),
-		databaseBackend:    databaseBackend, marketData: marketData, sumsub: sumsubClient,
+		databaseBackend:    databaseBackend, marketData: marketData, sumsub: sumsubProviderOrNil(sumsubClient),
 		sumsubSchemaReady: sumsubSchemaReady,
 		sumsubEnvironment: sumsubEnvironment, sumsubWebhookSecret: sumsubWebhookSecret, logger: logger,
 	}
@@ -224,6 +224,13 @@ func main() {
 		logger.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+func sumsubProviderOrNil(client *sumsubapi.Client) sumsubProvider {
+	if client == nil {
+		return nil
+	}
+	return client
 }
 
 func validConfiguredOrigin(value string, allowLocalHTTP bool) bool {
