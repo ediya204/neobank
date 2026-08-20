@@ -16,6 +16,9 @@ export const paths = {
       login: '/customer/login',
       setup: '/customer/setup',
       register: '/customer/register',
+      forgotPassword: '/customer/forgot-password',
+      resetPassword: '/customer/reset-password',
+      verifyEmail: '/customer/verify-email',
     },
     portal: {
       login: '/portal/login',

@@ -20,7 +20,7 @@
 
 | 角色               | 权限                                                               | 业务边界                                           |
 | ------------------ | ------------------------------------------------------------------ | -------------------------------------------------- |
-| `super_admin`      | 全部权限及 `admin_users.manage`                                    | 可管理管理员、客户、资金、系统配置和报表           |
+| `super_admin`      | 全部权限，包括 `admin_users.manage`、`customer_credentials.manage` | 可管理管理员、客户登录凭据、资金、系统配置和报表   |
 | `operations_admin` | `customers.read`、`funds.read`、`funds.manage`、`reports.read`     | 可处理资金业务；不能管理管理员、KYC 决策或系统配置 |
 | `compliance_admin` | `customers.read`、`customers.review`、`funds.read`、`reports.read` | 可处理客户、KYC 与 VA；资金仅供读取                |
 | `read_only_admin`  | `customers.read`、`funds.read`、`reports.read`                     | 只读查看客户、资金与报表                           |
@@ -35,10 +35,18 @@ Worker Core 代理的权限校验。未知 Core 路由对非超级管理员默�
 - 创建：`POST /api/v1/admin/users`
 - 更新：`PATCH /api/v1/admin/users/:id`
 - 未完成首次激活时重新签发链接：`POST /api/v1/admin/users/:id/setup-token`
+- 修改已激活客户密码：`PATCH /api/v1/admin/customers/:id/password`
 
 所有写请求要求管理员会话、同源 `Origin` 和有效 CSRF token。接口只返回一次性
 setup token；前端只把它放在 `/admin/setup#setup_token=...` 的 fragment 中。
 不得把 token 写入查询参数、日志、数据库明文、GitHub、工单或聊天记录。
+
+客户密码修改只允许持有 `customer_credentials.manage` 的超级管理员操作。请求只接收
+`new_password`，密码必须满足 14–128 个字符及大小写字母、数字、符号组合要求。服务端
+只向 Render PostgreSQL 写入随机盐与 Argon2id 派生结果；成功后递增
+`credential_version`、撤销该客户全部会话、终止未完成登录验证，并记录
+`auth.password_changed_by_admin`。TOTP 与恢复码保持不变，响应和审计元数据不得包含
+明文密码。
 
 ## 4. 创建 `backoffice@sscdigitalbank.com`
 
@@ -94,3 +102,6 @@ git diff --check
 账号管理的状态验收还应覆盖：重复邮箱、Core 身份冲突、并发版本冲突、自身锁定、
 最后一名超级管理员保护、角色变化会话撤销、过期链接重签、已激活账号拒绝重新签发、
 非超级管理员直接调用接口返回 `403`，以及不同管理员在 Core 审计中保留不同用户 ID。
+客户密码修改还应覆盖：弱密码拒绝、相同密码拒绝、并发版本冲突、未激活客户拒绝、
+全部旧会话失效、未完成登录验证失效、TOTP/恢复码不变，以及数据库参数、响应和审计
+元数据均不含明文密码。

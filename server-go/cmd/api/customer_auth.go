@@ -121,6 +121,14 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 		app.createCustomerTOTPStepUp(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/password/change":
 		app.changeCustomerPassword(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/password-reset/request":
+		app.requestCustomerPasswordReset(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/password-reset/inspect":
+		app.inspectCustomerPasswordReset(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/password-reset/complete":
+		app.completeCustomerPasswordReset(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/email-verification/complete":
+		app.completeCustomerEmailVerification(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/me":
 		app.customerSessionInfo(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/logout":
@@ -141,6 +149,8 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 		app.writeAdminSumsubVerification(w, r, adminCustomerRouteID(r.URL.Path, "/kyc-verification"))
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc/sync"):
 		app.enqueueSumsubSync(w, r, adminCustomerRouteID(r.URL.Path, "/kyc/sync"))
+	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/password"):
+		app.adminChangeCustomerPassword(w, r, adminCustomerRouteID(r.URL.Path, "/password"))
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc"):
 		app.reviewCustomerKYC(w, r, adminCustomerRouteID(r.URL.Path, "/kyc"))
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/activate"):

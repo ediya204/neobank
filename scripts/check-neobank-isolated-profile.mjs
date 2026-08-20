@@ -90,6 +90,10 @@ const [
 
 const packageJson = JSON.parse(packageSource);
 const scripts = packageJson.scripts || {};
+const coreRenderService =
+  renderConfig.match(/- type: web\s+name: neobank-core[\s\S]*?(?=\n  - type:)/)?.[0] || '';
+const emailRenderService =
+  renderConfig.match(/- type: worker\s+name: neobank-email-worker[\s\S]*?(?=\n  - type:)/)?.[0] || '';
 
 assert.match(neobankWrangler, /"name": "neobank-web"/);
 assert.match(neobankWrangler, /"pattern": "portal\.sscdigitalbank\.com"/);
@@ -142,6 +146,9 @@ assert.match(router, /path: 'virtual-accounts'/);
 assert.match(authRoutes, /export const adminAuthRoutes/);
 assert.match(authRoutes, /export const customerAuthRoutes/);
 assert.match(authRoutes, /path: 'customer\/register'/);
+assert.match(authRoutes, /path: 'customer\/forgot-password'/);
+assert.match(authRoutes, /path: 'customer\/reset-password'/);
+assert.match(authRoutes, /path: 'customer\/verify-email'/);
 assert.match(authRoutes, /const partnerAuthRoutes/);
 assert.match(authLayout, /type AuthClassicContentMode = 'split' \| 'focused'/);
 assert.match(authLayout, /mdUp && !focused && renderSection/);
@@ -328,6 +335,8 @@ assert.match(renderConfig, /key: NEOBANK_SOURCE_TENANT_ID\s+value: neobank/);
 assert.match(renderConfig, /name: neobank-financial-accounting-worker/);
 assert.match(renderConfig, /startCommand: npm run start:financial-accounting-worker/);
 assert.match(renderConfig, /key: WITHDRAWAL_ACCOUNTING_ENABLED\s+value: ['"]false['"]/);
+assert.doesNotMatch(coreRenderService, /key: CUSTOMER_PASSWORD_RESET_SECRET/);
+assert.match(emailRenderService, /key: CUSTOMER_PASSWORD_RESET_SECRET\s+sync: false/);
 assert.doesNotMatch(renderConfig, /D1_GATEWAY_/);
 assert.match(goMain, /databaseBackend != "postgres"/);
 assert.doesNotMatch(goMain, /case "d1"/);

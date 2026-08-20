@@ -14,6 +14,12 @@ func TestAdminRolePermissionsAreLeastPrivilege(t *testing.T) {
 	if !adminHasPermission(super, adminPermissionUsers) || adminHasPermission(operations, adminPermissionUsers) {
 		t.Fatal("only the super administrator may manage administrator accounts")
 	}
+	if !adminHasPermission(super, adminPermissionCustomerCredentials) ||
+		adminHasPermission(operations, adminPermissionCustomerCredentials) ||
+		adminHasPermission(compliance, adminPermissionCustomerCredentials) ||
+		adminHasPermission(viewer, adminPermissionCustomerCredentials) {
+		t.Fatal("only the super administrator may change customer credentials")
+	}
 	if !adminHasPermission(operations, adminPermissionFundsManage) || adminHasPermission(compliance, adminPermissionFundsManage) {
 		t.Fatal("fund mutation permission must remain operations-only")
 	}
@@ -41,5 +47,12 @@ func TestAdminRequestPermissionsCoverGoAdminRoutes(t *testing.T) {
 	}
 	if adminRequestPermitted(viewer, http.MethodPatch, "/api/v1/admin/customers/customer_1/kyc") {
 		t.Fatal("read-only administrator must not review KYC")
+	}
+	if !adminRequestPermitted(&adminSession{AccessRole: adminRoleSuperAdmin}, http.MethodPatch,
+		"/api/v1/admin/customers/customer_1/password") {
+		t.Fatal("super administrator must be able to change a customer password")
+	}
+	if adminRequestPermitted(compliance, http.MethodPatch, "/api/v1/admin/customers/customer_1/password") {
+		t.Fatal("compliance administrator must not change a customer password")
 	}
 }

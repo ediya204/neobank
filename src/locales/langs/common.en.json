@@ -332,10 +332,51 @@
       "copy_all": "Copy all recovery codes",
       "continue": "I saved them securely — continue"
     },
+    "password_recovery": {
+      "forgot_link": "Forgot password?",
+      "forgot": {
+        "page_title": "Recover customer password",
+        "eyebrow": "Account recovery",
+        "title": "Recover your password",
+        "subtitle": "Enter your account email. To protect account information, the result is the same whether or not the address exists.",
+        "submit": "Send secure link",
+        "accepted": "If this email belongs to a recoverable customer account, a secure link will arrive shortly.",
+        "accepted_helper": "Customers with an unverified email receive a verification link first. After verification, request a password reset again. Check spam and use only the newest email.",
+        "try_another": "Use another email"
+      },
+      "reset": {
+        "page_title": "Reset customer password",
+        "eyebrow": "Secure reset",
+        "title": "Create a new password",
+        "subtitle": "Create a new Online Banking password. The link works once and does not sign you in automatically.",
+        "password_hint": "Use 14–128 characters with uppercase, lowercase, number, and symbol.",
+        "use_totp": "Authenticator code",
+        "use_recovery": "Recovery code",
+        "totp_label": "6-digit verification code",
+        "submit": "Securely reset password",
+        "session_notice": "A successful reset signs out every existing session. Your authenticator and unused recovery codes remain valid.",
+        "invalid": "This reset link is invalid, expired, or already used. Request a new secure link.",
+        "request_again": "Request a new reset link",
+        "state_changed": "The account security state changed. Request a new reset link.",
+        "complete": "Your password was reset and all old sessions were signed out. Sign in again with the new password.",
+        "sign_in": "Sign in with new password"
+      },
+      "verify": {
+        "page_title": "Verify customer email",
+        "eyebrow": "Email verification",
+        "title": "Verify your account email",
+        "subtitle": "We are confirming that this email belongs to your customer account. The verification link works once.",
+        "complete": "Email verified. You can now request a password reset link again.",
+        "continue": "Continue password recovery",
+        "invalid": "This email-verification link is invalid, expired, or already used. Start password recovery again.",
+        "request_again": "Start password recovery again"
+      }
+    },
     "errors": {
       "invalid_credentials": "The email or password is incorrect.",
       "invalid_totp": "The verification code is incorrect or expired. Enter the current code.",
       "invalid_recovery_code": "The recovery code is invalid or has already been used.",
+      "password_unchanged": "The new password must be different from the current password.",
       "setup_token_missing": "This setup link is missing its security token. Ask an administrator for a new invitation.",
       "setup_token_invalid": "This setup link is invalid. Ask an administrator for a new invitation.",
       "setup_token_expired": "This setup link has expired. Ask an administrator for a new invitation.",

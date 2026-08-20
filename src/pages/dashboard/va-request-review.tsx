@@ -220,6 +220,7 @@ export default function VaRequestReviewPage() {
   }
 
   const presentation = statusPresentation(request.status);
+  const customerDisplayName = customer?.displayName || request.customer?.displayName || '未知客户';
   const rejected = request.status === 'REJECTED';
   const workflowSteps = [
     '客户提交',
@@ -233,7 +234,7 @@ export default function VaRequestReviewPage() {
   return (
     <>
       <Helmet>
-        <title>{request.customer?.displayName || request.id} | VA 申请详情</title>
+        <title>{customerDisplayName} | VA 申请详情</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={2.5}>
@@ -254,7 +255,7 @@ export default function VaRequestReviewPage() {
               <Label color={presentation.color}>{presentation.label}</Label>
             </Stack>
             <Typography color="text.secondary" sx={{ mt: 0.65 }}>
-              {request.customer?.displayName || request.customerId} · {request.id}
+              {customerDisplayName} · {request.id}
             </Typography>
           </Box>
 

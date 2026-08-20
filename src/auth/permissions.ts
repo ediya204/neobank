@@ -24,6 +24,7 @@ const portalPermissionSet = new Set<string>(PORTAL_PERMISSIONS);
 
 export const ADMIN_PERMISSIONS: readonly AdminPermission[] = [
   'admin_users.manage',
+  'customer_credentials.manage',
   'customers.read',
   'customers.review',
   'funds.read',

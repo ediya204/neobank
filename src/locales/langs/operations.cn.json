@@ -127,6 +127,7 @@
     "status": "状态",
     "txHash": "链上交易哈希",
     "type": "类型",
+    "unknownCustomer": "未知客户",
     "wallet": "钱包"
   },
   "filters": {

@@ -127,6 +127,7 @@
     "status": "Status",
     "txHash": "Transaction hash",
     "type": "Type",
+    "unknownCustomer": "Unknown customer",
     "wallet": "Wallet"
   },
   "filters": {

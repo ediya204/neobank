@@ -3,9 +3,9 @@
 ## Scope and authority
 
 Email notifications run in the Render `neobank-core` stack and persist in
-`neobank-postgres`. D1 is deprecated and is not part of this design. The Go
-`neobank` service remains responsible for its existing authentication/Cregis
-boundaries; it does not send customer lifecycle email.
+`neobank-postgres`. The Go `neobank` service remains responsible for customer
+authentication and enqueues password-recovery notifications in the same PostgreSQL
+outbox; the Render email worker remains the only component that sends email.
 
 The email feature is disabled unless `EMAIL_NOTIFICATIONS_ENABLED=true`. A code
 deployment, a PostgreSQL migration, a Render worker creation, an environment
@@ -30,6 +30,9 @@ Outbox states:
 
 No template may include balances, full bank account details, wallet addresses,
 credentials, internal reviewer identity, internal notes, or rejection reasons.
+Password-recovery and email-verification outbox payloads contain only a random
+request ID. The worker derives the one-time URL fragment with the shared
+`CUSTOMER_PASSWORD_RESET_SECRET`; raw recovery tokens are never persisted.
 
 ## Zoho OAuth
 
@@ -48,6 +51,10 @@ Required Render secrets for the email worker only:
 - `ZOHO_OAUTH_CLIENT_SECRET`
 - `ZOHO_OAUTH_REFRESH_TOKEN`
 
+Required on both the Go customer-auth service and email worker:
+
+- `CUSTOMER_PASSWORD_RESET_SECRET` (at least 32 bytes, identical on both services)
+
 Required non-secret settings:
 
 - `ZOHO_MAIL_ACCOUNT_ID`
@@ -61,6 +68,8 @@ Keep `EMAIL_NOTIFICATIONS_ENABLED=false` until the migration, worker health,
 OAuth token exchange, and a controlled test recipient have all passed.
 The web service needs only this feature flag to decide whether a business
 transaction should enqueue a notification; it does not need Zoho credentials.
+See `docs/CUSTOMER_PASSWORD_RECOVERY_RUNBOOK.md` for the customer recovery API,
+one-time-token boundary, migration, and acceptance checks.
 
 ## Local verification
 

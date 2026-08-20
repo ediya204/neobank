@@ -332,10 +332,51 @@
       "copy_all": "复制全部恢复代码",
       "continue": "我已安全保存，进入系统"
     },
+    "password_recovery": {
+      "forgot_link": "忘记密码？",
+      "forgot": {
+        "page_title": "找回客户密码",
+        "eyebrow": "账户恢复",
+        "title": "找回密码",
+        "subtitle": "输入您的账户邮箱。为保护账户信息，无论该邮箱是否存在，页面都会显示相同结果。",
+        "submit": "发送安全链接",
+        "accepted": "如果该邮箱对应可恢复的客户账户，安全链接将在稍后发送。",
+        "accepted_helper": "尚未验证邮箱的客户会先收到邮箱验证链接；验证完成后，请再次申请重置密码。请检查垃圾邮件，并仅使用最新一封邮件中的链接。",
+        "try_another": "使用其他邮箱"
+      },
+      "reset": {
+        "page_title": "重置客户密码",
+        "eyebrow": "安全重置",
+        "title": "设置新密码",
+        "subtitle": "创建新的网上银行密码。链接只能使用一次，且不会在完成后自动登录。",
+        "password_hint": "使用 14–128 个字符，并同时包含大写字母、小写字母、数字和符号。",
+        "use_totp": "验证器动态码",
+        "use_recovery": "恢复代码",
+        "totp_label": "6 位动态验证码",
+        "submit": "安全重置密码",
+        "session_notice": "重置成功后，所有现有登录会话都会退出；验证器及未使用的恢复代码保持有效。",
+        "invalid": "此重置链接无效、已过期或已被使用。请重新申请安全链接。",
+        "request_again": "重新申请重置链接",
+        "state_changed": "账户安全状态已变化，请重新申请重置链接。",
+        "complete": "密码已成功重置，所有旧会话均已退出。请使用新密码重新登录。",
+        "sign_in": "使用新密码登录"
+      },
+      "verify": {
+        "page_title": "验证客户邮箱",
+        "eyebrow": "邮箱验证",
+        "title": "验证账户邮箱",
+        "subtitle": "我们正在确认此邮箱属于您的客户账户。验证链接只能使用一次。",
+        "complete": "邮箱验证成功。现在可以重新申请密码重置链接。",
+        "continue": "继续找回密码",
+        "invalid": "此邮箱验证链接无效、已过期或已被使用。请重新发起找回密码。",
+        "request_again": "重新发起找回密码"
+      }
+    },
     "errors": {
       "invalid_credentials": "邮箱或密码不正确。",
       "invalid_totp": "动态验证码不正确或已过期，请输入当前验证码。",
       "invalid_recovery_code": "恢复代码无效或已被使用。",
+      "password_unchanged": "新密码不能与当前密码相同。",
       "setup_token_missing": "此设置链接缺少安全令牌，请联系管理员重新发送邀请。",
       "setup_token_invalid": "设置链接无效，请联系管理员重新发送邀请。",
       "setup_token_expired": "设置链接已过期，请联系管理员重新发送邀请。",

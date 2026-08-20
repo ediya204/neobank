@@ -1,10 +1,10 @@
 {
-  "name": "SSC数字银行 · SSC Digital Bank",
-  "short_name": "SSC Bank",
+  "name": "SSC Digital Bank",
+  "short_name": "SSC",
   "display": "standalone",
   "start_url": "/",
-  "theme_color": "#FDA92D",
-  "background_color": "#ffffff",
+  "theme_color": "#C91532",
+  "background_color": "#FFFFFF",
   "icons": [
     {
       "src": "favicon/android-chrome-192x192.png",

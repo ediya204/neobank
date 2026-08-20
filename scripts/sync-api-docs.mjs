@@ -435,8 +435,8 @@ const documentHtml = `<!doctype html>
     <a class="skip-link" href="#guide" data-copy-en="Skip to API guide" data-copy-zh="跳到 API 指南">Skip to API guide</a>
     <header class="masthead">
       <div class="masthead-inner">
-        <a class="brand" href="/portal/api" aria-label="Return to VA BaaS Portal">
-          <img src="/logo/logo_full.svg" alt="VA BaaS" />
+        <a class="brand" href="/portal/api" aria-label="Return to SSC Digital Bank Partner Portal">
+          <img src="/logo/logo_full.svg" alt="SSC Digital Bank" />
           <span data-copy-en="Partner API · v1" data-copy-zh="合作伙伴 API · v1">Partner API · v1</span>
         </a>
         <nav class="masthead-links" aria-label="API resources">

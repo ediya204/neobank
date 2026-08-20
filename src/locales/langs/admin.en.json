@@ -178,6 +178,7 @@
     },
     "permissions": {
       "admin_users": { "manage": "Manage administrator accounts" },
+      "customer_credentials": { "manage": "Change customer login passwords" },
       "customers": { "read": "Read customer profiles", "review": "Review customers and KYC / VA" },
       "funds": { "read": "Read fund data", "manage": "Process fund operations" },
       "settings": { "manage": "Manage channels, rates, and fees" },

@@ -42,7 +42,11 @@ async function enforceAuthRateLimit(
   });
   if (!sourceResult.success) return json({ error: { code: 'auth_rate_limited' } }, 429);
 
-  if (pathname.endsWith('/login') || pathname === '/api/auth/customer/register') {
+  if (
+    pathname.endsWith('/login') ||
+    pathname === '/api/auth/customer/register' ||
+    pathname === '/api/auth/customer/password-reset/request'
+  ) {
     let email = '';
     try {
       const payload = JSON.parse(new TextDecoder().decode(body)) as { email?: unknown };
@@ -56,6 +60,34 @@ async function enforceAuthRateLimit(
         key: await rateLimitKey(`identity\0${email}`),
       });
       if (!identityResult.success) return json({ error: { code: 'auth_rate_limited' } }, 429);
+    }
+  }
+  if (
+    pathname === '/api/auth/customer/password-reset/inspect' ||
+    pathname === '/api/auth/customer/password-reset/complete' ||
+    pathname === '/api/auth/customer/email-verification/complete'
+  ) {
+    let recoveryRequestId = '';
+    try {
+      const payload = JSON.parse(new TextDecoder().decode(body)) as {
+        reset_token?: unknown;
+        verification_token?: unknown;
+      };
+      const token =
+        typeof payload.reset_token === 'string'
+          ? payload.reset_token
+          : typeof payload.verification_token === 'string'
+            ? payload.verification_token
+            : '';
+      recoveryRequestId = token.split('.', 1)[0];
+    } catch {
+      // The source bucket still limits malformed reset-token traffic.
+    }
+    if (recoveryRequestId) {
+      const tokenResult = await limiter.limit({
+        key: await rateLimitKey(`recovery\0${recoveryRequestId}`),
+      });
+      if (!tokenResult.success) return json({ error: { code: 'auth_rate_limited' } }, 429);
     }
   }
   return null;
@@ -99,6 +131,10 @@ async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<R
   if (csrfToken) headers.set('x-csrf-token', csrfToken);
   const idempotencyKey = request.headers.get('idempotency-key');
   if (idempotencyKey) headers.set('idempotency-key', idempotencyKey);
+  const sourceIP = request.headers.get('cf-connecting-ip')?.trim() || 'unknown-source';
+  const userAgent = request.headers.get('user-agent')?.trim() || 'unknown-user-agent';
+  headers.set('x-neobank-source-ip-sha256', await rateLimitKey(sourceIP));
+  headers.set('x-neobank-user-agent-sha256', await rateLimitKey(userAgent));
   if (incoming.pathname === '/api/webhooks/sumsub') {
     const payloadDigest = request.headers.get('x-payload-digest');
     const payloadDigestAlgorithm = request.headers.get('x-payload-digest-alg');

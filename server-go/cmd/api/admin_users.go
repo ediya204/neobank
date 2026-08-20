@@ -9,22 +9,23 @@ import (
 )
 
 const (
-	adminRoleSuperAdmin           = "super_admin"
-	adminRoleOperations           = "operations_admin"
-	adminRoleCompliance           = "compliance_admin"
-	adminRoleReadOnly             = "read_only_admin"
-	adminPermissionUsers          = "admin_users.manage"
-	adminPermissionCustomerRead   = "customers.read"
-	adminPermissionCustomerReview = "customers.review"
-	adminPermissionFundsRead      = "funds.read"
-	adminPermissionFundsManage    = "funds.manage"
-	adminPermissionSettings       = "settings.manage"
-	adminPermissionReports        = "reports.read"
+	adminRoleSuperAdmin                = "super_admin"
+	adminRoleOperations                = "operations_admin"
+	adminRoleCompliance                = "compliance_admin"
+	adminRoleReadOnly                  = "read_only_admin"
+	adminPermissionUsers               = "admin_users.manage"
+	adminPermissionCustomerCredentials = "customer_credentials.manage"
+	adminPermissionCustomerRead        = "customers.read"
+	adminPermissionCustomerReview      = "customers.review"
+	adminPermissionFundsRead           = "funds.read"
+	adminPermissionFundsManage         = "funds.manage"
+	adminPermissionSettings            = "settings.manage"
+	adminPermissionReports             = "reports.read"
 )
 
 var adminRolePermissions = map[string][]string{
 	adminRoleSuperAdmin: {
-		adminPermissionUsers, adminPermissionCustomerRead, adminPermissionCustomerReview,
+		adminPermissionUsers, adminPermissionCustomerCredentials, adminPermissionCustomerRead, adminPermissionCustomerReview,
 		adminPermissionFundsRead, adminPermissionFundsManage, adminPermissionSettings,
 		adminPermissionReports,
 	},
@@ -78,6 +79,8 @@ func adminSessionUser(session *adminSession) map[string]any {
 func adminRequestPermitted(session *adminSession, method, path string) bool {
 	permission := ""
 	switch {
+	case strings.HasPrefix(path, "/api/v1/admin/customers/") && strings.HasSuffix(path, "/password"):
+		permission = adminPermissionCustomerCredentials
 	case strings.HasPrefix(path, "/api/v1/admin/customers"):
 		if method == http.MethodGet {
 			permission = adminPermissionCustomerRead

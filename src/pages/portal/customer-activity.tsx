@@ -4,8 +4,12 @@ import {
   Alert,
   Box,
   Card,
+  CardContent,
   Container,
+  Divider,
+  Drawer,
   FormControl,
+  IconButton,
   InputAdornment,
   InputLabel,
   MenuItem,
@@ -41,6 +45,13 @@ type ActivityRow = {
   direction: 'in' | 'out' | 'exchange';
   createdAt: string;
   detail: string;
+  record: { kind: 'operation'; value: Operation } | { kind: 'crypto'; value: CryptoTransfer };
+};
+
+type DetailItem = {
+  label: string;
+  value?: string | null;
+  mono?: boolean;
 };
 
 const tableHead = [
@@ -66,6 +77,7 @@ export default function CustomerActivity() {
   const [status, setStatus] = useState('all');
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
+  const [selectedRow, setSelectedRow] = useState<ActivityRow | null>(null);
 
   useEffect(() => {
     if (!customer) return;
@@ -104,6 +116,7 @@ export default function CustomerActivity() {
           row.type === 'FX' || row.type === 'OTC'
             ? `${row.currency} → ${row.quoteCurrency || '—'}`
             : row.beneficiary?.name || row.sourceAccount?.name || 'SSC 余额账户',
+        record: { kind: 'operation', value: row },
       };
     });
     const cryptoRows = cryptoTransfers.map(
@@ -118,6 +131,7 @@ export default function CustomerActivity() {
         direction: row.direction === 'DEPOSIT' ? 'in' : 'out',
         createdAt: row.createdAt,
         detail: `TRON（TRC20）${row.txHash ? ` · ${shortHash(row.txHash)}` : ''}`,
+        record: { kind: 'crypto', value: row },
       })
     );
     return [...operationRows, ...cryptoRows].sort(
@@ -149,7 +163,7 @@ export default function CustomerActivity() {
             links={[{ name: '总览', href: '/portal/home' }, { name: '交易记录' }]}
           />
           <Typography color="text.secondary" sx={{ mt: -2 }}>
-            在一个列表中追踪法币转入转出、USDT-TRON 和 OTC 兑换。
+            在一个列表中追踪法币转入转出、USDT-TRON 和 OTC 兑换。点击任一记录查看详情。
           </Typography>
           {error && <Alert severity="warning">{error}</Alert>}
           <Card>
@@ -209,7 +223,28 @@ export default function CustomerActivity() {
                 <TableHeadCustom headLabel={tableHead} />
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={row.id} hover>
+                    <TableRow
+                      key={row.id}
+                      hover
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`查看 ${row.title} ${row.reference} 详情`}
+                      onClick={() => setSelectedRow(row)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setSelectedRow(row);
+                        }
+                      }}
+                      sx={{
+                        cursor: 'pointer',
+                        '&:focus-visible': {
+                          outline: '2px solid',
+                          outlineColor: 'primary.main',
+                          outlineOffset: -2,
+                        },
+                      }}
+                    >
                       <TableCell>
                         <ActivityTitle row={row} />
                       </TableCell>
@@ -237,7 +272,29 @@ export default function CustomerActivity() {
                   direction="row"
                   alignItems="center"
                   spacing={1.5}
-                  sx={{ px: 2, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`查看 ${row.title} ${row.reference} 详情`}
+                  onClick={() => setSelectedRow(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedRow(row);
+                    }
+                  }}
+                  sx={{
+                    px: 2,
+                    py: 2,
+                    cursor: 'pointer',
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    '&:hover': { bgcolor: 'action.hover' },
+                    '&:focus-visible': {
+                      outline: '2px solid',
+                      outlineColor: 'primary.main',
+                      outlineOffset: -2,
+                    },
+                  }}
                 >
                   <ActivityIcon row={row} />
                   <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -262,8 +319,178 @@ export default function CustomerActivity() {
           </Card>
         </Stack>
       </Container>
+      <ActivityDetailDrawer row={selectedRow} onClose={() => setSelectedRow(null)} />
     </>
   );
+}
+
+function ActivityDetailDrawer({ row, onClose }: { row: ActivityRow | null; onClose: () => void }) {
+  const items = row ? activityDetailItems(row).filter((item) => item.value) : [];
+  const rejectionReason = row ? activityRejectionReason(row) : '';
+
+  return (
+    <Drawer
+      anchor="right"
+      open={Boolean(row)}
+      onClose={onClose}
+      PaperProps={{
+        role: 'dialog',
+        'aria-modal': true,
+        'aria-labelledby': 'activity-detail-title',
+        sx: { width: { xs: 1, sm: 480 } },
+      }}
+    >
+      {row && (
+        <>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{ px: 3, py: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography id="activity-detail-title" variant="h5">
+                交易详情
+              </Typography>
+              <Typography variant="body2" color="text.secondary" noWrap>
+                {row.reference}
+              </Typography>
+            </Box>
+            <IconButton aria-label="关闭交易详情" onClick={onClose}>
+              <Iconify icon="solar:close-circle-linear" />
+            </IconButton>
+          </Stack>
+
+          <Stack spacing={3} sx={{ p: 3 }}>
+            <Stack alignItems="center" spacing={1.25} sx={{ py: 1 }}>
+              <ActivityIcon row={row} />
+              <ActivityAmount row={row} emphasized />
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Typography variant="subtitle2">{row.title}</Typography>
+                <OperationStatus status={row.status} />
+              </Stack>
+            </Stack>
+
+            <Card variant="outlined">
+              <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+                <Stack divider={<Divider flexItem />}>
+                  {items.map((item) => (
+                    <ActivityDetailItem key={item.label} item={item} />
+                  ))}
+                </Stack>
+              </CardContent>
+            </Card>
+
+            {rejectionReason && (
+              <Alert severity="error">
+                <Typography variant="subtitle2">未通过原因</Typography>
+                {rejectionReason}
+              </Alert>
+            )}
+          </Stack>
+        </>
+      )}
+    </Drawer>
+  );
+}
+
+function ActivityDetailItem({ item }: { item: DetailItem }) {
+  return (
+    <Stack
+      direction={{ xs: 'column', sm: 'row' }}
+      justifyContent="space-between"
+      gap={0.75}
+      sx={{ px: 2.5, py: 1.75 }}
+    >
+      <Typography variant="body2" color="text.secondary">
+        {item.label}
+      </Typography>
+      <Typography
+        variant="body2"
+        sx={{
+          textAlign: { sm: 'right' },
+          wordBreak: item.mono ? 'break-all' : 'break-word',
+          fontFamily: item.mono ? 'monospace' : undefined,
+        }}
+      >
+        {item.value}
+      </Typography>
+    </Stack>
+  );
+}
+
+function activityDetailItems(row: ActivityRow): DetailItem[] {
+  if (row.record.kind === 'crypto') {
+    const transfer = row.record.value;
+    return [
+      { label: '交易类型', value: row.title },
+      { label: '参考号', value: transfer.reference, mono: true },
+      { label: '网络', value: 'TRON（TRC20）' },
+      { label: '链上金额', value: money(transfer.amount, 'USDT') },
+      { label: '手续费', value: money(transfer.feeAmount, 'USDT') },
+      { label: '实际到账', value: money(transfer.netAmount, 'USDT') },
+      { label: '发送地址', value: transfer.fromAddress || '暂未获取', mono: true },
+      { label: '接收地址', value: transfer.toAddress || '暂未获取', mono: true },
+      { label: 'TXID', value: transfer.txHash || '执行后生成', mono: true },
+      { label: '网络确认', value: `${transfer.confirmations} 次` },
+      { label: '创建时间', value: formatActivityDate(transfer.createdAt) },
+      { label: '提交时间', value: formatActivityDate(transfer.submittedAt) },
+      { label: '批准时间', value: formatActivityDate(transfer.approvedAt) },
+      { label: '完成时间', value: formatActivityDate(transfer.completedAt) },
+    ];
+  }
+
+  const operation = row.record.value;
+  const payoutMethods: Record<NonNullable<Operation['payoutMethod']>, string> = {
+    VA: 'VA 账户',
+    POBO: 'POBO',
+    PLATFORM: '平台代付',
+  };
+  return [
+    { label: '交易类型', value: row.title },
+    { label: '参考号', value: operation.reference, mono: true },
+    { label: '交易金额', value: money(operation.amount, operation.currency) },
+    { label: '手续费', value: money(operation.feeAmount, operation.currency) },
+    {
+      label: '到账金额',
+      value:
+        operation.quoteAmount && operation.quoteCurrency
+          ? money(operation.quoteAmount, operation.quoteCurrency)
+          : null,
+    },
+    {
+      label: '成交汇率',
+      value:
+        operation.rate && operation.quoteCurrency
+          ? `1 ${operation.currency} = ${operation.rate} ${operation.quoteCurrency}`
+          : null,
+    },
+    {
+      label: '付款方式',
+      value: operation.payoutMethod ? payoutMethods[operation.payoutMethod] : null,
+    },
+    { label: '付款账户', value: operation.sourceAccount?.name },
+    { label: '收款账户', value: operation.targetAccount?.name },
+    { label: '收款人', value: operation.beneficiary?.name },
+    { label: '资金通道', value: operation.channel?.name },
+    { label: '汇款附言', value: operation.remittanceReference },
+    { label: '外部参考号', value: operation.externalReference, mono: true },
+    { label: '交易说明', value: operation.narrative },
+    { label: '创建时间', value: formatActivityDate(operation.createdAt) },
+    { label: '提交时间', value: formatActivityDate(operation.submittedAt) },
+    { label: '批准时间', value: formatActivityDate(operation.approvedAt) },
+    { label: '执行时间', value: formatActivityDate(operation.executedAt) },
+  ];
+}
+
+function activityRejectionReason(row: ActivityRow) {
+  return row.record.kind === 'crypto'
+    ? row.record.value.rejectionReason || ''
+    : row.record.value.rejectionReason || '';
+}
+
+function formatActivityDate(value?: string) {
+  return value ? new Date(value).toLocaleString('zh-CN') : null;
 }
 
 function ActivityTitle({ row }: { row: ActivityRow }) {
@@ -300,13 +527,13 @@ function ActivityIcon({ row }: { row: ActivityRow }) {
   );
 }
 
-function ActivityAmount({ row }: { row: ActivityRow }) {
+function ActivityAmount({ row, emphasized = false }: { row: ActivityRow; emphasized?: boolean }) {
   let prefix = '';
   if (row.direction === 'in') prefix = '+';
   if (row.direction === 'out') prefix = '−';
   return (
     <Typography
-      variant="subtitle2"
+      variant={emphasized ? 'h4' : 'subtitle2'}
       color={row.direction === 'in' ? 'success.main' : 'text.primary'}
     >
       {prefix}

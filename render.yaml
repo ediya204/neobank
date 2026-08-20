@@ -20,6 +20,8 @@ services:
         sync: false
       - key: CUSTOMER_PASSWORD_PEPPER
         sync: false
+      - key: CUSTOMER_PASSWORD_RESET_SECRET
+        sync: false
       - key: CUSTOMER_TOTP_KEY
         sync: false
       - key: CUSTOMER_RECOVERY_PEPPER
@@ -68,6 +70,8 @@ services:
         value: neobank
       - key: WITHDRAWAL_ACCOUNTING_ENABLED
         value: 'false'
+      - key: EMAIL_NOTIFICATIONS_ENABLED
+        value: 'false'
   - type: web
     name: neobank-core
     runtime: node
@@ -114,6 +118,8 @@ services:
           property: connectionString
       - key: EMAIL_NOTIFICATIONS_ENABLED
         value: 'false'
+      - key: CUSTOMER_PASSWORD_RESET_SECRET
+        sync: false
       - key: EMAIL_WORKER_POLL_INTERVAL_MS
         value: '5000'
       - key: PORTAL_BASE_URL

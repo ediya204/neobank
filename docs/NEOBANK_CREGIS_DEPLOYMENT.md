@@ -316,6 +316,7 @@ The customer routes use the application session instead of Cloudflare Access:
 - Legacy/admin-created account activation: `/customer/setup#setup_token=...`
 - Customer auth API: `/api/auth/customer/*`, `/api/auth/me`, `/api/auth/logout`
 - Customer-scoped wallet API: `/api/v1/customer/*`
+- Super-admin customer password change: `PATCH /api/v1/admin/customers/:id/password`
 
 The Worker protects `/admin*`, `/dashboard*`, and administrator API routes with
 the application Admin session. Cregis callbacks remain public but
@@ -335,6 +336,13 @@ applicants choose their password during registration; only its salted, peppered
 Argon2id result is stored. The password cannot authenticate until manual KYC
 approval completes automatic activation. Admin-created customers without a password retain
 the 30-minute setup-link and TOTP fallback flow.
+
+For an activated customer with an existing password, a super administrator with
+`customer_credentials.manage` can set a replacement password from the customer detail
+workspace. The API stores only a new salted, peppered Argon2id result, increments the
+credential version, revokes every customer session, consumes outstanding login challenges,
+and writes `auth.password_changed_by_admin`. It preserves the customer's TOTP enrollment and
+recovery codes and never returns or audits the plaintext password.
 
 The Core administration rollout order is mandatory:
 

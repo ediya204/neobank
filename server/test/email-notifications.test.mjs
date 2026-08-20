@@ -44,7 +44,7 @@ test('email templates escape customer content and do not expose financial detail
   );
   assert.match(rendered.html, /&lt;script&gt;/);
   assert.doesNotMatch(rendered.html, /<script>/);
-  assert.match(rendered.html, /https:\/\/portal\.example\.com\/portal\/login/);
+  assert.match(rendered.html, /https:\/\/portal\.example\.com\/customer\/login/);
   assert.doesNotMatch(rendered.html, /balance|wallet address|account number/i);
 });
 
@@ -61,6 +61,7 @@ test('Zoho client exchanges the refresh token and sends through the Mail REST AP
     ZOHO_ACCOUNTS_BASE_URL: 'https://accounts.zoho.test',
     ZOHO_MAIL_API_BASE_URL: 'https://mail.zoho.test/api',
     PORTAL_BASE_URL: 'https://portal.example.com',
+    CUSTOMER_PASSWORD_RESET_SECRET: 'test-password-reset-secret-at-least-32-bytes',
   });
   globalThis.fetch = async (url, init) => {
     calls.push({ url: String(url), init });
@@ -104,4 +105,27 @@ test('Zoho client exchanges the refresh token and sends through the Mail REST AP
     globalThis.fetch = originalFetch;
     process.env = previousEnv;
   }
+});
+
+test('password reset template derives a fragment token without storing it in the payload', () => {
+  const rendered = renderEmailTemplate(
+    EmailTemplateKey.CUSTOMER_PASSWORD_RESET_REQUESTED,
+    {
+      displayName: 'Test Customer',
+      resetRequestId: 'password_reset_0123456789abcdef0123456789abcdef',
+    },
+    'https://portal.example.com',
+    'test-password-reset-secret-at-least-32-bytes'
+  );
+  assert.match(
+    rendered.html,
+    /https:\/\/portal\.example\.com\/customer\/reset-password#reset_token=password_reset_0123456789abcdef0123456789abcdef\./
+  );
+  assert.doesNotMatch(
+    JSON.stringify({
+      displayName: 'Test Customer',
+      resetRequestId: 'password_reset_0123456789abcdef0123456789abcdef',
+    }),
+    /reset_token/
+  );
 });

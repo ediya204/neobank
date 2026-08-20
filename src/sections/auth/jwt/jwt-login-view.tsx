@@ -639,6 +639,20 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
             ),
           }}
         />
+        {expectedRole === 'customer' && (
+          <Box sx={{ mt: -1, textAlign: 'right' }}>
+            <Link
+              component={RouterLink}
+              href={paths.auth.customer.forgotPassword}
+              variant="body2"
+              color="text.primary"
+              underline="hover"
+              sx={{ fontWeight: 600 }}
+            >
+              {t('auth.password_recovery.forgot_link')}
+            </Link>
+          </Box>
+        )}
         <LoadingButton
           fullWidth
           color="inherit"

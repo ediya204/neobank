@@ -368,6 +368,50 @@ export async function changeCurrentPassword(
   });
 }
 
+export async function requestCustomerPasswordReset(email: string) {
+  await authRequest('/api/auth/customer/password-reset/request', {
+    method: 'POST',
+    body: JSON.stringify({ email: email.trim().toLowerCase() }),
+  });
+}
+
+export async function inspectCustomerPasswordReset(resetToken: string) {
+  const payload = await authRequest('/api/auth/customer/password-reset/inspect', {
+    method: 'POST',
+    body: JSON.stringify({ reset_token: resetToken }),
+  });
+  const data = unwrapPayload(payload);
+  return {
+    valid: readBoolean(data, ['valid']) === true,
+    totpRequired: readBoolean(data, ['totp_required', 'totpRequired']) === true,
+    expiresAt: readString(data, ['expires_at', 'expiresAt']),
+  };
+}
+
+export async function completeCustomerPasswordReset(input: {
+  resetToken: string;
+  newPassword: string;
+  totpCode?: string;
+  recoveryCode?: string;
+}) {
+  await authRequest('/api/auth/customer/password-reset/complete', {
+    method: 'POST',
+    body: JSON.stringify({
+      reset_token: input.resetToken,
+      new_password: input.newPassword,
+      ...(input.totpCode ? { totp_code: input.totpCode } : {}),
+      ...(input.recoveryCode ? { recovery_code: input.recoveryCode } : {}),
+    }),
+  });
+}
+
+export async function completeCustomerEmailVerification(verificationToken: string) {
+  await authRequest('/api/auth/customer/email-verification/complete', {
+    method: 'POST',
+    body: JSON.stringify({ verification_token: verificationToken }),
+  });
+}
+
 export async function beginCustomerTotpEnrollment(
   currentPassword: string,
   csrfToken: string | null

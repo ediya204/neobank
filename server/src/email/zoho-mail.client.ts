@@ -27,7 +27,12 @@ export class ZohoMailClient {
 
   async send(row: EmailOutbox): Promise<{ providerMessageId: string | null }> {
     const config = this.config();
-    const rendered = renderEmailTemplate(row.templateKey, row.payload, config.portalBaseUrl);
+    const rendered = renderEmailTemplate(
+      row.templateKey,
+      row.payload,
+      config.portalBaseUrl,
+      config.passwordResetSecret
+    );
     let token = await this.accessToken();
     let response = await this.sendRequest(config, token, row.recipient, rendered);
     if (response.status === 401) {
@@ -129,6 +134,7 @@ export class ZohoMailClient {
       accountId: process.env.ZOHO_MAIL_ACCOUNT_ID?.trim(),
       fromAddress: process.env.ZOHO_MAIL_FROM_ADDRESS?.trim(),
       portalBaseUrl: process.env.PORTAL_BASE_URL?.trim(),
+      passwordResetSecret: process.env.CUSTOMER_PASSWORD_RESET_SECRET?.trim(),
     };
     for (const [key, value] of Object.entries(required)) {
       if (!value) throw new EmailDeliveryError(`missing_${key}`, false);
@@ -149,6 +155,7 @@ export class ZohoMailClient {
       accountId: required.accountId!,
       fromAddress: required.fromAddress!,
       portalBaseUrl,
+      passwordResetSecret: required.passwordResetSecret!,
       accountsBaseUrl,
       mailApiBaseUrl,
     };

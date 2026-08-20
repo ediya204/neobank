@@ -1,10 +1,36 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/hex"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/ediya204/neobank/server-go/internal/d1"
 )
+
+type adminCustomerPasswordDatabase struct {
+	rows       []map[string]any
+	statements []d1.Statement
+}
+
+func (db *adminCustomerPasswordDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+	return db.rows, nil
+}
+
+func (db *adminCustomerPasswordDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
+	db.statements = append(db.statements, statements...)
+	return []d1.Result{
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(2)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+	}, nil
+}
 
 func TestAdminCustomerViewNeverSelectsCredentialMaterial(t *testing.T) {
 	for _, prohibited := range []string{"password", "token", "totp", "credential", "recovery"} {
@@ -18,6 +44,93 @@ func TestAdminCustomerViewNeverSelectsCredentialMaterial(t *testing.T) {
 		if !strings.Contains(adminCustomerFields, required) {
 			t.Fatalf("admin customer response must include %q", required)
 		}
+	}
+}
+
+func TestAdminCustomerPasswordChangeRevokesSessionsAndAuditsWithoutPlaintext(t *testing.T) {
+	pepper := []byte("0123456789abcdef0123456789abcdef")
+	oldPassword := "Old-Customer-Password-7!"
+	newPassword := "New-Customer-Password-8!"
+	salt := []byte("0123456789abcdef")
+	app := &application{customerPasswordPepper: pepper, tenantID: "neobank"}
+	oldHash := app.deriveCustomerArgon2id(oldPassword, salt)
+	db := &adminCustomerPasswordDatabase{rows: []map[string]any{{
+		"password_salt": hex.EncodeToString(salt), "password_hash": hex.EncodeToString(oldHash),
+		"password_algorithm": customerPasswordAlgorithm, "password_iterations": int64(0),
+		"password_memory_kib":  int64(customerArgonMemoryKiB),
+		"password_time_cost":   int64(customerArgonTimeCost),
+		"password_parallelism": int64(customerArgonParallelism), "credential_version": int64(4),
+	}}}
+	app.db = db
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/customers/customer_1/password",
+		bytes.NewBufferString(`{"new_password":"`+newPassword+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Neobank-User", "super-admin@example.test")
+	response := httptest.NewRecorder()
+
+	app.adminChangeCustomerPassword(response, request, "customer_1")
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("password change status=%d body=%q", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), newPassword) || strings.Contains(response.Body.String(), oldPassword) {
+		t.Fatal("password change response must not expose plaintext passwords")
+	}
+	if len(db.statements) != 4 {
+		t.Fatalf("password change statements=%d, want 4", len(db.statements))
+	}
+	for _, required := range []struct {
+		index int
+		text  string
+	}{
+		{0, "credential_version=?"},
+		{1, "credential_version=? AND cc.password_hash=?"},
+		{2, "credential_version=? AND cc.password_hash=?"},
+		{3, "auth.password_changed_by_admin"},
+	} {
+		if !strings.Contains(db.statements[required.index].SQL, required.text) {
+			t.Fatalf("statement %d must contain %q", required.index, required.text)
+		}
+	}
+	for _, statement := range db.statements {
+		for _, param := range statement.Params {
+			if value, ok := param.(string); ok && (value == newPassword || value == oldPassword) {
+				t.Fatal("plaintext password must not be sent to the datastore")
+			}
+		}
+	}
+	if !strings.Contains(response.Body.String(), `"sessions_revoked":2`) {
+		t.Fatalf("password change response must report revoked sessions: %s", response.Body.String())
+	}
+}
+
+func TestAdminCustomerPasswordChangeRejectsUnchangedPassword(t *testing.T) {
+	pepper := []byte("0123456789abcdef0123456789abcdef")
+	password := "Same-Customer-Password-7!"
+	salt := []byte("0123456789abcdef")
+	app := &application{customerPasswordPepper: pepper, tenantID: "neobank"}
+	hash := app.deriveCustomerArgon2id(password, salt)
+	db := &adminCustomerPasswordDatabase{rows: []map[string]any{{
+		"password_salt": hex.EncodeToString(salt), "password_hash": hex.EncodeToString(hash),
+		"password_algorithm": customerPasswordAlgorithm, "password_iterations": int64(0),
+		"password_memory_kib":  int64(customerArgonMemoryKiB),
+		"password_time_cost":   int64(customerArgonTimeCost),
+		"password_parallelism": int64(customerArgonParallelism), "credential_version": int64(1),
+	}}}
+	app.db = db
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/customers/customer_1/password",
+		bytes.NewBufferString(`{"new_password":"`+password+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	app.adminChangeCustomerPassword(response, request, "customer_1")
+
+	if response.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(response.Body.String(), `"code":"password_unchanged"`) {
+		t.Fatalf("unchanged password status=%d body=%q", response.Code, response.Body.String())
+	}
+	if len(db.statements) != 0 {
+		t.Fatal("unchanged password must not write to the datastore")
 	}
 }
 

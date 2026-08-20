@@ -178,6 +178,7 @@
     },
     "permissions": {
       "admin_users": { "manage": "管理管理员账号" },
+      "customer_credentials": { "manage": "修改客户登录密码" },
       "customers": { "read": "查看客户资料", "review": "审核客户与 KYC / VA" },
       "funds": { "read": "查看资金数据", "manage": "处理资金业务" },
       "settings": { "manage": "管理通道、汇率与手续费" },

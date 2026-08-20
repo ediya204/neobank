@@ -37,6 +37,7 @@ import { paths } from 'src/routes/paths';
 type CregisHistoryRow = {
   id: string;
   customer_id: string;
+  customer_name?: string;
   amount: string;
   fee_amount?: string;
   net_amount?: string;
@@ -227,7 +228,7 @@ export default function CryptoOperationsAdmin() {
         history.withdrawals
           .map((row) => ({
             ...mapCregisWithdrawal(row),
-            customerName: customerNames.get(row.customer_id),
+            customerName: row.customer_name || customerNames.get(row.customer_id),
           }))
           .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
       );
@@ -421,8 +422,23 @@ export default function CryptoOperationsAdmin() {
                       sx={{ cursor: 'pointer' }}
                     >
                       <TableCell>{row.reference}</TableCell>
-                      <TableCell title={row.customerId}>
-                        {row.customerName || row.customerId}
+                      <TableCell>
+                        <Typography
+                          variant="subtitle2"
+                          noWrap
+                          title={row.customerName || '未知客户'}
+                        >
+                          {row.customerName || '未知客户'}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          noWrap
+                          title={row.customerId}
+                          sx={{ display: 'block' }}
+                        >
+                          {row.customerId}
+                        </Typography>
                       </TableCell>
                       <TableCell>
                         {row.network} · {row.wallet.tokenStandard}
@@ -460,6 +476,8 @@ export default function CryptoOperationsAdmin() {
               </IconButton>
             </Stack>
             <Card variant="outlined" sx={{ p: 2.5 }}>
+              <Info label="客户" value={selected.customerName || '未知客户'} />
+              <Info label="客户编号" value={selected.customerId} mono />
               <Info label="网络" value={`${selected.network} · ${selected.wallet.tokenStandard}`} />
               <Info label="钱包总扣账" value={`${selected.amount} USDT`} />
               <Info label="转出手续费" value={`${selected.feeAmount} USDT`} />

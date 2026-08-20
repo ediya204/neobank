@@ -25,28 +25,30 @@ import (
 )
 
 type application struct {
-	db                     databaseClient
-	cregis                 cregisClient
-	cregisLive             bool
-	edgeSecret             []byte
-	customerPasswordPepper []byte
-	customerTOTPKey        []byte
-	customerRecoveryPepper []byte
-	adminPasswordPepper    []byte
-	adminTOTPKey           []byte
-	adminBootstrapSecret   []byte
-	publicURL              string
-	portalURL              string
-	tenantID               string
-	coreOrganizationID     string
-	databaseBackend        string
-	marketData             marketDataClient
-	sumsub                 sumsubProvider
-	sumsubSchemaReady      bool
-	withdrawalAccounting   bool
-	sumsubEnvironment      string
-	sumsubWebhookSecret    []byte
-	logger                 *slog.Logger
+	db                          databaseClient
+	cregis                      cregisClient
+	cregisLive                  bool
+	edgeSecret                  []byte
+	customerPasswordPepper      []byte
+	customerPasswordResetSecret []byte
+	customerTOTPKey             []byte
+	customerRecoveryPepper      []byte
+	emailNotifications          bool
+	adminPasswordPepper         []byte
+	adminTOTPKey                []byte
+	adminBootstrapSecret        []byte
+	publicURL                   string
+	portalURL                   string
+	tenantID                    string
+	coreOrganizationID          string
+	databaseBackend             string
+	marketData                  marketDataClient
+	sumsub                      sumsubProvider
+	sumsubSchemaReady           bool
+	withdrawalAccounting        bool
+	sumsubEnvironment           string
+	sumsubWebhookSecret         []byte
+	logger                      *slog.Logger
 }
 
 type cregisClient interface {
@@ -125,6 +127,15 @@ func main() {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
+	emailNotifications := strings.EqualFold(os.Getenv("EMAIL_NOTIFICATIONS_ENABLED"), "true")
+	var passwordResetSecret []byte
+	if emailNotifications {
+		passwordResetSecret, err = requiredSecret("CUSTOMER_PASSWORD_RESET_SECRET", 32)
+		if err != nil {
+			logger.Error("invalid configuration", "error", err)
+			os.Exit(1)
+		}
+	}
 	adminPasswordPepper, err := requiredSecret("ADMIN_PASSWORD_PEPPER", 32)
 	if err != nil {
 		logger.Error("invalid configuration", "error", err)
@@ -201,7 +212,8 @@ func main() {
 	}
 	app := &application{
 		db: db, cregis: cregisClient, cregisLive: cregisLive, edgeSecret: []byte(edgeSecret),
-		customerPasswordPepper: passwordPepper, customerTOTPKey: totpKey, customerRecoveryPepper: recoveryPepper,
+		customerPasswordPepper: passwordPepper, customerPasswordResetSecret: passwordResetSecret,
+		customerTOTPKey: totpKey, customerRecoveryPepper: recoveryPepper, emailNotifications: emailNotifications,
 		adminPasswordPepper: adminPasswordPepper, adminTOTPKey: adminTOTPKey, adminBootstrapSecret: adminBootstrapSecret,
 		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"),
 		coreOrganizationID: envOr("CORE_ORGANIZATION_ID", "org_neobank"),

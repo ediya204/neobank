@@ -1284,12 +1284,23 @@ export default function OperationsPage({ section = 'deposits' }: { section?: Ope
                         </TableCell>
                         <TableCell>
                           <Typography
-                            variant="body2"
+                            variant="subtitle2"
                             noWrap
-                            title={row.customer_name || row.application_id || '-'}
+                            title={row.customer_name || t('fields.unknownCustomer')}
                           >
-                            {row.customer_name || row.application_id || '-'}
+                            {row.customer_name || t('fields.unknownCustomer')}
                           </Typography>
+                          {row.application_id && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              noWrap
+                              title={row.application_id}
+                              sx={{ display: 'block' }}
+                            >
+                              {row.application_id}
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell>{renderOperationType(row, t)}</TableCell>
                         <TableCell>
@@ -1743,7 +1754,17 @@ function AuditLogTable({ rows, onOpen }: { rows: Row[]; onOpen: (row: Row) => vo
           <TableRow key={row.id} hover>
             <TableCell>{formatOperationDate(row.created_at, locale)}</TableCell>
             <TableCell>
-              {row.customer_name || row.application_id || t('audit.systemConfiguration')}
+              <Typography variant="body2">
+                {row.customer_name ||
+                  (row.application_id
+                    ? t('fields.unknownCustomer')
+                    : t('audit.systemConfiguration'))}
+              </Typography>
+              {row.application_id && (
+                <Typography variant="caption" color="text.secondary">
+                  {row.application_id}
+                </Typography>
+              )}
             </TableCell>
             <TableCell>
               <Typography variant="body2">{auditActionLabel(row.action, t)}</Typography>

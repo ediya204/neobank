@@ -17,6 +17,7 @@ func TestReviewedMigrationFilename(t *testing.T) {
 		"0009_deposit_source_address.sql",
 		"0010_cregis_deposit_accounting.sql",
 		"0011_cregis_withdrawal_accounting.sql",
+		"0012_customer_password_recovery.sql",
 	} {
 		if !migrationFilename.MatchString(name) {
 			t.Fatalf("reviewed migration filename rejected: %s", name)
@@ -26,6 +27,32 @@ func TestReviewedMigrationFilename(t *testing.T) {
 		if migrationFilename.MatchString(name) {
 			t.Fatalf("unsafe migration filename accepted: %s", name)
 		}
+	}
+}
+
+func TestCustomerPasswordRecoveryMigrationUsesPostgresOutboxAndOneTimeRequests(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "migrations-postgres", "0012_customer_password_recovery.sql")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(content)
+	for _, required := range []string{
+		"ADD COLUMN IF NOT EXISTS email_verified_at TEXT",
+		"CREATE TABLE IF NOT EXISTS customer_email_verification_requests",
+		"CREATE TABLE IF NOT EXISTS customer_password_reset_requests",
+		"consumed_at TEXT",
+		"cancelled_at TEXT",
+		"attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 8)",
+		"CUSTOMER_PASSWORD_RESET_REQUESTED",
+		"VALUES ('0012_customer_password_recovery')",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("password recovery migration must contain %q", required)
+		}
+	}
+	if strings.Contains(strings.ToLower(sql), "password_hash text") {
+		t.Fatal("password recovery requests must not store password material")
 	}
 }
 

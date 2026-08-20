@@ -742,7 +742,8 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 		filter += " AND x.customer_id=?"
 		params = append(params, customerID)
 	}
-	withdrawals, err := app.db.Query(r.Context(), `SELECT x.id, x.customer_id, 'withdrawal' AS direction, x.currency, x.amount_text AS amount,
+	withdrawals, err := app.db.Query(r.Context(), `SELECT x.id, x.customer_id, c.display_name AS customer_name,
+	'withdrawal' AS direction, x.currency, x.amount_text AS amount,
     x.fee_amount_text AS fee_amount, x.net_amount_text AS net_amount,
     CAST(x.fee_rule_version AS TEXT) AS fee_rule_version,
 	CASE
@@ -757,13 +758,15 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 	x.to_address AS address, x.txid, x.cregis_cid, x.maker_id, x.checker_id, x.operator_id,
 	x.approved_at, x.submitted_at, x.completed_at, x.created_at
 	FROM cregis_withdrawals x
+	LEFT JOIN customers c ON c.id=x.customer_id AND c.tenant_id=x.tenant_id
 	LEFT JOIN cregis_withdrawal_accounting a ON a.withdrawal_id=x.id AND a.tenant_id=x.tenant_id
 	WHERE `+filter+` ORDER BY x.created_at DESC LIMIT 200`, params...)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
-	depositSQL := `SELECT d.id, w.customer_id, 'deposit' AS direction, d.currency, d.amount_text AS amount,
+	depositSQL := `SELECT d.id, w.customer_id, c.display_name AS customer_name,
+		'deposit' AS direction, d.currency, d.amount_text AS amount,
 		CASE
 		  WHEN d.status='failed' THEN 'failed'
 		  WHEN a.deposit_id IS NULL THEN 'exception'
@@ -774,6 +777,7 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 		d.status AS custody_status, COALESCE(a.status, 'not_posted') AS accounting_status,
 		d.address, d.from_address, d.txid, d.cregis_cid, d.received_at AS created_at
     FROM cregis_deposits d JOIN cregis_wallets w ON w.id=d.wallet_id
+	LEFT JOIN customers c ON c.id=w.customer_id AND c.tenant_id=w.tenant_id
 	LEFT JOIN cregis_deposit_accounting a ON a.deposit_id=d.id AND a.tenant_id=d.tenant_id
     WHERE d.tenant_id=? AND w.status='active' AND w.custody_provider='cregis'
       AND w.ownership_verified_at IS NOT NULL`

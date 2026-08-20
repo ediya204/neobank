@@ -30,6 +30,8 @@ import {
   Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import { useAuthContext } from 'src/auth/hooks';
+import { hasAdminPermission } from 'src/auth/permissions';
 import Iconify from 'src/components/iconify';
 import AssetIcon from 'src/components/asset-icon';
 import Label from 'src/components/label';
@@ -192,6 +194,16 @@ function customerStatusText(status: string) {
     SUSPENDED: '已暂停',
   };
   return labels[status] || status;
+}
+
+function validAdminCustomerPassword(password: string) {
+  return (
+    /^[\x20-\x7e]{14,128}$/.test(password) &&
+    /[a-z]/.test(password) &&
+    /[A-Z]/.test(password) &&
+    /[0-9]/.test(password) &&
+    /[^A-Za-z0-9]/.test(password)
+  );
 }
 
 function kycStatusText(status: string) {
@@ -474,6 +486,7 @@ function InfoGrid({ customer }: { customer: Customer }) {
 export default function CustomerDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuthContext();
   const userId = 'usr_admin';
   const [tab, setTab] = useState<DetailTab>('overview');
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -502,6 +515,13 @@ export default function CustomerDetailPage() {
   const [vaCurrency, setVaCurrency] = useState<Currency>('USD');
   const [vaPurpose, setVaPurpose] = useState('跨境贸易收款');
   const [vaSubmitting, setVaSubmitting] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const canManageCustomerCredentials =
+    IS_NEOBANK_DEPLOYMENT && hasAdminPermission(user, 'customer_credentials.manage');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -842,6 +862,55 @@ export default function CustomerDetailPage() {
     }
   };
 
+  const closePasswordDialog = () => {
+    if (passwordSaving) return;
+    setPasswordDialogOpen(false);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordError('');
+  };
+
+  const changeCustomerPassword = async () => {
+    if (!customer) return;
+    if (!validAdminCustomerPassword(newPassword)) {
+      setPasswordError('密码须为 14–128 个字符，并同时包含大写字母、小写字母、数字和符号');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('两次输入的密码不一致');
+      return;
+    }
+    setPasswordSaving(true);
+    setPasswordError('');
+    try {
+      const result = await neobankApi<{
+        password_changed_at: string;
+        sessions_revoked: number;
+      }>(`/admin/customers/${customer.id}/password`, {
+        method: 'PATCH',
+        userId,
+        body: JSON.stringify({ new_password: newPassword }),
+      });
+      setPasswordDialogOpen(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      setSuccess(`客户密码已修改，已撤销 ${result.sessions_revoked} 个登录会话`);
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : 'request_failed';
+      if (code === 'password_unchanged') {
+        setPasswordError('新密码不能与客户当前密码相同');
+      } else if (code === 'customer_password_change_unavailable') {
+        setPasswordError('该客户尚未激活或尚未设置登录密码，暂时不能修改');
+      } else if (code === 'customer_password_change_conflict') {
+        setPasswordError('客户登录状态已被其他操作更新，请关闭窗口后重试');
+      } else {
+        setPasswordError('客户密码修改失败，请重试');
+      }
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
   if (loading && !customer) {
     return (
       <Box sx={{ minHeight: 520, display: 'grid', placeItems: 'center' }}>
@@ -1106,6 +1175,43 @@ export default function CustomerDetailPage() {
                   查看 KYC 审核记录
                 </Button>
               </Paper>
+              {canManageCustomerCredentials && (
+                <Paper sx={{ ...panelSx, p: 2.25 }}>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ sm: 'center' }}
+                    gap={2}
+                  >
+                    <Box>
+                      <Typography variant="h6">登录与安全</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        管理员修改密码后，客户现有登录会话会立即失效；TOTP 与恢复码保持不变。
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      startIcon={<Iconify icon="solar:lock-password-bold" />}
+                      disabled={customer.status !== 'ACTIVE'}
+                      onClick={() => {
+                        setNewPassword('');
+                        setConfirmPassword('');
+                        setPasswordError('');
+                        setPasswordDialogOpen(true);
+                      }}
+                      sx={{ flex: '0 0 auto' }}
+                    >
+                      修改客户密码
+                    </Button>
+                  </Stack>
+                  {customer.status !== 'ACTIVE' && (
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                      客户完成激活并设置登录密码后，才能由管理员修改密码。
+                    </Alert>
+                  )}
+                </Paper>
+              )}
             </Stack>
           )}
 
@@ -1269,6 +1375,72 @@ export default function CustomerDetailPage() {
         onClose={() => setReviewAction(null)}
         onSubmit={() => submitReview().catch(() => undefined)}
       />
+
+      <Dialog
+        open={passwordDialogOpen}
+        onClose={closePasswordDialog}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>修改客户密码</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="warning">
+              保存后会撤销该客户的全部登录会话和未完成登录验证。新密码不会显示在客户资料或审计记录中。
+            </Alert>
+            {passwordError && <Alert severity="error">{passwordError}</Alert>}
+            <TextField
+              autoFocus
+              fullWidth
+              required
+              type="password"
+              label="新密码"
+              value={newPassword}
+              onChange={(event) => {
+                setNewPassword(event.target.value);
+                setPasswordError('');
+              }}
+              autoComplete="new-password"
+              helperText="14–128 个字符，须包含大写字母、小写字母、数字和符号。"
+              inputProps={{ minLength: 14, maxLength: 128 }}
+            />
+            <TextField
+              fullWidth
+              required
+              type="password"
+              label="确认新密码"
+              value={confirmPassword}
+              onChange={(event) => {
+                setConfirmPassword(event.target.value);
+                setPasswordError('');
+              }}
+              autoComplete="new-password"
+              error={Boolean(confirmPassword) && newPassword !== confirmPassword}
+              helperText={
+                confirmPassword && newPassword !== confirmPassword ? '两次输入的密码不一致' : ' '
+              }
+              inputProps={{ minLength: 14, maxLength: 128 }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePasswordDialog} disabled={passwordSaving}>
+            取消
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={
+              passwordSaving ||
+              !validAdminCustomerPassword(newPassword) ||
+              newPassword !== confirmPassword
+            }
+            onClick={() => changeCustomerPassword().catch(() => undefined)}
+          >
+            {passwordSaving ? '保存中…' : '确认修改'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={vaRequestOpen}

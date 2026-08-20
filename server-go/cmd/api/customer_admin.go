@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/url"
@@ -104,6 +105,99 @@ func (app *application) listAdminCustomers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+func (app *application) adminChangeCustomerPassword(w http.ResponseWriter, r *http.Request, id string) {
+	var input struct {
+		NewPassword string `json:"new_password"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if !safeIdentifier.MatchString(id) || !validCustomerPassword(input.NewPassword) {
+		validationError(w)
+		return
+	}
+
+	rows, err := app.db.Query(r.Context(), `SELECT cc.password_salt, cc.password_hash,
+	    cc.password_algorithm, cc.password_iterations, cc.password_memory_kib,
+	    cc.password_time_cost, cc.password_parallelism, cc.credential_version
+	  FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
+	  WHERE c.id=? AND c.tenant_id=? AND c.status='active' AND c.kyc_status='approved'
+	    AND c.operations_status='active' AND cc.password_salt IS NOT NULL
+	    AND cc.password_hash IS NOT NULL`, id, app.tenantID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(rows) != 1 {
+		conflict(w, "customer_password_change_unavailable")
+		return
+	}
+	if unchanged, _ := app.verifyCustomerPassword(input.NewPassword, rows[0]); unchanged {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": map[string]string{"code": "password_unchanged"},
+		})
+		return
+	}
+
+	now := time.Now().UTC()
+	nowText := databaseTimestamp(now)
+	credentialVersion := integer(rows[0]["credential_version"])
+	newCredentialVersion := credentialVersion + 1
+	salt := randomBytes(16)
+	passwordHash := app.deriveCustomerArgon2id(input.NewPassword, salt)
+	encodedPasswordHash := hex.EncodeToString(passwordHash)
+	actor := edgeUser(r)
+	results, err := app.db.Batch(r.Context(),
+		d1.Statement{SQL: `UPDATE customer_credentials
+	  SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=0,
+	      password_memory_kib=?, password_time_cost=?, password_parallelism=?,
+	      password_changed_at=?, credential_version=?, failed_attempts=0, locked_until=NULL,
+	      updated_at=?
+	  WHERE customer_id=? AND credential_version=? AND EXISTS (
+	    SELECT 1 FROM customers c WHERE c.id=customer_credentials.customer_id
+	      AND c.tenant_id=? AND c.status='active' AND c.kyc_status='approved'
+	      AND c.operations_status='active')`, Params: []any{
+			hex.EncodeToString(salt), encodedPasswordHash, customerPasswordAlgorithm,
+			customerArgonMemoryKiB, customerArgonTimeCost, customerArgonParallelism,
+			nowText, newCredentialVersion, nowText, id, credentialVersion, app.tenantID,
+		}},
+		d1.Statement{SQL: `UPDATE customer_sessions SET revoked_at=?, last_seen_at=?
+	  WHERE customer_id=? AND revoked_at IS NULL AND EXISTS (
+	    SELECT 1 FROM customer_credentials cc WHERE cc.customer_id=?
+	      AND cc.credential_version=? AND cc.password_hash=? AND cc.password_changed_at=?)`, Params: []any{
+			nowText, nowText, id, id, newCredentialVersion, encodedPasswordHash, nowText,
+		}},
+		d1.Statement{SQL: `UPDATE customer_login_challenges SET consumed_at=?
+	  WHERE customer_id=? AND consumed_at IS NULL AND EXISTS (
+	    SELECT 1 FROM customer_credentials cc WHERE cc.customer_id=?
+	      AND cc.credential_version=? AND cc.password_hash=? AND cc.password_changed_at=?)`, Params: []any{
+			nowText, id, id, newCredentialVersion, encodedPasswordHash, nowText,
+		}},
+		d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
+	  (id, customer_id, event_type, actor, metadata_json, created_at)
+	  SELECT ?, ?, 'auth.password_changed_by_admin', ?, ?, ?
+	  WHERE EXISTS (SELECT 1 FROM customer_credentials
+	    WHERE customer_id=? AND credential_version=? AND password_hash=?
+	      AND password_changed_at=?)`, Params: []any{
+			randomID("audit"), id, actor,
+			mustJSON(map[string]string{"method": "admin_set_password"}), nowText,
+			id, newCredentialVersion, encodedPasswordHash, nowText,
+		}},
+	)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != 4 || resultChanges(results[:1]) != 1 || resultChanges(results[3:4]) != 1 {
+		conflict(w, "customer_password_change_conflict")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"password_changed_at": nowText,
+		"sessions_revoked":    resultChanges(results[1:2]),
+	})
 }
 
 func (app *application) reviewCustomerKYC(w http.ResponseWriter, r *http.Request, id string) {

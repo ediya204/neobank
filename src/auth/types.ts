@@ -42,6 +42,7 @@ export type PortalPermission =
 
 export type AdminPermission =
   | 'admin_users.manage'
+  | 'customer_credentials.manage'
   | 'customers.read'
   | 'customers.review'
   | 'funds.read'

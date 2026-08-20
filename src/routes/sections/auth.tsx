@@ -7,6 +7,7 @@ import { paths } from 'src/routes/paths';
 const LoginPage = lazy(() => import('src/pages/auth/jwt/login'));
 const SetupPage = lazy(() => import('src/pages/auth/jwt/setup'));
 const RegisterPage = lazy(() => import('src/pages/auth/jwt/register'));
+const PasswordRecoveryPage = lazy(() => import('src/pages/auth/jwt/password-recovery'));
 const PortalRoleEntryPage = lazy(() => import('src/pages/auth/portal-role-entry'));
 const InvalidAuthEntryPage = lazy(() => import('src/pages/auth/jwt/invalid-entry'));
 
@@ -67,6 +68,38 @@ export const customerAuthRoutes = [
             <RegisterPage loginPath={paths.auth.customer.login} />
           </AuthClassicLayout>
         </GuestGuard>
+      </Suspense>
+    ),
+  },
+  {
+    path: 'customer/forgot-password',
+    element: (
+      <Suspense fallback={<SplashScreen />}>
+        <GuestGuard>
+          <AuthClassicLayout workspaceRole="customer">
+            <PasswordRecoveryPage mode="forgot" />
+          </AuthClassicLayout>
+        </GuestGuard>
+      </Suspense>
+    ),
+  },
+  {
+    path: 'customer/reset-password',
+    element: (
+      <Suspense fallback={<SplashScreen />}>
+        <AuthClassicLayout workspaceRole="customer">
+          <PasswordRecoveryPage mode="reset" />
+        </AuthClassicLayout>
+      </Suspense>
+    ),
+  },
+  {
+    path: 'customer/verify-email',
+    element: (
+      <Suspense fallback={<SplashScreen />}>
+        <AuthClassicLayout workspaceRole="customer">
+          <PasswordRecoveryPage mode="verify" />
+        </AuthClassicLayout>
       </Suspense>
     ),
   },

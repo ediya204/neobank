@@ -58,7 +58,7 @@ export default function App() {
 
   `;
 
-  console.info(`%c${charAt}`, 'color: #FDA92D');
+  console.info(`%c${charAt}`, 'color: #C91532');
 
   useScrollToTop();
 
