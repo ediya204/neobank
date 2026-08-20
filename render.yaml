@@ -34,6 +34,8 @@ services:
         sync: false
       - key: SUMSUB_ENABLED
         value: "false"
+      - key: SUMSUB_ACTIVATION_APPROVED
+        value: "false"
       - key: SUMSUB_BASE_URL
         value: https://api.sumsub.com
       - key: SUMSUB_MODE

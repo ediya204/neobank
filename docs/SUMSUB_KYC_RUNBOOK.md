@@ -79,6 +79,7 @@ Webhook secret 必须与 Render 的 `SUMSUB_WEBHOOK_SECRET` 一致，并启用 S
 | 变量                    | 规则                                                         |
 | ----------------------- | ------------------------------------------------------------ |
 | `SUMSUB_ENABLED`        | Sandbox 验收前保持 `false`                                   |
+| `SUMSUB_ACTIVATION_APPROVED` | 第二道人工激活门禁，Sandbox 验收前保持 `false`           |
 | `SUMSUB_BASE_URL`       | `https://api.sumsub.com`                                     |
 | `SUMSUB_MODE`           | `sandbox` 或 `production`，必须与 Webhook `sandboxMode` 一致 |
 | `SUMSUB_LEVEL_NAME`     | `neobank_individual_v1`                                      |
@@ -97,10 +98,10 @@ Webhook secret 必须与 Render 的 `SUMSUB_WEBHOOK_SECRET` 一致，并启用 S
 
 推荐顺序：
 
-1. 保持 `SUMSUB_ENABLED=false` 部署兼容代码；
+1. 保持 `SUMSUB_ENABLED=false` 与 `SUMSUB_ACTIVATION_APPROVED=false` 部署兼容代码；
 2. 依照上述门禁应用 `0008` 并做表、索引和既有客户行数核对；
 3. 配置 Sandbox Level、Webhook 与 Render secrets；
-4. 设置 `SUMSUB_ENABLED=true` 并只用 Sandbox 测试申请；
+4. 设置 `SUMSUB_ENABLED=true` 与 `SUMSUB_ACTIVATION_APPROVED=true` 并只用 Sandbox 测试申请；
 5. 完成下面的验收证据后，再单独审批生产切换。
 
 ## 7. Sandbox 验收
