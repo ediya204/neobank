@@ -106,6 +106,97 @@ func TestCustomerSessionConcurrentTouchRemainsAuthenticated(t *testing.T) {
 	}
 }
 
+func TestRoleScopedSessionReadsSelectRequestedIdentity(t *testing.T) {
+	now := time.Now().UTC()
+	adminToken := strings.Repeat("a", 32)
+	adminCSRF := strings.Repeat("b", 32)
+	customerToken := strings.Repeat("c", 32)
+	customerCSRF := strings.Repeat("d", 32)
+
+	t.Run("customer", func(t *testing.T) {
+		db := &sessionTouchDatabase{rows: []map[string]any{{
+			"id": "customer_session", "customer_id": "customer_test", "csrf_hash": tokenHash(customerCSRF),
+			"credential_version": int64(1), "current_credential_version": int64(1),
+			"expires_at": databaseTimestamp(now.Add(time.Hour)), "idle_expires_at": databaseTimestamp(now.Add(time.Hour)),
+			"last_seen_at": databaseTimestamp(now), "email": "customer@example.test", "display_name": "Customer",
+			"status": "active", "totp_enabled": false,
+		}}}
+		app := &application{db: db, portalURL: "http://localhost:3000", tenantID: "neobank"}
+		request := httptest.NewRequest(http.MethodGet, "/api/auth/customer/me", nil)
+		request.AddCookie(&http.Cookie{Name: app.adminCookieName(), Value: adminToken})
+		request.AddCookie(&http.Cookie{Name: app.adminCSRFCookieName(), Value: adminCSRF})
+		request.AddCookie(&http.Cookie{Name: app.customerCookieName(), Value: customerToken})
+		request.AddCookie(&http.Cookie{Name: app.customerCSRFCookieName(), Value: customerCSRF})
+		response := httptest.NewRecorder()
+
+		app.auth(response, request)
+
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"role":"customer"`) {
+			t.Fatalf("customer scoped me status=%d body=%q", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("admin", func(t *testing.T) {
+		db := &sessionTouchDatabase{rows: []map[string]any{{
+			"id": "admin_session", "user_id": "admin_test", "csrf_hash": tokenHash(adminCSRF),
+			"credential_version": int64(1), "current_credential_version": int64(1),
+			"expires_at": databaseTimestamp(now.Add(time.Hour)), "last_seen_at": databaseTimestamp(now),
+			"email": "admin@example.test", "display_name": "Admin", "access_role": adminRoleSuperAdmin,
+		}}}
+		app := &application{db: db, portalURL: "http://localhost:3000"}
+		request := httptest.NewRequest(http.MethodGet, "/api/auth/admin/me", nil)
+		request.AddCookie(&http.Cookie{Name: app.adminCookieName(), Value: adminToken})
+		request.AddCookie(&http.Cookie{Name: app.adminCSRFCookieName(), Value: adminCSRF})
+		request.AddCookie(&http.Cookie{Name: app.customerCookieName(), Value: customerToken})
+		request.AddCookie(&http.Cookie{Name: app.customerCSRFCookieName(), Value: customerCSRF})
+		response := httptest.NewRecorder()
+
+		app.auth(response, request)
+
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"role":"admin"`) {
+			t.Fatalf("admin scoped me status=%d body=%q", response.Code, response.Body.String())
+		}
+	})
+}
+
+func TestRoleScopedLogoutPreservesOtherRoleCookies(t *testing.T) {
+	now := time.Now().UTC()
+	adminToken := strings.Repeat("a", 32)
+	adminCSRF := strings.Repeat("b", 32)
+	customerToken := strings.Repeat("c", 32)
+	customerCSRF := strings.Repeat("d", 32)
+	db := &sessionTouchDatabase{batchChanges: 1, rows: []map[string]any{{
+		"id": "customer_session", "customer_id": "customer_test", "csrf_hash": tokenHash(customerCSRF),
+		"credential_version": int64(1), "current_credential_version": int64(1),
+		"expires_at": databaseTimestamp(now.Add(time.Hour)), "idle_expires_at": databaseTimestamp(now.Add(time.Hour)),
+		"last_seen_at": databaseTimestamp(now), "email": "customer@example.test", "display_name": "Customer",
+		"status": "active", "totp_enabled": false,
+	}}}
+	app := &application{db: db, portalURL: "http://localhost:3000", tenantID: "neobank"}
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/logout", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", app.portalURL)
+	request.Header.Set("X-CSRF-Token", customerCSRF)
+	request.AddCookie(&http.Cookie{Name: app.adminCookieName(), Value: adminToken})
+	request.AddCookie(&http.Cookie{Name: app.adminCSRFCookieName(), Value: adminCSRF})
+	request.AddCookie(&http.Cookie{Name: app.customerCookieName(), Value: customerToken})
+	request.AddCookie(&http.Cookie{Name: app.customerCSRFCookieName(), Value: customerCSRF})
+	response := httptest.NewRecorder()
+
+	app.auth(response, request)
+
+	setCookies := strings.Join(response.Header().Values("Set-Cookie"), "\n")
+	if response.Code != http.StatusOK {
+		t.Fatalf("customer scoped logout status=%d body=%q", response.Code, response.Body.String())
+	}
+	if !strings.Contains(setCookies, "neobank_customer=") || !strings.Contains(setCookies, "neobank_csrf=") {
+		t.Fatalf("customer cookies were not cleared: %q", setCookies)
+	}
+	if strings.Contains(setCookies, "neobank_admin=") || strings.Contains(setCookies, "neobank_admin_csrf=") {
+		t.Fatalf("customer logout must preserve admin cookies: %q", setCookies)
+	}
+}
+
 func TestConfiguredOriginValidation(t *testing.T) {
 	if !validConfiguredOrigin("https://customer.example.com", false) {
 		t.Fatal("expected HTTPS origin to pass")

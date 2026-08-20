@@ -274,13 +274,15 @@ async function constantTimeTextEqual(left: string, right: string): Promise<boole
 
 async function loadApplicationSession(
   request: Request,
-  env: Env
+  env: Env,
+  expectedRole: 'admin' | 'customer'
 ): Promise<ApplicationSessionPayload | null> {
   const upstreamOrigin = new URL(env.GO_API_BASE_URL);
   if (upstreamOrigin.protocol !== 'https:' || upstreamOrigin.pathname !== '/') {
     throw new Error('GO_API_BASE_URL must be an HTTPS origin');
   }
-  const upstream = new URL('/api/auth/me', upstreamOrigin);
+  const sessionPath = `/api/auth/${expectedRole}/me`;
+  const upstream = new URL(sessionPath, upstreamOrigin);
   const bodyHashHex = Array.from(
     new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array()))
   )
@@ -288,7 +290,7 @@ async function loadApplicationSession(
     .join('');
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const edgeUser = 'application-session-edge';
-  const canonical = [timestamp, 'GET', '/api/auth/me', edgeUser, bodyHashHex].join('\n');
+  const canonical = [timestamp, 'GET', sessionPath, edgeUser, bodyHashHex].join('\n');
   const signature = await hmacHex(env.GO_EDGE_SHARED_SECRET, canonical);
   const headers = new Headers({
     accept: 'application/json',
@@ -466,8 +468,17 @@ async function proxyCoreAPI(
   }
 
   const incoming = new URL(request.url);
-  const session =
-    options.session === undefined ? await loadApplicationSession(request, env) : options.session;
+  let session = options.session;
+  if (session === undefined) {
+    const requestedRole = request.headers.get('x-neobank-session-role')?.trim().toLowerCase();
+    if (requestedRole !== 'admin' && requestedRole !== 'customer') {
+      return json({ error: { code: 'session_role_required' } }, 400);
+    }
+    session = await loadApplicationSession(request, env, requestedRole);
+    if (session?.user?.role !== requestedRole) {
+      return json({ error: { code: 'authentication_required' } }, 401);
+    }
+  }
   const role = typeof session?.user?.role === 'string' ? session.user.role : '';
   const userId = typeof session?.user?.id === 'string' ? session.user.id : '';
   const coreUserId =

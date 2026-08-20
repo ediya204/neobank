@@ -1,6 +1,7 @@
 import {
   IS_FULL_ADMIN_WALLET_DEPLOYMENT,
   IS_ISOLATED_WALLET_DEPLOYMENT,
+  IS_NEOBANK_DEPLOYMENT,
 } from 'src/config/deployment-mode';
 import { AuthRole, AuthSessionUser } from './types';
 import { hasPortalPermission } from './permissions';
@@ -153,9 +154,16 @@ export function getRoleSetup(role: AuthRole) {
   return ROLE_SETUP[role];
 }
 
-export function requiredRoleForPath(pathname: string): AuthRole | null {
-  if (pathname === '/admin' || pathname === '/admin/neobank-crypto') return 'admin';
+export function requiredRoleForPath(
+  pathname: string,
+  neobankDeployment = IS_NEOBANK_DEPLOYMENT
+): AuthRole | null {
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) return 'admin';
   if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) return 'admin';
+  if (pathname === '/customer' || pathname.startsWith('/customer/')) return 'customer';
+  if (neobankDeployment && (pathname === '/portal' || pathname.startsWith('/portal/'))) {
+    return 'customer';
+  }
   if (pathname === '/portal' || pathname.startsWith('/portal/')) return null;
   return null;
 }

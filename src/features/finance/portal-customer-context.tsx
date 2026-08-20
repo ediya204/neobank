@@ -1,13 +1,18 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthContext } from 'src/auth/hooks';
 import {
   AssetSummary,
   coreApi,
+  Currency,
   Customer,
   demoOrganizationId,
   isSupportedPortalAccount,
   Operation,
 } from './core-api';
+import {
+  buildAssetSummaryFromLastKnownRates,
+  resolveAssetSummaryRates,
+} from './asset-summary-rates';
 import { activeCustomerWalletAccounts, CustomerWalletRow } from './customer-wallet';
 
 type PortalCustomerContextValue = {
@@ -15,6 +20,8 @@ type PortalCustomerContextValue = {
   customer: Customer | null;
   operations: Operation[];
   assetSummary: AssetSummary | null;
+  assetSummaryUsesCachedRates: boolean;
+  assetSummaryRateCurrencies: Currency[];
   backendStarting: boolean;
   loading: boolean;
   error: string;
@@ -46,6 +53,9 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
   );
   const [operations, setOperations] = useState<Operation[]>([]);
   const [assetSummary, setAssetSummary] = useState<AssetSummary | null>(null);
+  const [assetSummaryUsesCachedRates, setAssetSummaryUsesCachedRates] = useState(false);
+  const [assetSummaryRateCurrencies, setAssetSummaryRateCurrencies] = useState<Currency[]>([]);
+  const latestCustomerRef = useRef<Customer | null>(null);
   const [backendStarting, setBackendStarting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -93,12 +103,18 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
           .filter((row) => !(row.type === 'PAYOUT' && row.currency === 'USDT'))
           .slice(0, 5);
         setCustomers([resolvedCustomer]);
+        latestCustomerRef.current = resolvedCustomer;
         setCustomerId(self.id);
         setOperations(resolvedOperations);
-        setAssetSummary(home.assetSummary);
+        const resolvedSummary = resolveAssetSummaryRates(home.assetSummary);
+        setAssetSummary(resolvedSummary.summary);
+        setAssetSummaryUsesCachedRates(resolvedSummary.lastKnownCurrencies.length > 0);
+        setAssetSummaryRateCurrencies(resolvedSummary.lastKnownCurrencies);
         return;
       }
       setAssetSummary(null);
+      setAssetSummaryUsesCachedRates(false);
+      setAssetSummaryRateCurrencies([]);
       const rows = await coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`);
       const active = rows
         .filter((row) => row.status === 'ACTIVE')
@@ -111,6 +127,8 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
         ? customerId
         : active.find((row) => row.id === 'cus_demo_business')?.id || active[0]?.id || '';
       if (resolvedId !== customerId) setCustomerId(resolvedId);
+      latestCustomerRef.current =
+        active.find((row) => row.id === resolvedId) || active[0] || null;
       const operationRows = await coreApi<Operation[]>(
         `/operations?organizationId=${demoOrganizationId}`
       );
@@ -120,9 +138,20 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
             row.customerId === resolvedId && !(row.type === 'PAYOUT' && row.currency === 'USDT')
         )
       );
-    } catch (value) {
-      setAssetSummary(null);
-      setError(value instanceof Error ? value.message : '账户数据加载失败');
+    } catch {
+      const fallback =
+        user?.role === 'customer' && latestCustomerRef.current
+          ? buildAssetSummaryFromLastKnownRates(
+              latestCustomerRef.current.id,
+              latestCustomerRef.current.accounts
+            )
+          : null;
+      setAssetSummary(fallback?.summary || null);
+      setAssetSummaryUsesCachedRates(Boolean(fallback));
+      setAssetSummaryRateCurrencies(fallback?.lastKnownCurrencies || []);
+      // Core and edge error codes are operational details. Keep them out of
+      // customer-facing alerts while preserving a clear recovery action.
+      setError('账户资料暂时不可用，请稍后刷新。');
     } finally {
       if (startupNoticeTimer !== undefined) window.clearTimeout(startupNoticeTimer);
       setBackendStarting(false);
@@ -145,6 +174,8 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
       customer: customers.find((row) => row.id === customerId) || customers[0] || null,
       operations,
       assetSummary,
+      assetSummaryUsesCachedRates,
+      assetSummaryRateCurrencies,
       backendStarting,
       loading,
       error,
@@ -153,6 +184,8 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
     }),
     [
       assetSummary,
+      assetSummaryRateCurrencies,
+      assetSummaryUsesCachedRates,
       backendStarting,
       customerId,
       customers,

@@ -16,7 +16,7 @@ export const adminAuthRoutes = [
     path: 'admin/login',
     element: (
       <Suspense fallback={<SplashScreen />}>
-        <GuestGuard>
+        <GuestGuard expectedRole="admin">
           <AuthClassicLayout workspaceRole="admin">
             <LoginPage expectedRole="admin" />
           </AuthClassicLayout>
@@ -41,7 +41,7 @@ export const customerAuthRoutes = [
     path: 'customer/login',
     element: (
       <Suspense fallback={<SplashScreen />}>
-        <GuestGuard>
+        <GuestGuard expectedRole="customer">
           <AuthClassicLayout workspaceRole="customer">
             <LoginPage expectedRole="customer" />
           </AuthClassicLayout>
@@ -63,7 +63,7 @@ export const customerAuthRoutes = [
     path: 'customer/register',
     element: (
       <Suspense fallback={<SplashScreen />}>
-        <GuestGuard>
+        <GuestGuard expectedRole="customer">
           <AuthClassicLayout workspaceRole="customer">
             <RegisterPage loginPath={paths.auth.customer.login} />
           </AuthClassicLayout>
@@ -75,7 +75,7 @@ export const customerAuthRoutes = [
     path: 'customer/forgot-password',
     element: (
       <Suspense fallback={<SplashScreen />}>
-        <GuestGuard>
+        <GuestGuard expectedRole="customer">
           <AuthClassicLayout workspaceRole="customer">
             <PasswordRecoveryPage mode="forgot" />
           </AuthClassicLayout>
@@ -110,7 +110,7 @@ const partnerAuthRoutes = [
     path: 'portal/login',
     element: (
       <Suspense fallback={<SplashScreen />}>
-        <GuestGuard>
+        <GuestGuard expectedRole="partner">
           <AuthClassicLayout workspaceRole="partner">
             <LoginPage expectedRole="partner" />
           </AuthClassicLayout>
@@ -132,7 +132,7 @@ const partnerAuthRoutes = [
     path: 'portal/register',
     element: (
       <Suspense fallback={<SplashScreen />}>
-        <GuestGuard>
+        <GuestGuard expectedRole="partner">
           <AuthClassicLayout workspaceRole="partner">
             <RegisterPage loginPath={paths.auth.portal.login} />
           </AuthClassicLayout>

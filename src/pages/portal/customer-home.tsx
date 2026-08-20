@@ -37,9 +37,26 @@ const TREND_COLORS: Record<DisplayCurrency, string> = {
 
 export default function CustomerHome() {
   const navigate = useNavigate();
-  const { customer, operations, assetSummary, backendStarting, loading, error, refresh } =
-    usePortalCustomer();
+  const {
+    customer,
+    operations,
+    assetSummary,
+    assetSummaryUsesCachedRates,
+    assetSummaryRateCurrencies,
+    backendStarting,
+    loading,
+    error,
+    refresh,
+  } = usePortalCustomer();
   const [period, setPeriod] = useState<Period>(30);
+  const cachedRatesAsOf = assetSummary?.ratesAsOf
+    ? new Intl.DateTimeFormat('zh-CN', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(assetSummary.ratesAsOf))
+    : '';
 
   const accounts = useMemo(() => customer?.accounts || [], [customer?.accounts]);
   const firstName =
@@ -162,14 +179,37 @@ export default function CustomerHome() {
           )}
           {error && (
             <Alert
-              severity="error"
+              severity={assetSummary ? 'warning' : 'error'}
               action={
-                <Button color="inherit" size="small" onClick={() => refresh()}>
-                  重试
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => refresh().catch(() => undefined)}
+                >
+                  刷新账户
                 </Button>
               }
             >
               {error}
+            </Alert>
+          )}
+
+          {assetSummaryUsesCachedRates && (
+            <Alert
+              severity="warning"
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => refresh().catch(() => undefined)}
+                >
+                  刷新汇率
+                </Button>
+              }
+            >
+              {assetSummaryRateCurrencies.length
+                ? `实时汇率暂未更新，${assetSummaryRateCurrencies.join('、')} 正按最后一次成功汇率显示${cachedRatesAsOf ? `（截至 ${cachedRatesAsOf}）` : ''}。`
+                : '实时估值暂未更新，当前仅显示无需折算或已有有效历史汇率的资产。'}
             </Alert>
           )}
 

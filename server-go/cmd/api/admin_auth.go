@@ -55,6 +55,10 @@ func (app *application) routeAdminAuth(w http.ResponseWriter, r *http.Request) b
 		app.adminLogin(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/admin/totp/verify":
 		app.verifyAdminTOTP(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/admin/me":
+		app.adminSessionInfo(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/admin/logout":
+		app.adminLogout(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/me" && app.hasAdminCookie(r):
 		app.adminSessionInfo(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/logout" && app.hasAdminCookie(r):

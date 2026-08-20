@@ -1,4 +1,5 @@
 import { getCsrfToken, notifySessionExpired } from 'src/auth/csrf-token';
+import { requiredRoleForPath } from 'src/auth/role-access';
 
 export type Currency = 'USD' | 'SGD' | 'HKD' | 'EUR' | 'GBP' | 'USDT';
 export type CryptoNetwork = 'TRON' | 'BSC' | 'ETHEREUM';
@@ -339,12 +340,35 @@ const coreBaseUrl = process.env.REACT_APP_CORE_API_URL || '/api/v1';
 const transientReadStatuses = new Set([502, 503, 504]);
 const defaultRequestTimeoutMs = 10_000;
 const maxReadAttempts = 2;
+const apiBoundaryErrorMessages: Record<string, string> = {
+  customer_core_route_forbidden: '账户资料暂时无法读取，请刷新账户或重新登录后重试。',
+  authentication_required: '登录状态已失效，请重新登录。',
+  session_role_required: '登录状态不完整，请重新登录。',
+  admin_identity_incomplete: '管理员身份信息不完整，请重新登录。',
+  admin_permission_required: '当前管理员账号没有执行此操作的权限。',
+  service_unavailable: '服务暂时不可用，请稍后重试。',
+  market_data_unavailable: '实时报价暂时不可用，请稍后重试。',
+};
 
 type ApiRequestInit = RequestInit & {
   userId?: string;
   timeoutMs?: number;
   onTransientRetry?: () => void;
 };
+
+export function apiErrorMessage(
+  message: unknown,
+  code: unknown,
+  status: number,
+  fallback = '请求失败'
+) {
+  if (typeof code === 'string' && apiBoundaryErrorMessages[code]) {
+    return apiBoundaryErrorMessages[code];
+  }
+  if (typeof message === 'string' && message.trim()) return message;
+  if (typeof code === 'string' && code.trim()) return code;
+  return `${fallback} (${status})`;
+}
 
 function retryDelay(attempt: number) {
   return new Promise((resolve) => {
@@ -413,6 +437,11 @@ async function requestApi<T>(baseUrl: string, path: string, init?: ApiRequestIni
   } = init || {};
   const method = (requestInit.method || 'GET').toUpperCase();
   const csrfToken = getCsrfToken();
+  let sessionRole: 'admin' | 'customer' | null = null;
+  if (baseUrl.startsWith('/api/core') && typeof window !== 'undefined') {
+    const requiredRole = requiredRoleForPath(window.location.pathname);
+    if (requiredRole === 'admin' || requiredRole === 'customer') sessionRole = requiredRole;
+  }
   const response = await fetchWithTransientReadRetry(
     `${baseUrl}${path}`,
     {
@@ -422,6 +451,7 @@ async function requestApi<T>(baseUrl: string, path: string, init?: ApiRequestIni
       headers: {
         ...(requestInit.body ? { 'content-type': 'application/json' } : {}),
         ...(process.env.NODE_ENV === 'development' ? { 'x-user-id': userId } : {}),
+        ...(sessionRole ? { 'X-Neobank-Session-Role': sessionRole } : {}),
         ...(method !== 'GET' && method !== 'HEAD' && csrfToken
           ? { 'X-CSRF-Token': csrfToken }
           : {}),
@@ -442,7 +472,7 @@ async function requestApi<T>(baseUrl: string, path: string, init?: ApiRequestIni
     if (response.status === 401 && code === 'session_expired') {
       notifySessionExpired();
     }
-    throw new Error(message || code || `请求失败 (${response.status})`);
+    throw new Error(apiErrorMessage(message, code, response.status));
   }
   if (payload === null) {
     throw new Error('API 响应格式无效');

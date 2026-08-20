@@ -11,11 +11,11 @@ type Props = {
 
 export default function AuthGuard({ expectedRole, children }: Props) {
   const location = useLocation();
-  const { authenticated, loading } = useAuthContext();
+  const { authenticated, loading, user } = useAuthContext();
 
   if (loading) return <SplashScreen />;
 
-  if (!authenticated) {
+  if (!authenticated || user?.role !== expectedRole) {
     const returnTo = `${location.pathname}${location.search}`;
     const searchParams = new URLSearchParams({ returnTo });
     return <Navigate to={`${getRoleLogin(expectedRole)}?${searchParams.toString()}`} replace />;

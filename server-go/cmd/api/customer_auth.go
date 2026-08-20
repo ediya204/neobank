@@ -129,6 +129,10 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 		app.completeCustomerPasswordReset(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/email-verification/complete":
 		app.completeCustomerEmailVerification(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/customer/me":
+		app.customerSessionInfo(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/logout":
+		app.customerLogout(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/me":
 		app.customerSessionInfo(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/logout":

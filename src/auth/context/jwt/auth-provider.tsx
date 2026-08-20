@@ -15,6 +15,7 @@ import {
   setCsrfToken,
 } from 'src/auth/csrf-token';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
+import { requiredRoleForPath } from 'src/auth/role-access';
 import { AuthContext } from './auth-context';
 import {
   AuthApiError,
@@ -159,13 +160,15 @@ type Props = {
 export function AuthProvider({ children }: Props) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  const refreshSession = useCallback(async () => {
+  const refreshSession = useCallback(async (expectedRole?: AuthRole) => {
     const demoUser = localDemoUser();
     if (demoUser) {
       dispatch({ type: Types.INITIAL, payload: { user: demoUser, sessionError: null } });
       return demoUser;
     }
-    const session = await getSession();
+    const session = await getSession(
+      expectedRole || requiredRoleForPath(window.location.pathname) || undefined
+    );
     setCsrfToken(session?.csrfToken);
     dispatch({
       type: Types.INITIAL,
@@ -201,12 +204,12 @@ export function AuthProvider({ children }: Props) {
     return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
   }, []);
 
-  const applyFlowResult = useCallback(async (result: AuthFlowResult) => {
+  const applyFlowResult = useCallback(async (result: AuthFlowResult, expectedRole: AuthRole) => {
     if (result.nextStep !== 'authenticated') return result;
 
     // The authentication response only establishes identity. Always refresh
     // the server-derived Partner membership and permissions before rendering.
-    const session = await getSession();
+    const session = await getSession(expectedRole);
     const user = session?.user || result.user || null;
     const csrfToken = result.csrfToken || session?.csrfToken || null;
     if (!user || !csrfToken) {
@@ -230,12 +233,13 @@ export function AuthProvider({ children }: Props) {
 
   const login = useCallback(
     async (email: string, password: string, expectedRole: AuthRole) =>
-      applyFlowResult(await loginWithPassword(email, password, expectedRole)),
+      applyFlowResult(await loginWithPassword(email, password, expectedRole), expectedRole),
     [applyFlowResult]
   );
 
   const completeSetup = useCallback(
-    async (input: CompleteSetupInput) => applyFlowResult(await completeInitialSetup(input)),
+    async (input: CompleteSetupInput) =>
+      applyFlowResult(await completeInitialSetup(input), input.expectedRole),
     [applyFlowResult]
   );
 
@@ -246,24 +250,31 @@ export function AuthProvider({ children }: Props) {
   );
 
   const verifyTotp = useCallback(
-    async (input: VerifyTotpInput) => applyFlowResult(await verifyTotpChallenge(input)),
+    async (input: VerifyTotpInput) =>
+      applyFlowResult(await verifyTotpChallenge(input), input.expectedRole),
     [applyFlowResult]
   );
 
-  const logout = useCallback(async () => {
-    if (localDemoUser()) {
-      dispatch({ type: Types.LOGOUT });
-      return;
-    }
-    try {
-      await logoutSession(getCsrfToken());
-    } catch (error) {
-      if (!(error instanceof AuthApiError && error.status === 401)) throw error;
-    } finally {
-      clearCsrfToken();
-      dispatch({ type: Types.LOGOUT });
-    }
-  }, []);
+  const logout = useCallback(
+    async (expectedRole?: AuthRole) => {
+      if (localDemoUser()) {
+        dispatch({ type: Types.LOGOUT });
+        return;
+      }
+      try {
+        await logoutSession(
+          expectedRole || state.user?.role || requiredRoleForPath(window.location.pathname),
+          getCsrfToken()
+        );
+      } catch (error) {
+        if (!(error instanceof AuthApiError && error.status === 401)) throw error;
+      } finally {
+        clearCsrfToken();
+        dispatch({ type: Types.LOGOUT });
+      }
+    },
+    [state.user?.role]
+  );
 
   const changePassword = useCallback(
     async (input: ChangePasswordInput) => {

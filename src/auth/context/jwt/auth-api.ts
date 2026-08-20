@@ -12,6 +12,7 @@ import {
   VerifyTotpInput,
 } from 'src/auth/types';
 import { isSessionPermission } from 'src/auth/permissions';
+import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -106,7 +107,10 @@ export function normalizeAuthUser(payload: unknown): AuthSessionUser | null {
     displayName,
     role,
     totpEnabled: readBoolean(candidate, ['totp_enabled', 'totpEnabled']) || false,
-    accessRole: readString(candidate, ['access_role', 'accessRole']) as AuthSessionUser['accessRole'],
+    accessRole: readString(candidate, [
+      'access_role',
+      'accessRole',
+    ]) as AuthSessionUser['accessRole'],
     photoURL,
     organization: organizationId
       ? {
@@ -192,6 +196,13 @@ function scopedAuthPath(role: AuthRole, action: string) {
   if (role === 'admin') scope = 'admin';
   if (role === 'customer') scope = 'customer';
   return `/api/auth/${scope}/${action}`;
+}
+
+function sessionAuthPath(role: AuthRole | null | undefined, action: 'me' | 'logout') {
+  if (IS_NEOBANK_DEPLOYMENT && (role === 'admin' || role === 'customer')) {
+    return scopedAuthPath(role, action);
+  }
+  return `/api/auth/${action}`;
 }
 
 export function normalizeTotpSetup(payload: unknown): TotpSetupData | null {
@@ -288,9 +299,9 @@ async function authRequest(path: string, init: RequestInit = {}) {
   return payload;
 }
 
-export async function getSession(): Promise<AuthSessionData | null> {
+export async function getSession(expectedRole?: AuthRole): Promise<AuthSessionData | null> {
   try {
-    const payload = await authRequest('/api/auth/me', { method: 'GET' });
+    const payload = await authRequest(sessionAuthPath(expectedRole, 'me'), { method: 'GET' });
     const user = normalizeAuthUser(payload);
     const data = unwrapPayload(payload);
     const csrfToken = readString(data, ['csrf_token', 'csrfToken']);
@@ -455,8 +466,8 @@ export async function verifyCustomerTotpEnrollment(
   };
 }
 
-export async function logoutSession(csrfToken: string | null) {
-  await authRequest('/api/auth/logout', {
+export async function logoutSession(expectedRole: AuthRole | null, csrfToken: string | null) {
+  await authRequest(sessionAuthPath(expectedRole, 'logout'), {
     method: 'POST',
     body: JSON.stringify({}),
     headers: {

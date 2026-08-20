@@ -247,7 +247,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
 
       if (clearSession) {
         try {
-          await logout();
+          await logout(expectedRole);
         } catch {
           // The provider still clears the local session if server-side logout fails.
         }
@@ -271,7 +271,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
 
   const finishAuthentication = useCallback(
     async (result: AuthFlowResult) => {
-      const user = result.user || (await refreshSession());
+      const user = result.user || (await refreshSession(expectedRole));
       if (!user) throw new AuthApiError(502, 'invalid_auth_response', 'Session user is missing');
       await enforceEntryRole(user, true);
 
@@ -284,7 +284,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
 
       redirectAuthenticatedUser(user);
     },
-    [enforceEntryRole, redirectAuthenticatedUser, refreshSession]
+    [enforceEntryRole, expectedRole, redirectAuthenticatedUser, refreshSession]
   );
 
   const loadTotpEnrollment = useCallback(
@@ -334,7 +334,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
         return;
       }
 
-      const sessionUser = await refreshSession();
+      const sessionUser = await refreshSession(expectedRole);
       if (sessionUser) {
         await enforceEntryRole(sessionUser, true);
         redirectAuthenticatedUser(sessionUser);

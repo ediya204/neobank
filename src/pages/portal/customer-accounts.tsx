@@ -29,6 +29,11 @@ import CustomBreadcrumbs from 'src/components/custom-breadcrumbs';
 import { APP_DISPLAY_NAME } from 'src/config-global';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 import {
+  buildAssetSummaryFromLastKnownRates,
+  ResolvedAssetSummary,
+  resolveAssetSummaryRates,
+} from 'src/features/finance/asset-summary-rates';
+import {
   AssetDistributionItem,
   AssetSummary,
   coreApi,
@@ -43,6 +48,14 @@ import { AccountKindChip, accountLabel, money } from './customer-shared';
 
 type AccountTab = 'all' | 'wallet' | 'va' | 'crypto';
 
+function summaryFallbackMessage(fallback: ResolvedAssetSummary | null) {
+  if (!fallback) return '资产汇总加载失败，请稍后重试。';
+  if (fallback.lastKnownCurrencies.length) {
+    return '实时汇率暂未更新，当前按最后一次成功获取的汇率显示。';
+  }
+  return '资产估值暂未更新；当前仅计入无需折算或已有有效汇率的资产。';
+}
+
 export default function CustomerAccounts() {
   const { customer, error, refresh } = usePortalCustomer();
   const [tab, setTab] = useState<AccountTab>('all');
@@ -51,26 +64,41 @@ export default function CustomerAccounts() {
   const [summary, setSummary] = useState<AssetSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState('');
+  const [lastKnownRateCurrencies, setLastKnownRateCurrencies] = useState<Currency[]>([]);
 
   useEffect(() => {
     let active = true;
     if (!customer?.id) {
       setSummary(null);
       setSummaryLoading(false);
+      setLastKnownRateCurrencies([]);
       return () => {
         active = false;
       };
     }
-    setSummaryLoading(true);
+    const fallback = buildAssetSummaryFromLastKnownRates(customer.id, customer.accounts || []);
+    setSummary(fallback?.summary || null);
+    setLastKnownRateCurrencies(fallback?.lastKnownCurrencies || []);
+    setSummaryLoading(!fallback);
     setSummaryError('');
     coreApi<AssetSummary>(`/accounts/summary?customerId=${encodeURIComponent(customer.id)}`)
       .then((value) => {
-        if (active) setSummary(value);
-      })
-      .catch((value) => {
         if (active) {
-          setSummary(null);
-          setSummaryError(value instanceof Error ? value.message : '资产汇总加载失败');
+          const resolved = resolveAssetSummaryRates(value);
+          setSummary(resolved.summary);
+          setLastKnownRateCurrencies(resolved.lastKnownCurrencies);
+          setSummaryError(
+            resolved.lastKnownCurrencies.length
+              ? '实时汇率暂未更新，当前按最后一次成功获取的汇率显示。'
+              : ''
+          );
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSummary(fallback?.summary || null);
+          setLastKnownRateCurrencies(fallback?.lastKnownCurrencies || []);
+          setSummaryError(summaryFallbackMessage(fallback));
         }
       })
       .finally(() => {
@@ -79,17 +107,22 @@ export default function CustomerAccounts() {
     return () => {
       active = false;
     };
-  }, [customer?.id]);
+  }, [customer]);
 
   const usdRates = useMemo(() => {
     const rates = new Map<Currency, UsdRate>();
     rates.set('USD', { rate: 1, source: 'parity' });
     summary?.distribution.forEach((item) => {
       const rate = Number(item.reportingRate);
-      if (Number.isFinite(rate) && rate > 0) rates.set(item.currency, { rate, source: 'book' });
+      if (Number.isFinite(rate) && rate > 0) {
+        rates.set(item.currency, {
+          rate,
+          source: lastKnownRateCurrencies.includes(item.currency) ? 'last_known' : 'book',
+        });
+      }
     });
     return rates;
-  }, [summary]);
+  }, [lastKnownRateCurrencies, summary]);
 
   const accounts = (customer?.accounts || []).filter((row) => {
     if (tab === 'wallet') return row.kind === 'SYSTEM_WALLET';
@@ -120,9 +153,28 @@ export default function CustomerAccounts() {
           <Typography color="text.secondary" sx={{ mt: -2 }}>
             查看 USD、HKD 与 USDT-TRON 的可用、冻结和账面余额。
           </Typography>
-          {error && <Alert severity="error">{error}</Alert>}
-          {summaryError && !error && <Alert severity="error">{summaryError}</Alert>}
-          <AssetOverview summary={summary} loading={summaryLoading} />
+          {error && (
+            <Alert
+              severity={summary ? 'warning' : 'error'}
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => refresh().catch(() => undefined)}
+                >
+                  刷新账户
+                </Button>
+              }
+            >
+              {error}
+            </Alert>
+          )}
+          {summaryError && <Alert severity={summary ? 'warning' : 'error'}>{summaryError}</Alert>}
+          <AssetOverview
+            summary={summary}
+            loading={summaryLoading}
+            usingLastKnownRates={lastKnownRateCurrencies.length > 0}
+          />
           <Card>
             <Tabs
               value={tab}
@@ -209,7 +261,7 @@ export default function CustomerAccounts() {
 
 type UsdRate = {
   rate: number;
-  source: 'market' | 'book' | 'parity';
+  source: 'market' | 'book' | 'parity' | 'last_known';
 };
 
 type UsdValuation = {
@@ -236,7 +288,15 @@ const assetColors: Record<Currency, string> = {
   USDT: '#4FBFA2',
 };
 
-function AssetOverview({ summary, loading }: { summary: AssetSummary | null; loading: boolean }) {
+function AssetOverview({
+  summary,
+  loading,
+  usingLastKnownRates,
+}: {
+  summary: AssetSummary | null;
+  loading: boolean;
+  usingLastKnownRates: boolean;
+}) {
   const chartBackground = useMemo(() => {
     if (!summary?.distribution.length) return '#E8ECEA';
     let cursor = 0;
@@ -256,6 +316,17 @@ function AssetOverview({ summary, loading }: { summary: AssetSummary | null; loa
         minute: '2-digit',
       }).format(new Date(summary.asOf))
     : '';
+  const ratesAsOf = summary?.ratesAsOf
+    ? new Intl.DateTimeFormat('zh-CN', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(summary.ratesAsOf))
+    : '';
+  let valuationTime = '';
+  if (usingLastKnownRates && ratesAsOf) valuationTime = ` · 汇率截至 ${ratesAsOf}`;
+  else if (asOf) valuationTime = ` · ${asOf}`;
 
   return (
     <Box
@@ -300,7 +371,7 @@ function AssetOverview({ summary, loading }: { summary: AssetSummary | null; loa
                 </Typography>
               )}
               <Typography variant="body2" sx={{ color: '#B9D7CE', mt: 1 }}>
-                多币种资产 USD 估值{asOf ? ` · ${asOf}` : ''}
+                多币种资产 USD 估值{valuationTime}
               </Typography>
             </Box>
             <Box
@@ -613,6 +684,9 @@ function AccountListRow({
   else if (usdValuation) {
     mobileValuationLabel = `${money(usdValuation.value, 'USD')} 美金价值`;
   }
+  let valuationSourceLabel = '账面估算';
+  if (usdValuation?.source === 'last_known') valuationSourceLabel = '上次汇率估算';
+  else if (usdValuation?.source === 'market') valuationSourceLabel = '行情估算';
   return (
     <Box
       sx={{
@@ -697,7 +771,7 @@ function AccountListRow({
               {usdValuation ? money(usdValuation.value, 'USD') : '暂无估值'}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {usdValuation?.source === 'market' ? '行情估算' : '账面估算'}
+              {valuationSourceLabel}
             </Typography>
           </>
         )}

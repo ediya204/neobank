@@ -296,7 +296,10 @@ assert.match(customerCryptoWallet, /neobankApi<CustomerHistory>\('\/customer\/hi
 
 assert.match(worker, /proxyAPI\(request, env, 'application-session-edge'\)/);
 assert.match(worker, /proxyCoreAPI\(request, env\)/);
-assert.match(worker, /loadApplicationSession\(request, env\)/);
+assert.match(worker, /loadApplicationSession\(request, env, requestedRole\)/);
+assert.match(worker, /`\/api\/auth\/\$\{expectedRole\}\/me`/);
+assert.match(worker, /session_role_required/);
+assert.match(coreApi, /X-Neobank-Session-Role/);
 assert.match(worker, /customerHomeAPI\(request, env\)/);
 assert.match(worker, /internalGetRequest\(request, '\/api\/v1\/customer\/profile'\)/);
 assert.match(worker, /customerId=\$\{encodedCustomerId\}&limit=5/);

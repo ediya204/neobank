@@ -486,13 +486,11 @@ export default function CustomerActionPage({
     }
   };
 
-  let submissionInfoText =
-    '提交后进入平台单人审批；审批完成前你可以在交易记录中查看进度。';
+  let submissionInfoText = '提交后进入平台单人审批；审批完成前你可以在交易记录中查看进度。';
   if (submissionDisabledReason) {
     submissionInfoText = '当前页面保留账户与报价展示，不会创建资金指令。';
   } else if (action === 'otc') {
-    submissionInfoText =
-      '先获取服务端成交报价；报价仅保留 5 秒，点击确认后立即执行，无需审批。';
+    submissionInfoText = '先获取服务端成交报价；报价仅保留 5 秒，点击确认后立即执行，无需审批。';
   }
   let quoteConfirmButtonText = '报价已失效';
   if (submitting) quoteConfirmButtonText = '正在执行…';
@@ -530,7 +528,24 @@ export default function CustomerActionPage({
             <Alert severity="info">{submissionDisabledReason} 历史记录可在“交易记录”中查询。</Alert>
           )}
           {error && (
-            <Alert severity="error" onClose={() => setError('')}>
+            <Alert
+              severity="error"
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    setError('');
+                    loadDetail().catch(() =>
+                      setError('账户资料暂时无法读取，请刷新账户或重新登录后重试。')
+                    );
+                    loadRates().catch(() => undefined);
+                  }}
+                >
+                  重新加载
+                </Button>
+              }
+            >
               {error}
             </Alert>
           )}
@@ -922,9 +937,7 @@ export default function CustomerActionPage({
                     multiline
                     minRows={2}
                   />
-                  <Alert severity="info">
-                    {submissionInfoText}
-                  </Alert>
+                  <Alert severity="info">{submissionInfoText}</Alert>
                   <Button
                     size="large"
                     type="submit"

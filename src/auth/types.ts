@@ -21,10 +21,7 @@ export type AuthStateType = {
   user: AuthUserType;
 };
 
-export type AuthRole =
-  | 'admin'
-  | 'partner'
-  | 'customer';
+export type AuthRole = 'admin' | 'partner' | 'customer';
 
 export type PortalPermission =
   | 'team.read'
@@ -179,20 +176,13 @@ export type JWTContextType = {
   authenticated: boolean;
   unauthenticated: boolean;
   sessionError: string | null;
-  login: (
-    email: string,
-    password: string,
-    expectedRole: AuthRole
-  ) => Promise<AuthFlowResult>;
+  login: (email: string, password: string, expectedRole: AuthRole) => Promise<AuthFlowResult>;
   completeSetup: (input: CompleteSetupInput) => Promise<AuthFlowResult>;
-  setupTotp: (
-    role: AuthRole,
-    challengeToken?: string | null
-  ) => Promise<TotpSetupData>;
+  setupTotp: (role: AuthRole, challengeToken?: string | null) => Promise<TotpSetupData>;
   verifyTotp: (input: VerifyTotpInput) => Promise<AuthFlowResult>;
-  refreshSession: () => Promise<AuthSessionUser | null>;
+  refreshSession: (expectedRole?: AuthRole) => Promise<AuthSessionUser | null>;
   changePassword: (input: ChangePasswordInput) => Promise<void>;
-  logout: () => Promise<void>;
+  logout: (expectedRole?: AuthRole) => Promise<void>;
 };
 
 export type FirebaseContextType = CanRemove & {

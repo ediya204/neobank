@@ -70,6 +70,18 @@ cookie, the paired CSRF cookie/header, and a same-origin mutation. The web
 Worker performs rate limiting and signed transport only; it never derives or
 accepts an administrator identity from browser headers.
 
+Admin and customer sessions may coexist in one browser profile. Each role-specific
+Neobank workspace reads and closes its session through the scoped endpoints:
+`GET /api/auth/admin/me`, `POST /api/auth/admin/logout`,
+`GET /api/auth/customer/me`, and `POST /api/auth/customer/logout`. The web profile
+must not use the shared compatibility endpoints for a role-specific workspace,
+because a shared endpoint cannot identify which workspace the current tab intends
+to open.
+For `/api/core/*`, the browser also sends `X-Neobank-Session-Role` from the current
+Admin or customer route. The Worker accepts only `admin` or `customer` and uses it
+solely to select the corresponding server-validated session endpoint; the header
+does not grant identity, permissions, customer scope, or CSRF authority.
+
 The Worker authenticates that Go Admin session before proxying `/api/core/*` to
 Nest Core. Mutations also require the Go session's CSRF token. Worker-to-Core
 requests use a separate HMAC secret; the public Core origin rejects unsigned
@@ -314,7 +326,7 @@ The customer routes use the application session instead of Cloudflare Access:
 
 - Login: `/customer/login`
 - Legacy/admin-created account activation: `/customer/setup#setup_token=...`
-- Customer auth API: `/api/auth/customer/*`, `/api/auth/me`, `/api/auth/logout`
+- Customer auth API: `/api/auth/customer/*`, including role-scoped `me` and `logout`
 - Customer-scoped wallet API: `/api/v1/customer/*`
 - Super-admin customer password change: `PATCH /api/v1/admin/customers/:id/password`
 
