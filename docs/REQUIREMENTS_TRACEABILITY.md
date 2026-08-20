@@ -1,8 +1,8 @@
 # V1 需求追踪矩阵
 
-> V1.2 当前范围：只允许 Admin 人工录入法币到账，并在明确标记“已清算”后
-> 自动兑换为 USDT/TRON。客户转出、USDT 充值及手动 OTC 创建已关闭；历史数据
-> 继续通过余额、交易、自动兑换记录和账本查询。旧需求行仅代表历史实现。
+> 本矩阵主要保留旧 V1.2 合同的历史证据。当前 Neobank 客户 Portal 已单独开放
+> PostgreSQL Core 的五秒 OTC 报价确认流程；未确认不占用余额，确认后原子完成且
+> 无需审批。Partner 机器 API 的手动 OTC 写入、客户转出和 USDT 充值仍关闭。
 
 状态说明：`已实现` 表示当前代码、API 或确定性 Demo 可验收；`配置待办` 表示产品能力
 已具备但需要真实运营配置；`后续版本` 表示明确不属于 V1 自动化范围。
@@ -30,7 +30,7 @@
 | 资金实际到账与完成结果由 Edi 录入，Ethan 不能申报转入 | 已实现 | Partner 转入返回 `403 operator_only`；Admin 可录入 |
 | Admin 入账必须提供银行参考号或 Tx Hash | 已实现 | 创建缺失返回 `422 external_reference_required`；完成时 `external_reference` / `transaction_reference` 均为空返回 `422 transaction_reference_required` |
 | 同一外部入账凭证不得跨客户重复记账 | 已实现 | 同类型/网络全局防重；法币与十六进制链参考号忽略大小写，Solana 签名保留大小写；冲突返回 `409 duplicate_deposit_reference` |
-| 可用余额以账本为准，扣除待处理转出占用 | 已实现 | `/balances`；OTC 创建时原子完成，不产生待审批占用 |
+| 可用余额以账本为准，扣除待处理转出占用 | 已实现 | `/balances`；Neobank OTC 报价不占用余额，确认时原子完成且不产生待审批占用 |
 | 法币钱包、数字钱包先列全部客户，再进入详情 | 已实现 | 两级钱包路由 |
 | 法币/数字货币转出使用独立页面 | 已实现 | `.../{customerId}/withdraw` |
 | 转出页左侧余额与流程、下方表单，右侧最近交易 | 已实现 | 两种转出页人工视觉验收 |

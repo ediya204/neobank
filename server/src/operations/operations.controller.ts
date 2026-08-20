@@ -89,6 +89,16 @@ export class OperationsController {
     return this.operations.create(dto, currentUserId(request));
   }
 
+  @Post('quote')
+  createQuote(@Body() dto: CreateOperationDto, @Req() request: Request) {
+    return this.operations.createQuote(dto, currentUserId(request), customerQuoteActor(request));
+  }
+
+  @Post(':id/confirm')
+  confirmQuote(@Param('id') id: string, @Req() request: Request) {
+    return this.operations.confirmQuote(id, customerQuoteActor(request));
+  }
+
   @Patch(':id/approve')
   approve(@Param('id') id: string, @Req() request: Request) {
     return this.operations.approve(id, currentUserId(request));
@@ -103,4 +113,10 @@ export class OperationsController {
   execute(@Param('id') id: string, @Body() dto: ExecuteOperationDto, @Req() request: Request) {
     return this.operations.execute(id, dto.externalReference, currentUserId(request));
   }
+}
+
+function customerQuoteActor(request: Request) {
+  const customerId = request.header('x-authenticated-customer-id')?.trim() || '';
+  const email = request.header('x-authenticated-email')?.trim() || undefined;
+  return { customerId, email };
 }

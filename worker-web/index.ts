@@ -326,6 +326,12 @@ function customerCoreRouteAllowed(
   customerId: string,
   organizationId: string
 ) {
+  if (method === 'POST' && url.pathname === '/api/core/operations/quote') {
+    return hasOnlySearchParams(url, new Set());
+  }
+  if (method === 'POST' && /^\/api\/core\/operations\/[^/]+\/confirm$/.test(url.pathname)) {
+    return hasOnlySearchParams(url, new Set());
+  }
   if (url.pathname === '/api/core/funding-channels' && method === 'GET') {
     const type = url.searchParams.get('type');
     return (
@@ -512,16 +518,21 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  if (
-    role === 'admin' &&
+  const isAdminConversionSubmission =
+    role === 'admin' && request.method === 'POST' && incoming.pathname === '/api/core/operations';
+  const isCustomerQuoteRequest =
+    role === 'customer' &&
     request.method === 'POST' &&
-    incoming.pathname === '/api/core/operations'
-  ) {
+    incoming.pathname === '/api/core/operations/quote';
+  if (isAdminConversionSubmission || isCustomerQuoteRequest) {
     let operation: Record<string, unknown>;
     try {
       operation = JSON.parse(new TextDecoder().decode(body)) as Record<string, unknown>;
     } catch {
       return json({ error: { code: 'invalid_json' } }, 400);
+    }
+    if (isCustomerQuoteRequest && (operation.type !== 'OTC' || operation.customerId !== userId)) {
+      return json({ error: { code: 'customer_quote_scope_mismatch' } }, 403);
     }
     if (operation.type === 'FX' || operation.type === 'OTC') {
       if (typeof operation.currency !== 'string' || typeof operation.quoteCurrency !== 'string') {

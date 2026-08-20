@@ -39,7 +39,7 @@ function databaseForDeposit(target, transaction) {
   };
 }
 
-test('manual OTC creation and approval stay closed until USDT uses one ledger', async () => {
+test('OTC bypass creation and approval stay closed in favor of quote confirmation', async () => {
   const service = new OperationsService({
     $transaction: async (operation) =>
       operation({
@@ -58,12 +58,221 @@ test('manual OTC creation and approval stay closed until USDT uses one ledger', 
       { customerId: customer.id, type: 'OTC', currency: 'USD', amount: '1' },
       maker.id
     ),
-    /usdt_otc_disabled_until_single_ledger/
+    /otc_quote_confirmation_required/
   );
+  await assert.rejects(service.approve('legacy_otc', maker.id), /otc_does_not_require_approval/);
+});
+
+test('customer OTC quote stays draft for five seconds without reserving funds', async () => {
+  const source = {
+    id: 'source_usd',
+    customerId: customer.id,
+    kind: 'SYSTEM_WALLET',
+    status: 'ACTIVE',
+    currency: 'USD',
+    network: null,
+    fundingChannelId: null,
+  };
+  const target = {
+    id: 'target_usdt',
+    customerId: customer.id,
+    kind: 'CRYPTO_WALLET',
+    status: 'ACTIVE',
+    currency: 'USDT',
+    network: 'TRON',
+  };
+  let createdData;
+  let balanceWrites = 0;
+  const tx = {
+    operation: {
+      updateMany: async () => ({ count: 0 }),
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        createdData = data;
+        return { id: 'quote_test', ...data, customer, metadata: data.metadata };
+      },
+    },
+    rateVersion: {
+      findFirst: async () => ({ id: 'rate_test', feeBps: 20 }),
+    },
+    account: {
+      updateMany: async () => {
+        balanceWrites += 1;
+        return { count: 1 };
+      },
+    },
+  };
+  const service = new OperationsService({
+    user: { findUnique: async () => maker },
+    customer: { findUnique: async () => customer },
+    account: {
+      findUnique: async ({ where }) => (where.id === source.id ? source : target),
+    },
+    fundingChannel: { findUnique: async () => null },
+    beneficiary: { findUnique: async () => null },
+    $transaction: async (callback) => callback(tx),
+  });
+  const before = Date.now();
+  const quote = await service.createQuote(
+    {
+      customerId: customer.id,
+      type: 'OTC',
+      currency: 'USD',
+      quoteCurrency: 'USDT',
+      amount: '100',
+      feeAmount: '0',
+      sourceAccountId: source.id,
+      targetAccountId: target.id,
+      idempotencyKey: 'quote-key-1',
+      marketProvider: 'fastforex',
+      marketPriceType: 'midpoint_spot',
+      marketReferenceOnly: true,
+      marketRate: '1.001',
+      marketUpdatedAt: new Date().toISOString(),
+      marketFetchedAt: new Date().toISOString(),
+    },
+    maker.id,
+    { customerId: customer.id, email: 'customer@example.com' }
+  );
+  const expiresAt = Date.parse(quote.quoteExpiresAt);
+  assert.equal(createdData.status, 'DRAFT');
+  assert.equal(createdData.submittedAt, undefined);
+  assert.equal(createdData.rate.toString(), '0.998998');
+  assert.equal(createdData.quoteAmount.toString(), '99.8998');
+  assert.equal(balanceWrites, 0);
+  assert.ok(expiresAt >= before + 4_900 && expiresAt <= Date.now() + 5_100);
+});
+
+test('OTC quote confirmation atomically completes without an approval step', async () => {
+  const expiresAt = new Date(Date.now() + 5_000).toISOString();
+  const operation = {
+    id: 'quote_confirm_test',
+    reference: 'OP-QUOTE',
+    customerId: customer.id,
+    customer,
+    type: 'OTC',
+    status: 'DRAFT',
+    currency: 'USD',
+    quoteCurrency: 'USDT',
+    amount: new Prisma.Decimal('100'),
+    feeAmount: new Prisma.Decimal('0'),
+    quoteAmount: new Prisma.Decimal('99.8998'),
+    rate: new Prisma.Decimal('0.998998'),
+    rateVersionId: 'rate_test',
+    sourceAccountId: 'source_usd',
+    targetAccountId: 'target_usdt',
+    makerId: maker.id,
+    narrative: 'confirmed quote',
+    metadata: { quoteConfirmation: { customerId: customer.id, expiresAt } },
+  };
+  const statusWrites = [];
+  let journalCount = 0;
+  const tx = {
+    operation: {
+      findUnique: async () => operation,
+      updateMany: async ({ data }) => {
+        statusWrites.push(data.status);
+        return { count: 1 };
+      },
+      update: async ({ data }) => {
+        statusWrites.push(data.status || 'SNAPSHOT');
+        return { ...operation, ...data, status: data.status || operation.status };
+      },
+    },
+    account: {
+      updateMany: async () => ({ count: 1 }),
+      findFirst: async ({ where }) => ({ id: `clearing_${where.currency}` }),
+    },
+    cryptoWallet: { updateMany: async () => ({ count: 1 }) },
+    journalEntry: {
+      create: async () => {
+        journalCount += 1;
+      },
+    },
+  };
+  const service = new OperationsService({
+    $transaction: async (callback) => callback(tx),
+  });
+  const completed = await service.confirmQuote(operation.id, { customerId: customer.id });
+  assert.equal(completed.status, 'COMPLETED');
+  assert.equal(completed.approvedAt, undefined);
+  assert.equal(completed.checkerId, undefined);
+  assert.deepEqual(statusWrites, ['PROCESSING', 'SNAPSHOT', 'COMPLETED']);
+  assert.equal(journalCount, 1);
+});
+
+test('expired OTC quote is cancelled without touching balances', async () => {
+  const operation = {
+    id: 'expired_quote',
+    customerId: customer.id,
+    customer,
+    type: 'OTC',
+    status: 'DRAFT',
+    metadata: {
+      quoteConfirmation: {
+        customerId: customer.id,
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+      },
+    },
+  };
+  let cancelled = false;
+  let balanceWrites = 0;
+  const service = new OperationsService({
+    $transaction: async (callback) =>
+      callback({
+        operation: {
+          findUnique: async () => operation,
+          updateMany: async ({ data }) => {
+            cancelled = data.status === 'CANCELLED';
+            return { count: 1 };
+          },
+        },
+        account: {
+          updateMany: async () => {
+            balanceWrites += 1;
+            return { count: 1 };
+          },
+        },
+      }),
+  });
   await assert.rejects(
-    service.approve('legacy_otc', maker.id),
-    /usdt_otc_disabled_until_single_ledger/
+    service.confirmQuote(operation.id, { customerId: customer.id }),
+    /quote_expired/
   );
+  assert.equal(cancelled, true);
+  assert.equal(balanceWrites, 0);
+});
+
+test('deposit approval fails closed with an actionable error when clearing is missing', async () => {
+  let credited = false;
+  const operation = {
+    id: 'deposit_without_clearing',
+    type: 'DEPOSIT',
+    status: 'SUBMITTED',
+    currency: 'USD',
+    amount: new Prisma.Decimal('10'),
+    feeAmount: new Prisma.Decimal('0'),
+    targetAccountId: 'target_test',
+    makerId: maker.id,
+    metadata: null,
+    customer,
+  };
+  const service = new OperationsService({
+    $transaction: async (callback) =>
+      callback({
+        operation: { findUnique: async () => operation },
+        user: { findUnique: async () => maker },
+        account: {
+          findFirst: async () => null,
+          update: async () => {
+            credited = true;
+          },
+        },
+      }),
+  });
+
+  await assert.rejects(service.approve(operation.id, maker.id), /clearing_account_not_configured/);
+  assert.equal(credited, false);
 });
 
 test('deposit approval fails closed with an actionable error when clearing is missing', async () => {

@@ -66,8 +66,9 @@ The source includes:
 - Real password change with TOTP, credential-version race protection, other-session
   revocation, and audit logging.
 - FastForex-backed FX/OTC fee policies: active quotes are recomputed from live
-  midpoint data, and each submitted conversion locks a server-fetched market and
-  customer-rate snapshot before approval.
+  midpoint data. Customer OTC uses a server-fetched five-second `DRAFT` snapshot;
+  explicit confirmation atomically posts it without approval, while expiration
+  makes no balance change. Direct operation creation cannot bypass this gate.
 - Automatic account-opening completion: an active, KYC-approved customer receives
   idempotent zero-balance USD/HKD standard fiat accounts during Core synchronization;
   the Admin UI has no manual standard-fiat-account creation action.

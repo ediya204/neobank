@@ -56,6 +56,13 @@ type CreateOperationInput = {
   marketFetchedAt?: string;
 };
 
+type CustomerQuoteActor = {
+  customerId: string;
+  email?: string;
+};
+
+const QUOTE_CONFIRM_WINDOW_MS = 5_000;
+
 const operationInclude = {
   customer: true,
   sourceAccount: true,
@@ -88,7 +95,7 @@ export class OperationsService {
       where: {
         customer: { organizationId: filters.organizationId },
         metadata: { path: ['cryptoTransferId'], equals: Prisma.AnyNull },
-        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.status ? { status: filters.status } : { status: { not: 'DRAFT' } }),
         ...(filters.type ? { type: filters.type } : {}),
         ...(filters.customerId ? { customerId: filters.customerId } : {}),
       },
@@ -127,11 +134,28 @@ export class OperationsService {
   }
 
   async create(input: CreateOperationInput, makerId: string) {
+    if (input.type === 'OTC') {
+      throw new ConflictException('otc_quote_confirmation_required');
+    }
+    return this.createOperation(input, makerId);
+  }
+
+  async createQuote(input: CreateOperationInput, makerId: string, actor: CustomerQuoteActor) {
+    if (input.type !== 'OTC') throw new BadRequestException('otc_quote_required');
+    if (!actor.customerId || actor.customerId !== input.customerId) {
+      throw new ForbiddenException('customer_quote_scope_mismatch');
+    }
+    const operation = await this.createOperation(input, makerId, actor);
+    return this.quoteResponse(operation);
+  }
+
+  private async createOperation(
+    input: CreateOperationInput,
+    makerId: string,
+    quoteActor?: CustomerQuoteActor
+  ) {
     if (input.type === 'INTERNAL_TRANSFER') {
       throw new BadRequestException('internal_transfer_not_supported');
-    }
-    if (['OTC'].includes(input.type)) {
-      throw new ConflictException('usdt_otc_disabled_until_single_ledger');
     }
     if (input.currency !== 'USDT' && !isSupportedFiatCurrency(input.currency)) {
       throw new BadRequestException('unsupported_currency');
@@ -146,6 +170,9 @@ export class OperationsService {
     const amount = this.positiveMoney(input.amount, 'amount', input.currency);
     const requestedFeeAmount = new Prisma.Decimal(input.feeAmount || 0);
     if (requestedFeeAmount.isNegative()) throw new BadRequestException('fee_must_not_be_negative');
+    if (input.type === 'OTC' && !requestedFeeAmount.isZero()) {
+      throw new BadRequestException('otc_fee_amount_must_be_zero');
+    }
 
     const [maker, customer, source, target, channel, beneficiary] = await Promise.all([
       this.db.user.findUnique({ where: { id: makerId } }),
@@ -179,19 +206,35 @@ export class OperationsService {
       .slice(0, 10)
       .replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
     const frozen =
-      input.type === 'PAYOUT' ||
-      input.type === 'FX' ||
-      input.type === 'OTC' ||
-      (input.type === 'ADJUSTMENT' && input.adjustmentDirection === 'DEBIT');
+      !quoteActor &&
+      (input.type === 'PAYOUT' ||
+        input.type === 'FX' ||
+        input.type === 'OTC' ||
+        (input.type === 'ADJUSTMENT' && input.adjustmentDirection === 'DEBIT'));
     try {
       return await this.db.$transaction(
         async (tx) => {
+          if (quoteActor) {
+            await tx.operation.updateMany({
+              where: {
+                customerId: input.customerId,
+                type: 'OTC',
+                status: 'DRAFT',
+                createdAt: { lt: new Date(Date.now() - QUOTE_CONFIRM_WINDOW_MS) },
+              },
+              data: { status: 'CANCELLED' },
+            });
+          }
           if (input.idempotencyKey) {
             const existing = await tx.operation.findFirst({
               where: { customerId: input.customerId, idempotencyKey: input.idempotencyKey },
               include: operationInclude,
             });
-            if (existing) return existing;
+            if (existing) {
+              if (quoteActor && existing.type === 'OTC') return existing;
+              if (!quoteActor && existing.type !== 'OTC') return existing;
+              throw new ConflictException('idempotency_key_reused');
+            }
           }
           if (input.type === 'DEPOSIT' && input.channelId && input.remittanceReference) {
             const existingReceipt = await tx.operation.findFirst({
@@ -315,6 +358,10 @@ export class OperationsService {
               await this.freezeCryptoWallet(tx, input.customerId, reserve);
             }
           }
+          const createdAt = new Date();
+          const quoteExpiresAt = quoteActor
+            ? new Date(createdAt.getTime() + QUOTE_CONFIRM_WINDOW_MS)
+            : undefined;
           return tx.operation.create({
             data: {
               reference,
@@ -322,7 +369,7 @@ export class OperationsService {
               customerId: input.customerId,
               channelId: input.channelId,
               type: input.type,
-              status: 'SUBMITTED',
+              status: quoteActor ? 'DRAFT' : 'SUBMITTED',
               currency: input.currency,
               amount,
               feeAmount,
@@ -343,13 +390,23 @@ export class OperationsService {
               receivedAt: input.receivedAt ? new Date(input.receivedAt) : undefined,
               proofUrl: input.proofUrl,
               metadata:
-                withdrawalFeeSnapshot || conversionSnapshot
+                withdrawalFeeSnapshot || conversionSnapshot || quoteActor
                   ? {
                       ...(withdrawalFeeSnapshot ? { withdrawalFee: withdrawalFeeSnapshot } : {}),
                       ...(conversionSnapshot ? { marketQuote: conversionSnapshot.metadata } : {}),
+                      ...(quoteActor && quoteExpiresAt
+                        ? {
+                            quoteConfirmation: {
+                              customerId: quoteActor.customerId,
+                              ...(quoteActor.email ? { email: quoteActor.email } : {}),
+                              expiresAt: quoteExpiresAt.toISOString(),
+                            },
+                          }
+                        : {}),
                     }
                   : undefined,
-              submittedAt: new Date(),
+              submittedAt: quoteActor ? undefined : createdAt,
+              createdAt,
             },
             include: operationInclude,
           });
@@ -369,6 +426,87 @@ export class OperationsService {
     }
   }
 
+  async confirmQuote(id: string, actor: CustomerQuoteActor) {
+    let result: {
+      expired: boolean;
+      operation: Prisma.OperationGetPayload<{
+        include: typeof operationInclude;
+      }> | null;
+    };
+    try {
+      result = await this.db.$transaction(
+        async (tx) => {
+          const operation = await tx.operation.findUnique({
+            where: { id },
+            include: operationInclude,
+          });
+          if (!operation || operation.type !== 'OTC' || operation.customerId !== actor.customerId) {
+            throw new NotFoundException('quote_not_found');
+          }
+          if (operation.status === 'COMPLETED') return { expired: false, operation };
+          if (operation.status !== 'DRAFT') {
+            throw new ConflictException('quote_not_confirmable');
+          }
+          const expiresAt = this.quoteExpiresAt(operation.metadata);
+          if (!expiresAt) throw new ConflictException('quote_expiry_missing');
+          if (expiresAt.getTime() <= Date.now()) {
+            await tx.operation.updateMany({
+              where: { id, status: 'DRAFT' },
+              data: { status: 'CANCELLED' },
+            });
+            return { expired: true, operation: null };
+          }
+
+          const confirmedAt = new Date();
+          const claimed = await tx.operation.updateMany({
+            where: { id, status: 'DRAFT' },
+            data: { status: 'PROCESSING', submittedAt: confirmedAt },
+          });
+          if (claimed.count !== 1) throw new ConflictException('quote_not_confirmable');
+
+          const reserve = operation.amount.add(operation.feeAmount);
+          if (!operation.sourceAccountId) {
+            throw new BadRequestException('source_account_required');
+          }
+          await this.freeze(tx, operation.sourceAccountId, reserve);
+          if (operation.currency === 'USDT') {
+            await this.freezeCryptoWallet(tx, operation.customerId, reserve);
+          }
+          await this.postConversion(tx, { ...operation, status: 'PROCESSING' });
+
+          const completed = await tx.operation.update({
+            where: { id },
+            data: { status: 'COMPLETED', submittedAt: confirmedAt, executedAt: confirmedAt },
+            include: operationInclude,
+          });
+          return { expired: false, operation: completed };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      );
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        (error.code === 'P2034' || error.code === 'P2002')
+      ) {
+        const completed = await this.db.operation.findUnique({
+          where: { id },
+          include: operationInclude,
+        });
+        if (
+          completed?.type === 'OTC' &&
+          completed.customerId === actor.customerId &&
+          completed.status === 'COMPLETED'
+        ) {
+          return completed;
+        }
+        throw new ConflictException('quote_confirmation_conflict');
+      }
+      throw error;
+    }
+    if (result.expired) throw new ConflictException('quote_expired');
+    return result.operation;
+  }
+
   async approve(id: string, checkerId: string) {
     return this.db.$transaction(
       async (tx) => {
@@ -378,8 +516,8 @@ export class OperationsService {
         });
         if (!operation) throw new NotFoundException('operation_not_found');
         this.requireNonCryptoWorkflow(operation);
-        if (['OTC'].includes(operation.type)) {
-          throw new ConflictException('usdt_otc_disabled_until_single_ledger');
+        if (operation.type === 'OTC') {
+          throw new ConflictException('otc_does_not_require_approval');
         }
         if (operation.status !== 'SUBMITTED')
           throw new ConflictException('operation_not_pending_approval');
@@ -933,6 +1071,31 @@ export class OperationsService {
       operation.type === 'OTC' ||
       (operation.type === 'ADJUSTMENT' && operation.adjustmentDirection === 'DEBIT')
     );
+  }
+
+  private quoteExpiresAt(metadata: Prisma.JsonValue | null): Date | null {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+    const quoteConfirmation = metadata.quoteConfirmation;
+    if (
+      !quoteConfirmation ||
+      typeof quoteConfirmation !== 'object' ||
+      Array.isArray(quoteConfirmation) ||
+      typeof quoteConfirmation.expiresAt !== 'string'
+    ) {
+      return null;
+    }
+    const expiresAt = new Date(quoteConfirmation.expiresAt);
+    return Number.isFinite(expiresAt.getTime()) ? expiresAt : null;
+  }
+
+  private quoteResponse<T extends { metadata: Prisma.JsonValue | null }>(operation: T) {
+    const expiresAt = this.quoteExpiresAt(operation.metadata);
+    if (!expiresAt) throw new ConflictException('quote_expiry_missing');
+    return {
+      ...operation,
+      quoteExpiresAt: expiresAt.toISOString(),
+      quoteConfirmWindowMs: QUOTE_CONFIRM_WINDOW_MS,
+    };
   }
 
   private async requireRole(tx: Prisma.TransactionClient, userId: string, roles: UserRole[]) {

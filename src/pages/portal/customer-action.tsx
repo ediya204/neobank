@@ -10,6 +10,10 @@ import {
   CardContent,
   CircularProgress,
   Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   FormControl,
   InputAdornment,
@@ -139,6 +143,8 @@ export default function CustomerActionPage({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [pendingQuote, setPendingQuote] = useState<Operation | null>(null);
+  const [quoteCountdownMs, setQuoteCountdownMs] = useState(0);
   let conversionType: RateVersion['type'] | null = null;
   if (action === 'fx') conversionType = 'FX';
   if (action === 'otc') conversionType = 'OTC';
@@ -322,6 +328,16 @@ export default function CustomerActionPage({
     setTargetId(nextTarget?.id || '');
   }, [action, searchParams, source, targetId, targets]);
 
+  useEffect(() => {
+    if (!pendingQuote?.quoteExpiresAt) return undefined;
+    const updateCountdown = () => {
+      setQuoteCountdownMs(Math.max(0, Date.parse(pendingQuote.quoteExpiresAt || '') - Date.now()));
+    };
+    updateCountdown();
+    const intervalId = window.setInterval(updateCountdown, 100);
+    return () => window.clearInterval(intervalId);
+  }, [pendingQuote?.id, pendingQuote?.quoteExpiresAt]);
+
   const changeOtcDirection = (direction: OtcDirection) => {
     if (direction === otcDirection) return;
     setOtcDirection(direction);
@@ -404,19 +420,23 @@ export default function CustomerActionPage({
         });
       }
       payload.type = type;
-      const created = await coreApi<Operation>('/operations', {
+      const operationPath = action === 'otc' ? '/operations/quote' : '/operations';
+      const created = await coreApi<Operation>(operationPath, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+      if (action === 'otc') {
+        if (!created.quoteExpiresAt || !created.rate || !created.quoteAmount) {
+          throw new Error('服务端未返回完整的确认报价');
+        }
+        setQuoteCountdownMs(Math.max(0, Date.parse(created.quoteExpiresAt) - Date.now()));
+        setPendingQuote(created);
+        return;
+      }
       let successMessage = '指令已提交审批，完成后余额会自动更新。';
       if (action === 'payout') {
         successMessage = '付款已提交。平台管理员审批后将由银行或支付通道执行。';
-      } else if (
-        (action === 'fx' || action === 'otc') &&
-        created.rate &&
-        created.quoteAmount &&
-        created.quoteCurrency
-      ) {
+      } else if (action === 'fx' && created.rate && created.quoteAmount && created.quoteCurrency) {
         successMessage = `指令已按提交时实时行情锁定：1 ${created.currency} = ${created.rate} ${
           created.quoteCurrency
         }，预计到账 ${money(created.quoteAmount, created.quoteCurrency)}。`;
@@ -431,6 +451,53 @@ export default function CustomerActionPage({
       setSubmitting(false);
     }
   };
+
+  const confirmPendingQuote = async () => {
+    if (!pendingQuote || quoteCountdownMs <= 0) return;
+    setError('');
+    setSuccess('');
+    setSubmitting(true);
+    try {
+      const completed = await coreApi<Operation>(`/operations/${pendingQuote.id}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      setPendingQuote(null);
+      setQuoteCountdownMs(0);
+      setSuccess(
+        `兑换已执行：1 ${completed.currency} = ${completed.rate} ${
+          completed.quoteCurrency
+        }，到账 ${money(completed.quoteAmount || '0', completed.quoteCurrency || 'USDT')}。`
+      );
+      setAmount('');
+      setNote('');
+      await Promise.all([loadDetail(), refresh(), loadRates()]);
+    } catch (value) {
+      const message = value instanceof Error ? value.message : '确认执行失败';
+      if (message.includes('quote_expired')) {
+        setQuoteCountdownMs(0);
+        setError('报价已失效，请重新获取报价。');
+      } else {
+        setError(message);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  let submissionInfoText =
+    '提交后进入平台单人审批；审批完成前你可以在交易记录中查看进度。';
+  if (submissionDisabledReason) {
+    submissionInfoText = '当前页面保留账户与报价展示，不会创建资金指令。';
+  } else if (action === 'otc') {
+    submissionInfoText =
+      '先获取服务端成交报价；报价仅保留 5 秒，点击确认后立即执行，无需审批。';
+  }
+  let quoteConfirmButtonText = '报价已失效';
+  if (submitting) quoteConfirmButtonText = '正在执行…';
+  else if (quoteCountdownMs > 0) {
+    quoteConfirmButtonText = `确认执行（${Math.ceil(quoteCountdownMs / 1000)}）`;
+  }
 
   if (action === 'beneficiaries')
     return (
@@ -855,9 +922,7 @@ export default function CustomerActionPage({
                     minRows={2}
                   />
                   <Alert severity="info">
-                    {submissionDisabledReason
-                      ? '当前页面保留账户与报价展示，不会创建资金指令。'
-                      : '提交后进入平台单人审批；审批完成前你可以在交易记录中查看进度。'}
+                    {submissionInfoText}
                   </Alert>
                   <Button
                     size="large"
@@ -877,10 +942,15 @@ export default function CustomerActionPage({
                     {submitting && '正在提交…'}
                     {!submissionDisabledReason &&
                       !submitting &&
+                      action === 'otc' &&
+                      '获取 5 秒确认报价'}
+                    {!submissionDisabledReason &&
+                      !submitting &&
                       action === 'payout' &&
                       '确认并提交付款'}
                     {!submissionDisabledReason &&
                       !submitting &&
+                      action !== 'otc' &&
                       action !== 'payout' &&
                       '确认并提交'}
                   </Button>
@@ -890,6 +960,58 @@ export default function CustomerActionPage({
           </Card>
         </Stack>
       </Container>
+      <Dialog
+        open={Boolean(pendingQuote)}
+        onClose={submitting ? undefined : () => setPendingQuote(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>确认 OTC 成交报价</DialogTitle>
+        <DialogContent>
+          {pendingQuote && (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Alert severity={quoteCountdownMs > 0 ? 'warning' : 'error'}>
+                {quoteCountdownMs > 0
+                  ? `报价将在 ${Math.ceil(quoteCountdownMs / 1000)} 秒后失效，请确认后立即执行。`
+                  : '报价已失效，不会执行或扣减余额，请重新获取报价。'}
+              </Alert>
+              <Stack spacing={1.25}>
+                <Stack direction="row" justifyContent="space-between" gap={2}>
+                  <Typography color="text.secondary">卖出金额</Typography>
+                  <Typography fontWeight={600}>
+                    {money(pendingQuote.amount, pendingQuote.currency)}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" gap={2}>
+                  <Typography color="text.secondary">锁定成交价</Typography>
+                  <Typography fontWeight={600}>
+                    1 {pendingQuote.currency} = {pendingQuote.rate} {pendingQuote.quoteCurrency}
+                  </Typography>
+                </Stack>
+                <Divider />
+                <Stack direction="row" justifyContent="space-between" gap={2}>
+                  <Typography fontWeight={600}>实际到账</Typography>
+                  <Typography variant="h6" color="primary.main">
+                    {money(pendingQuote.quoteAmount || '0', pendingQuote.quoteCurrency || 'USDT')}
+                  </Typography>
+                </Stack>
+              </Stack>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={submitting} onClick={() => setPendingQuote(null)}>
+            {quoteCountdownMs > 0 ? '取消' : '重新获取报价'}
+          </Button>
+          <Button
+            variant="contained"
+            disabled={submitting || quoteCountdownMs <= 0}
+            onClick={confirmPendingQuote}
+          >
+            {quoteConfirmButtonText}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <BeneficiaryDialog
         open={beneficiaryOpen}
         customerId={customer?.id || ''}

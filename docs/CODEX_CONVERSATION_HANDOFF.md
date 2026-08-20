@@ -18,8 +18,11 @@ D1-related note in this history.
   actions, and keep sensitive money movement under operator confirmation.
 - The business was later narrowed to manual fiat receipt, explicit clearing,
   automatic fiat-to-USDT conversion, and administrator-controlled USDT/TRON sweep.
-- Customer-facing manual OTC and unrelated deposit/withdrawal write paths were
-  removed or disabled while historical visibility and audit records were retained.
+- Customer-facing OTC was later reopened only through the Render Core ledger: a
+  server quote remains valid for five seconds and requires explicit customer
+  confirmation before an immediate, no-approval atomic conversion. Partner machine
+  OTC and unrelated deposit/withdrawal write paths remain disabled unless separately
+  changed; historical visibility and audit records are retained.
 
 ## Accounting and security corrections
 

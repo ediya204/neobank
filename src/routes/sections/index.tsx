@@ -135,12 +135,7 @@ const fullAdminWalletRoutes = [
       },
       {
         path: 'money/otc',
-        element: (
-          <CustomerActionPage
-            action="otc"
-            submissionDisabledReason="当前版本的 OTC 由已清算法币自动生成，客户暂不能手动创建订单。"
-          />
-        ),
+        element: <CustomerActionPage action="otc" />,
       },
       {
         path: 'money/payouts',

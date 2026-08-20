@@ -40,12 +40,12 @@ that the assumption no longer applies.
   release. Only the Core transaction may consume frozen funds, post principal and fee
   journals, or expose a final customer balance.
 - `WITHDRAWAL_ACCOUNTING_ENABLED` is fail-closed and PostgreSQL migration
-  `0011_cregis_withdrawal_accounting` never enqueues historical withdrawals. Manual
-  OTC creation is server-disabled until every USD/HKD/USDT conversion is represented
-  by one Core state machine and journal; hiding the customer UI is not a sufficient
-  control.
-- Automatic conversion records remain visible and auditable even when customers
-  cannot create OTC orders.
+  `0011_cregis_withdrawal_accounting` never enqueues historical withdrawals. Customer
+  OTC now uses the Core state machine and balanced journal: the first request creates
+  a non-reserving `DRAFT` quote for five seconds, and authenticated confirmation
+  atomically completes the conversion without administrator approval. Direct OTC
+  operation creation remains blocked so clients cannot bypass confirmation.
+- Automatic and customer-confirmed conversion records remain visible and auditable.
 - A submitted sweep with a transaction hash must not be treated like an unsubmitted
   locked batch. Cancellation and completion rules must prevent value reuse.
 - Withdrawal fees are versioned by asset class, currency, payout method, channel,
@@ -61,9 +61,10 @@ that the assumption no longer applies.
   explicit customer reconfirmation.
 - FX/OTC rate versions configure only a fee policy for a supported currency pair.
   Customer quotes must be calculated from the current FastForex midpoint plus that
-  fee on every display and refreshed again at operation submission. The submitted
-  operation stores the provider midpoint, fee, final rate, amount, and timestamps;
-  later approval posts that immutable transaction snapshot. A rate version's
+  fee on every display and refreshed again when the server creates a transaction
+  quote. The operation stores the provider midpoint, fee, final rate, amount, and
+  timestamps. OTC posts that immutable snapshot only when the customer confirms
+  within five seconds; expiration never reserves or moves funds. A rate version's
   creation-time midpoint is audit evidence only and must never become the runtime
   pricing baseline.
 - USD portfolio valuations use current FastForex quotes for every non-USD asset,

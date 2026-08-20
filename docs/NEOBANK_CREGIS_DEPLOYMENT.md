@@ -185,14 +185,15 @@ existing policy even when the live midpoint has moved.
 Every active `GET /api/core/rates` row is decorated at the Worker with a fresh
 or short-TTL FastForex `marketRate` and a dynamically computed `customerRate`.
 The UI must not fall back to the creation-time audit columns if live market
-data is unavailable. For FX/OTC submission, the Worker ignores browser quote
-fields, fetches FastForex again, and injects the authenticated live midpoint.
+data is unavailable. For FX submission and customer OTC quote creation, the Worker
+ignores browser quote fields, fetches FastForex again, and injects the authenticated live midpoint.
 Core then resolves the active fee policy, computes
 `customerRate = marketRate * (1 - feeBps / 10000)`, and stores the provider
 midpoint, fee, final rate, quote amount, and timestamps on the operation before
-funds are reserved. Approval posts that immutable operation quote; it never
-reuses the policy's creation-time midpoint. This keeps the displayed price
-dynamic while preserving an auditable point-in-time transaction price.
+funds are reserved. An OTC quote remains `DRAFT` and non-reserving for five seconds;
+the authenticated customer confirmation atomically posts that immutable snapshot and
+completes without approval. An expired quote cannot reserve or move funds. This keeps
+the displayed price dynamic while preserving an auditable point-in-time transaction price.
 
 Portfolio USD valuations follow the same rule. Core returns materialized account
 balances without using any stored rate-version snapshot. The Worker decorates

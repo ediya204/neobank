@@ -219,6 +219,8 @@ export type Operation = {
   submittedAt?: string;
   approvedAt?: string;
   executedAt?: string;
+  quoteExpiresAt?: string;
+  quoteConfirmWindowMs?: number;
 };
 
 export type RateVersion = {
