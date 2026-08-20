@@ -120,14 +120,6 @@ export default function CustomerHome() {
       background: '#EAF0FC',
     },
     {
-      label: '账户划转',
-      hint: '同币种账户之间',
-      path: '/portal/money/transfer',
-      icon: ACTION_ICONS.internalTransfer,
-      color: '#A5701B',
-      background: '#FBF2DE',
-    },
-    {
       label: '兑换',
       hint: '法币与 USDT',
       path: '/portal/money/otc',
