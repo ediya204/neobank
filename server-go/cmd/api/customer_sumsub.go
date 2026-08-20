@@ -622,11 +622,13 @@ func (app *application) processOneSumsubSync(ctx context.Context) {
 	applicantID := text(verification["applicant_id"])
 	review, err := app.sumsub.GetReviewStatus(syncContext, applicantID)
 	if err != nil {
+		app.logger.Warn("sumsub provider request failed", "operation", "review_status", "error", err)
 		app.failSumsubSyncJob(ctx, jobID, integer(rows[0]["attempts"]), "review_status_unavailable")
 		return
 	}
 	steps, err := app.sumsub.GetRequiredSteps(syncContext, applicantID)
 	if err != nil {
+		app.logger.Warn("sumsub provider request failed", "operation", "required_steps", "error", err)
 		app.failSumsubSyncJob(ctx, jobID, integer(rows[0]["attempts"]), "required_steps_unavailable")
 		return
 	}
