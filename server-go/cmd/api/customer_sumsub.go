@@ -425,7 +425,7 @@ func (app *application) sumsubWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	providerStatus := webhookProviderStatus(payload)
 	rejectLabels := sumsubRejectLabelsJSON(payload.ReviewResult.RejectLabels)
-	results, err := app.db.Batch(r.Context(),
+	statements := []d1.Statement{
 		d1.Statement{SQL: `INSERT OR IGNORE INTO sumsub_webhook_events
 		  (id, verification_id, event_type, payload_sha256, applicant_id, external_user_id,
 		   sandbox_mode, occurred_at, received_at, processed_at)
@@ -444,9 +444,11 @@ func (app *application) sumsubWebhook(w http.ResponseWriter, r *http.Request) {
 			nullIfEmpty(safeWebhookText(payload.ReviewResult.ClientComment, 4000)), nowText, nowText,
 			verificationID, payload.ApplicantID,
 		}},
-		sumsubSyncJobStatement(verificationID, nowText),
-	)
-	if err != nil || len(results) != 3 {
+	}
+	statements = append(statements, sumsubWebhookStepStatements(verificationID, payload, nowText)...)
+	statements = append(statements, sumsubSyncJobStatement(verificationID, nowText))
+	results, err := app.db.Batch(r.Context(), statements...)
+	if err != nil || len(results) != len(statements) {
 		if err == nil {
 			err = errors.New("unexpected Sumsub webhook database result")
 		}
@@ -485,7 +487,31 @@ func webhookProviderStatus(payload sumsubWebhookPayload) string {
 	if payload.ReviewStatus == "init" || payload.Type == "applicantCreated" {
 		return "awaiting_applicant"
 	}
+	if payload.Type == "applicantReviewed" && payload.ReviewStatus == "completed" &&
+		payload.ReviewResult.ReviewAnswer == "GREEN" {
+		return "ready_for_admin_review"
+	}
 	return "provider_reviewing"
+}
+
+func sumsubWebhookStepStatements(verificationID string, payload sumsubWebhookPayload, nowText string) []d1.Statement {
+	if webhookProviderStatus(payload) != "ready_for_admin_review" {
+		return nil
+	}
+	documentTypes := map[string]string{"IDENTITY": "PASSPORT", "SELFIE": "SELFIE"}
+	statements := make([]d1.Statement, 0, 3)
+	for _, stepType := range []string{"IDENTITY", "SELFIE", "PROOF_OF_RESIDENCE"} {
+		statements = append(statements, d1.Statement{SQL: `INSERT INTO customer_kyc_steps
+		  (verification_id, step_type, review_answer, review_reject_type, document_type, document_country,
+		   reject_labels_json, moderation_comment, client_comment, updated_at)
+		  VALUES (?, ?, 'GREEN', NULL, ?, NULL, '[]', NULL, NULL, ?)
+		  ON CONFLICT(verification_id, step_type) DO UPDATE SET review_answer='GREEN',
+		    review_reject_type=NULL, document_type=COALESCE(excluded.document_type, customer_kyc_steps.document_type),
+		    reject_labels_json='[]', moderation_comment=NULL, client_comment=NULL, updated_at=excluded.updated_at`, Params: []any{
+			verificationID, stepType, nullIfEmpty(documentTypes[stepType]), nowText,
+		}})
+	}
+	return statements
 }
 
 func sumsubSyncJobStatement(verificationID, nowText string) d1.Statement {

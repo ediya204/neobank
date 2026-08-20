@@ -71,6 +71,35 @@ func TestSumsubProviderStatusSeparatesRetryAndFinalRejection(t *testing.T) {
 	}
 }
 
+func TestGreenApplicantReviewedWebhookUnlocksOnlyManualReview(t *testing.T) {
+	payload := sumsubWebhookPayload{
+		Type:         "applicantReviewed",
+		ReviewStatus: "completed",
+		ReviewResult: sumsubapi.ReviewResult{ReviewAnswer: "GREEN"},
+	}
+	if got := webhookProviderStatus(payload); got != "ready_for_admin_review" {
+		t.Fatalf("green reviewed webhook status = %q", got)
+	}
+	statements := sumsubWebhookStepStatements("verification_test", payload, "2026-08-20T14:00:00Z")
+	if len(statements) != 3 {
+		t.Fatalf("green reviewed webhook step statements = %d, want 3", len(statements))
+	}
+	for index, stepType := range []string{"IDENTITY", "SELFIE", "PROOF_OF_RESIDENCE"} {
+		params := statements[index].Params
+		if len(params) != 4 || params[0] != "verification_test" || params[1] != stepType {
+			t.Fatalf("%s step params = %#v", stepType, params)
+		}
+	}
+
+	payload.Type = "applicantPending"
+	if got := webhookProviderStatus(payload); got != "provider_reviewing" {
+		t.Fatalf("non-final green webhook status = %q", got)
+	}
+	if statements := sumsubWebhookStepStatements("verification_test", payload, "2026-08-20T14:00:00Z"); len(statements) != 0 {
+		t.Fatalf("non-final webhook created %d step statements", len(statements))
+	}
+}
+
 func TestSumsubEffectiveRequiredStepsUsesOnlyActiveImageStatuses(t *testing.T) {
 	steps := sumsubapi.RequiredSteps{
 		"PROOF_OF_RESIDENCE": {
