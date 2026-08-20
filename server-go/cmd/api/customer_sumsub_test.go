@@ -71,6 +71,44 @@ func TestSumsubProviderStatusSeparatesRetryAndFinalRejection(t *testing.T) {
 	}
 }
 
+func TestSumsubEffectiveRequiredStepsUsesOnlyActiveImageStatuses(t *testing.T) {
+	steps := sumsubapi.RequiredSteps{
+		"PROOF_OF_RESIDENCE": {
+			IDDocType: "UTILITY_BILL",
+			ReviewResult: sumsubapi.ReviewResult{
+				ReviewAnswer:      "RED",
+				ReviewRejectType:  "RETRY",
+				RejectLabels:      []string{"BAD_PROOF_OF_ADDRESS"},
+				ModerationComment: "Upload another document",
+			},
+			ImageStatuses: []sumsubapi.ImageStatus{{
+				ImageID:      "active-green-image",
+				ReviewResult: sumsubapi.ReviewResult{ReviewAnswer: "GREEN"},
+			}},
+		},
+	}
+
+	effective := sumsubEffectiveRequiredSteps(steps)["PROOF_OF_RESIDENCE"]
+	if effective.ReviewResult.ReviewAnswer != "GREEN" {
+		t.Fatalf("active green image status = %q", effective.ReviewResult.ReviewAnswer)
+	}
+	if effective.ReviewResult.ReviewRejectType != "" || len(effective.ReviewResult.RejectLabels) != 0 ||
+		effective.ReviewResult.ModerationComment != "" {
+		t.Fatal("stale rejection details must be cleared after an active green replacement")
+	}
+
+	steps["PROOF_OF_RESIDENCE"] = sumsubapi.StepStatus{
+		ReviewResult: sumsubapi.ReviewResult{ReviewAnswer: "RED"},
+		ImageStatuses: []sumsubapi.ImageStatus{
+			{ImageID: "green", ReviewResult: sumsubapi.ReviewResult{ReviewAnswer: "GREEN"}},
+			{ImageID: "red", ReviewResult: sumsubapi.ReviewResult{ReviewAnswer: "RED"}},
+		},
+	}
+	if got := sumsubEffectiveRequiredSteps(steps)["PROOF_OF_RESIDENCE"].ReviewResult.ReviewAnswer; got != "RED" {
+		t.Fatalf("mixed active image status = %q, want RED", got)
+	}
+}
+
 func TestSumsubRejectLabelsJSONAlwaysReturnsAnArray(t *testing.T) {
 	for name, test := range map[string]struct {
 		labels []string

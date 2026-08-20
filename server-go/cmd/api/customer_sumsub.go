@@ -626,6 +626,7 @@ func (app *application) processOneSumsubSync(ctx context.Context) {
 		app.failSumsubSyncJob(ctx, jobID, integer(rows[0]["attempts"]), "required_steps_unavailable")
 		return
 	}
+	steps = sumsubEffectiveRequiredSteps(steps)
 	nextStatus := sumsubProviderStatus(review, steps)
 	rejectLabels := sumsubRejectLabelsJSON(review.ReviewResult.RejectLabels)
 	statements := []d1.Statement{{SQL: `UPDATE customer_kyc_verifications
@@ -669,6 +670,26 @@ func (app *application) processOneSumsubSync(ctx context.Context) {
 	if _, err := app.db.Batch(ctx, statements...); err != nil {
 		app.failSumsubSyncJob(ctx, jobID, integer(rows[0]["attempts"]), "database_update_failed")
 	}
+}
+
+func sumsubEffectiveRequiredSteps(steps sumsubapi.RequiredSteps) sumsubapi.RequiredSteps {
+	for stepType, step := range steps {
+		if step.ReviewResult.ReviewAnswer == "GREEN" || len(step.ImageStatuses) == 0 {
+			continue
+		}
+		allActiveImagesGreen := true
+		for _, image := range step.ImageStatuses {
+			if image.ReviewResult.ReviewAnswer != "GREEN" {
+				allActiveImagesGreen = false
+				break
+			}
+		}
+		if allActiveImagesGreen {
+			step.ReviewResult = sumsubapi.ReviewResult{ReviewAnswer: "GREEN"}
+			steps[stepType] = step
+		}
+	}
+	return steps
 }
 
 func sumsubProviderStatus(review sumsubapi.ReviewStatus, steps sumsubapi.RequiredSteps) string {

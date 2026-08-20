@@ -100,14 +100,21 @@ func TestGetRequiredStepsPreservesOnlyStructuredFields(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"IDENTITY":{"reviewResult":{"reviewAnswer":"GREEN"},"country":"HKG","idDocType":"PASSPORT"},
 			"SELFIE":{"reviewResult":{"reviewAnswer":"GREEN"},"idDocType":"SELFIE"},
-			"PROOF_OF_RESIDENCE":{"reviewResult":{"reviewAnswer":"GREEN"},"country":"HKG","idDocType":"UTILITY_BILL"}
+			"PROOF_OF_RESIDENCE":{
+				"reviewResult":{"reviewAnswer":"RED","reviewRejectType":"RETRY"},
+				"country":"HKG",
+				"idDocType":"UTILITY_BILL",
+				"imageStatuses":[{"imageId":"active-image","reviewResult":{"reviewAnswer":"GREEN"}}]
+			}
 		}`))
 	})
 	steps, err := client.GetRequiredSteps(t.Context(), "0123456789abcdef01234567")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if steps["IDENTITY"].IDDocType != "PASSPORT" || steps["PROOF_OF_RESIDENCE"].ReviewResult.ReviewAnswer != "GREEN" {
+	address := steps["PROOF_OF_RESIDENCE"]
+	if steps["IDENTITY"].IDDocType != "PASSPORT" || len(address.ImageStatuses) != 1 ||
+		address.ImageStatuses[0].ImageID != "active-image" || address.ImageStatuses[0].ReviewResult.ReviewAnswer != "GREEN" {
 		t.Fatalf("unexpected steps: %#v", steps)
 	}
 }

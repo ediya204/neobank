@@ -78,9 +78,15 @@ type ReviewStatus struct {
 }
 
 type StepStatus struct {
+	ReviewResult  ReviewResult  `json:"reviewResult"`
+	Country       string        `json:"country"`
+	IDDocType     string        `json:"idDocType"`
+	ImageStatuses []ImageStatus `json:"imageStatuses"`
+}
+
+type ImageStatus struct {
+	ImageID      string       `json:"imageId"`
 	ReviewResult ReviewResult `json:"reviewResult"`
-	Country      string       `json:"country"`
-	IDDocType    string       `json:"idDocType"`
 }
 
 type RequiredSteps map[string]StepStatus
