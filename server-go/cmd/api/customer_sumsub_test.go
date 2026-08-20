@@ -70,3 +70,9 @@ func TestSumsubProviderStatusSeparatesRetryAndFinalRejection(t *testing.T) {
 		}
 	}
 }
+
+func TestSumsubProviderOrNilKeepsDisabledProviderNil(t *testing.T) {
+	if provider := sumsubProviderOrNil(nil); provider != nil {
+		t.Fatal("disabled Sumsub provider must remain a nil interface")
+	}
+}
