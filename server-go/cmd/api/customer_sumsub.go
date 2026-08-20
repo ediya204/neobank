@@ -597,7 +597,11 @@ func (app *application) processOneSumsubSync(ctx context.Context) {
 	UPDATE sumsub_sync_jobs job SET status='processing', attempts=attempts+1, locked_at=?, updated_at=?
 	FROM candidate WHERE job.id=candidate.id
 	RETURNING job.id, job.verification_id, job.attempts`, nowText, staleLock, nowText, nowText)
-	if err != nil || len(rows) == 0 {
+	if err != nil {
+		app.logger.Error("sumsub sync job selection failed", "error", err)
+		return
+	}
+	if len(rows) == 0 {
 		return
 	}
 	jobID := text(rows[0]["id"])
@@ -669,7 +673,12 @@ func (app *application) processOneSumsubSync(ctx context.Context) {
 	  last_error_code=NULL, updated_at=? WHERE id=? AND status='processing'`, Params: []any{nowText, jobID}})
 	if _, err := app.db.Batch(ctx, statements...); err != nil {
 		app.failSumsubSyncJob(ctx, jobID, integer(rows[0]["attempts"]), "database_update_failed")
+		return
 	}
+	app.logger.Info("sumsub sync job completed", "provider_status", nextStatus,
+		"identity", steps["IDENTITY"].ReviewResult.ReviewAnswer,
+		"selfie", steps["SELFIE"].ReviewResult.ReviewAnswer,
+		"proof_of_residence", steps["PROOF_OF_RESIDENCE"].ReviewResult.ReviewAnswer)
 }
 
 func sumsubEffectiveRequiredSteps(steps sumsubapi.RequiredSteps) sumsubapi.RequiredSteps {
@@ -721,6 +730,7 @@ func (app *application) failSumsubSyncJob(ctx context.Context, jobID string, att
 	_, _ = app.db.Batch(ctx, d1.Statement{SQL: `UPDATE sumsub_sync_jobs SET status=?, run_after=?, locked_at=NULL,
 	  last_error_code=?, updated_at=? WHERE id=?`, Params: []any{status, databaseTimestamp(runAfter), errorCode,
 		databaseTimestamp(now), jobID}})
+	app.logger.Warn("sumsub sync job failed", "error_code", errorCode, "attempts", attempts, "status", status)
 }
 
 func maxInt64(left, right int64) int64 {
