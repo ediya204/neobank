@@ -150,7 +150,8 @@ func main() {
 		logger.Warn("FastForex market data is disabled because FASTFOREX_API_KEY is not configured")
 	}
 	var sumsubClient *sumsubapi.Client
-	sumsubEnabled := strings.EqualFold(os.Getenv("SUMSUB_ENABLED"), "true")
+	sumsubEnabled := strings.EqualFold(os.Getenv("SUMSUB_ENABLED"), "true") &&
+		strings.EqualFold(os.Getenv("SUMSUB_ACTIVATION_APPROVED"), "true")
 	schemaContext, cancelSchemaCheck := context.WithTimeout(context.Background(), 3*time.Second)
 	sumsubMigrationRows, schemaErr := db.Query(schemaContext,
 		`SELECT version FROM neobank_schema_migrations WHERE version='0008_sumsub_individual_kyc'`)
