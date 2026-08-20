@@ -27,6 +27,7 @@ import {
   MoneyAccount,
   SYSTEM_WALLET_PRODUCT_NAME,
 } from 'src/features/finance/core-api';
+import { portalText } from 'src/locales/portal-text';
 
 type DepositMode = 'PLATFORM' | 'VA' | 'OTC';
 
@@ -51,7 +52,7 @@ const modes: Array<{
   {
     value: 'OTC',
     title: 'OTC 兑换入账',
-    description: `卖出 USDT 后将法币转入${SYSTEM_WALLET_PRODUCT_NAME}或 VA 账户`,
+    description: '卖出 USDT 后将法币转入 {{productName}} 或 VA 账户',
     icon: 'solar:hand-money-bold-duotone',
   },
 ];
@@ -93,7 +94,11 @@ export default function FiatDepositPage() {
     )
       .then(setChannels)
       .catch((value) =>
-        setError(value instanceof Error ? value.message : '暂时无法读取银行转入资料，请稍后重试。')
+        setError(
+          value instanceof Error
+            ? value.message
+            : portalText('暂时无法读取银行转入资料，请稍后重试。')
+        )
       );
   }, [customer]);
 
@@ -112,16 +117,23 @@ export default function FiatDepositPage() {
   return (
     <>
       <Helmet>
-        <title>银行转入 | {APP_DISPLAY_NAME}</title>
+        <title>{portalText('银行转入')} | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="md">
         <Stack spacing={3}>
           <CustomBreadcrumbs
-            heading="银行转入"
-            links={[{ name: '收付与兑换', href: '/portal/money/transfers' }, { name: '银行转入' }]}
+            heading={portalText('银行转入')}
+            links={[
+              {
+                name: portalText('收付与兑换'),
+                href: '/portal/money/transfers',
+              },
+              { name: portalText('银行转入') },
+            ]}
           />
+
           <Typography color="text.secondary" sx={{ mt: -2 }}>
-            根据资金来源选择平台银行账户、VA 账户或 OTC 兑换入账。
+            {portalText('根据资金来源选择平台银行账户、VA 账户或 OTC 兑换入账。')}
           </Typography>
           {error && <Alert severity="error">{error}</Alert>}
 
@@ -152,11 +164,11 @@ export default function FiatDepositPage() {
                   <Stack spacing={1} sx={{ width: 1 }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                       <Iconify icon={item.icon} width={27} color="primary.main" />
-                      {selected && <Label color="primary">已选择</Label>}
+                      {selected && <Label color="primary">{portalText('已选择')}</Label>}
                     </Stack>
-                    <Typography variant="subtitle1">{item.title}</Typography>
+                    <Typography variant="subtitle1">{portalText(item.title)}</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {item.description}
+                      {portalText(item.description, { productName: SYSTEM_WALLET_PRODUCT_NAME })}
                     </Typography>
                   </Stack>
                 </ButtonBase>
@@ -166,8 +178,8 @@ export default function FiatDepositPage() {
 
           {mode === 'PLATFORM' && (
             <BankInstructionCard
-              title="平台账户转入资料"
-              description="从外部银行账户汇入 SSC 平台账户"
+              title={portalText('平台账户转入资料')}
+              description={portalText('从外部银行账户汇入 SSC 平台账户')}
               accounts={systemAccounts}
               account={account}
               accountId={accountId}
@@ -182,8 +194,8 @@ export default function FiatDepositPage() {
 
           {mode === 'VA' && (
             <BankInstructionCard
-              title="VA 账户收款资料"
-              description="向下方客户专属 VA 银行账户汇款"
+              title={portalText('VA 账户收款资料')}
+              description={portalText('向下方客户专属 VA 银行账户汇款')}
               accounts={vaAccounts}
               account={account}
               accountId={accountId}
@@ -198,10 +210,12 @@ export default function FiatDepositPage() {
               <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
                 <Stack spacing={2.5}>
                   <Box>
-                    <Typography variant="h6">卖出 USDT 并接收法币</Typography>
+                    <Typography variant="h6">{portalText('卖出 USDT 并接收法币')}</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                      OTC 成交后，USD / HKD 将转入{SYSTEM_WALLET_PRODUCT_NAME}或客户 VA
-                      账户。每笔入账均关联对应的 OTC 订单和成交报价。
+                      {portalText(
+                        'OTC 成交后，USD / HKD 将转入 {{productName}} 或客户 VA 账户。每笔入账均关联对应的 OTC 订单和成交报价。',
+                        { productName: SYSTEM_WALLET_PRODUCT_NAME }
+                      )}
                     </Typography>
                   </Box>
                   <Box
@@ -212,21 +226,25 @@ export default function FiatDepositPage() {
                     }}
                   >
                     <OtcDestination
-                      title={`入${SYSTEM_WALLET_PRODUCT_NAME}`}
-                      description={`可选 ${
-                        systemAccounts.map((row) => row.currency).join(' / ') || 'USD / HKD'
-                      }`}
+                      title={portalText('入{{value0}}', { value0: SYSTEM_WALLET_PRODUCT_NAME })}
+                      description={portalText('可选 {{value0}}', {
+                        value0:
+                          systemAccounts.map((row) => row.currency).join(' / ') || 'USD / HKD',
+                      })}
                       icon="solar:cash-out-bold-duotone"
                       onClick={() =>
                         navigate('/portal/money/otc?source=USDT&targetKind=SYSTEM_WALLET')
                       }
                     />
+
                     <OtcDestination
-                      title="入 VA 账户"
+                      title={portalText('入 VA 账户')}
                       description={
                         vaAccounts.length
-                          ? `可选 ${vaAccounts.map((row) => row.currency).join(' / ')}`
-                          : '当前客户尚未开通 VA'
+                          ? portalText('可选 {{value0}}', {
+                              value0: vaAccounts.map((row) => row.currency).join(' / '),
+                            })
+                          : portalText('当前客户尚未开通 VA')
                       }
                       icon="solar:wallet-money-bold-duotone"
                       disabled={!vaAccounts.length}
@@ -236,7 +254,9 @@ export default function FiatDepositPage() {
                     />
                   </Box>
                   <Alert severity="info">
-                    OTC 申请提交后将先冻结相应 USDT。审核、成交及记账完成后，法币才会转入所选账户。
+                    {portalText(
+                      'OTC 申请提交后将先冻结相应 USDT。审核、成交及记账完成后，法币才会转入所选账户。'
+                    )}
                   </Alert>
                 </Stack>
               </CardContent>
@@ -288,9 +308,9 @@ function BankInstructionCard({
             </Typography>
           </Box>
           <FormControl fullWidth>
-            <InputLabel>{platform ? '到账币种' : '选择 VA'}</InputLabel>
+            <InputLabel>{platform ? portalText('到账币种') : portalText('选择 VA')}</InputLabel>
             <Select
-              label={platform ? '到账币种' : '选择 VA'}
+              label={platform ? portalText('到账币种') : portalText('选择 VA')}
               value={account?.id || accountId}
               onChange={(event) => onAccountChange(event.target.value)}
             >
@@ -305,12 +325,19 @@ function BankInstructionCard({
             <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
               <CardContent sx={{ p: 3 }}>
                 <Stack spacing={2}>
-                  <InstructionRow label="币种" value={account?.currency || '—'} />
-                  <InstructionRow label="收款银行" value={bankName || '—'} />
-                  <InstructionRow label="收款账号" value={bankAccount || '—'} />
+                  <InstructionRow label={portalText('币种')} value={account?.currency || '—'} />
+
+                  <InstructionRow label={portalText('收款银行')} value={bankName || '—'} />
+
+                  <InstructionRow label={portalText('收款账号')} value={bankAccount || '—'} />
+
                   <InstructionRow label="SWIFT / BIC" value={swiftBic || '—'} />
                   {platform && (
-                    <InstructionRow label="专属转账附言" value={reference || '—'} highlight />
+                    <InstructionRow
+                      label={portalText('专属转账附言')}
+                      value={reference || '—'}
+                      highlight
+                    />
                   )}
                 </Stack>
               </CardContent>
@@ -318,14 +345,16 @@ function BankInstructionCard({
           ) : (
             <Alert severity="warning">
               {accounts.length
-                ? '当前币种的银行收款资料尚未配置完整。'
-                : '当前客户尚未开通可用于收款的账户。'}
+                ? portalText('当前币种的银行收款资料尚未配置完整。')
+                : portalText('当前客户尚未开通可用于收款的账户。')}
             </Alert>
           )}
           <Alert severity="info">
             {platform
-              ? '汇款时请准确填写专属附言。银行来账将在核验及清算完成后计入可用余额。'
-              : '请核对币种、收款户名及 VA 账号。银行来账匹配并完成清算后，将计入 VA 可用余额。'}
+              ? portalText('汇款时请准确填写专属附言。银行来账将在核验及清算完成后计入可用余额。')
+              : portalText(
+                  '请核对币种、收款户名及 VA 账号。银行来账匹配并完成清算后，将计入 VA 可用余额。'
+                )}
           </Alert>
           <Button
             size="large"
@@ -334,7 +363,7 @@ function BankInstructionCard({
             onClick={onCopy}
             disabled={!ready}
           >
-            {copied ? '银行转入资料已复制' : '复制银行转入资料'}
+            {copied ? portalText('银行转入资料已复制') : portalText('复制银行转入资料')}
           </Button>
         </Stack>
       </CardContent>
@@ -412,10 +441,14 @@ function depositInstructionText(
 ) {
   const platform = mode === 'PLATFORM';
   return [
-    `币种: ${account.currency}`,
-    `银行: ${platform ? channel?.settlementBankName || '—' : account.bankName || '—'}`,
-    `账号: ${platform ? channel?.settlementAccount || '—' : account.accountNumber || '—'}`,
+    portalText('币种: {{value0}}', { value0: account.currency }),
+    portalText('银行: {{value0}}', {
+      value0: platform ? channel?.settlementBankName || '—' : account.bankName || '—',
+    }),
+    portalText('账号: {{value0}}', {
+      value0: platform ? channel?.settlementAccount || '—' : account.accountNumber || '—',
+    }),
     `SWIFT/BIC: ${platform ? channel?.swiftBic || '—' : account.swiftBic || '—'}`,
-    ...(platform ? [`转账附言: ${reference}`] : []),
+    ...(platform ? [portalText('转账附言: {{value0}}', { value0: reference })] : []),
   ].join('\n');
 }

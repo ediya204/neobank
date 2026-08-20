@@ -50,12 +50,20 @@
       "portal_login": "合作伙伴工作台安全登录",
       "portal_setup": "合作伙伴账户激活",
       "customer_login": "客户网上银行登录",
+      "customer_setup": "激活网上银行账户",
       "registration": "个人与企业账户申请"
     },
     "role_entries": {
       "admin": "运营管理后台",
       "portal": "合作伙伴工作台",
       "customer": "网上银行"
+    },
+    "role_selection": {
+      "page_title": "选择账户类型",
+      "title": "选择账户类型",
+      "description": "网上银行与合作伙伴工作台采用独立的安全会话。请选择与您的账户类型相符的登录入口。",
+      "customer": "进入网上银行",
+      "partner": "进入合作伙伴工作台"
     },
     "invalid_entry": {
       "page_title": "登录入口无效",

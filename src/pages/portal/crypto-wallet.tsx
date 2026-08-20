@@ -58,6 +58,8 @@ import {
 } from 'src/features/finance/crypto-wallet-status';
 import { createDepositQrCode } from 'src/features/finance/deposit-qr';
 import { CustomerWalletRow, toCustomerCryptoWallet } from 'src/features/finance/customer-wallet';
+import { portalLocale, portalText } from 'src/locales/portal-text';
+import { APP_DISPLAY_NAME } from 'src/config-global';
 
 export type CryptoWalletView = 'overview' | 'deposit' | 'withdraw';
 
@@ -151,7 +153,9 @@ function renderDepositQrCode(wallet: CryptoWallet, qrCode: string | null) {
       <Box
         component="img"
         src={qrCode}
-        alt={`${wallet.network} USDT 转入地址二维码`}
+        alt={portalText('{{value0}} USDT 转入地址二维码', {
+          value0: wallet.network,
+        })}
         sx={{ width: 170, height: 170, imageRendering: 'crisp-edges' }}
       />
     );
@@ -159,7 +163,7 @@ function renderDepositQrCode(wallet: CryptoWallet, qrCode: string | null) {
   if (qrCode === '') {
     return (
       <Typography variant="caption" color="text.secondary" align="center" sx={{ px: 2 }}>
-        暂时无法生成二维码，请复制并逐字核对上方 TRC20 地址。
+        {portalText('暂时无法生成二维码，请复制并逐字核对上方 TRC20 地址。')}
       </Typography>
     );
   }
@@ -242,7 +246,9 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
         )
       );
     } catch (value) {
-      setError(value instanceof Error ? value.message : '暂时无法读取 USDT 账户，请稍后重试。');
+      setError(
+        value instanceof Error ? value.message : portalText('暂时无法读取 USDT 账户，请稍后重试。')
+      );
     } finally {
       setLoading(false);
     }
@@ -252,9 +258,9 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
     load().catch(() => undefined);
   }, [load]);
 
-  let title = 'USDT 账户';
-  if (view === 'deposit') title = 'USDT 转入';
-  if (view === 'withdraw') title = 'USDT 转出';
+  let title = portalText('USDT 账户');
+  if (view === 'deposit') title = portalText('USDT 转入');
+  if (view === 'withdraw') title = portalText('USDT 转出');
   const hasActiveWallet = wallets.some(isWithdrawalReady);
 
   useEffect(() => {
@@ -266,7 +272,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
   return (
     <>
       <Helmet>
-        <title>{title} | SSC Digital Bank</title>
+        <title>{title} | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
@@ -274,16 +280,19 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
             <Box>
               <Stack direction="row" alignItems="center" spacing={1.25}>
                 {view !== 'overview' && (
-                  <IconButton onClick={() => navigate('/portal/home')} aria-label="返回账户概览">
+                  <IconButton
+                    onClick={() => navigate('/portal/home')}
+                    aria-label={portalText('返回账户概览')}
+                  >
                     <Iconify icon="solar:alt-arrow-left-linear" />
                   </IconButton>
                 )}
                 <Box>
                   <Typography variant="h4">{title}</Typography>
                   <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                    {view === 'overview' && '查看 TRON（TRC20）网络的余额及链上交易。'}
-                    {view === 'deposit' && '向本账户的 TRON（TRC20）地址转入 USDT。'}
-                    {view === 'withdraw' && '向已验证的 TRON（TRC20）地址转出 USDT。'}
+                    {view === 'overview' && portalText('查看 TRON（TRC20）网络的余额及链上交易。')}
+                    {view === 'deposit' && portalText('向本账户的 TRON（TRC20）地址转入 USDT。')}
+                    {view === 'withdraw' && portalText('向已验证的 TRON（TRC20）地址转出 USDT。')}
                   </Typography>
                 </Box>
               </Stack>
@@ -294,7 +303,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
                 startIcon={<Iconify icon="solar:download-minimalistic-bold-duotone" />}
                 onClick={() => navigate('/portal/crypto-wallet/deposit')}
               >
-                转入
+                {portalText('转入')}
               </Button>
               <Button
                 variant={view === 'withdraw' ? 'contained' : 'outlined'}
@@ -302,7 +311,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
                 disabled={loading || !hasActiveWallet}
                 onClick={() => navigate('/portal/crypto-wallet/withdraw')}
               >
-                转出
+                {portalText('转出')}
               </Button>
             </Stack>
           </Stack>
@@ -367,7 +376,7 @@ function WalletOverview({
             <Box>
               <Stack direction="row" alignItems="center" spacing={1}>
                 <Iconify icon={USDT_ASSET_ICON} width={30} />
-                <Typography sx={{ opacity: 0.72 }}>USDT 账户总余额</Typography>
+                <Typography sx={{ opacity: 0.72 }}>{portalText('USDT 账户总余额')}</Typography>
               </Stack>
               {loading ? (
                 <Skeleton width={260} height={70} />
@@ -377,7 +386,8 @@ function WalletOverview({
                 </Typography>
               )}
               <Typography variant="body2" sx={{ mt: 1, opacity: 0.62 }}>
-                冻结余额 {formatUsdt(frozen)} · TRON（TRC20）
+                {portalText('冻结余额')}
+                {formatUsdt(frozen)} · TRON（TRC20）
               </Typography>
             </Box>
             <Stack direction="row" spacing={1.5} alignItems="center">
@@ -392,7 +402,7 @@ function WalletOverview({
                   '&:hover': { bgcolor: 'grey.200' },
                 }}
               >
-                转入
+                {portalText('转入')}
               </Button>
               <Button
                 variant="outlined"
@@ -401,7 +411,7 @@ function WalletOverview({
                 onClick={() => navigate('/portal/crypto-wallet/withdraw')}
                 sx={{ color: 'common.white', borderColor: 'rgba(255,255,255,.38)' }}
               >
-                转出
+                {portalText('转出')}
               </Button>
             </Stack>
           </Stack>
@@ -410,7 +420,7 @@ function WalletOverview({
 
       <Box>
         <Typography variant="h5" sx={{ mb: 2 }}>
-          网络余额
+          {portalText('网络余额')}
         </Typography>
         <Box
           sx={{
@@ -426,7 +436,7 @@ function WalletOverview({
       </Box>
 
       <TransferList
-        title="近期链上交易"
+        title={portalText('近期链上交易')}
         rows={transfers.slice(0, 8)}
         loading={loading}
         onOpen={onOpenTransfer}
@@ -468,12 +478,12 @@ function NetworkWalletCard({ wallet }: { wallet: CryptoWallet }) {
           {formatUsdt(wallet.availableBalance)}
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          可用余额
+          {portalText('可用余额')}
         </Typography>
         <Divider sx={{ my: 2 }} />
         <Stack direction="row" justifyContent="space-between">
           <Typography variant="body2" color="text.secondary">
-            网络手续费
+            {portalText('网络手续费')}
           </Typography>
           <Typography variant="subtitle2">{formatUsdt(wallet.withdrawalFee)}</Typography>
         </Stack>
@@ -540,7 +550,7 @@ function DepositView({
             <Stepper orientation="vertical" activeStep={wallet ? 2 : 1}>
               <Step>
                 <StepLabel>
-                  <Typography variant="subtitle2">选择币种</Typography>
+                  <Typography variant="subtitle2">{portalText('选择币种')}</Typography>
                 </StepLabel>
                 <Box sx={{ ml: 4.5, mt: 1, mb: 2.5 }}>
                   <TextField
@@ -555,13 +565,13 @@ function DepositView({
               </Step>
               <Step>
                 <StepLabel>
-                  <Typography variant="subtitle2">选择网络</Typography>
+                  <Typography variant="subtitle2">{portalText('选择网络')}</Typography>
                 </StepLabel>
                 <Box sx={{ ml: 4.5, mt: 1, mb: 2.5 }}>
                   <FormControl fullWidth>
-                    <InputLabel>网络</InputLabel>
+                    <InputLabel>{portalText('网络')}</InputLabel>
                     <Select
-                      label="网络"
+                      label={portalText('网络')}
                       value={depositWallets.some((row) => row.network === network) ? network : ''}
                       onChange={(event) => setNetwork(event.target.value as CryptoNetwork)}
                     >
@@ -581,19 +591,23 @@ function DepositView({
                       color="text.secondary"
                       sx={{ mt: 1, display: 'block' }}
                     >
-                      最低转入 {wallet.minimumDeposit} USDT · 达到 {wallet.confirmationsRequired}{' '}
-                      次网络确认后入账
+                      {portalText('最低转入 {{amount}} USDT · 达到 {{confirmations}} 次网络确认后入账', {
+                        amount: wallet.minimumDeposit,
+                        confirmations: wallet.confirmationsRequired,
+                      })}
                     </Typography>
                   ) : (
                     <Alert severity="warning" sx={{ mt: 1.5 }}>
-                      转入服务暂不可用。托管服务完成地址分配及账户归属验证后，系统才会显示转入地址和二维码。
+                      {portalText(
+                        '转入服务暂不可用。托管服务完成地址分配及账户归属验证后，系统才会显示转入地址和二维码。'
+                      )}
                     </Alert>
                   )}
                 </Box>
               </Step>
               <Step>
                 <StepLabel>
-                  <Typography variant="subtitle2">获取转入地址</Typography>
+                  <Typography variant="subtitle2">{portalText('获取转入地址')}</Typography>
                 </StepLabel>
                 <Box sx={{ ml: { xs: 0, sm: 4.5 }, mt: 1.5 }}>
                   {isDepositReady(wallet) && (
@@ -604,7 +618,7 @@ function DepositView({
                     >
                       <Box sx={{ flex: 1, width: 1 }}>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          转入地址
+                          {portalText('转入地址')}
                         </Typography>
                         <TextField
                           fullWidth
@@ -612,7 +626,9 @@ function DepositView({
                           InputProps={{
                             readOnly: true,
                             endAdornment: (
-                              <Tooltip title={copied ? '已复制' : '复制地址'}>
+                              <Tooltip
+                                title={copied ? portalText('已复制') : portalText('复制地址')}
+                              >
                                 <IconButton onClick={copyAddress}>
                                   <Iconify icon="solar:copy-linear" />
                                 </IconButton>
@@ -620,14 +636,19 @@ function DepositView({
                             ),
                           }}
                         />
+
                         <Alert severity="success" icon={false} sx={{ mt: 1.5 }}>
-                          仅支持通过 {networkMeta[wallet.network].name}（{wallet.tokenStandard}）
-                          网络转入 USDT
+                          {portalText('仅支持通过 {{network}}（{{standard}}）网络转入 USDT', {
+                            network: networkMeta[wallet.network].name,
+                            standard: wallet.tokenStandard,
+                          })}
                         </Alert>
                         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5 }}>
                           <Iconify icon="solar:shield-check-bold" color="success.main" />
                           <Typography variant="caption" color="text.secondary">
-                            托管服务已验证该地址属于本账户；转账前请逐字核对网络与地址。
+                            {portalText(
+                              '托管服务已验证该地址属于本账户；转账前请逐字核对网络与地址。'
+                            )}
                           </Typography>
                         </Stack>
                       </Box>
@@ -651,7 +672,9 @@ function DepositView({
                   {!isDepositReady(wallet) && loading && <Skeleton height={180} />}
                   {!isDepositReady(wallet) && !loading && (
                     <Alert severity="info" icon={<Iconify icon="solar:shield-warning-bold" />}>
-                      当前暂无通过账户归属验证的转入地址。地址复制及二维码功能暂不可用。
+                      {portalText(
+                        '当前暂无通过账户归属验证的转入地址。地址复制及二维码功能暂不可用。'
+                      )}
                     </Alert>
                   )}
                 </Box>
@@ -663,20 +686,31 @@ function DepositView({
           <CardContent sx={{ p: 3 }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
               <Iconify icon="solar:info-circle-bold" color="info.main" />
-              <Typography variant="h6">转入须知</Typography>
+              <Typography variant="h6">{portalText('转入须知')}</Typography>
             </Stack>
             <Notice
               number="1"
-              text="币种与网络必须和发送方设置完全一致，使用错误网络可能导致资产永久丢失。"
+              text={portalText(
+                '币种与网络必须和发送方设置完全一致，使用错误网络可能导致资产永久丢失。'
+              )}
             />
-            <Notice number="2" text="不要向此地址发送 USDT 以外的资产。" />
-            <Notice number="3" text="达到所需网络确认数后，转入金额将自动计入账户。" />
-            <Notice number="4" text="只有完成托管分配及账户归属验证的地址，才可用于转入。" />
+
+            <Notice number="2" text={portalText('不要向此地址发送 USDT 以外的资产。')} />
+
+            <Notice
+              number="3"
+              text={portalText('达到所需网络确认数后，转入金额将自动计入账户。')}
+            />
+
+            <Notice
+              number="4"
+              text={portalText('只有完成托管分配及账户归属验证的地址，才可用于转入。')}
+            />
           </CardContent>
         </Card>
       </Box>
       <TransferList
-        title="近期转入"
+        title={portalText('近期转入')}
         rows={visibleTransfers}
         loading={loading}
         onOpen={onOpenTransfer}
@@ -730,10 +764,10 @@ function WithdrawView({
   const net = Math.max(0, Number(amount || 0) - fee);
 
   const validate = () => {
-    if (!isWithdrawalReady(wallet)) return '当前没有可用于转出的 USDT 账户';
-    if (!selectedBeneficiary || !address) return '请选择已通过两步验证的白名单地址';
-    if (!amount || Number(amount) <= fee) return '转出数量必须大于网络手续费';
-    if (Number(amount) > Number(wallet.availableBalance)) return '可用余额不足';
+    if (!isWithdrawalReady(wallet)) return portalText('当前没有可用于转出的 USDT 账户');
+    if (!selectedBeneficiary || !address) return portalText('请选择已通过两步验证的白名单地址');
+    if (!amount || Number(amount) <= fee) return portalText('转出数量必须大于网络手续费');
+    if (Number(amount) > Number(wallet.availableBalance)) return portalText('可用余额不足');
     return '';
   };
 
@@ -750,12 +784,12 @@ function WithdrawView({
 
   const submit = async () => {
     if (!isWithdrawalReady(wallet)) {
-      setError('当前没有可用于转出的 USDT 账户。');
+      setError(portalText('当前没有可用于转出的 USDT 账户。'));
       setConfirmOpen(false);
       return;
     }
     if (!selectedBeneficiary?.walletAddress) {
-      setError('请选择已通过两步验证的白名单地址。');
+      setError(portalText('请选择已通过两步验证的白名单地址。'));
       setConfirmOpen(false);
       return;
     }
@@ -797,10 +831,16 @@ function WithdrawView({
       setConfirmOpen(false);
       setAmount('');
       setBeneficiaryId('');
-      setSuccess('USDT 转出申请已提交。审核通过后将执行链上转账，您可在交易明细中查看进度。');
+      setSuccess(
+        portalText('USDT 转出申请已提交。审核通过后将执行链上转账，您可在交易明细中查看进度。')
+      );
       await onCreated();
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'USDT 转出申请暂时无法提交，请稍后重试。');
+      setError(
+        value instanceof Error
+          ? value.message
+          : portalText('USDT 转出申请暂时无法提交，请稍后重试。')
+      );
       setConfirmOpen(false);
     } finally {
       setSubmitting(false);
@@ -820,15 +860,15 @@ function WithdrawView({
     const label = addressLabel.trim();
     const destination = newAddress.trim();
     if (!label) {
-      setError('请输入地址名称');
+      setError(portalText('请输入地址名称'));
       return;
     }
     if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(destination)) {
-      setError('请输入有效的 TRON（TRC20）地址');
+      setError(portalText('请输入有效的 TRON（TRC20）地址'));
       return;
     }
     if (!/^\d{6}$/.test(otpCode)) {
-      setError('请输入验证器当前显示的 6 位动态码。');
+      setError(portalText('请输入验证器当前显示的 6 位动态码。'));
       return;
     }
     setAddingAddress(true);
@@ -855,20 +895,22 @@ function WithdrawView({
       );
       await onCreated();
       setBeneficiaryId(created.id);
-      setSuccess(`白名单地址“${created.label}”已通过两步验证并生效。`);
+      setSuccess(
+        portalText('白名单地址“{{value0}}”已通过两步验证并生效。', { value0: created.label })
+      );
       setAddressDialogOpen(false);
       setAddressLabel('');
       setNewAddress('');
       setOtpCode('');
     } catch (value) {
       const message =
-        value instanceof Error ? value.message : '暂时无法添加白名单地址，请稍后重试。';
+        value instanceof Error ? value.message : portalText('暂时无法添加白名单地址，请稍后重试。');
       if (message === 'invalid_totp_code') {
-        setError('动态码无效、已过期或已使用，请输入验证器当前显示的动态码。');
+        setError(portalText('动态码无效、已过期或已使用，请输入验证器当前显示的动态码。'));
       } else if (message === 'totp_not_enrolled') {
-        setError('当前账户尚未绑定验证器，无法添加白名单地址');
+        setError(portalText('当前账户尚未绑定验证器，无法添加白名单地址'));
       } else if (message === 'withdrawal_address_already_exists') {
-        setError('该地址已经在白名单中');
+        setError(portalText('该地址已经在白名单中'));
       } else {
         setError(message);
       }
@@ -902,13 +944,14 @@ function WithdrawView({
                 )}
                 {!loading && !withdrawalWallets.length && (
                   <Alert severity="warning">
-                    USDT
-                    转出暂不可用。只有状态正常的账户可以提交申请；创建中、异常、冻结或已关闭的账户均不可转出。
+                    {portalText(
+                      'USDT 转出暂不可用。只有状态正常的账户可以提交申请；创建中、异常、冻结或已关闭的账户均不可转出。'
+                    )}
                   </Alert>
                 )}
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    币种
+                    {portalText('币种')}
                   </Typography>
                   <TextField
                     fullWidth
@@ -920,9 +963,9 @@ function WithdrawView({
                   />
                 </Box>
                 <FormControl fullWidth disabled={!withdrawalWallets.length}>
-                  <InputLabel>发送网络</InputLabel>
+                  <InputLabel>{portalText('发送网络')}</InputLabel>
                   <Select
-                    label="发送网络"
+                    label={portalText('发送网络')}
                     value={withdrawalWallets.some((row) => row.network === network) ? network : ''}
                     onChange={(event) => {
                       setNetwork(event.target.value as CryptoNetwork);
@@ -931,17 +974,17 @@ function WithdrawView({
                   >
                     {withdrawalWallets.map((row) => (
                       <MenuItem key={row.id} value={row.network}>
-                        {networkMeta[row.network].name} ({row.tokenStandard}) · 可用{' '}
-                        {formatUsdt(row.availableBalance)}
+                        {networkMeta[row.network].name} ({row.tokenStandard}
+                        {portalText(') · 可用')} {formatUsdt(row.availableBalance)}
                       </MenuItem>
                     ))}
                   </Select>
                 </FormControl>
                 <FormControl fullWidth disabled={!wallet || !savedBeneficiaries.length}>
-                  <InputLabel>白名单地址</InputLabel>
+                  <InputLabel>{portalText('白名单地址')}</InputLabel>
                   <Select
                     required
-                    label="白名单地址"
+                    label={portalText('白名单地址')}
                     value={beneficiaryId}
                     onChange={(event) => setBeneficiaryId(event.target.value)}
                     renderValue={(selected) => {
@@ -970,13 +1013,20 @@ function WithdrawView({
                               {row.walletAddress?.slice(0, 9)}…{row.walletAddress?.slice(-8)}
                             </Typography>
                           </Box>
-                          <Chip label="已验证" color="success" size="small" variant="outlined" />
+                          <Chip
+                            label={portalText('已验证')}
+                            color="success"
+                            size="small"
+                            variant="outlined"
+                          />
                         </Stack>
                       </MenuItem>
                     ))}
                   </Select>
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75 }}>
-                    USDT 只能转出至已通过两步验证的 {networkMeta[network].standard} 白名单地址。
+                    {portalText('USDT 只能转出至已通过两步验证的 {{standard}} 白名单地址。', {
+                      standard: networkMeta[network].standard,
+                    })}
                   </Typography>
                 </FormControl>
                 <Button
@@ -993,7 +1043,7 @@ function WithdrawView({
                   disabled={!wallet}
                   sx={{ mt: -1, alignSelf: 'flex-start', px: 0 }}
                 >
-                  添加白名单地址
+                  {portalText('添加白名单地址')}
                 </Button>
                 {selectedBeneficiary?.walletAddress && (
                   <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
@@ -1017,24 +1067,33 @@ function WithdrawView({
                   required
                   disabled={!wallet}
                   type="number"
-                  label="发送数量（USDT）"
+                  label={portalText('发送数量（USDT）')}
                   value={amount}
                   onChange={(event) => setAmount(event.target.value)}
                   inputProps={{ min: 0, step: 0.000001 }}
-                  helperText={wallet ? `可用 ${formatUsdt(wallet.availableBalance)}` : undefined}
+                  helperText={
+                    wallet
+                      ? portalText('可用 {{value0}}', {
+                          value0: formatUsdt(wallet.availableBalance),
+                        })
+                      : undefined
+                  }
                 />
+
                 <Card variant="outlined" sx={{ bgcolor: 'grey.50' }}>
                   <CardContent sx={{ p: 2.5 }}>
                     <Stack spacing={1}>
-                      <FeeRow label="发送数量" value={formatUsdt(amount || 0)} />
-                      <FeeRow label="网络手续费" value={formatUsdt(fee)} />
+                      <FeeRow label={portalText('发送数量')} value={formatUsdt(amount || 0)} />
+
+                      <FeeRow label={portalText('网络手续费')} value={formatUsdt(fee)} />
+
                       <Divider />
-                      <FeeRow label="预计到账" value={formatUsdt(net)} strong />
+                      <FeeRow label={portalText('预计到账')} value={formatUsdt(net)} strong />
                     </Stack>
                   </CardContent>
                 </Card>
                 <Alert severity="warning">
-                  链上转账不可撤销。提交后将冻结转出金额，审核完成前不可再次使用。
+                  {portalText('链上转账不可撤销。提交后将冻结转出金额，审核完成前不可再次使用。')}
                 </Alert>
                 <Button
                   type="submit"
@@ -1042,7 +1101,7 @@ function WithdrawView({
                   size="large"
                   disabled={!isWithdrawalReady(wallet) || !selectedBeneficiary || submitting}
                 >
-                  核对并提交
+                  {portalText('核对并提交')}
                 </Button>
               </Stack>
             </Box>
@@ -1051,20 +1110,32 @@ function WithdrawView({
         <Card sx={{ alignSelf: 'start' }}>
           <CardContent sx={{ p: 3 }}>
             <Typography variant="h6" sx={{ mb: 2 }}>
-              安全提醒
+              {portalText('安全提醒')}
             </Typography>
-            <Notice number="1" text="请确认接收地址支持所选网络和资产。" />
-            <Notice number="2" text="首次向新地址付款时，建议先发送小额测试。" />
-            <Notice number="3" text="本机构不会通过邮件、聊天或电话索取私钥、助记词或动态码。" />
+            <Notice number="1" text={portalText('请确认接收地址支持所选网络和资产。')} />
+
+            <Notice number="2" text={portalText('首次向新地址付款时，建议先发送小额测试。')} />
+
+            <Notice
+              number="3"
+              text={portalText('本机构不会通过邮件、聊天或电话索取私钥、助记词或动态码。')}
+            />
+
             <Divider sx={{ my: 2 }} />
             <Stack direction="row" justifyContent="space-between">
-              <Typography color="text.secondary">预计处理</Typography>
-              <Typography variant="subtitle2">审核通过后约 5–20 分钟</Typography>
+              <Typography color="text.secondary">{portalText('预计处理')}</Typography>
+              <Typography variant="subtitle2">{portalText('审核通过后约 5–20 分钟')}</Typography>
             </Stack>
           </CardContent>
         </Card>
       </Box>
-      <TransferList title="近期转出" rows={transfers} loading={loading} onOpen={onOpenTransfer} />
+      <TransferList
+        title={portalText('近期转出')}
+        rows={transfers}
+        loading={loading}
+        onOpen={onOpenTransfer}
+      />
+
       <Dialog
         open={customerSession && addressDialogOpen}
         onClose={closeAddressDialog}
@@ -1072,12 +1143,14 @@ function WithdrawView({
         maxWidth="sm"
       >
         <Box component="form" onSubmit={addWithdrawalAddress}>
-          <DialogTitle>添加白名单地址</DialogTitle>
+          <DialogTitle>{portalText('添加白名单地址')}</DialogTitle>
           <DialogContent>
             <Stack spacing={2.25} sx={{ pt: 0.5 }}>
               {totpEnabled ? (
                 <Alert severity="info" icon={<Iconify icon="solar:shield-keyhole-bold" />}>
-                  新地址必须使用当前账户验证器生成的 6 位动态码确认，验证通过后才可用于转出。
+                  {portalText(
+                    '新地址必须使用当前账户验证器生成的 6 位动态码确认，验证通过后才可用于转出。'
+                  )}
                 </Alert>
               ) : (
                 <Alert
@@ -1088,41 +1161,45 @@ function WithdrawView({
                       size="small"
                       onClick={() => navigate('/portal/settings')}
                     >
-                      前往设置
+                      {portalText('前往设置')}
                     </Button>
                   }
                 >
-                  当前账户尚未启用两步验证。请先在“安全与设置”中绑定验证器，再添加白名单地址。
+                  {portalText(
+                    '当前账户尚未启用两步验证。请先在“安全与设置”中绑定验证器，再添加白名单地址。'
+                  )}
                 </Alert>
               )}
               {error && <Alert severity="error">{error}</Alert>}
               <TextField
                 required
                 autoFocus
-                label="地址名称"
+                label={portalText('地址名称')}
                 value={addressLabel}
                 onChange={(event) => setAddressLabel(event.target.value.slice(0, 100))}
-                placeholder="例如：公司冷钱包"
+                placeholder={portalText('例如：公司冷钱包')}
                 inputProps={{ maxLength: 100 }}
               />
+
               <TextField
                 required
-                label="TRON（TRC20）地址"
+                label={portalText('TRON（TRC20）地址')}
                 value={newAddress}
                 onChange={(event) => setNewAddress(event.target.value.trim())}
                 placeholder="T..."
-                helperText="请逐字核对网络和地址；钱包地址保存后不可修改。"
+                helperText={portalText('请逐字核对网络和地址；钱包地址保存后不可修改。')}
                 inputProps={{ spellCheck: false, autoComplete: 'off' }}
               />
+
               <Divider />
               <TextField
                 required
                 disabled={!totpEnabled}
-                label="6 位动态码"
+                label={portalText('6 位动态码')}
                 value={otpCode}
                 onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="000000"
-                helperText="输入验证器当前显示且尚未使用的动态码。"
+                helperText={portalText('输入验证器当前显示且尚未使用的动态码。')}
                 inputProps={{
                   inputMode: 'numeric',
                   pattern: '[0-9]*',
@@ -1130,14 +1207,15 @@ function WithdrawView({
                   autoComplete: 'one-time-code',
                 }}
               />
+
               <Alert severity="warning">
-                链上转账不可撤销。本机构不会通过邮件、聊天或电话索取您的动态码。
+                {portalText('链上转账不可撤销。本机构不会通过邮件、聊天或电话索取您的动态码。')}
               </Alert>
             </Stack>
           </DialogContent>
           <DialogActions>
             <Button onClick={closeAddressDialog} disabled={addingAddress}>
-              取消
+              {portalText('取消')}
             </Button>
             <Button
               type="submit"
@@ -1150,38 +1228,41 @@ function WithdrawView({
                 !/^\d{6}$/.test(otpCode)
               }
             >
-              {addingAddress ? '验证中…' : '验证并添加'}
+              {addingAddress ? portalText('验证中…') : portalText('验证并添加')}
             </Button>
           </DialogActions>
         </Box>
       </Dialog>
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>确认 USDT 转出</DialogTitle>
+        <DialogTitle>{portalText('确认 USDT 转出')}</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            请最后核对网络、地址及金额。链上交易执行后无法撤销。
+            {portalText('请最后核对网络、地址及金额。链上交易执行后无法撤销。')}
           </Alert>
           <Stack divider={<Divider flexItem />}>
             <DetailRow
-              label="网络"
+              label={portalText('网络')}
               value={`${networkMeta[network].name} (${networkMeta[network].standard})`}
             />
-            <DetailRow label="发送数量" value={formatUsdt(amount || 0)} />
-            <DetailRow label="手续费" value={formatUsdt(fee)} />
-            <DetailRow label="预计到账" value={formatUsdt(net)} />
-            <DetailRow label="白名单名称" value={selectedBeneficiary?.name || '-'} />
-            <DetailRow label="接收地址" value={address} mono />
+
+            <DetailRow label={portalText('发送数量')} value={formatUsdt(amount || 0)} />
+
+            <DetailRow label={portalText('手续费')} value={formatUsdt(fee)} />
+            <DetailRow label={portalText('预计到账')} value={formatUsdt(net)} />
+            <DetailRow label={portalText('白名单名称')} value={selectedBeneficiary?.name || '-'} />
+
+            <DetailRow label={portalText('接收地址')} value={address} mono />
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)}>返回修改</Button>
+          <Button onClick={() => setConfirmOpen(false)}>{portalText('返回修改')}</Button>
           <Button
             variant="contained"
             color="warning"
             disabled={submitting || !isWithdrawalReady(wallet) || !selectedBeneficiary}
             onClick={() => submit().catch(() => undefined)}
           >
-            {submitting ? '提交中…' : '确认提交'}
+            {submitting ? portalText('提交中…') : portalText('确认提交')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1206,24 +1287,26 @@ function TransferList({
         <Box>
           <Typography variant="h6">{title}</Typography>
           <Typography variant="body2" color="text.secondary">
-            仅展示 TRON（TRC20）网络记录，点击可查看详情。
+            {portalText('仅展示 TRON（TRC20）网络记录，点击可查看详情。')}
           </Typography>
         </Box>
-        <Button endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}>全部记录</Button>
+        <Button endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}>
+          {portalText('全部记录')}
+        </Button>
       </Stack>
       <TableContainer>
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>订单号</TableCell>
-              <TableCell>状态</TableCell>
-              <TableCell>方向</TableCell>
-              <TableCell>链 / 网络</TableCell>
-              <TableCell align="right">链上金额</TableCell>
-              <TableCell align="right">到账金额</TableCell>
+              <TableCell>{portalText('订单号')}</TableCell>
+              <TableCell>{portalText('状态')}</TableCell>
+              <TableCell>{portalText('方向')}</TableCell>
+              <TableCell>{portalText('链 / 网络')}</TableCell>
+              <TableCell align="right">{portalText('链上金额')}</TableCell>
+              <TableCell align="right">{portalText('到账金额')}</TableCell>
               <TableCell>TXID</TableCell>
-              <TableCell>创建时间</TableCell>
-              <TableCell align="right">操作</TableCell>
+              <TableCell>{portalText('创建时间')}</TableCell>
+              <TableCell align="right">{portalText('操作')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -1237,7 +1320,9 @@ function TransferList({
                 <TableCell>
                   <CryptoStatus status={row.status} rawStatus={rawCregisStatus(row)} />
                 </TableCell>
-                <TableCell>{row.direction === 'DEPOSIT' ? '转入' : '转出'}</TableCell>
+                <TableCell>
+                  {row.direction === 'DEPOSIT' ? portalText('转入') : portalText('转出')}
+                </TableCell>
                 <TableCell>
                   <Stack direction="row" spacing={1} alignItems="center">
                     <Iconify icon={networkMeta[row.network].icon} width={20} />
@@ -1250,13 +1335,13 @@ function TransferList({
                 <TableCell align="right">{formatUsdt(row.netAmount)}</TableCell>
                 <TableCell>
                   <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    {shorten(row.txHash || '待生成', 7, 5)}
+                    {shorten(row.txHash || portalText('待生成'), 7, 5)}
                   </Typography>
                 </TableCell>
-                <TableCell>{new Date(row.createdAt).toLocaleString('zh-CN')}</TableCell>
+                <TableCell>{new Date(row.createdAt).toLocaleString(portalLocale())}</TableCell>
                 <TableCell align="right">
                   <Button size="small" onClick={() => onOpen(row)}>
-                    详情
+                    {portalText('详情')}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -1264,7 +1349,7 @@ function TransferList({
             {!rows.length && (
               <TableRow>
                 <TableCell colSpan={9} align="center" sx={{ py: 7 }}>
-                  {loading ? '加载中…' : '暂无链上记录'}
+                  {loading ? portalText('加载中…') : portalText('暂无链上记录')}
                 </TableCell>
               </TableRow>
             )}
@@ -1293,7 +1378,7 @@ function TransferDrawer({
         <Stack spacing={3}>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Box>
-              <Typography variant="h5">链上交易详情</Typography>
+              <Typography variant="h5">{portalText('链上交易详情')}</Typography>
               <Typography color="text.secondary">{transfer.reference}</Typography>
             </Box>
             <IconButton onClick={onClose}>
@@ -1320,42 +1405,71 @@ function TransferDrawer({
             <CardContent>
               <Stack divider={<Divider flexItem />}>
                 <DetailRow
-                  label="类型"
-                  value={transfer.direction === 'DEPOSIT' ? '转入' : '转出'}
+                  label={portalText('类型')}
+                  value={transfer.direction === 'DEPOSIT' ? portalText('转入') : portalText('转出')}
                 />
+
                 <DetailRow
-                  label="网络"
+                  label={portalText('网络')}
                   value={`${networkMeta[transfer.network].name} (${
                     networkMeta[transfer.network].standard
                   })`}
                 />
-                <DetailRow label="链上金额" value={formatUsdt(transfer.amount)} />
-                <DetailRow label="手续费" value={formatUsdt(transfer.feeAmount)} />
+
+                <DetailRow label={portalText('链上金额')} value={formatUsdt(transfer.amount)} />
+
+                <DetailRow label={portalText('手续费')} value={formatUsdt(transfer.feeAmount)} />
+
                 <DetailRow
-                  label={transfer.direction === 'DEPOSIT' ? '发送方地址' : '转出地址'}
-                  value={transfer.fromAddress ? shorten(transfer.fromAddress, 10, 8) : '暂未获取'}
+                  label={
+                    transfer.direction === 'DEPOSIT'
+                      ? portalText('发送方地址')
+                      : portalText('转出地址')
+                  }
+                  value={
+                    transfer.fromAddress
+                      ? shorten(transfer.fromAddress, 10, 8)
+                      : portalText('暂未获取')
+                  }
                   mono={Boolean(transfer.fromAddress)}
                 />
-                <DetailRow label="目标地址" value={shorten(transfer.toAddress, 10, 8)} mono />
+
                 <DetailRow
-                  label="TXID"
-                  value={transfer.txHash ? shorten(transfer.txHash, 10, 8) : '执行后生成'}
+                  label={portalText('目标地址')}
+                  value={shorten(transfer.toAddress, 10, 8)}
                   mono
                 />
-                <DetailRow label="网络确认" value={`${transfer.confirmations} 次`} />
+
                 <DetailRow
-                  label="创建时间"
-                  value={new Date(transfer.createdAt).toLocaleString('zh-CN')}
+                  label="TXID"
+                  value={
+                    transfer.txHash ? shorten(transfer.txHash, 10, 8) : portalText('执行后生成')
+                  }
+                  mono
+                />
+
+                <DetailRow
+                  label={portalText('网络确认')}
+                  value={portalText('{{value0}} 次', { value0: transfer.confirmations })}
+                />
+
+                <DetailRow
+                  label={portalText('创建时间')}
+                  value={new Date(transfer.createdAt).toLocaleString(portalLocale())}
                 />
               </Stack>
             </CardContent>
           </Card>
           {transfer.status === 'SUBMITTED' && (
-            <Alert severity="info">转出申请正在等待审核，审核完成前相应金额保持冻结。</Alert>
+            <Alert severity="info">
+              {portalText('转出申请正在等待审核，审核完成前相应金额保持冻结。')}
+            </Alert>
           )}
           {rawCregisStatus(transfer) === 'exception' && (
             <Alert severity="warning">
-              该交易正在异常核查，相关金额仍处于冻结状态。核查完成并确认最终结果后，余额才会更新。
+              {portalText(
+                '该交易正在异常核查，相关金额仍处于冻结状态。核查完成并确认最终结果后，余额才会更新。'
+              )}
             </Alert>
           )}
           {transfer.rejectionReason && <Alert severity="error">{transfer.rejectionReason}</Alert>}
@@ -1372,14 +1486,14 @@ function CryptoStatus({
   status: CryptoTransfer['status'];
   rawStatus?: string;
 }) {
-  if (rawStatus === 'exception') return <Label color="warning">异常调单</Label>;
-  if (rawStatus === 'cancelled') return <Label color="default">已取消</Label>;
+  if (rawStatus === 'exception') return <Label color="warning">{portalText('异常调单')}</Label>;
+  if (rawStatus === 'cancelled') return <Label color="default">{portalText('已取消')}</Label>;
   const labels = {
-    SUBMITTED: '待审核',
-    PROCESSING: '链上处理中',
-    COMPLETED: '成功',
-    REJECTED: '已拒绝',
-    FAILED: '失败',
+    SUBMITTED: portalText('待审核'),
+    PROCESSING: portalText('链上处理中'),
+    COMPLETED: portalText('成功'),
+    REJECTED: portalText('已拒绝'),
+    FAILED: portalText('失败'),
   };
   let color: 'default' | 'warning' | 'info' | 'success' | 'error' = 'default';
   if (status === 'SUBMITTED') color = 'warning';
@@ -1455,7 +1569,7 @@ function DetailRow({
   );
 }
 function formatUsdt(value: string | number) {
-  return `${Number(value).toLocaleString('zh-CN', {
+  return `${Number(value).toLocaleString(portalLocale(), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 6,
   })} USDT`;

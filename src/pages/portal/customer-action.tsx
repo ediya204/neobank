@@ -55,6 +55,7 @@ import {
   otcSourceAccounts,
   otcTargetAccounts,
 } from 'src/features/finance/otc-account-selection';
+import { portalLocale, portalText } from 'src/locales/portal-text';
 import { accountLabel, money } from './customer-shared';
 
 export type CustomerAction = 'transfer' | 'fx' | 'otc' | 'payout' | 'beneficiaries';
@@ -162,7 +163,9 @@ export default function CustomerActionPage({
       setRates(rows);
       setRatesError('');
     } catch (value) {
-      setRatesError(value instanceof Error ? value.message : '暂时无法获取实时报价，请稍后重试。');
+      setRatesError(
+        value instanceof Error ? value.message : portalText('暂时无法获取实时报价，请稍后重试。')
+      );
     } finally {
       setRatesLoading(false);
     }
@@ -189,7 +192,9 @@ export default function CustomerActionPage({
 
   useEffect(() => {
     loadDetail().catch((value) =>
-      setError(value instanceof Error ? value.message : '暂时无法读取账户资料，请稍后重试。')
+      setError(
+        value instanceof Error ? value.message : portalText('暂时无法读取账户资料，请稍后重试。')
+      )
     );
   }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -241,12 +246,15 @@ export default function CustomerActionPage({
       (row) => row.kind === 'SYSTEM_WALLET' && supportedFiatCurrencies.includes(row.currency)
     );
   }, [accounts, action, otcDirection, payoutMethod, selectedBeneficiary]);
-  let sourceFieldLabel = action === 'payout' ? '付款账户' : '从账户';
+  let sourceFieldLabel = action === 'payout' ? portalText('付款账户') : portalText('从账户');
   if (action === 'otc') {
-    sourceFieldLabel = otcDirection === 'BUY_USDT' ? '付款账户' : 'USDT 账户';
+    sourceFieldLabel =
+      otcDirection === 'BUY_USDT' ? portalText('付款账户') : portalText('USDT 账户');
   }
   const targetFieldLabel =
-    action === 'otc' && otcDirection === 'BUY_USDT' ? '到账 USDT 账户' : '到账账户';
+    action === 'otc' && otcDirection === 'BUY_USDT'
+      ? portalText('到账 USDT 账户')
+      : portalText('到账账户');
   const payoutChannel =
     action === 'payout' && source
       ? channels.find(
@@ -288,20 +296,25 @@ export default function CustomerActionPage({
       : null;
   const quoteReady = Boolean(readyQuote);
   const quoteInvalid = quote?.status === 'unavailable' || quote?.status === 'stale';
-  let quoteHelperText = '选择付款与收款账户并输入金额后获取报价';
-  if (quote?.status === 'loading') quoteHelperText = '正在获取实时报价…';
+  let quoteHelperText = portalText('选择付款与收款账户并输入金额后获取报价');
+  if (quote?.status === 'loading') quoteHelperText = portalText('正在获取实时报价…');
   if (quote?.status === 'unavailable') {
     quoteHelperText = ratesError
-      ? '实时报价加载失败，请稍后重试'
-      : '当前币种组合暂无有效报价，请稍后重试';
+      ? portalText('实时报价加载失败，请稍后重试')
+      : portalText('当前币种组合暂无有效报价，请稍后重试');
   }
-  if (quote?.status === 'stale') quoteHelperText = '报价已过期，正在重新获取实时报价';
+  if (quote?.status === 'stale') quoteHelperText = portalText('报价已过期，正在重新获取实时报价');
   if (readyQuote) {
-    quoteHelperText = `按当前实时报价估算${
-      readyQuote.rate.marketUpdatedAt
-        ? ` · 行情时间 ${new Date(readyQuote.rate.marketUpdatedAt).toLocaleString('zh-CN')}`
-        : ''
-    }；确认前将重新取价并锁定最终成交金额`;
+    quoteHelperText = portalText(
+      '按当前实时报价估算{{value0}}；确认前将重新取价并锁定最终成交金额',
+      {
+        value0: readyQuote.rate.marketUpdatedAt
+          ? portalText('· 行情时间 {{value0}}', {
+              value0: new Date(readyQuote.rate.marketUpdatedAt).toLocaleString(portalLocale()),
+            })
+          : '',
+      }
+    );
   }
 
   useEffect(() => {
@@ -354,22 +367,28 @@ export default function CustomerActionPage({
     source && amount && Number(amount) > Number(source.availableBalance)
   );
   const availableBalanceLabel = source ? money(source.availableBalance, source.currency) : '';
-  let amountHelperText = '请先选择付款账户';
+  let amountHelperText = portalText('请先选择付款账户');
   if (action === 'otc' && otcDirection === 'SELL_USDT') {
-    amountHelperText = '请先选择 USDT 账户';
+    amountHelperText = portalText('请先选择 USDT 账户');
   }
-  if (source) amountHelperText = `可用余额 ${availableBalanceLabel}`;
-  if (insufficientBalance) amountHelperText = `金额超过可用余额 ${availableBalanceLabel}`;
+  if (source)
+    amountHelperText = portalText('可用余额 {{value0}}', {
+      value0: availableBalanceLabel,
+    });
+  if (insufficientBalance)
+    amountHelperText = portalText('金额超过可用余额 {{value0}}', {
+      value0: availableBalanceLabel,
+    });
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!customer) return;
     if (submissionDisabledReason) {
-      setError(submissionDisabledReason);
+      setError(portalText(submissionDisabledReason));
       return;
     }
     if (conversionType && !quoteReady) {
-      setError('当前报价已失效，请重新获取报价后再确认。');
+      setError(portalText('当前报价已失效，请重新获取报价后再确认。'));
       return;
     }
     setError('');
@@ -379,7 +398,7 @@ export default function CustomerActionPage({
       const sourceAccount = accounts.find((row) => row.id === sourceId);
       const targetAccount = accounts.find((row) => row.id === targetId);
       if (!sourceAccount || !amount || Number(amount) <= 0)
-        throw new Error('请选择付款账户并输入有效金额');
+        throw new Error(portalText('请选择付款账户并输入有效金额'));
       let type: OperationType = 'INTERNAL_TRANSFER';
       const payload: Record<string, unknown> = {
         customerId: customer.id,
@@ -391,7 +410,7 @@ export default function CustomerActionPage({
         idempotencyKey: crypto.randomUUID(),
       };
       if (action === 'transfer' || action === 'fx' || action === 'otc') {
-        if (!targetAccount) throw new Error('请选择收款账户');
+        if (!targetAccount) throw new Error(portalText('请选择收款账户'));
         payload.targetAccountId = targetAccount.id;
       }
       if (action === 'fx') {
@@ -404,16 +423,16 @@ export default function CustomerActionPage({
       }
       if (action === 'payout') {
         type = 'PAYOUT';
-        if (!selectedBeneficiary) throw new Error('请选择第三方收款人');
+        if (!selectedBeneficiary) throw new Error(portalText('请选择第三方收款人'));
         const channel = payoutChannel;
         if (!channel) {
           throw new Error(
             payoutMethod === 'VA'
-              ? '所选 VA 账户未绑定可用的开户银行通道'
-              : '当前付款方式暂不支持该币种'
+              ? portalText('所选 VA 账户未绑定可用的开户银行通道')
+              : portalText('当前付款方式暂不支持该币种')
           );
         }
-        if (!payoutFee) throw new Error('当前渠道尚未配置转出手续费');
+        if (!payoutFee) throw new Error(portalText('当前渠道尚未配置转出手续费'));
         Object.assign(payload, {
           beneficiaryId: selectedBeneficiary.id,
           payoutMethod,
@@ -430,26 +449,34 @@ export default function CustomerActionPage({
       });
       if (action === 'otc') {
         if (!created.quoteExpiresAt || !created.rate || !created.quoteAmount) {
-          throw new Error('服务端未返回完整的确认报价');
+          throw new Error(portalText('服务端未返回完整的确认报价'));
         }
         setQuoteCountdownMs(Math.max(0, Date.parse(created.quoteExpiresAt) - Date.now()));
         setPendingQuote(created);
         return;
       }
-      let successMessage = '申请已提交审核。处理完成后，账户余额将自动更新。';
+      let successMessage = portalText('申请已提交审核。处理完成后，账户余额将自动更新。');
       if (action === 'payout') {
-        successMessage = '付款申请已提交。审核通过后将由银行或支付通道执行。';
+        successMessage = portalText('付款申请已提交。审核通过后将由银行或支付通道执行。');
       } else if (action === 'fx' && created.rate && created.quoteAmount && created.quoteCurrency) {
-        successMessage = `成交报价已锁定：1 ${created.currency} = ${created.rate} ${
-          created.quoteCurrency
-        }，预计到账 ${money(created.quoteAmount, created.quoteCurrency)}。`;
+        successMessage = portalText(
+          '成交报价已锁定：1 {{value0}} = {{value1}} {{value2}}，预计到账 {{value3}}。',
+          {
+            value0: created.currency,
+            value1: created.rate,
+            value2: created.quoteCurrency,
+            value3: money(created.quoteAmount, created.quoteCurrency),
+          }
+        );
       }
       setSuccess(successMessage);
       setAmount('');
       setNote('');
       await Promise.all([loadDetail(), refresh(), loadRates()]);
     } catch (value) {
-      setError(value instanceof Error ? value.message : '申请暂时无法提交，请稍后重试。');
+      setError(
+        value instanceof Error ? value.message : portalText('申请暂时无法提交，请稍后重试。')
+      );
     } finally {
       setSubmitting(false);
     }
@@ -468,18 +495,22 @@ export default function CustomerActionPage({
       setPendingQuote(null);
       setQuoteCountdownMs(0);
       setSuccess(
-        `兑换已完成：1 ${completed.currency} = ${completed.rate} ${
-          completed.quoteCurrency
-        }，到账 ${money(completed.quoteAmount || '0', completed.quoteCurrency || 'USDT')}。`
+        portalText('兑换已完成：1 {{value0}} = {{value1}} {{value2}}，到账 {{value3}}。', {
+          value0: completed.currency,
+          value1: completed.rate,
+          value2: completed.quoteCurrency,
+          value3: money(completed.quoteAmount || '0', completed.quoteCurrency || 'USDT'),
+        })
       );
       setAmount('');
       setNote('');
       await Promise.all([loadDetail(), refresh(), loadRates()]);
     } catch (value) {
-      const message = value instanceof Error ? value.message : '暂时无法完成兑换，请重新获取报价。';
+      const message =
+        value instanceof Error ? value.message : portalText('暂时无法完成兑换，请重新获取报价。');
       if (message.includes('quote_expired')) {
         setQuoteCountdownMs(0);
-        setError('报价已失效，请重新获取报价。');
+        setError(portalText('报价已失效，请重新获取报价。'));
       } else {
         setError(message);
       }
@@ -488,16 +519,20 @@ export default function CustomerActionPage({
     }
   };
 
-  let submissionInfoText = '提交后将进入审核流程，您可在交易明细中随时查看处理进度。';
+  let submissionInfoText = portalText('提交后将进入审核流程，您可在交易明细中随时查看处理进度。');
   if (submissionDisabledReason) {
-    submissionInfoText = '当前仅提供账户与报价查询，不会创建或执行资金交易。';
+    submissionInfoText = portalText('当前仅提供账户与报价查询，不会创建或执行资金交易。');
   } else if (action === 'otc') {
-    submissionInfoText = '成交报价有效期为 5 秒。确认后将立即完成兑换并更新余额，交易不可撤销。';
+    submissionInfoText = portalText(
+      '成交报价有效期为 5 秒。确认后将立即完成兑换并更新余额，交易不可撤销。'
+    );
   }
-  let quoteConfirmButtonText = '报价已失效';
-  if (submitting) quoteConfirmButtonText = '正在执行…';
+  let quoteConfirmButtonText = portalText('报价已失效');
+  if (submitting) quoteConfirmButtonText = portalText('正在执行…');
   else if (quoteCountdownMs > 0) {
-    quoteConfirmButtonText = `确认执行（${Math.ceil(quoteCountdownMs / 1000)}）`;
+    quoteConfirmButtonText = portalText('确认执行（{{value0}}）', {
+      value0: Math.ceil(quoteCountdownMs / 1000),
+    });
   }
 
   if (action === 'beneficiaries')
@@ -511,23 +546,33 @@ export default function CustomerActionPage({
         setDialogOpen={setBeneficiaryOpen}
       />
     );
+
   const info = copy[action];
   return (
     <>
       <Helmet>
-        <title>{info.title} | SSC Digital Bank</title>
+        <title>{portalText(info.title)} | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="md">
         <Stack spacing={3}>
           <CustomBreadcrumbs
-            heading={info.title}
-            links={[{ name: '收付与兑换', href: '/portal/money/transfers' }, { name: info.title }]}
+            heading={portalText(info.title)}
+            links={[
+              {
+                name: portalText('收付与兑换'),
+                href: '/portal/money/transfers',
+              },
+              { name: portalText(info.title) },
+            ]}
           />
+
           <Typography color="text.secondary" sx={{ mt: -2 }}>
-            {info.description}
+            {portalText(info.description)}
           </Typography>
           {submissionDisabledReason && (
-            <Alert severity="info">{submissionDisabledReason} 历史记录可在“交易明细”中查询。</Alert>
+            <Alert severity="info">
+              {portalText(submissionDisabledReason)} {portalText('历史记录可在“交易明细”中查询。')}
+            </Alert>
           )}
           {error && (
             <Alert
@@ -539,12 +584,12 @@ export default function CustomerActionPage({
                   onClick={() => {
                     setError('');
                     loadDetail().catch(() =>
-                      setError('账户资料暂时无法读取，请刷新页面或重新登录后重试。')
+                      setError(portalText('账户资料暂时无法读取，请刷新页面或重新登录后重试。'))
                     );
                     loadRates().catch(() => undefined);
                   }}
                 >
-                  重新加载
+                  {portalText('重新加载')}
                 </Button>
               }
             >
@@ -560,20 +605,22 @@ export default function CustomerActionPage({
             <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
               <Stepper activeStep={0} sx={{ mb: 4, display: { xs: 'none', sm: 'flex' } }}>
                 <Step>
-                  <StepLabel>填写交易信息</StepLabel>
+                  <StepLabel>{portalText('填写交易信息')}</StepLabel>
                 </Step>
                 <Step>
-                  <StepLabel>{action === 'otc' ? '确认成交' : '审核处理'}</StepLabel>
+                  <StepLabel>
+                    {action === 'otc' ? portalText('确认成交') : portalText('审核处理')}
+                  </StepLabel>
                 </Step>
                 <Step>
-                  <StepLabel>完成</StepLabel>
+                  <StepLabel>{portalText('完成')}</StepLabel>
                 </Step>
               </Stepper>
               <Box component="form" onSubmit={submit}>
                 <Stack spacing={2.5}>
                   {action === 'payout' && (
                     <>
-                      <Typography variant="h6">选择转出方式</Typography>
+                      <Typography variant="h6">{portalText('选择转出方式')}</Typography>
                       <Box
                         sx={{
                           display: 'grid',
@@ -605,11 +652,15 @@ export default function CustomerActionPage({
                                   justifyContent="space-between"
                                 >
                                   <Iconify icon={method.icon} width={26} color="primary.main" />
-                                  {selected && <Label color="primary">已选择</Label>}
+                                  {selected && (
+                                    <Label color="primary">{portalText('已选择')}</Label>
+                                  )}
                                 </Stack>
-                                <Typography variant="subtitle2">{method.title}</Typography>
+                                <Typography variant="subtitle2">
+                                  {portalText(method.title)}
+                                </Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                  {method.description}
+                                  {portalText(method.description)}
                                 </Typography>
                               </Stack>
                             </ButtonBase>
@@ -621,18 +672,18 @@ export default function CustomerActionPage({
                         justifyContent="space-between"
                         gap={1}
                       >
-                        <Typography variant="h6">第三方收款人</Typography>
+                        <Typography variant="h6">{portalText('第三方收款人')}</Typography>
                         <Button
                           startIcon={<Iconify icon="solar:add-circle-linear" />}
                           onClick={() => setBeneficiaryOpen(true)}
                         >
-                          新增收款人
+                          {portalText('新增收款人')}
                         </Button>
                       </Stack>
                       <FormControl required fullWidth>
-                        <InputLabel>选择收款人</InputLabel>
+                        <InputLabel>{portalText('选择收款人')}</InputLabel>
                         <Select
-                          label="选择收款人"
+                          label={portalText('选择收款人')}
                           value={beneficiaryId}
                           onChange={(event) => setBeneficiaryId(event.target.value)}
                         >
@@ -655,7 +706,7 @@ export default function CustomerActionPage({
                             <Stack spacing={1.25}>
                               <Stack direction="row" justifyContent="space-between" gap={2}>
                                 <Typography variant="body2" color="text.secondary">
-                                  收款人
+                                  {portalText('收款人')}
                                 </Typography>
                                 <Typography variant="subtitle2">
                                   {selectedBeneficiary.name}
@@ -663,7 +714,7 @@ export default function CustomerActionPage({
                               </Stack>
                               <Stack direction="row" justifyContent="space-between" gap={2}>
                                 <Typography variant="body2" color="text.secondary">
-                                  收款银行
+                                  {portalText('收款银行')}
                                 </Typography>
                                 <Typography variant="subtitle2">
                                   {selectedBeneficiary.bankName}
@@ -671,7 +722,7 @@ export default function CustomerActionPage({
                               </Stack>
                               <Stack direction="row" justifyContent="space-between" gap={2}>
                                 <Typography variant="body2" color="text.secondary">
-                                  币种与账号
+                                  {portalText('币种与账号')}
                                 </Typography>
                                 <Typography variant="subtitle2">
                                   {selectedBeneficiary.currency} · ••••
@@ -694,10 +745,10 @@ export default function CustomerActionPage({
                   )}
                   {action === 'otc' && (
                     <>
-                      <Typography variant="h6">兑换方向</Typography>
+                      <Typography variant="h6">{portalText('兑换方向')}</Typography>
                       <Box
                         role="radiogroup"
-                        aria-label="OTC 兑换方向"
+                        aria-label={portalText('OTC 兑换方向')}
                         sx={{
                           display: 'grid',
                           gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
@@ -708,12 +759,12 @@ export default function CustomerActionPage({
                           [
                             {
                               value: 'BUY_USDT',
-                              title: '法币买入 USDT',
+                              title: portalText('法币买入 USDT'),
                               description: 'USD / HKD → USDT · TRON（TRC20）',
                             },
                             {
                               value: 'SELL_USDT',
-                              title: '卖出 USDT',
+                              title: portalText('卖出 USDT'),
                               description: 'USDT · TRON（TRC20）→ USD / HKD',
                             },
                           ] as const
@@ -753,7 +804,7 @@ export default function CustomerActionPage({
                                   {option.description}
                                 </Typography>
                               </Box>
-                              {selected && <Label color="primary">已选择</Label>}
+                              {selected && <Label color="primary">{portalText('已选择')}</Label>}
                             </ButtonBase>
                           );
                         })}
@@ -761,8 +812,8 @@ export default function CustomerActionPage({
                       {!sourceOptions.length && (
                         <Alert severity="warning">
                           {otcDirection === 'BUY_USDT'
-                            ? '当前没有可用于买入 USDT 的有效法币账户。'
-                            : '当前没有可用于卖出的有效 USDT-TRC20 账户。'}
+                            ? portalText('当前没有可用于买入 USDT 的有效法币账户。')
+                            : portalText('当前没有可用于卖出的有效 USDT-TRC20 账户。')}
                         </Alert>
                       )}
                     </>
@@ -800,13 +851,19 @@ export default function CustomerActionPage({
                   {action === 'otc' && source && !targets.length && (
                     <Alert severity="warning">
                       {otcDirection === 'BUY_USDT'
-                        ? '当前没有可接收资产的有效 USDT-TRC20 账户。'
-                        : '当前没有可接收卖出款项的有效 USD / HKD 账户。'}
+                        ? portalText('当前没有可接收资产的有效 USDT-TRC20 账户。')
+                        : portalText('当前没有可接收卖出款项的有效 USD / HKD 账户。')}
                     </Alert>
                   )}
                   <TextField
                     required
-                    label={source ? `金额（${source.currency}）` : '金额'}
+                    label={
+                      source
+                        ? portalText('金额（{{value0}}）', {
+                            value0: source.currency,
+                          })
+                        : portalText('金额')
+                    }
                     type="number"
                     value={amount}
                     onChange={(event) => setAmount(event.target.value)}
@@ -814,16 +871,23 @@ export default function CustomerActionPage({
                     inputProps={{ min: 0.01, step: source?.currency === 'USDT' ? 0.000001 : 0.01 }}
                     helperText={amountHelperText}
                   />
+
                   {conversionType && (
                     <TextField
                       fullWidth
-                      label={target ? `预计到账（${target.currency}）` : '预计到账'}
+                      label={
+                        target
+                          ? portalText('预计到账（{{value0}}）', {
+                              value0: target.currency,
+                            })
+                          : portalText('预计到账')
+                      }
                       value={
                         readyQuote && target
                           ? formatConversionAmount(readyQuote.received, target.currency)
                           : ''
                       }
-                      placeholder="选择账户并输入金额后显示"
+                      placeholder={portalText('选择账户并输入金额后显示')}
                       error={quoteInvalid}
                       helperText={quoteHelperText}
                       FormHelperTextProps={{ 'aria-live': 'polite' }}
@@ -836,7 +900,9 @@ export default function CustomerActionPage({
                           </InputAdornment>
                         ),
                       }}
-                      inputProps={{ 'aria-label': '预计到账目标资产金额' }}
+                      inputProps={{
+                        'aria-label': portalText('预计到账目标资产金额'),
+                      }}
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           bgcolor: 'background.neutral',
@@ -851,13 +917,13 @@ export default function CustomerActionPage({
                           <Stack spacing={1.25}>
                             <Stack direction="row" justifyContent="space-between" gap={2}>
                               <Typography variant="body2" color="text.secondary">
-                                转出渠道
+                                {portalText('转出渠道')}
                               </Typography>
                               <Typography variant="subtitle2">{payoutChannel.name}</Typography>
                             </Stack>
                             <Stack direction="row" justifyContent="space-between" gap={2}>
                               <Typography variant="body2" color="text.secondary">
-                                转出手续费
+                                {portalText('转出手续费')}
                               </Typography>
                               <Typography variant="subtitle2">
                                 {money(payoutFee.amount, source.currency)}
@@ -865,7 +931,9 @@ export default function CustomerActionPage({
                             </Stack>
                             <Divider />
                             <Stack direction="row" justifyContent="space-between" gap={2}>
-                              <Typography variant="subtitle2">账户总扣款</Typography>
+                              <Typography variant="subtitle2">
+                                {portalText('账户总扣款')}
+                              </Typography>
                               <Typography variant="h6" color="primary.main">
                                 {money(
                                   Number(amount || 0) + Number(payoutFee.amount),
@@ -877,8 +945,10 @@ export default function CustomerActionPage({
                         ) : (
                           <Alert severity="warning">
                             {payoutMethod === 'VA' && !source.fundingChannelId
-                              ? '该 VA 是历史账户，未绑定开户银行通道，暂不能发起 VA 转出。'
-                              : '当前渠道尚未配置可用的转出手续费。'}
+                              ? portalText(
+                                  '该 VA 是历史账户，未绑定开户银行通道，暂不能发起 VA 转出。'
+                                )
+                              : portalText('当前渠道尚未配置可用的转出手续费。')}
                           </Alert>
                         )}
                       </CardContent>
@@ -890,7 +960,7 @@ export default function CustomerActionPage({
                         <Stack spacing={1.25}>
                           <Stack direction="row" justifyContent="space-between" gap={2}>
                             <Typography variant="body2" color="text.secondary">
-                              卖出金额
+                              {portalText('卖出金额')}
                             </Typography>
                             <Typography variant="subtitle2">
                               {money(amount, source.currency)}
@@ -898,7 +968,7 @@ export default function CustomerActionPage({
                           </Stack>
                           <Stack direction="row" justifyContent="space-between" gap={2}>
                             <Typography variant="body2" color="text.secondary">
-                              参考中间价
+                              {portalText('参考中间价')}
                             </Typography>
                             <Typography variant="subtitle2">
                               1 {source.currency} ={' '}
@@ -908,7 +978,7 @@ export default function CustomerActionPage({
                           </Stack>
                           <Stack direction="row" justifyContent="space-between" gap={2}>
                             <Typography variant="body2" color="text.secondary">
-                              客户成交报价
+                              {portalText('客户成交报价')}
                             </Typography>
                             <Typography variant="subtitle2">
                               1 {source.currency} ={' '}
@@ -918,27 +988,29 @@ export default function CustomerActionPage({
                           </Stack>
                           <Stack direction="row" justifyContent="space-between" gap={2}>
                             <Typography variant="body2" color="text.secondary">
-                              报价费率
+                              {portalText('报价费率')}
                             </Typography>
                             <Typography variant="subtitle2">
                               {(readyQuote.rate.feeBps / 100).toFixed(2)}%
                             </Typography>
                           </Stack>
                           <Typography variant="caption" color="text.secondary">
-                            市场中间价仅供参考，预计到账金额已包含报价费率。确认时系统会重新取价，
-                            并锁定最终成交价及到账金额。
+                            {portalText(
+                              '市场中间价仅供参考，预计到账金额已包含报价费率。确认时系统会重新取价， 并锁定最终成交价及到账金额。'
+                            )}
                           </Typography>
                         </Stack>
                       </CardContent>
                     </Card>
                   )}
                   <TextField
-                    label="备注（选填）"
+                    label={portalText('备注（选填）')}
                     value={note}
                     onChange={(event) => setNote(event.target.value)}
                     multiline
                     minRows={2}
                   />
+
                   <Alert severity="info">{submissionInfoText}</Alert>
                   <Button
                     size="large"
@@ -954,21 +1026,21 @@ export default function CustomerActionPage({
                       Boolean(conversionType && !quoteReady)
                     }
                   >
-                    {submissionDisabledReason && '当前不可提交'}
-                    {submitting && '正在提交…'}
+                    {submissionDisabledReason && portalText('当前不可提交')}
+                    {submitting && portalText('正在提交…')}
                     {!submissionDisabledReason &&
                       !submitting &&
                       action === 'otc' &&
-                      '获取 5 秒确认报价'}
+                      portalText('获取 5 秒确认报价')}
                     {!submissionDisabledReason &&
                       !submitting &&
                       action === 'payout' &&
-                      '确认并提交付款'}
+                      portalText('确认并提交付款')}
                     {!submissionDisabledReason &&
                       !submitting &&
                       action !== 'otc' &&
                       action !== 'payout' &&
-                      '确认并提交'}
+                      portalText('确认并提交')}
                   </Button>
                 </Stack>
               </Box>
@@ -982,31 +1054,33 @@ export default function CustomerActionPage({
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>确认 OTC 成交报价</DialogTitle>
+        <DialogTitle>{portalText('确认 OTC 成交报价')}</DialogTitle>
         <DialogContent>
           {pendingQuote && (
             <Stack spacing={2} sx={{ pt: 1 }}>
               <Alert severity={quoteCountdownMs > 0 ? 'warning' : 'error'}>
                 {quoteCountdownMs > 0
-                  ? `报价将在 ${Math.ceil(quoteCountdownMs / 1000)} 秒后失效，请确认后立即执行。`
-                  : '报价已失效，不会执行或扣减余额，请重新获取报价。'}
+                  ? portalText('报价将在 {{value0}} 秒后失效，请确认后立即执行。', {
+                      value0: Math.ceil(quoteCountdownMs / 1000),
+                    })
+                  : portalText('报价已失效，不会执行或扣减余额，请重新获取报价。')}
               </Alert>
               <Stack spacing={1.25}>
                 <Stack direction="row" justifyContent="space-between" gap={2}>
-                  <Typography color="text.secondary">卖出金额</Typography>
+                  <Typography color="text.secondary">{portalText('卖出金额')}</Typography>
                   <Typography fontWeight={600}>
                     {money(pendingQuote.amount, pendingQuote.currency)}
                   </Typography>
                 </Stack>
                 <Stack direction="row" justifyContent="space-between" gap={2}>
-                  <Typography color="text.secondary">锁定成交价</Typography>
+                  <Typography color="text.secondary">{portalText('锁定成交价')}</Typography>
                   <Typography fontWeight={600}>
                     1 {pendingQuote.currency} = {pendingQuote.rate} {pendingQuote.quoteCurrency}
                   </Typography>
                 </Stack>
                 <Divider />
                 <Stack direction="row" justifyContent="space-between" gap={2}>
-                  <Typography fontWeight={600}>实际到账</Typography>
+                  <Typography fontWeight={600}>{portalText('实际到账')}</Typography>
                   <Typography variant="h6" color="primary.main">
                     {money(pendingQuote.quoteAmount || '0', pendingQuote.quoteCurrency || 'USDT')}
                   </Typography>
@@ -1017,7 +1091,7 @@ export default function CustomerActionPage({
         </DialogContent>
         <DialogActions>
           <Button disabled={submitting} onClick={() => setPendingQuote(null)}>
-            {quoteCountdownMs > 0 ? '取消' : '重新获取报价'}
+            {quoteCountdownMs > 0 ? portalText('取消') : portalText('重新获取报价')}
           </Button>
           <Button
             variant="contained"
@@ -1070,15 +1144,15 @@ function BeneficiaryPage({
   return (
     <>
       <Helmet>
-        <title>收款人管理 | SSC Digital Bank</title>
+        <title>{portalText('收款人管理 | SSC Digital Bank')}</title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2}>
             <Box>
-              <Typography variant="h4">收款人管理</Typography>
+              <Typography variant="h4">{portalText('收款人管理')}</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                统一管理经核对的银行账户与数字资产地址，付款前请再次确认收款资料。
+                {portalText('统一管理经核对的银行账户与数字资产地址，付款前请再次确认收款资料。')}
               </Typography>
             </Box>
             {!readOnlyReason && (
@@ -1087,20 +1161,25 @@ function BeneficiaryPage({
                 startIcon={<Iconify icon="solar:add-circle-linear" />}
                 onClick={onCreate}
               >
-                新增收款人
+                {portalText('新增收款人')}
               </Button>
             )}
           </Stack>
-          {readOnlyReason && <Alert severity="info">{readOnlyReason}</Alert>}
+          {readOnlyReason && <Alert severity="info">{portalText(readOnlyReason)}</Alert>}
           <Card>
             <Tabs
               value={filter}
               onChange={(_, value) => setFilter(value)}
               sx={{ px: { xs: 1, sm: 2 }, borderBottom: '1px solid', borderColor: 'divider' }}
             >
-              <Tab value="ALL" label={`全部 ${rows.length}`} />
-              <Tab value="BANK" label={`银行账户 ${bankCount}`} />
-              <Tab value="CRYPTO" label={`数字资产 ${cryptoCount}`} />
+              <Tab value="ALL" label={portalText('全部 {{value0}}', { value0: rows.length })} />
+
+              <Tab value="BANK" label={portalText('银行账户 {{value0}}', { value0: bankCount })} />
+
+              <Tab
+                value="CRYPTO"
+                label={portalText('数字资产 {{value0}}', { value0: cryptoCount })}
+              />
             </Tabs>
             <Stack divider={<Divider flexItem />}>
               {visibleRows.map((row) => {
@@ -1142,7 +1221,7 @@ function BeneficiaryPage({
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                         <Typography variant="subtitle1">{row.name}</Typography>
                         <Label color={cryptoRecipient ? 'success' : 'info'}>
-                          {cryptoRecipient ? '数字资产' : '银行账户'}
+                          {cryptoRecipient ? portalText('数字资产') : portalText('银行账户')}
                         </Label>
                       </Stack>
                       <Typography variant="body2" color="text.secondary">
@@ -1158,7 +1237,7 @@ function BeneficiaryPage({
                       endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}
                       sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, flexShrink: 0 }}
                     >
-                      {cryptoRecipient ? '用于转出' : '用于付款'}
+                      {cryptoRecipient ? portalText('用于转出') : portalText('用于付款')}
                     </Button>
                   </Stack>
                 );
@@ -1174,17 +1253,20 @@ function BeneficiaryPage({
                     width={38}
                     color="text.disabled"
                   />
+
                   <Typography variant="subtitle1" sx={{ mt: 1.5 }}>
-                    {filter === 'CRYPTO' ? '暂无数字资产收款人' : '暂无第三方收款人'}
+                    {filter === 'CRYPTO'
+                      ? portalText('暂无数字资产收款人')
+                      : portalText('暂无第三方收款人')}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                     {filter === 'CRYPTO'
-                      ? '添加经过核对的 USDT · TRON (TRC20) 地址。'
-                      : '添加银行账户或数字资产地址后，可在付款页面直接选择。'}
+                      ? portalText('添加经过核对的 USDT · TRON (TRC20) 地址。')
+                      : portalText('添加银行账户或数字资产地址后，可在付款页面直接选择。')}
                   </Typography>
                   {!readOnlyReason && (
                     <Button onClick={onCreate} sx={{ mt: 1.5 }}>
-                      添加收款人
+                      {portalText('添加收款人')}
                     </Button>
                   )}
                 </Stack>

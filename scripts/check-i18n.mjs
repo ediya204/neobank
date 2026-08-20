@@ -8,6 +8,8 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDirectory, '..');
 const languageDirectory = path.join(projectRoot, 'src', 'locales', 'langs');
 const sourceDirectory = path.join(projectRoot, 'src');
+const portalPageDirectory = path.join(sourceDirectory, 'pages', 'portal');
+const portalLayoutPath = path.join(sourceDirectory, 'layouts', 'portal', 'layout.tsx');
 const namespaceFiles = {
   translations: ['en.json', 'cn.json'],
   common: ['common.en.json', 'common.cn.json'],
@@ -118,6 +120,44 @@ for (const [namespace, [enFile, cnFile]] of Object.entries(namespaceFiles)) {
 }
 
 const portalSourceReferences = new Map();
+let portalModuleKeysChecked = 0;
+let portalHardcodedViolations = 0;
+
+function isPortalClientSurface(sourcePath) {
+  return sourcePath === portalLayoutPath || sourcePath.startsWith(`${portalPageDirectory}${path.sep}`);
+}
+
+function containsHan(value) {
+  return /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u.test(value);
+}
+
+function isInsidePortalTextCall(node) {
+  let current = node.parent;
+
+  while (current) {
+    if (
+      ts.isCallExpression(current) &&
+      ts.isIdentifier(current.expression) &&
+      current.expression.text === 'portalText'
+    ) {
+      return true;
+    }
+    current = current.parent;
+  }
+
+  return false;
+}
+
+function hasFunctionAncestor(node) {
+  let current = node.parent;
+
+  while (current) {
+    if (ts.isFunctionLike(current)) return true;
+    current = current.parent;
+  }
+
+  return false;
+}
 
 for (const sourcePath of sourceFiles(sourceDirectory)) {
   const sourceText = fs.readFileSync(sourcePath, 'utf8');
@@ -169,6 +209,32 @@ for (const sourcePath of sourceFiles(sourceDirectory)) {
       }
     }
 
+    if (isPortalClientSurface(sourcePath)) {
+      let literalValue;
+      if (ts.isJsxText(node)) literalValue = node.getText(sourceFile);
+      else if (ts.isStringLiteralLike(node)) literalValue = node.text;
+
+      if (literalValue && containsHan(literalValue) && !isInsidePortalTextCall(node)) {
+        const isAllowedModuleKey =
+          !ts.isJsxText(node) &&
+          !hasFunctionAncestor(node) &&
+          Object.prototype.hasOwnProperty.call(portalResources.cn, literalValue) &&
+          Object.prototype.hasOwnProperty.call(portalResources.en, literalValue);
+
+        if (isAllowedModuleKey) {
+          portalModuleKeysChecked += 1;
+        } else {
+          portalHardcodedViolations += 1;
+          hasErrors = true;
+          const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+          process.stderr.write(
+            `[portal hardcoded] Route Chinese copy through portalText: ` +
+              `${path.relative(projectRoot, sourcePath)}:${line}\n`
+          );
+        }
+      }
+    }
+
     ts.forEachChild(node, visit);
   }
 
@@ -196,6 +262,10 @@ for (const [key, references] of [...portalSourceReferences.entries()].sort(([a],
 
 process.stdout.write(
   `[portal source] ${portalSourceReferences.size} static translate/portalText keys checked\n`
+);
+process.stdout.write(
+  `[portal hardcoded] ${portalHardcodedViolations} unlocalized literals; ` +
+    `${portalModuleKeysChecked} bilingual module keys checked\n`
 );
 
 if (hasErrors) process.exit(1);

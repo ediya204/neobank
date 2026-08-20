@@ -26,6 +26,7 @@ import {
   PortalCustomerProvider,
   usePortalCustomer,
 } from 'src/features/finance/portal-customer-context';
+import { portalText, usePortalLanguage } from 'src/locales/portal-text';
 
 const navItems = [
   ['业务概览', '/portal/home', 'solar:home-2-bold-duotone'],
@@ -60,6 +61,7 @@ export default function PortalLayout() {
 }
 
 function PortalFrame() {
+  usePortalLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const { customers, customer, selectCustomer } = usePortalCustomer();
@@ -136,7 +138,7 @@ function PortalFrame() {
                   onClick={() => navigate(path)}
                   sx={{ fontWeight: isActive(path) ? 700 : 500, px: 1.5 }}
                 >
-                  {label}
+                  {portalText(label)}
                 </Button>
               ))}
             </Stack>
@@ -156,7 +158,7 @@ function PortalFrame() {
                   .filter((row) => row.id.startsWith('cus_demo_'))
                   .map((row) => (
                     <MenuItem key={row.id} value={row.id}>
-                      {row.type === 'BUSINESS' ? '企业 · ' : '个人 · '}
+                      {row.type === 'BUSINESS' ? portalText('企业 ·') : portalText('个人 ·')}
                       {row.displayName}
                     </MenuItem>
                   ))}
@@ -164,7 +166,7 @@ function PortalFrame() {
             )}
             <IconButton
               onClick={(event) => setAnchor(event.currentTarget)}
-              aria-label="打开账户菜单"
+              aria-label={portalText('打开账户菜单')}
             >
               <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', typography: 'body2' }}>
                 {customer?.displayName.slice(0, 1) || 'M'}
@@ -172,7 +174,9 @@ function PortalFrame() {
             </IconButton>
             <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
               <Box sx={{ px: 2, py: 1, minWidth: 220 }}>
-                <Typography variant="subtitle2">{customer?.displayName || '客户账户'}</Typography>
+                <Typography variant="subtitle2">
+                  {customer?.displayName || portalText('客户账户')}
+                </Typography>
                 <Typography variant="caption" color="text.secondary">
                   {customer?.email}
                 </Typography>
@@ -186,7 +190,7 @@ function PortalFrame() {
                   }}
                 >
                   <Iconify icon="solar:settings-bold-duotone" sx={{ mr: 1.5 }} />
-                  安全与设置
+                  {portalText('安全与设置')}
                 </MenuItem>
               )}
               {user?.role === 'customer' ? (
@@ -197,7 +201,7 @@ function PortalFrame() {
                   }}
                 >
                   <Iconify icon="solar:logout-2-linear" sx={{ mr: 1.5 }} />
-                  退出登录
+                  {portalText('退出登录')}
                 </MenuItem>
               ) : (
                 <MenuItem
@@ -207,7 +211,7 @@ function PortalFrame() {
                   }}
                 >
                   <Iconify icon="solar:shield-user-linear" sx={{ mr: 1.5 }} />
-                  进入运营管理后台
+                  {portalText('进入运营管理后台')}
                 </MenuItem>
               )}
             </Menu>
@@ -221,11 +225,16 @@ function PortalFrame() {
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Box>
                 <Typography variant="caption" color="text.secondary">
-                  当前客户
+                  {portalText('当前客户')}
                 </Typography>
                 <Typography variant="subtitle2">{customer.displayName}</Typography>
               </Box>
-              <Chip size="small" label={customer.type === 'BUSINESS' ? '企业账户' : '个人账户'} />
+              <Chip
+                size="small"
+                label={
+                  customer.type === 'BUSINESS' ? portalText('企业账户') : portalText('个人账户')
+                }
+              />
             </Stack>
           </Container>
         )}
@@ -255,7 +264,7 @@ function PortalFrame() {
             sx={{ minWidth: 0, py: 1, flexDirection: 'column', gap: 0.25, typography: 'caption' }}
           >
             <Iconify icon={icon} width={21} />
-            {label}
+            {portalText(label)}
           </Button>
         ))}
       </Box>

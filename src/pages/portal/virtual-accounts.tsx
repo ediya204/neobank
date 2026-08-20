@@ -27,6 +27,7 @@ import {
   FundingChannel,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
+import { portalLocale, portalText } from 'src/locales/portal-text';
 
 export default function VirtualAccountsPage() {
   const { customer } = usePortalCustomer();
@@ -34,7 +35,7 @@ export default function VirtualAccountsPage() {
   const [requests, setRequests] = useState<VirtualAccountRequest[]>([]);
   const [channelId, setChannelId] = useState('');
   const [currency, setCurrency] = useState<Currency>('USD');
-  const [purpose, setPurpose] = useState('接收业务款项');
+  const [purpose, setPurpose] = useState(portalText('接收业务款项'));
   const [applying, setApplying] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -60,7 +61,9 @@ export default function VirtualAccountsPage() {
         if (first?.supportedCurrencies[0]) setCurrency(first.supportedCurrencies[0]);
       }
     } catch (value) {
-      setError(value instanceof Error ? value.message : '暂时无法读取 VA 账户，请稍后重试。');
+      setError(
+        value instanceof Error ? value.message : portalText('暂时无法读取 VA 账户，请稍后重试。')
+      );
     } finally {
       setLoading(false);
     }
@@ -94,7 +97,9 @@ export default function VirtualAccountsPage() {
         method: 'POST',
         body: JSON.stringify({ channelId: selectedChannel.id, currency, purpose }),
       });
-      setSuccess('VA 账户申请已提交。审核完成并取得银行分配的账号后，账户资料会显示在本页。');
+      setSuccess(
+        portalText('VA 账户申请已提交。审核完成并取得银行分配的账号后，账户资料会显示在本页。')
+      );
       setApplying(false);
       await load();
     } catch (value) {
@@ -107,7 +112,7 @@ export default function VirtualAccountsPage() {
   return (
     <>
       <Helmet>
-        <title>VA 账户 | {APP_DISPLAY_NAME}</title>
+        <title>{portalText('VA 账户')} | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>
@@ -122,10 +127,10 @@ export default function VirtualAccountsPage() {
                 Virtual accounts
               </Typography>
               <Typography variant="h3" sx={{ mt: 0.25 }}>
-                虚拟账户（VA）
+                {portalText('虚拟账户（VA）')}
               </Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                按银行与币种申请专属收款账户，并在本页跟踪审核进度。
+                {portalText('按银行与币种申请专属收款账户，并在本页跟踪审核进度。')}
               </Typography>
             </Box>
             <Button
@@ -133,7 +138,7 @@ export default function VirtualAccountsPage() {
               startIcon={<Iconify icon="solar:buildings-2-bold-duotone" />}
               onClick={() => setApplying((value) => !value)}
             >
-              {applying ? '收起申请表' : '申请 VA 账户'}
+              {applying ? portalText('收起申请表') : portalText('申请 VA 账户')}
             </Button>
           </Stack>
 
@@ -145,15 +150,15 @@ export default function VirtualAccountsPage() {
               <Box component="form" onSubmit={submit} sx={{ p: { xs: 2.5, md: 3.5 } }}>
                 <Stack spacing={2.5}>
                   <Box>
-                    <Typography variant="h6">选择服务银行</Typography>
+                    <Typography variant="h6">{portalText('选择服务银行')}</Typography>
                     <Typography variant="body2" color="text.secondary">
-                      本页仅显示当前可受理 VA 账户申请的银行及其支持币种。
+                      {portalText('本页仅显示当前可受理 VA 账户申请的银行及其支持币种。')}
                     </Typography>
                   </Box>
                   <FormControl fullWidth required>
-                    <InputLabel>银行</InputLabel>
+                    <InputLabel>{portalText('银行')}</InputLabel>
                     <Select
-                      label="银行"
+                      label={portalText('银行')}
                       value={channelId}
                       onChange={(event) => selectChannel(event.target.value)}
                     >
@@ -182,7 +187,7 @@ export default function VirtualAccountsPage() {
                           {selectedChannel.settlementBankName || selectedChannel.name}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                          {selectedChannel.bankAddress || '银行地址以最终开户资料为准'}
+                          {selectedChannel.bankAddress || portalText('银行地址以最终开户资料为准')}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           SWIFT / BIC：{selectedChannel.swiftBic || '—'}
@@ -190,7 +195,7 @@ export default function VirtualAccountsPage() {
                       </Box>
                       <Box>
                         <Typography variant="caption" color="text.secondary">
-                          支持币种
+                          {portalText('支持币种')}
                         </Typography>
                         <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mt: 0.75 }}>
                           {selectedChannel.supportedCurrencies.map((item) => (
@@ -207,15 +212,15 @@ export default function VirtualAccountsPage() {
                     </Box>
                   ) : (
                     <Alert severity="info">
-                      当前暂无可受理申请的银行。如需协助，请联系客户服务团队。
+                      {portalText('当前暂无可受理申请的银行。如需协助，请联系客户服务团队。')}
                     </Alert>
                   )}
 
                   {selectedChannel && (
                     <FormControl fullWidth required>
-                      <InputLabel>开户币种</InputLabel>
+                      <InputLabel>{portalText('开户币种')}</InputLabel>
                       <Select
-                        label="开户币种"
+                        label={portalText('开户币种')}
                         value={currency}
                         onChange={(event) => setCurrency(event.target.value as Currency)}
                       >
@@ -231,21 +236,22 @@ export default function VirtualAccountsPage() {
                     required
                     multiline
                     minRows={2}
-                    label="账户用途"
+                    label={portalText('账户用途')}
                     value={purpose}
                     inputProps={{ maxLength: 500 }}
                     onChange={(event) => setPurpose(event.target.value)}
                   />
+
                   <Stack direction="row" justifyContent="flex-end" spacing={1.5}>
                     <Button color="inherit" onClick={() => setApplying(false)}>
-                      取消
+                      {portalText('取消')}
                     </Button>
                     <Button
                       type="submit"
                       variant="contained"
                       disabled={!selectedChannel || submitting}
                     >
-                      {submitting ? '正在提交…' : '提交申请'}
+                      {submitting ? portalText('正在提交…') : portalText('提交申请')}
                     </Button>
                   </Stack>
                 </Stack>
@@ -254,9 +260,9 @@ export default function VirtualAccountsPage() {
           )}
 
           <Box>
-            <Typography variant="h5">VA 账户与申请记录</Typography>
+            <Typography variant="h5">{portalText('VA 账户与申请记录')}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              账户名称、账号及 IBAN 以银行最终分配结果为准。
+              {portalText('账户名称、账号及 IBAN 以银行最终分配结果为准。')}
             </Typography>
           </Box>
 
@@ -290,10 +296,10 @@ export default function VirtualAccountsPage() {
             >
               <Iconify icon="solar:buildings-2-bold-duotone" width={36} color="primary.main" />
               <Typography variant="h6" sx={{ mt: 1.5 }}>
-                暂无 VA 账户申请
+                {portalText('暂无 VA 账户申请')}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                申请后可在本页查看审核状态及已开通账户资料。
+                {portalText('申请后可在本页查看审核状态及已开通账户资料。')}
               </Typography>
             </Box>
           )}
@@ -306,9 +312,9 @@ export default function VirtualAccountsPage() {
 function RequestRow({ request }: { request: VirtualAccountRequest }) {
   const account = request.assignedAccount;
   const status = {
-    SUBMITTED: { label: '审核中', color: 'warning' as const },
-    APPROVED: { label: '已开通', color: 'success' as const },
-    REJECTED: { label: '未通过', color: 'error' as const },
+    SUBMITTED: { label: portalText('审核中'), color: 'warning' as const },
+    APPROVED: { label: portalText('已开通'), color: 'success' as const },
+    REJECTED: { label: portalText('未通过'), color: 'error' as const },
   }[request.status];
   return (
     <Box
@@ -325,7 +331,9 @@ function RequestRow({ request }: { request: VirtualAccountRequest }) {
       <Box>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
           <Typography variant="subtitle1">
-            {request.channel?.settlementBankName || request.channel?.name || '历史 VA 申请'}
+            {request.channel?.settlementBankName ||
+              request.channel?.name ||
+              portalText('历史 VA 申请')}
           </Typography>
           <Chip size="small" label={status.label} color={status.color} variant="outlined" />
         </Stack>
@@ -335,18 +343,21 @@ function RequestRow({ request }: { request: VirtualAccountRequest }) {
       </Box>
       <Box>
         <Typography variant="caption" color="text.secondary">
-          申请币种
+          {portalText('申请币种')}
         </Typography>
         <Typography variant="h6">{request.currency}</Typography>
         <Typography variant="caption" color="text.secondary">
-          {new Date(request.createdAt).toLocaleString('zh-CN')}
+          {new Date(request.createdAt).toLocaleString(portalLocale())}
         </Typography>
       </Box>
       <Box>
         {account && (
           <Stack spacing={0.35}>
             <Typography variant="subtitle2">{account.name}</Typography>
-            <Typography variant="body2">账号：{account.accountNumber || '—'}</Typography>
+            <Typography variant="body2">
+              {portalText('账号：')}
+              {account.accountNumber || '—'}
+            </Typography>
             {account.iban && <Typography variant="body2">IBAN：{account.iban}</Typography>}
             <Typography variant="caption" color="text.secondary">
               {[account.swiftBic, account.bankAddress].filter(Boolean).join(' · ')}
@@ -355,12 +366,13 @@ function RequestRow({ request }: { request: VirtualAccountRequest }) {
         )}
         {!account && request.status === 'REJECTED' && (
           <Alert severity="error" variant="outlined">
-            {request.rejectionReason || '申请未通过。如需了解详情，请联系客户服务团队。'}
+            {request.rejectionReason ||
+              portalText('申请未通过。如需了解详情，请联系客户服务团队。')}
           </Alert>
         )}
         {!account && request.status !== 'REJECTED' && (
           <Typography variant="body2" color="text.secondary">
-            审核完成并取得银行分配的账号后，账户资料会显示在这里。
+            {portalText('审核完成并取得银行分配的账号后，账户资料会显示在这里。')}
           </Typography>
         )}
       </Box>
@@ -371,12 +383,13 @@ function RequestRow({ request }: { request: VirtualAccountRequest }) {
 function vaErrorMessage(value: unknown) {
   const message = value instanceof Error ? value.message : '';
   const messages: Record<string, string> = {
-    active_customer_required: '账户尚未激活，暂时无法申请 VA 账户。',
-    virtual_account_channel_not_found: '所选银行已停用或不存在，请刷新后重新选择。',
-    virtual_account_channel_currency_unsupported: '所选银行不支持这个币种，请重新选择。',
-    virtual_account_request_already_pending: '该银行和币种已有一笔审核中的申请。',
-    virtual_account_purpose_required: '请说明该账户的主要用途。',
-    customer_core_route_forbidden: '当前账户没有申请 VA 账户的权限。',
+    active_customer_required: portalText('账户尚未激活，暂时无法申请 VA 账户。'),
+    virtual_account_channel_not_found: portalText('所选银行已停用或不存在，请刷新后重新选择。'),
+    virtual_account_channel_currency_unsupported:
+      portalText('所选银行不支持这个币种，请重新选择。'),
+    virtual_account_request_already_pending: portalText('该银行和币种已有一笔审核中的申请。'),
+    virtual_account_purpose_required: portalText('请说明该账户的主要用途。'),
+    customer_core_route_forbidden: portalText('当前账户没有申请 VA 账户的权限。'),
   };
-  return messages[message] || message || '暂时无法处理 VA 账户申请，请稍后重试。';
+  return messages[message] || message || portalText('暂时无法处理 VA 账户申请，请稍后重试。');
 }

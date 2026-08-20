@@ -5,6 +5,7 @@ import CustomBreadcrumbs from 'src/components/custom-breadcrumbs';
 import Iconify from 'src/components/iconify';
 import { APP_DISPLAY_NAME } from 'src/config-global';
 import FundsActionList, { FundsActionItem } from 'src/sections/portal/funds/funds-action-list';
+import { portalText } from 'src/locales/portal-text';
 
 const fiatActions: FundsActionItem[] = [
   {
@@ -62,32 +63,44 @@ const cryptoActions: FundsActionItem[] = [
 
 export default function FundsHub() {
   const navigate = useNavigate();
+  const localizeActions = (actions: FundsActionItem[]) =>
+    actions.map((action) => ({
+      ...action,
+      title: portalText(action.title),
+      description: portalText(action.description),
+      ...(action.badge ? { badge: portalText(action.badge) } : {}),
+    }));
 
   return (
     <>
       <Helmet>
-        <title>收付与兑换 | {APP_DISPLAY_NAME}</title>
+        <title>{portalText('收付与兑换')} | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>
           <CustomBreadcrumbs
-            heading="收付与兑换"
-            links={[{ name: '账户概览', href: '/portal/home' }, { name: '收付与兑换' }]}
+            heading={portalText('收付与兑换')}
+            links={[
+              { name: portalText('账户概览'), href: '/portal/home' },
+              { name: portalText('收付与兑换') },
+            ]}
           />
+
           <Typography color="text.secondary" sx={{ mt: -2 }}>
-            集中办理银行转入、转出、法币兑换及 USDT 资金操作。
+            {portalText('集中办理银行转入、转出、法币兑换及 USDT 资金操作。')}
           </Typography>
 
           <FundsActionList
-            title="法币"
-            subtitle="USD 与 HKD"
-            actions={fiatActions}
+            title={portalText('法币')}
+            subtitle={portalText('USD 与 HKD')}
+            actions={localizeActions(fiatActions)}
             onOpen={navigate}
           />
+
           <FundsActionList
-            title="数字资产"
+            title={portalText('数字资产')}
             subtitle="USDT · TRON（TRC20）"
-            actions={cryptoActions}
+            actions={localizeActions(cryptoActions)}
             onOpen={navigate}
           />
 
@@ -96,10 +109,11 @@ export default function FundsHub() {
             icon={<Iconify icon="solar:shield-check-bold-duotone" width={24} />}
           >
             <Box>
-              <Typography variant="subtitle2">资金处理说明</Typography>
+              <Typography variant="subtitle2">{portalText('资金处理说明')}</Typography>
               <Typography variant="body2" sx={{ mt: 0.5 }}>
-                转出申请提交后，相应金额会先从可用余额中冻结。审核通过并取得银行参考号或链上 Tx Hash
-                后才完成扣账；申请未通过时，冻结金额将自动释放。全部状态变化均保留记录。
+                {portalText(
+                  '转出申请提交后，相应金额会先从可用余额中冻结。审核通过并取得银行参考号或链上 Tx Hash 后才完成扣账；申请未通过时，冻结金额将自动释放。全部状态变化均保留记录。'
+                )}
               </Typography>
             </Box>
           </Alert>

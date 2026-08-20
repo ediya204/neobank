@@ -35,6 +35,7 @@ import {
   demoOrganizationId,
   Operation,
 } from 'src/features/finance/core-api';
+import { portalLocale, portalText } from 'src/locales/portal-text';
 import { USDT_ASSET_ICON } from 'src/utils/asset-icons';
 import { money, OperationStatus } from './customer-shared';
 
@@ -122,7 +123,7 @@ export default function CustomerActivity() {
         setCryptoTransfers([]);
       }
       if (operationResult.status === 'rejected' || cryptoResult.status === 'rejected') {
-        setError('部分交易记录暂时不可用，请稍后刷新。');
+        setError(portalText('部分交易记录暂时不可用，请稍后刷新。'));
       }
     });
     return () => {
@@ -155,7 +156,7 @@ export default function CustomerActivity() {
         detail:
           row.type === 'FX' || row.type === 'OTC'
             ? `${row.currency} → ${row.quoteCurrency || '—'}`
-            : row.beneficiary?.name || row.sourceAccount?.name || 'SSC 余额账户',
+            : row.beneficiary?.name || row.sourceAccount?.name || portalText('SSC 余额账户'),
         record: { kind: 'operation', value: row },
       };
     });
@@ -163,7 +164,7 @@ export default function CustomerActivity() {
       (row): ActivityRow => ({
         id: `crypto-${row.id}`,
         reference: row.reference,
-        title: row.direction === 'DEPOSIT' ? 'USDT 转入' : 'USDT 转出',
+        title: row.direction === 'DEPOSIT' ? portalText('USDT 转入') : portalText('USDT 转出'),
         type: row.direction === 'DEPOSIT' ? 'CRYPTO_IN' : 'CRYPTO_OUT',
         status: row.status,
         currency: 'USDT',
@@ -194,16 +195,25 @@ export default function CustomerActivity() {
   return (
     <>
       <Helmet>
-        <title>交易明细 | {APP_DISPLAY_NAME}</title>
+        <title>
+          {portalText('交易明细 |')}
+          {APP_DISPLAY_NAME}
+        </title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>
           <CustomBreadcrumbs
-            heading="交易明细"
-            links={[{ name: '账户概览', href: '/portal/home' }, { name: '交易明细' }]}
+            heading={portalText('交易明细')}
+            links={[
+              { name: portalText('账户概览'), href: '/portal/home' },
+              { name: portalText('交易明细') },
+            ]}
           />
+
           <Typography color="text.secondary" sx={{ mt: -2 }}>
-            集中查询银行转入转出、USDT 链上交易及兑换记录，并查看每笔交易的处理状态。
+            {portalText(
+              '集中查询银行转入转出、USDT 链上交易及兑换记录，并查看每笔交易的处理状态。'
+            )}
           </Typography>
           {error && <Alert severity="warning">{error}</Alert>}
           <Card>
@@ -216,7 +226,7 @@ export default function CustomerActivity() {
                 size="small"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索交易参考号、币种或交易类型"
+                placeholder={portalText('搜索交易参考号、币种或交易类型')}
                 sx={{ flex: 1, minWidth: { md: 280 } }}
                 InputProps={{
                   startAdornment: (
@@ -226,34 +236,35 @@ export default function CustomerActivity() {
                   ),
                 }}
               />
+
               <FormControl size="small" sx={{ minWidth: 170 }}>
-                <InputLabel>交易类型</InputLabel>
+                <InputLabel>{portalText('交易类型')}</InputLabel>
                 <Select
-                  label="交易类型"
+                  label={portalText('交易类型')}
                   value={type}
                   onChange={(event) => setType(event.target.value as ActivityType)}
                 >
-                  <MenuItem value="all">全部类型</MenuItem>
-                  <MenuItem value="FIAT_IN">法币转入</MenuItem>
-                  <MenuItem value="FIAT_OUT">法币转出</MenuItem>
-                  <MenuItem value="CRYPTO_IN">USDT 转入</MenuItem>
-                  <MenuItem value="CRYPTO_OUT">USDT 转出</MenuItem>
-                  <MenuItem value="EXCHANGE">法币兑换 / OTC</MenuItem>
+                  <MenuItem value="all">{portalText('全部类型')}</MenuItem>
+                  <MenuItem value="FIAT_IN">{portalText('法币转入')}</MenuItem>
+                  <MenuItem value="FIAT_OUT">{portalText('法币转出')}</MenuItem>
+                  <MenuItem value="CRYPTO_IN">{portalText('USDT 转入')}</MenuItem>
+                  <MenuItem value="CRYPTO_OUT">{portalText('USDT 转出')}</MenuItem>
+                  <MenuItem value="EXCHANGE">{portalText('法币兑换 / OTC')}</MenuItem>
                 </Select>
               </FormControl>
               <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel>状态</InputLabel>
+                <InputLabel>{portalText('状态')}</InputLabel>
                 <Select
-                  label="状态"
+                  label={portalText('状态')}
                   value={status}
                   onChange={(event) => setStatus(event.target.value)}
                 >
-                  <MenuItem value="all">全部状态</MenuItem>
-                  <MenuItem value="SUBMITTED">审核中</MenuItem>
-                  <MenuItem value="PROCESSING">处理中</MenuItem>
-                  <MenuItem value="COMPLETED">已完成</MenuItem>
-                  <MenuItem value="REJECTED">未通过</MenuItem>
-                  <MenuItem value="FAILED">失败</MenuItem>
+                  <MenuItem value="all">{portalText('全部状态')}</MenuItem>
+                  <MenuItem value="SUBMITTED">{portalText('审核中')}</MenuItem>
+                  <MenuItem value="PROCESSING">{portalText('处理中')}</MenuItem>
+                  <MenuItem value="COMPLETED">{portalText('已完成')}</MenuItem>
+                  <MenuItem value="REJECTED">{portalText('未通过')}</MenuItem>
+                  <MenuItem value="FAILED">{portalText('失败')}</MenuItem>
                 </Select>
               </FormControl>
             </Stack>
@@ -268,7 +279,10 @@ export default function CustomerActivity() {
                       hover
                       role="button"
                       tabIndex={0}
-                      aria-label={`查看 ${row.title} ${row.reference} 详情`}
+                      aria-label={portalText('查看 {{value0}} {{value1}} 详情', {
+                        value0: row.title,
+                        value1: row.reference,
+                      })}
                       onClick={() => setSelectedRow(row)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -290,7 +304,7 @@ export default function CustomerActivity() {
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
-                          {new Date(row.createdAt).toLocaleString('zh-CN')}
+                          {new Date(row.createdAt).toLocaleString(portalLocale())}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -314,7 +328,10 @@ export default function CustomerActivity() {
                   spacing={1.5}
                   role="button"
                   tabIndex={0}
-                  aria-label={`查看 ${row.title} ${row.reference} 详情`}
+                  aria-label={portalText('查看 {{value0}} {{value1}} 详情', {
+                    value0: row.title,
+                    value1: row.reference,
+                  })}
                   onClick={() => setSelectedRow(row)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -340,7 +357,7 @@ export default function CustomerActivity() {
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography variant="subtitle2">{row.title}</Typography>
                     <Typography variant="caption" color="text.secondary" noWrap>
-                      {row.detail} · {new Date(row.createdAt).toLocaleDateString('zh-CN')}
+                      {row.detail} · {new Date(row.createdAt).toLocaleDateString(portalLocale())}
                     </Typography>
                   </Box>
                   <Box sx={{ textAlign: 'right' }}>
@@ -353,7 +370,7 @@ export default function CustomerActivity() {
 
             {!rows.length && (
               <Typography color="text.secondary" align="center" sx={{ py: 8 }}>
-                暂无符合当前条件的交易记录
+                {portalText('暂无符合当前条件的交易记录')}
               </Typography>
             )}
           </Card>
@@ -390,13 +407,13 @@ function ActivityDetailDrawer({ row, onClose }: { row: ActivityRow | null; onClo
           >
             <Box sx={{ minWidth: 0 }}>
               <Typography id="activity-detail-title" variant="h5">
-                交易明细
+                {portalText('交易明细')}
               </Typography>
               <Typography variant="body2" color="text.secondary" noWrap>
                 {row.reference}
               </Typography>
             </Box>
-            <IconButton aria-label="关闭交易明细" onClick={onClose}>
+            <IconButton aria-label={portalText('关闭交易明细')} onClick={onClose}>
               <Iconify icon="solar:close-circle-linear" />
             </IconButton>
           </Stack>
@@ -423,7 +440,7 @@ function ActivityDetailDrawer({ row, onClose }: { row: ActivityRow | null; onClo
 
             {rejectionReason && (
               <Alert severity="error">
-                <Typography variant="subtitle2">未通过说明</Typography>
+                <Typography variant="subtitle2">{portalText('未通过说明')}</Typography>
                 {rejectionReason}
               </Alert>
             )}
@@ -463,63 +480,74 @@ function activityDetailItems(row: ActivityRow): DetailItem[] {
   if (row.record.kind === 'crypto') {
     const transfer = row.record.value;
     return [
-      { label: '交易类型', value: row.title },
-      { label: '参考号', value: transfer.reference, mono: true },
-      { label: '网络', value: 'TRON（TRC20）' },
-      { label: '链上金额', value: money(transfer.amount, 'USDT') },
-      { label: '手续费', value: money(transfer.feeAmount, 'USDT') },
-      { label: '实际到账', value: money(transfer.netAmount, 'USDT') },
-      { label: '发送地址', value: transfer.fromAddress || '暂未获取', mono: true },
-      { label: '接收地址', value: transfer.toAddress || '暂未获取', mono: true },
-      { label: 'TXID', value: transfer.txHash || '执行后生成', mono: true },
-      { label: '网络确认', value: `${transfer.confirmations} 次` },
-      { label: '创建时间', value: formatActivityDate(transfer.createdAt) },
-      { label: '提交时间', value: formatActivityDate(transfer.submittedAt) },
-      { label: '审核通过时间', value: formatActivityDate(transfer.approvedAt) },
-      { label: '完成时间', value: formatActivityDate(transfer.completedAt) },
+      { label: portalText('交易类型'), value: row.title },
+      { label: portalText('参考号'), value: transfer.reference, mono: true },
+      { label: portalText('网络'), value: 'TRON（TRC20）' },
+      { label: portalText('链上金额'), value: money(transfer.amount, 'USDT') },
+      { label: portalText('手续费'), value: money(transfer.feeAmount, 'USDT') },
+      { label: portalText('实际到账'), value: money(transfer.netAmount, 'USDT') },
+      {
+        label: portalText('发送地址'),
+        value: transfer.fromAddress || portalText('暂未获取'),
+        mono: true,
+      },
+      {
+        label: portalText('接收地址'),
+        value: transfer.toAddress || portalText('暂未获取'),
+        mono: true,
+      },
+      { label: 'TXID', value: transfer.txHash || portalText('执行后生成'), mono: true },
+      {
+        label: portalText('网络确认'),
+        value: portalText('{{value0}} 次', { value0: transfer.confirmations }),
+      },
+      { label: portalText('创建时间'), value: formatActivityDate(transfer.createdAt) },
+      { label: portalText('提交时间'), value: formatActivityDate(transfer.submittedAt) },
+      { label: portalText('审核通过时间'), value: formatActivityDate(transfer.approvedAt) },
+      { label: portalText('完成时间'), value: formatActivityDate(transfer.completedAt) },
     ];
   }
 
   const operation = row.record.value;
   const payoutMethods: Record<NonNullable<Operation['payoutMethod']>, string> = {
-    VA: 'VA 账户',
+    VA: portalText('VA 账户'),
     POBO: 'POBO',
-    PLATFORM: '平台代付',
+    PLATFORM: portalText('平台代付'),
   };
   return [
-    { label: '交易类型', value: row.title },
-    { label: '参考号', value: operation.reference, mono: true },
-    { label: '交易金额', value: money(operation.amount, operation.currency) },
-    { label: '手续费', value: money(operation.feeAmount, operation.currency) },
+    { label: portalText('交易类型'), value: row.title },
+    { label: portalText('参考号'), value: operation.reference, mono: true },
+    { label: portalText('交易金额'), value: money(operation.amount, operation.currency) },
+    { label: portalText('手续费'), value: money(operation.feeAmount, operation.currency) },
     {
-      label: '到账金额',
+      label: portalText('到账金额'),
       value:
         operation.quoteAmount && operation.quoteCurrency
           ? money(operation.quoteAmount, operation.quoteCurrency)
           : null,
     },
     {
-      label: '成交汇率',
+      label: portalText('成交汇率'),
       value:
         operation.rate && operation.quoteCurrency
           ? `1 ${operation.currency} = ${operation.rate} ${operation.quoteCurrency}`
           : null,
     },
     {
-      label: '付款方式',
+      label: portalText('付款方式'),
       value: operation.payoutMethod ? payoutMethods[operation.payoutMethod] : null,
     },
-    { label: '付款账户', value: operation.sourceAccount?.name },
-    { label: '收款账户', value: operation.targetAccount?.name },
-    { label: '收款人', value: operation.beneficiary?.name },
-    { label: '资金通道', value: operation.channel?.name },
-    { label: '汇款附言', value: operation.remittanceReference },
-    { label: '外部参考号', value: operation.externalReference, mono: true },
-    { label: '交易说明', value: operation.narrative },
-    { label: '创建时间', value: formatActivityDate(operation.createdAt) },
-    { label: '提交时间', value: formatActivityDate(operation.submittedAt) },
-    { label: '审核通过时间', value: formatActivityDate(operation.approvedAt) },
-    { label: '执行时间', value: formatActivityDate(operation.executedAt) },
+    { label: portalText('付款账户'), value: operation.sourceAccount?.name },
+    { label: portalText('收款账户'), value: operation.targetAccount?.name },
+    { label: portalText('收款人'), value: operation.beneficiary?.name },
+    { label: portalText('资金通道'), value: operation.channel?.name },
+    { label: portalText('汇款附言'), value: operation.remittanceReference },
+    { label: portalText('外部参考号'), value: operation.externalReference, mono: true },
+    { label: portalText('交易说明'), value: operation.narrative },
+    { label: portalText('创建时间'), value: formatActivityDate(operation.createdAt) },
+    { label: portalText('提交时间'), value: formatActivityDate(operation.submittedAt) },
+    { label: portalText('审核通过时间'), value: formatActivityDate(operation.approvedAt) },
+    { label: portalText('执行时间'), value: formatActivityDate(operation.executedAt) },
   ];
 }
 
@@ -530,7 +558,7 @@ function activityRejectionReason(row: ActivityRow) {
 }
 
 function formatActivityDate(value?: string) {
-  return value ? new Date(value).toLocaleString('zh-CN') : null;
+  return value ? new Date(value).toLocaleString(portalLocale()) : null;
 }
 
 function ActivityTitle({ row }: { row: ActivityRow }) {

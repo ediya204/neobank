@@ -11,7 +11,7 @@ export default function SetupPage({ expectedRole }: Props) {
   const { t } = useTranslation('common');
   let title = t('auth.page_titles.portal_setup');
   if (expectedRole === 'admin') title = t('auth.page_titles.admin_setup');
-  if (expectedRole === 'customer') title = '激活网上银行账户';
+  if (expectedRole === 'customer') title = t('auth.page_titles.customer_setup');
 
   return (
     <>

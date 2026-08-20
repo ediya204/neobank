@@ -44,16 +44,17 @@ import {
   SYSTEM_WALLET_PRODUCT_NAME,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
+import { portalLocale, portalText } from 'src/locales/portal-text';
 import { AccountKindChip, accountLabel, money } from './customer-shared';
 
 type AccountTab = 'all' | 'wallet' | 'va' | 'crypto';
 
 function summaryFallbackMessage(fallback: ResolvedAssetSummary | null) {
-  if (!fallback) return '暂时无法读取资产汇总，请稍后重试。';
+  if (!fallback) return portalText('暂时无法读取资产汇总，请稍后重试。');
   if (fallback.lastKnownCurrencies.length) {
-    return '实时汇率暂未更新，当前估值按最近一次有效汇率显示。';
+    return portalText('实时汇率暂未更新，当前估值按最近一次有效汇率显示。');
   }
-  return '部分汇率暂不可用；当前总值仅计入无需折算或已有有效汇率的资产。';
+  return portalText('部分汇率暂不可用；当前总值仅计入无需折算或已有有效汇率的资产。');
 }
 
 export default function CustomerAccounts() {
@@ -89,7 +90,7 @@ export default function CustomerAccounts() {
           setLastKnownRateCurrencies(resolved.lastKnownCurrencies);
           setSummaryError(
             resolved.lastKnownCurrencies.length
-              ? '实时汇率暂未更新，当前估值按最近一次有效汇率显示。'
+              ? portalText('实时汇率暂未更新，当前估值按最近一次有效汇率显示。')
               : ''
           );
         }
@@ -133,25 +134,29 @@ export default function CustomerAccounts() {
   return (
     <>
       <Helmet>
-        <title>账户与资产 | {APP_DISPLAY_NAME}</title>
+        <title>{portalText('账户与资产')} | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
           <CustomBreadcrumbs
-            heading="资产与账户"
-            links={[{ name: '账户概览', href: '/portal/home' }, { name: '账户与资产' }]}
+            heading={portalText('资产与账户')}
+            links={[
+              { name: portalText('账户概览'), href: '/portal/home' },
+              { name: portalText('账户与资产') },
+            ]}
             action={
               <Button
                 variant="contained"
                 startIcon={<Iconify icon="solar:add-circle-linear" />}
                 onClick={() => setVaOpen(true)}
               >
-                申请 VA 账户
+                {portalText('申请 VA 账户')}
               </Button>
             }
           />
+
           <Typography color="text.secondary" sx={{ mt: -2 }}>
-            查看 USD、HKD 与 USDT 的账面余额、冻结金额及可用余额。
+            {portalText('查看 USD、HKD 与 USDT 的账面余额、冻结金额及可用余额。')}
           </Typography>
           {error && (
             <Alert
@@ -162,7 +167,7 @@ export default function CustomerAccounts() {
                   size="small"
                   onClick={() => refresh().catch(() => undefined)}
                 >
-                  刷新数据
+                  {portalText('刷新数据')}
                 </Button>
               }
             >
@@ -175,6 +180,7 @@ export default function CustomerAccounts() {
             loading={summaryLoading}
             usingLastKnownRates={lastKnownRateCurrencies.length > 0}
           />
+
           <Card>
             <Tabs
               value={tab}
@@ -183,10 +189,10 @@ export default function CustomerAccounts() {
               scrollButtons="auto"
               sx={{ px: 2 }}
             >
-              <Tab value="all" label="全部" />
+              <Tab value="all" label={portalText('全部')} />
               <Tab value="wallet" label={SYSTEM_WALLET_PRODUCT_NAME} />
-              <Tab value="va" label="VA 账户" />
-              <Tab value="crypto" label="数字资产账户" />
+              <Tab value="va" label={portalText('VA 账户')} />
+              <Tab value="crypto" label={portalText('数字资产账户')} />
             </Tabs>
           </Card>
           <Card sx={{ overflow: 'hidden' }}>
@@ -204,27 +210,27 @@ export default function CustomerAccounts() {
               }}
             >
               <Typography variant="caption" color="text.secondary">
-                账户
+                {portalText('账户')}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                类型
+                {portalText('类型')}
               </Typography>
               <Typography variant="caption" color="text.secondary" textAlign="right">
-                可用余额
+                {portalText('可用余额')}
               </Typography>
               <Typography variant="caption" color="text.secondary" textAlign="right">
-                冻结余额
+                {portalText('冻结余额')}
               </Typography>
               <Box sx={{ textAlign: 'right' }}>
                 <Typography variant="caption" color="text.secondary" display="block">
-                  美元折算价值
+                  {portalText('美元折算价值')}
                 </Typography>
                 <Typography variant="caption" color="text.disabled">
-                  含冻结
+                  {portalText('含冻结')}
                 </Typography>
               </Box>
               <Typography variant="caption" color="text.secondary" textAlign="right">
-                操作
+                {portalText('操作')}
               </Typography>
             </Box>
             {accounts.map((account, index) => (
@@ -240,7 +246,7 @@ export default function CustomerAccounts() {
           </Card>
           {!accounts.length && (
             <Card sx={{ py: 8, textAlign: 'center' }}>
-              <Typography color="text.secondary">当前分类下暂无账户</Typography>
+              <Typography color="text.secondary">{portalText('当前分类下暂无账户')}</Typography>
             </Card>
           )}
         </Stack>
@@ -309,7 +315,7 @@ function AssetOverview({
     return `conic-gradient(${segments.join(', ')})`;
   }, [summary]);
   const asOf = summary
-    ? new Intl.DateTimeFormat('zh-CN', {
+    ? new Intl.DateTimeFormat(portalLocale(), {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -317,7 +323,7 @@ function AssetOverview({
       }).format(new Date(summary.asOf))
     : '';
   const ratesAsOf = summary?.ratesAsOf
-    ? new Intl.DateTimeFormat('zh-CN', {
+    ? new Intl.DateTimeFormat(portalLocale(), {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -325,7 +331,8 @@ function AssetOverview({
       }).format(new Date(summary.ratesAsOf))
     : '';
   let valuationTime = '';
-  if (usingLastKnownRates && ratesAsOf) valuationTime = ` · 汇率截至 ${ratesAsOf}`;
+  if (usingLastKnownRates && ratesAsOf)
+    valuationTime = portalText('· 汇率截至 {{value0}}', { value0: ratesAsOf });
   else if (asOf) valuationTime = ` · ${asOf}`;
 
   return (
@@ -349,7 +356,7 @@ function AssetOverview({
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
             <Box>
               <Typography variant="overline" sx={{ color: '#B9D7CE', letterSpacing: 1.3 }}>
-                资产总览
+                {portalText('资产总览')}
               </Typography>
               {loading ? (
                 <Skeleton
@@ -371,7 +378,8 @@ function AssetOverview({
                 </Typography>
               )}
               <Typography variant="body2" sx={{ color: '#B9D7CE', mt: 1 }}>
-                多币种资产美元折算价值{valuationTime}
+                {portalText('多币种资产美元折算价值')}
+                {valuationTime}
               </Typography>
             </Box>
             <Box
@@ -386,7 +394,7 @@ function AssetOverview({
                 whiteSpace: 'nowrap',
               }}
             >
-              参考估值
+              {portalText('参考估值')}
             </Box>
           </Stack>
           <Box
@@ -400,18 +408,20 @@ function AssetOverview({
             }}
           >
             <AssetMetric
-              label="可用余额"
+              label={portalText('可用余额')}
               value={summary ? money(summary.totalAvailable, 'USD') : '$0.00'}
               loading={loading}
             />
+
             <AssetMetric
-              label="冻结余额"
+              label={portalText('冻结余额')}
               value={summary ? money(summary.totalFrozen, 'USD') : '$0.00'}
               loading={loading}
             />
+
             <AssetMetric
-              label="资产账户"
-              value={`${summary?.accountCount || 0} 个`}
+              label={portalText('资产账户')}
+              value={portalText('{{value0}} 个', { value0: summary?.accountCount || 0 })}
               loading={loading}
             />
           </Box>
@@ -422,13 +432,14 @@ function AssetOverview({
         <CardContent sx={{ p: { xs: 3, sm: 3.5 } }}>
           <Stack direction="row" justifyContent="space-between" alignItems="baseline">
             <Box>
-              <Typography variant="h6">资产分布</Typography>
+              <Typography variant="h6">{portalText('资产分布')}</Typography>
               <Typography variant="caption" color="text.secondary">
-                按美元参考估值计算
+                {portalText('按美元参考估值计算')}
               </Typography>
             </Box>
             <Typography variant="caption" color="text.secondary">
-              {summary?.distribution.length || 0} 个币种
+              {summary?.distribution.length || 0}
+              {portalText('个币种')}
             </Typography>
           </Stack>
           <Box
@@ -442,7 +453,7 @@ function AssetOverview({
           >
             <Box
               role="img"
-              aria-label="资产币种分布图"
+              aria-label={portalText('资产币种分布图')}
               sx={{
                 width: { xs: 110, sm: 132 },
                 aspectRatio: '1',
@@ -463,7 +474,7 @@ function AssetOverview({
               <Box sx={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
                 <Typography variant="h5">{summary?.distribution.length || 0}</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  币种
+                  {portalText('币种')}
                 </Typography>
               </Box>
             </Box>
@@ -475,14 +486,15 @@ function AssetOverview({
                   .map((item) => <DistributionRow key={item.currency} item={item} />)}
               {!loading && !summary?.distribution.length && (
                 <Typography variant="body2" color="text.secondary">
-                  账户产生余额后，将在这里显示资产分布。
+                  {portalText('账户产生余额后，将在这里显示资产分布。')}
                 </Typography>
               )}
             </Stack>
           </Box>
           {summary?.valuationStatus === 'partial' && (
             <Alert severity="warning" sx={{ mt: 2.5 }}>
-              {summary.missingRates.join('、')} 暂无有效估值汇率，未计入总资产。
+              {summary.missingRates.join('、')}
+              {portalText('暂无有效估值汇率，未计入总资产。')}
             </Alert>
           )}
         </CardContent>
@@ -528,12 +540,13 @@ function DistributionRow({ item }: { item: AssetDistributionItem }) {
           flexShrink: 0,
         }}
       />
+
       <Typography variant="subtitle2" sx={{ width: 42 }}>
         {item.currency}
       </Typography>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-          {item.reportingValue ? money(item.reportingValue, 'USD') : '暂不可估值'}
+          {item.reportingValue ? money(item.reportingValue, 'USD') : portalText('暂不可估值')}
         </Typography>
       </Box>
       <Typography
@@ -561,7 +574,7 @@ function VaRequestDialog({
   const [currency, setCurrency] = useState<Currency>('USD');
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [channelId, setChannelId] = useState('');
-  const [purpose, setPurpose] = useState('接收客户货款');
+  const [purpose, setPurpose] = useState(portalText('接收客户货款'));
   const [error, setError] = useState('');
   const selectedChannel = channels.find((channel) => channel.id === channelId);
 
@@ -577,7 +590,9 @@ function VaRequestDialog({
         if (first?.supportedCurrencies[0]) setCurrency(first.supportedCurrencies[0]);
       })
       .catch((value) =>
-        setError(value instanceof Error ? value.message : '暂时无法读取可选银行，请稍后重试。')
+        setError(
+          value instanceof Error ? value.message : portalText('暂时无法读取可选银行，请稍后重试。')
+        )
       );
   }, [open]);
 
@@ -591,20 +606,22 @@ function VaRequestDialog({
       });
       onCreated();
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'VA 账户申请暂时无法提交，请稍后重试。');
+      setError(
+        value instanceof Error ? value.message : portalText('VA 账户申请暂时无法提交，请稍后重试。')
+      );
     }
   };
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <Box component="form" onSubmit={submit}>
-        <DialogTitle>申请 VA 账户</DialogTitle>
+        <DialogTitle>{portalText('申请 VA 账户')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
             <FormControl fullWidth required>
-              <InputLabel>银行</InputLabel>
+              <InputLabel>{portalText('银行')}</InputLabel>
               <Select
-                label="银行"
+                label={portalText('银行')}
                 value={channelId}
                 onChange={(event) => {
                   const nextId = event.target.value;
@@ -624,15 +641,16 @@ function VaRequestDialog({
               <Alert severity="info">
                 {selectedChannel.bankCountry || '--'} · SWIFT {selectedChannel.swiftBic || '—'}
                 <br />
-                支持币种：{selectedChannel.supportedCurrencies.join(' / ')}
+                {portalText('支持币种：')}
+                {selectedChannel.supportedCurrencies.join(' / ')}
               </Alert>
             ) : (
-              <Alert severity="warning">当前暂无可受理 VA 账户申请的银行。</Alert>
+              <Alert severity="warning">{portalText('当前暂无可受理 VA 账户申请的银行。')}</Alert>
             )}
             <FormControl fullWidth required disabled={!selectedChannel}>
-              <InputLabel>币种</InputLabel>
+              <InputLabel>{portalText('币种')}</InputLabel>
               <Select
-                label="币种"
+                label={portalText('币种')}
                 value={currency}
                 onChange={(event) => setCurrency(event.target.value as Currency)}
               >
@@ -645,21 +663,24 @@ function VaRequestDialog({
             </FormControl>
             <TextField
               required
-              label="账户用途"
+              label={portalText('账户用途')}
               value={purpose}
               onChange={(event) => setPurpose(event.target.value)}
               multiline
               minRows={2}
             />
+
             <Alert severity="info">
-              申请提交后将进入审核。账户开通后，本页会显示银行、账号及 SWIFT/BIC 信息。
+              {portalText(
+                '申请提交后将进入审核。账户开通后，本页会显示银行、账号及 SWIFT/BIC 信息。'
+              )}
             </Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose}>取消</Button>
+          <Button onClick={onClose}>{portalText('取消')}</Button>
           <Button type="submit" variant="contained" disabled={!selectedChannel}>
-            提交申请
+            {portalText('提交申请')}
           </Button>
         </DialogActions>
       </Box>
@@ -681,14 +702,16 @@ function AccountListRow({
   divider: boolean;
 }) {
   const crypto = account.kind === 'CRYPTO_WALLET';
-  let mobileValuationLabel = '美元价值暂不可估值';
-  if (valuationLoading) mobileValuationLabel = '正在计算美元价值…';
+  let mobileValuationLabel = portalText('美元价值暂不可估值');
+  if (valuationLoading) mobileValuationLabel = portalText('正在计算美元价值…');
   else if (usdValuation) {
-    mobileValuationLabel = `${money(usdValuation.value, 'USD')} 美元价值`;
+    mobileValuationLabel = portalText('{{value0}} 美元价值', {
+      value0: money(usdValuation.value, 'USD'),
+    });
   }
-  let valuationSourceLabel = '账面参考值';
-  if (usdValuation?.source === 'last_known') valuationSourceLabel = '按最近有效汇率';
-  else if (usdValuation?.source === 'market') valuationSourceLabel = '按当前市场汇率';
+  let valuationSourceLabel = portalText('账面参考值');
+  if (usdValuation?.source === 'last_known') valuationSourceLabel = portalText('按最近有效汇率');
+  else if (usdValuation?.source === 'market') valuationSourceLabel = portalText('按当前市场汇率');
   return (
     <Box
       sx={{
@@ -738,7 +761,7 @@ function AccountListRow({
           color="text.secondary"
           sx={{ display: { xs: 'block', md: 'none' } }}
         >
-          可用
+          {portalText('可用')}
         </Typography>
         <Typography
           variant="caption"
@@ -753,7 +776,7 @@ function AccountListRow({
           onClick={crypto ? undefined : onOpen}
           sx={{ display: { xs: 'inline-flex', md: 'none' }, mt: 0.5, px: 0 }}
         >
-          {crypto ? '管理账户' : '查看账户资料'}
+          {crypto ? portalText('管理账户') : portalText('查看账户资料')}
         </Button>
       </Box>
       <Typography
@@ -770,7 +793,7 @@ function AccountListRow({
         ) : (
           <>
             <Typography variant="subtitle2">
-              {usdValuation ? money(usdValuation.value, 'USD') : '暂不可估值'}
+              {usdValuation ? money(usdValuation.value, 'USD') : portalText('暂不可估值')}
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {valuationSourceLabel}
@@ -781,11 +804,11 @@ function AccountListRow({
       <Box sx={{ display: { xs: 'none', md: 'flex' }, justifyContent: 'flex-end' }}>
         {crypto ? (
           <Button size="small" href="/portal/crypto-wallet">
-            管理账户
+            {portalText('管理账户')}
           </Button>
         ) : (
           <Button size="small" onClick={onOpen}>
-            查看账户资料
+            {portalText('查看账户资料')}
           </Button>
         )}
       </Box>
@@ -804,26 +827,37 @@ function AccountDialog({
   const isVa = account.kind === 'VIRTUAL_ACCOUNT';
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{isVa ? '使用专属 VA 收款' : `${account.currency} 入账信息`}</DialogTitle>
+      <DialogTitle>
+        {isVa
+          ? portalText('使用专属 VA 收款')
+          : portalText('{{value0}} 入账信息', { value0: account.currency })}
+      </DialogTitle>
       <DialogContent>
         <Alert severity="info" sx={{ mb: 2 }}>
-          请确保汇款人名称与客户资料一致。银行来账核验及清算完成后，可用余额将自动更新。
+          {portalText(
+            '请确保汇款人名称与客户资料一致。银行来账核验及清算完成后，可用余额将自动更新。'
+          )}
         </Alert>
         <Stack divider={<Divider flexItem />}>
-          <Detail label="账户名称" value={account.name} />
-          <Detail label="开户银行" value={account.bankName || 'SSC数字银行服务银行'} />
-          <Detail label="账户号码" value={account.accountNumber || '-'} mono />
+          <Detail label={portalText('账户名称')} value={account.name} />
+          <Detail
+            label={portalText('开户银行')}
+            value={account.bankName || portalText('SSC数字银行服务银行')}
+          />
+
+          <Detail label={portalText('账户号码')} value={account.accountNumber || '-'} mono />
+
           <Detail label="SWIFT / BIC" value={account.swiftBic || '-'} mono />
-          <Detail label="币种" value={account.currency} />
+          <Detail label={portalText('币种')} value={account.currency} />
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>关闭</Button>
+        <Button onClick={onClose}>{portalText('关闭')}</Button>
         <Button
           variant="contained"
           onClick={() => navigator.clipboard?.writeText(account.accountNumber || '')}
         >
-          复制账户号码
+          {portalText('复制账户号码')}
         </Button>
       </DialogActions>
     </Dialog>

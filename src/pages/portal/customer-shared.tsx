@@ -7,6 +7,7 @@ import {
   Operation,
   SYSTEM_WALLET_PRODUCT_NAME,
 } from 'src/features/finance/core-api';
+import { portalLocale, portalText } from 'src/locales/portal-text';
 
 export const currencySymbols: Record<Currency, string> = {
   USD: '$',
@@ -18,7 +19,7 @@ export const currencySymbols: Record<Currency, string> = {
 };
 
 export function money(value: string | number, currency: Currency) {
-  return `${currencySymbols[currency]}${Number(value).toLocaleString('zh-CN', {
+  return `${currencySymbols[currency]}${Number(value).toLocaleString(portalLocale(), {
     minimumFractionDigits: 2,
     maximumFractionDigits: currency === 'USDT' ? 4 : 2,
   })}`;
@@ -51,7 +52,7 @@ const statusNames: Record<Operation['status'], string> = {
 export function OperationTitle({ operation }: { operation: Operation }) {
   return (
     <Stack spacing={0.35}>
-      <Typography variant="subtitle2">{typeNames[operation.type]}</Typography>
+      <Typography variant="subtitle2">{portalText(typeNames[operation.type])}</Typography>
       <Typography variant="caption" color="text.secondary">
         {operation.reference}
       </Typography>
@@ -64,13 +65,13 @@ export function OperationStatus({ status }: { status: Operation['status'] }) {
   if (status === 'COMPLETED') color = 'success';
   if (status === 'REJECTED' || status === 'FAILED') color = 'error';
   if (status === 'SUBMITTED' || status === 'PROCESSING') color = 'warning';
-  return <Label color={color}>{statusNames[status]}</Label>;
+  return <Label color={color}>{portalText(statusNames[status])}</Label>;
 }
 
 export function AccountKindChip({ account }: { account: MoneyAccount }) {
   let label = SYSTEM_WALLET_PRODUCT_NAME;
-  if (account.kind === 'VIRTUAL_ACCOUNT') label = 'VA 账户';
-  if (account.kind === 'CRYPTO_WALLET') label = '数字资产账户';
+  if (account.kind === 'VIRTUAL_ACCOUNT') label = portalText('VA 账户');
+  if (account.kind === 'CRYPTO_WALLET') label = portalText('数字资产账户');
   return (
     <Chip
       size="small"

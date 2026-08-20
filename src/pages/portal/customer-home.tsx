@@ -21,6 +21,7 @@ import AssetIcon from 'src/components/asset-icon';
 import { APP_DISPLAY_NAME } from 'src/config-global';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 import { MoneyAccount, Operation } from 'src/features/finance/core-api';
+import { portalLocale, portalText } from 'src/locales/portal-text';
 import { ACTION_ICONS } from 'src/theme/iconography';
 import { money, OperationStatus } from './customer-shared';
 
@@ -50,7 +51,7 @@ export default function CustomerHome() {
   } = usePortalCustomer();
   const [period, setPeriod] = useState<Period>(30);
   const cachedRatesAsOf = assetSummary?.ratesAsOf
-    ? new Intl.DateTimeFormat('zh-CN', {
+    ? new Intl.DateTimeFormat(portalLocale(), {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -76,52 +77,59 @@ export default function CustomerHome() {
   const attentionRows = useMemo(
     () => [
       {
-        label: `${operations.filter((row) => row.status === 'PROCESSING').length} 笔处理中`,
-        hint: '资金指令正在执行',
+        label: portalText('{{value0}} 笔处理中', {
+          value0: operations.filter((row) => row.status === 'PROCESSING').length,
+        }),
+        hint: portalText('资金指令正在执行'),
         icon: 'solar:clock-circle-bold-duotone',
         color: '#A5701B',
         background: '#FBF2DE',
       },
       {
-        label: `${operations.filter((row) => row.status === 'SUBMITTED').length} 笔审核中`,
-        hint: '付款申请已提交',
+        label: portalText('{{value0}} 笔审核中', {
+          value0: operations.filter((row) => row.status === 'SUBMITTED').length,
+        }),
+        hint: portalText('付款申请已提交'),
         icon: 'solar:document-text-bold-duotone',
         color: '#356DBD',
         background: '#EAF0FB',
       },
       {
-        label: `${
-          operations.filter((row) => row.status === 'REJECTED' || row.status === 'FAILED').length
-        } 笔未通过`,
-        hint: '查看原因并更新资料',
+        label: portalText('{{value0}} 笔未通过', {
+          value0: operations.filter((row) => row.status === 'REJECTED' || row.status === 'FAILED')
+            .length,
+        }),
+
+        hint: portalText('查看原因并更新资料'),
         icon: 'solar:danger-circle-bold-duotone',
         color: '#B44A58',
         background: '#F9E9EC',
       },
     ],
+
     [operations]
   );
 
   const quickActions = [
     {
-      label: '转入',
-      hint: '查看收款信息',
+      label: portalText('转入'),
+      hint: portalText('查看收款信息'),
       path: '/portal/money/deposit',
       icon: ACTION_ICONS.fundsIn,
       color: '#16876A',
       background: '#E7F5F0',
     },
     {
-      label: '付款',
-      hint: '银行或链上转出',
+      label: portalText('付款'),
+      hint: portalText('银行或链上转出'),
       path: '/portal/money/payouts',
       icon: ACTION_ICONS.fundsOut,
       color: '#3267C8',
       background: '#EAF0FC',
     },
     {
-      label: '兑换',
-      hint: '法币与 USDT',
+      label: portalText('兑换'),
+      hint: portalText('法币与 USDT'),
       path: '/portal/money/otc',
       icon: ACTION_ICONS.otc,
       color: '#7654C5',
@@ -162,12 +170,17 @@ export default function CustomerHome() {
   return (
     <>
       <Helmet>
-        <title>账户概览 | {APP_DISPLAY_NAME}</title>
+        <title>
+          {portalText('账户概览 |')}
+          {APP_DISPLAY_NAME}
+        </title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={2.5}>
           {backendStarting && (
-            <Alert severity="info">后台服务正在启动，账户数据将在连接就绪后自动显示。</Alert>
+            <Alert severity="info">
+              {portalText('后台服务正在启动，账户数据将在连接就绪后自动显示。')}
+            </Alert>
           )}
           {error && (
             <Alert
@@ -178,7 +191,7 @@ export default function CustomerHome() {
                   size="small"
                   onClick={() => refresh().catch(() => undefined)}
                 >
-                  刷新数据
+                  {portalText('刷新数据')}
                 </Button>
               }
             >
@@ -195,33 +208,37 @@ export default function CustomerHome() {
                   size="small"
                   onClick={() => refresh().catch(() => undefined)}
                 >
-                  刷新汇率
+                  {portalText('刷新汇率')}
                 </Button>
               }
             >
               {assetSummaryRateCurrencies.length
-                ? `实时汇率暂未更新，${assetSummaryRateCurrencies.join(
-                    '、'
-                  )} 正按最近一次有效汇率显示${
-                    cachedRatesAsOf ? `（截至 ${cachedRatesAsOf}）` : ''
-                  }。`
-                : '部分汇率暂不可用；当前仅显示无需折算或已有有效汇率的资产。'}
+                ? portalText('实时汇率暂未更新，{{value0}} 正按最近一次有效汇率显示{{value1}}。', {
+                    value0: assetSummaryRateCurrencies.join('、'),
+                    value1: cachedRatesAsOf ? `（截至 ${cachedRatesAsOf}）` : '',
+                  })
+                : portalText('部分汇率暂不可用；当前仅显示无需折算或已有有效汇率的资产。')}
             </Alert>
           )}
 
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
             <Box>
               <Stack direction="row" alignItems="center" spacing={1}>
-                <Typography variant="h4">您好，{firstName || '欢迎回来'}</Typography>
+                <Typography variant="h4">
+                  {portalText('您好，')}
+                  {firstName || portalText('欢迎回来')}
+                </Typography>
                 {customer && (
                   <Chip
                     size="small"
-                    label={customer.type === 'BUSINESS' ? '企业账户' : '个人账户'}
+                    label={
+                      customer.type === 'BUSINESS' ? portalText('企业账户') : portalText('个人账户')
+                    }
                   />
                 )}
               </Stack>
               <Typography color="text.secondary" sx={{ mt: 0.6 }}>
-                查看您的可用资金、近期资金变动和交易进度。
+                {portalText('查看您的可用资金、近期资金变动和交易进度。')}
               </Typography>
             </Box>
             <Stack
@@ -233,7 +250,7 @@ export default function CustomerHome() {
             >
               <Iconify icon="solar:calendar-linear" width={18} />
               <Typography variant="body2">
-                {new Intl.DateTimeFormat('zh-CN', {
+                {new Intl.DateTimeFormat(portalLocale(), {
                   year: 'numeric',
                   month: 'long',
                   day: 'numeric',
@@ -264,8 +281,9 @@ export default function CustomerHome() {
             <Stack direction="row" spacing={0.75} alignItems="center" color="warning.dark">
               <Iconify icon="solar:info-circle-linear" width={18} />
               <Typography variant="caption">
-                跨币种总额暂不显示；以下币种缺少有效估值汇率：
-                {assetSummary.missingRates.join('、') || '部分币种'}
+                {portalText('跨币种总额暂不显示；以下币种缺少有效估值汇率：')}
+
+                {assetSummary.missingRates.join('、') || portalText('部分币种')}
               </Typography>
             </Stack>
           )}
@@ -291,21 +309,21 @@ export default function CustomerHome() {
                 >
                   <Box>
                     <Typography variant="overline" color="text.secondary">
-                      资金动态
+                      {portalText('资金动态')}
                     </Typography>
                     <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography variant="h5">多币种资金走势</Typography>
+                      <Typography variant="h5">{portalText('多币种资金走势')}</Typography>
                       <Typography variant="caption" color="success.main">
-                        已更新
+                        {portalText('已更新')}
                       </Typography>
                     </Stack>
                     <Typography variant="caption" color="text.secondary">
-                      基于可见的已完成交易估算，按变化幅度对比；悬停查看原币余额
+                      {portalText('基于可见的已完成交易估算，按变化幅度对比；悬停查看原币余额')}
                     </Typography>
                   </Box>
                   <Box
                     role="group"
-                    aria-label="选择资金走势时间范围"
+                    aria-label={portalText('选择资金走势时间范围')}
                     sx={{
                       display: 'flex',
                       p: 0.4,
@@ -329,7 +347,8 @@ export default function CustomerHome() {
                           boxShadow: period === value ? '0 1px 4px rgba(16,24,40,.10)' : 'none',
                         }}
                       >
-                        {value}天
+                        {value}
+                        {portalText('天')}
                       </ButtonBase>
                     ))}
                   </Box>
@@ -347,6 +366,7 @@ export default function CustomerHome() {
                         network={currency === 'USDT' ? 'TRON' : undefined}
                         size={18}
                       />
+
                       <Typography
                         variant="caption"
                         sx={{ color: TREND_COLORS[currency], fontWeight: 700 }}
@@ -376,12 +396,12 @@ export default function CustomerHome() {
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Box>
                       <Typography variant="overline" color="text.secondary">
-                        常用服务
+                        {portalText('常用服务')}
                       </Typography>
-                      <Typography variant="h5">收付与兑换</Typography>
+                      <Typography variant="h5">{portalText('收付与兑换')}</Typography>
                     </Box>
                     <Button size="small" onClick={() => navigate('/portal/money')}>
-                      全部
+                      {portalText('全部')}
                     </Button>
                   </Stack>
                   <Box
@@ -411,12 +431,12 @@ export default function CustomerHome() {
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Box>
                       <Typography variant="overline" color="text.secondary">
-                        我的交易进度
+                        {portalText('我的交易进度')}
                       </Typography>
-                      <Typography variant="h5">需要关注</Typography>
+                      <Typography variant="h5">{portalText('需要关注')}</Typography>
                     </Box>
                     <Button size="small" onClick={() => navigate('/portal/transactions')}>
-                      查看
+                      {portalText('查看')}
                     </Button>
                   </Stack>
                   <Stack divider={<Divider flexItem />} sx={{ mt: 1.5 }}>
@@ -474,11 +494,13 @@ export default function CustomerHome() {
               >
                 <Box>
                   <Typography variant="overline" color="text.secondary">
-                    最近交易
+                    {portalText('最近交易')}
                   </Typography>
-                  <Typography variant="h5">最近资金变动</Typography>
+                  <Typography variant="h5">{portalText('最近资金变动')}</Typography>
                 </Box>
-                <Button onClick={() => navigate('/portal/transactions')}>查看全部</Button>
+                <Button onClick={() => navigate('/portal/transactions')}>
+                  {portalText('查看全部')}
+                </Button>
               </Stack>
               <Divider />
               {recentOperations.map((operation, index) => (
@@ -491,7 +513,7 @@ export default function CustomerHome() {
               ))}
               {!recentOperations.length && !loading && (
                 <Typography color="text.secondary" align="center" sx={{ py: 6 }}>
-                  暂无交易记录
+                  {portalText('暂无交易记录')}
                 </Typography>
               )}
               {loading && (
@@ -555,7 +577,8 @@ function BalanceCard({
       </Box>
       <Box sx={{ ml: 1.6, minWidth: 0 }}>
         <Typography variant="caption" color="text.secondary">
-          {currency} 可用余额
+          {currency}
+          {portalText('可用余额')}
         </Typography>
         {loading ? (
           <Skeleton width={150} height={31} />
@@ -568,7 +591,9 @@ function BalanceCard({
           variant="caption"
           color={balance.frozen > 0 ? 'warning.main' : 'text.secondary'}
         >
-          {balance.frozen > 0 ? `冻结 ${money(balance.frozen, currency)}` : '无冻结资金'}
+          {balance.frozen > 0
+            ? portalText('冻结 {{value0}}', { value0: money(balance.frozen, currency) })
+            : portalText('无冻结资金')}
         </Typography>
       </Box>
     </ButtonBase>
@@ -755,7 +780,10 @@ function buildBalanceTrend(accounts: MoneyAccount[], operations: Operation[], da
       );
     });
     return {
-      label: new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(date),
+      label: new Intl.DateTimeFormat(portalLocale(), {
+        month: 'numeric',
+        day: 'numeric',
+      }).format(date),
       actual: actualRows[index],
       normalized,
     };
@@ -789,7 +817,7 @@ function operationTime(operation: Operation) {
 }
 
 function formatOperationTime(operation: Operation) {
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(portalLocale(), {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
@@ -799,12 +827,12 @@ function formatOperationTime(operation: Operation) {
 
 function operationTypeLabel(type: Operation['type']) {
   const labels: Record<Operation['type'], string> = {
-    DEPOSIT: '法币转入',
-    PAYOUT: '付款',
-    ADJUSTMENT: '余额调整',
-    INTERNAL_TRANSFER: '账户划转',
-    FX: '换汇',
-    OTC: 'OTC 兑换',
+    DEPOSIT: portalText('法币转入'),
+    PAYOUT: portalText('付款'),
+    ADJUSTMENT: portalText('余额调整'),
+    INTERNAL_TRANSFER: portalText('账户划转'),
+    FX: portalText('换汇'),
+    OTC: portalText('OTC 兑换'),
   };
   return labels[type];
 }

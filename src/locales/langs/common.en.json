@@ -50,12 +50,20 @@
       "portal_login": "Secure Partner Workspace sign-in",
       "portal_setup": "Activate partner account",
       "customer_login": "Customer online banking sign-in",
+      "customer_setup": "Activate Online Banking account",
       "registration": "Individual and business account application"
     },
     "role_entries": {
       "admin": "Operations Admin",
       "portal": "Partner Workspace",
       "customer": "Online Banking"
+    },
+    "role_selection": {
+      "page_title": "Choose account type",
+      "title": "Choose your account type",
+      "description": "Online Banking and the Partner Workspace use separate secure sessions. Choose the sign-in page that matches your account.",
+      "customer": "Continue to Online Banking",
+      "partner": "Continue to Partner Workspace"
     },
     "invalid_entry": {
       "page_title": "Invalid sign-in link",
