@@ -1,8 +1,4 @@
-import {
-  Customer,
-  demoOrganizationId,
-  neobankApi,
-} from 'src/features/finance/core-api';
+import { Customer, demoOrganizationId, neobankApi } from 'src/features/finance/core-api';
 
 export type NeobankCustomerRecord = {
   id: string;
@@ -45,6 +41,48 @@ export type NeobankKycReviewResult = NeobankCustomerRecord & {
     status: 'retry_required';
     error_code: string;
   };
+};
+
+export type NeobankSumsubStep = {
+  step_type: 'IDENTITY' | 'SELFIE' | 'PROOF_OF_RESIDENCE';
+  review_answer?: string | null;
+  review_reject_type?: string | null;
+  document_type?: string | null;
+  document_country?: string | null;
+  reject_labels?: string[];
+  moderation_comment?: string | null;
+  client_comment?: string | null;
+  updated_at?: string | null;
+};
+
+export type NeobankSumsubVerification = {
+  id: string;
+  provider: 'sumsub';
+  external_user_id: string;
+  applicant_id?: string | null;
+  level_name: string;
+  environment: 'sandbox' | 'production';
+  status:
+    | 'initializing'
+    | 'awaiting_applicant'
+    | 'provider_reviewing'
+    | 'resubmission_required'
+    | 'provider_rejected'
+    | 'ready_for_admin_review'
+    | 'provider_error';
+  review_status?: string | null;
+  review_answer?: string | null;
+  review_reject_type?: string | null;
+  reject_labels?: string[];
+  moderation_comment?: string | null;
+  client_comment?: string | null;
+  provider_created_at?: string | null;
+  provider_reviewed_at?: string | null;
+  last_event_at?: string | null;
+  last_synced_at?: string | null;
+  updated_at?: string | null;
+  steps: NeobankSumsubStep[];
+  events: Array<{ event_type: string; occurred_at?: string | null; received_at: string }>;
 };
 
 export function mapNeobankCustomer(row: NeobankCustomerRecord): Customer {
@@ -91,4 +129,24 @@ export async function loadNeobankCustomerRecords(userId = 'usr_admin') {
     userId,
   });
   return payload.data;
+}
+
+export async function loadNeobankSumsubVerification(customerId: string, userId = 'usr_admin') {
+  try {
+    return await neobankApi<NeobankSumsubVerification>(
+      `/admin/customers/${customerId}/kyc-verification`,
+      { userId }
+    );
+  } catch (caught) {
+    if (caught instanceof Error && caught.message === 'sumsub_verification_not_found') return null;
+    throw caught;
+  }
+}
+
+export async function syncNeobankSumsubVerification(customerId: string, userId = 'usr_admin') {
+  return neobankApi<{ status: 'sync_queued' }>(`/admin/customers/${customerId}/kyc/sync`, {
+    method: 'POST',
+    userId,
+    body: '{}',
+  });
 }

@@ -17,21 +17,22 @@ identity. `/portal/register` provides the applicant-facing individual/business
 account-opening V1 UI, including KYC/KYB preparation and explicit pending-review
 states. The separate Core API/admin onboarding workspace now mirrors the same
 individual/business fields. The default VA profile retains separate Compliance
-and Operations checkpoints. In the Neobank production profile, manual KYC approval
-automatically activates the customer and provisions the Cregis-verified USDT-TRC20
-wallet without a second Operations approval click.
-There is still no public submission API, email verification, KYC-provider
-session, or automatic identity provisioning connected to `/portal/register`.
-Do not treat its local completion screen as a stored or production-accepted
-application.
+and Operations checkpoints. In the Neobank profile, `/portal/register` persists
+the application. Individual applications then receive a short-lived server-issued
+Sumsub WebSDK token for passport, passive liveness/face, and proof-of-address
+checks. Sumsub `GREEN` only changes the provider state to
+`ready_for_admin_review`; manual KYC approval remains the final account-opening
+gate and automatically activates the customer and provisions the Cregis-verified
+USDT-TRC20 wallet without a second Operations approval click. Business KYB remains
+on the existing manual path.
 
 The intended registration lifecycle is:
 
-`application_submitted -> kyc_pending -> kyc_approved -> operations_review -> active`
+`application_submitted -> sumsub_pending -> ready_for_admin_review -> manual_kyc_approved -> active`
 
-KYC completion does not activate an account. After Operations approval, the
-existing one-time setup-link flow remains responsible for password and TOTP
-enrollment.
+Sumsub completion does not activate an account. Only the authenticated Admin KYC
+decision does so in the Neobank profile. The existing first-login flow remains
+responsible for TOTP enrollment.
 
 The Core API implementation represents this boundary as:
 
@@ -42,9 +43,8 @@ The Core API implementation represents this boundary as:
 - `kycStatus=REJECTED` with `Customer.status=REJECTED` for a rejected manual
   KYC review.
 
-The KYC provider name, provider session, and provider Webhook are deliberately
-out of scope. A production Postgres rollout of the matching schema migration is
-also a separate, manually approved operation.
+The provider integration, Webhook boundary, status mapping, configuration, and
+production migration gate are documented in `docs/SUMSUB_KYC_RUNBOOK.md`.
 
 ## Local Partner Portal bypass
 

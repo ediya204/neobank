@@ -355,7 +355,6 @@ export default function VaRequestReviewPage() {
                   />
                   <Field label="开户币种" value={request.currency} />
                   <Field label="银行国家/地区" value={request.channel?.bankCountry} />
-                  <Field label="分行" value={request.channel?.branchName} />
                   <Field label="SWIFT / BIC" value={request.channel?.swiftBic} />
                   <Field label="银行地址" value={request.channel?.bankAddress} />
                 </Box>

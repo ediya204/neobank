@@ -91,6 +91,48 @@ func TestCallUsesAuthenticatedRelayWithoutChangingCregisPayload(t *testing.T) {
 	}
 }
 
+func TestDepositTradeReturnsTheSingleExactTransaction(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/trade/page" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		for key, expected := range map[string]float64{
+			"cid": 1463535767997001, "trade_type": 1, "business_type": 3, "page_num": 1, "page_size": 10,
+		} {
+			if payload[key] != expected {
+				t.Errorf("%s = %v; want %v", key, payload[key], expected)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// gitleaks:allow -- token_id is the public TRON USDT contract address used by the fixture.
+		_, _ = io.WriteString(w, `{"code":"00000","msg":"ok","data":{"rows":[{"cid":1463535767997001,"chain_id":"195","token_id":"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t","to_address":"TFbXZoaXDCWq318W2HghRmrXktCvCzoX9K","from_address":"TXsmKpEuW7qWnXzJLGP9eDLvWPR2GRn1FS","amount":"0.1","status":1,"txid":"tx-deposit-1"}]}}`) // gitleaks:allow
+	}))
+	defer server.Close()
+
+	client, err := New(Config{
+		BaseURL:     "https://t-wsmbuuhb.cregis.io",
+		ProjectID:   "1463535767997152",
+		Secret:      "cregis-test-secret",
+		RelayURL:    server.URL,
+		RelaySecret: strings.Repeat("r", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.httpClient = server.Client()
+	trade, err := client.DepositTrade(context.Background(), 1463535767997001, "tx-deposit-1", "195", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trade.FromAddress != "TXsmKpEuW7qWnXzJLGP9eDLvWPR2GRn1FS" {
+		t.Fatalf("unexpected source address: %s", trade.FromAddress)
+	}
+}
+
 func TestNewRequiresAuthenticatedRelay(t *testing.T) {
 	base := Config{
 		BaseURL:   "https://t-wsmbuuhb.cregis.io",

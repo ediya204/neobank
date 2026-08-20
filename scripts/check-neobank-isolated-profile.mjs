@@ -31,6 +31,7 @@ const [
   customerSync,
   customerAdmin,
   portalCustomerContext,
+  portalLayout,
   customerCryptoWallet,
   virtualAccountsPage,
   financeWorkspace,
@@ -64,6 +65,7 @@ const [
   read('server/src/customers/neobank-customer-sync.ts'),
   read('server-go/cmd/api/customer_admin.go'),
   read('src/features/finance/portal-customer-context.tsx'),
+  read('src/layouts/portal/layout.tsx'),
   read('src/pages/portal/crypto-wallet.tsx'),
   read('src/pages/portal/virtual-accounts.tsx'),
   read('src/pages/dashboard/finance-workspace.tsx'),
@@ -110,7 +112,15 @@ assert.match(router, /\.\.\.authRoutes/);
 assert.match(router, /\.\.\.dashboardRoutes/);
 assert.match(router, /path: '\/admin'/);
 assert.match(router, /path: '\/admin\/neobank-crypto'/);
-assert.match(router, /path: 'home', element: <CryptoWalletPage \/>/);
+assert.match(router, /path: 'home', element: <CustomerHome \/>/);
+assert.match(router, /path: 'money\/accounts', element: <CustomerAccounts \/>/);
+assert.match(router, /path: 'money\/transfers', element: <FundsHub \/>/);
+assert.match(router, /path: 'money\/deposit', element: <FiatDepositPage \/>/);
+assert.match(router, /path: 'money\/otc'/);
+assert.match(router, /path: 'money\/payouts'/);
+assert.match(router, /submissionDisabledReason="当前版本的 OTC/);
+assert.match(router, /submissionDisabledReason="当前版本暂未开放客户法币转出申请/);
+assert.match(router, /path: 'transactions', element: <CustomerActivity \/>/);
 assert.match(router, /<Navigate to="\/portal\/home" replace \/>/);
 assert.match(router, /<Navigate to="\/admin" replace \/>/);
 assert.match(router, /path: 'crypto-wallet\/withdraw'/);
@@ -122,7 +132,11 @@ assert.match(authRoutes, /const partnerAuthRoutes/);
 assert.match(roleAccess, /admin: IS_ISOLATED_WALLET_DEPLOYMENT \? '\/admin'/);
 assert.match(roleAccess, /customer: '\/portal\/home'/);
 assert.match(roleAccess, /pathname === '\/portal\/virtual-accounts'/);
-assert.match(roleAccess, /!isCustomerWalletPath\(canonicalUrl\.pathname\)/);
+assert.match(roleAccess, /pathname === '\/portal\/money\/accounts'/);
+assert.match(roleAccess, /pathname === '\/portal\/money\/transfers'/);
+assert.match(roleAccess, /pathname === '\/portal\/money\/otc'/);
+assert.match(roleAccess, /isCustomerFullPortalPath\(canonicalUrl\.pathname\)/);
+assert.match(roleAccess, /!customerPathAllowed/);
 assert.match(provider, /IS_NEOBANK_DEPLOYMENT \|\|/);
 assert.doesNotMatch(provider, /getAccessAdminSession/);
 assert.match(
@@ -205,6 +219,12 @@ assert.match(customerAdmin, /automaticWalletAlias\(id\)/);
 assert.match(customerAdmin, /provisionCregisWallet/);
 assert.match(portalCustomerContext, /neobankApi<[\s\S]*?>\('\/customer\/profile'\)/);
 assert.doesNotMatch(portalCustomerContext, /coreApi<[\s\S]*?>\('\/customer\/profile'\)/);
+assert.match(portalCustomerContext, /coreApi<Customer>\(`\/customers\/\$\{encodeURIComponent/);
+assert.match(portalCustomerContext, /customerId=\$\{encodeURIComponent\(profile\.id\)\}/);
+for (const label of ['总览', '系统账户', 'VA 账户', 'USDT 钱包', '转入转出', 'OTC', '交易记录']) {
+  assert.match(portalLayout, new RegExp(`\\['${label}',`));
+}
+assert.match(portalLayout, /customerMobileNavPaths/);
 assert.match(
   customerCryptoWallet,
   /neobankApi<\{ data: CustomerWalletRow\[\] \}>\('\/customer\/wallets'\)/
@@ -215,9 +235,15 @@ assert.match(worker, /proxyAPI\(request, env, 'application-session-edge'\)/);
 assert.match(worker, /proxyCoreAPI\(request, env\)/);
 assert.match(worker, /loadApplicationSession\(request, env\)/);
 assert.match(worker, /customerCoreRouteAllowed\(incoming, request\.method, userId/);
-assert.match(worker, /type'\) === 'VIRTUAL_ACCOUNT'/);
+assert.match(worker, /type === 'VIRTUAL_ACCOUNT'/);
+assert.match(worker, /type === 'FIAT_INBOUND'/);
 assert.match(worker, /active'\) === 'true'/);
 assert.match(worker, /customers\/\$\{customerId\}\/virtual-account-requests/);
+assert.match(worker, /if \(method !== 'GET'\) return false/);
+assert.match(worker, /api\/core\/accounts\/summary/);
+assert.match(worker, /api\/core\/operations/);
+assert.match(worker, /api\/core\/crypto-wallets\/transfers/);
+assert.match(worker, /redactCustomerCorePayload/);
 assert.match(worker, /invalid_csrf_token/);
 assert.match(worker, /incoming\.pathname === '\/api\/core\/rates\/from-market'/);
 assert.match(worker, /fetchLiveMarketQuote/);

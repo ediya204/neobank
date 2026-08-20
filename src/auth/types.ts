@@ -77,6 +77,7 @@ export type AuthSessionUser = {
   email: string;
   displayName: string;
   role: AuthRole;
+  totpEnabled?: boolean;
   accessRole?: AdminAccessRole | null;
   photoURL?: string | null;
   organization: AuthOrganization | null;
@@ -134,6 +135,16 @@ export type ChangePasswordInput = {
   currentPassword: string;
   newPassword: string;
   totpCode: string;
+};
+
+export type CustomerTotpEnrollmentResult = TotpSetupData & {
+  expiresAt: string | null;
+};
+
+export type CustomerTotpVerificationResult = {
+  totpEnabled: boolean;
+  recoveryCodes: string[];
+  otherSessionsRevoked: boolean;
 };
 
 // ----------------------------------------------------------------------

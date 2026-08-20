@@ -40,6 +40,12 @@ that the assumption no longer applies.
   including USDT. Missing provider data produces an explicit partial valuation;
   stored fee-policy snapshots and assumed stablecoin parity are not fallbacks.
 - In the Neobank profile, manual KYC approval is the final account-opening gate.
+  For new individual applications that have a Sumsub verification record, approval
+  is allowed only after the dedicated `neobank_individual_v1` Level reports GREEN
+  for passport identity, liveness/face, and proof of residence. A Sumsub result never
+  auto-approves, auto-activates, or provisions an account. Applications created
+  before this integration remain on the documented legacy manual-review path;
+  business KYB is unchanged.
   Approval automatically activates the customer, assigns zero-balance USD and HKD
   standard fiat accounts, and idempotently provisions one Cregis-verified
   USDT-TRC20 wallet. Core customer synchronization repairs any missing standard fiat
@@ -81,7 +87,8 @@ that the assumption no longer applies.
   keys, address configuration versions, or internal Webhook delivery status.
 - VA 开户必须绑定后台已启用的 `VIRTUAL_ACCOUNT` 银行渠道。客户先选择银行，
   再从该银行声明的支持币种中选择开户币种；服务端重复校验渠道、币种和客户归属。
-- 银行名称、国家/地区、地址、分行与 SWIFT/BIC 是渠道固定资料。运营批准申请时
+- 银行名称、国家/地区、地址与 SWIFT/BIC 是渠道固定资料；通道不配置分行或
+  收款/结算账号。运营批准申请时
   只录入银行实际分配的账户名称、账号和可选 IBAN；开通账户保存固定资料快照，
   后续修改渠道不会静默改写历史 VA。
 - `VIRTUAL_ACCOUNT` 是同一家银行的统一 VA 能力配置：开户批准后账户保存

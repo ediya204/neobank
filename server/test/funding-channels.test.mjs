@@ -111,3 +111,111 @@ test('VA payout cannot be configured as a separate new funding channel', async (
     /va_payout_channel_merged/
   );
 });
+
+test('VA bank channels reject customer-specific account and branch details', async () => {
+  const controller = new ChannelsController({
+    user: { findUnique: async () => admin },
+    fundingChannel: { create: async () => assert.fail('create must not be called') },
+  });
+
+  await assert.rejects(
+    controller.create(
+      {
+        organizationId: 'org_test',
+        code: 'VA-BANK-01',
+        name: 'VA Bank',
+        type: 'VIRTUAL_ACCOUNT',
+        supportedCurrencies: ['USD'],
+        settlementAccount: 'customer-account-001',
+      },
+      request
+    ),
+    /virtual_account_channel_customer_details_not_allowed/
+  );
+
+  await assert.rejects(
+    controller.create(
+      {
+        organizationId: 'org_test',
+        code: 'VA-BANK-02',
+        name: 'VA Bank',
+        type: 'VIRTUAL_ACCOUNT',
+        supportedCurrencies: ['USD'],
+        branchName: 'Customer Branch',
+      },
+      request
+    ),
+    /virtual_account_channel_customer_details_not_allowed/
+  );
+});
+
+test('an existing VA bank channel cannot be assigned a shared account or branch', async () => {
+  const controller = new ChannelsController({
+    user: { findUnique: async () => admin },
+    fundingChannel: {
+      findUnique: async () => ({
+        organizationId: 'org_test',
+        type: 'VIRTUAL_ACCOUNT',
+        active: false,
+      }),
+      update: async () => assert.fail('update must not be called'),
+    },
+  });
+
+  await assert.rejects(
+    controller.update('channel_va', { branchName: 'Shared Branch' }, request),
+    /virtual_account_channel_customer_details_not_allowed/
+  );
+  await assert.rejects(
+    controller.update('channel_va', { settlementAccount: 'shared-account' }, request),
+    /virtual_account_channel_customer_details_not_allowed/
+  );
+});
+
+test('customer channel reads expose active inbound instructions but keep VA account details hidden', async () => {
+  const customerRequest = {
+    header: (name) => {
+      if (name === 'x-user-id') return 'admin_test';
+      if (name === 'x-authenticated-customer-id') return 'customer_test';
+      return undefined;
+    },
+  };
+  let selectedType;
+  const controller = new ChannelsController({
+    user: { findUnique: async () => admin },
+    fundingChannel: {
+      findMany: async ({ where }) => {
+        selectedType = where.type;
+        return [
+          {
+            id: 'channel_customer',
+            organizationId: 'org_test',
+            code: 'CHANNEL-01',
+            name: 'Customer Bank',
+            type: where.type,
+            supportedCurrencies: ['USD'],
+            active: true,
+            settlementBankName: 'Example Bank',
+            settlementAccount: '123-456',
+            swiftBic: 'EXAMPLE1',
+            bankCountry: 'HK',
+            bankAddress: 'Central',
+          },
+        ];
+      },
+    },
+  });
+
+  const inbound = await controller.list('org_test', customerRequest, 'FIAT_INBOUND', 'true');
+  assert.equal(selectedType, 'FIAT_INBOUND');
+  assert.equal(inbound[0].settlementAccount, '123-456');
+
+  const virtualAccount = await controller.list(
+    'org_test',
+    customerRequest,
+    'VIRTUAL_ACCOUNT',
+    'true'
+  );
+  assert.equal(selectedType, 'VIRTUAL_ACCOUNT');
+  assert.equal('settlementAccount' in virtualAccount[0], false);
+});

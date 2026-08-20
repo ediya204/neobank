@@ -28,9 +28,12 @@ import Label from 'src/components/label';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import {
   loadNeobankCustomerRecords,
+  loadNeobankSumsubVerification,
   mapNeobankCustomer,
   NeobankCustomerRecord,
   NeobankKycReviewResult,
+  NeobankSumsubVerification,
+  syncNeobankSumsubVerification,
 } from 'src/features/customers/neobank-customer';
 import { coreApi, Customer, neobankApi } from 'src/features/finance/core-api';
 import { paths } from 'src/routes/paths';
@@ -67,6 +70,28 @@ const rejectionReasons = [
   ['screening_hit', '制裁、PEP 或负面信息命中'],
   ['information_incomplete', '申请资料不完整'],
 ] as const;
+
+const sumsubStepLabels = {
+  IDENTITY: '护照身份核验',
+  SELFIE: '本人活体与人脸核验',
+  PROOF_OF_RESIDENCE: '住址证明核验',
+} as const;
+
+const sumsubStatusLabels: Record<NeobankSumsubVerification['status'], string> = {
+  initializing: '正在初始化',
+  awaiting_applicant: '等待客户提交资料',
+  provider_reviewing: 'Sumsub 审核中',
+  resubmission_required: '需要客户补件',
+  provider_rejected: 'Sumsub 核验未通过',
+  ready_for_admin_review: '三项已通过，可人工审批',
+  provider_error: '服务商同步异常',
+};
+
+function sumsubStatusSeverity(status: NeobankSumsubVerification['status']) {
+  if (status === 'ready_for_admin_review') return 'success' as const;
+  if (status === 'provider_rejected') return 'error' as const;
+  return 'warning' as const;
+}
 
 function kycReviewPresentation(status: Customer['kycStatus']) {
   if (status === 'APPROVED') return { label: '已通过', color: 'success' as const };
@@ -129,6 +154,9 @@ export default function KycReviewWorkspace() {
   const userId = 'usr_admin';
   const [record, setRecord] = useState<NeobankCustomerRecord | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [sumsubVerification, setSumsubVerification] = useState<NeobankSumsubVerification | null>(
+    null
+  );
   const [checks, setChecks] = useState<Record<ReviewCheck, boolean>>({
     identity: false,
     profile: false,
@@ -150,11 +178,15 @@ export default function KycReviewWorkspace() {
     setError('');
     try {
       if (IS_NEOBANK_DEPLOYMENT) {
-        const rows = await loadNeobankCustomerRecords(userId);
+        const [rows, verification] = await Promise.all([
+          loadNeobankCustomerRecords(userId),
+          loadNeobankSumsubVerification(id, userId),
+        ]);
         const source = rows.find((row) => row.id === id);
         if (!source) throw new Error('kyc_application_not_found');
         setRecord(source);
         setCustomer(mapNeobankCustomer(source));
+        setSumsubVerification(verification);
       } else {
         const row = await coreApi<Customer>(`/customers/${id}`, { userId });
         setCustomer(row);
@@ -171,11 +203,12 @@ export default function KycReviewWorkspace() {
   }, [load]);
 
   const allChecksComplete = reviewChecks.every((item) => checks[item.key]);
+  const sumsubReady = !sumsubVerification || sumsubVerification.status === 'ready_for_admin_review';
   const canSubmit =
     customer?.kycStatus === 'PENDING' &&
     confirmed &&
     note.trim().length >= 10 &&
-    (decision === 'approve' ? allChecksComplete : Boolean(rejectionReason));
+    (decision === 'approve' ? allChecksComplete && sumsubReady : Boolean(rejectionReason));
 
   const reviewSummary = useMemo(() => {
     const completed = reviewChecks.filter((item) => checks[item.key]).map((item) => item.label);
@@ -229,6 +262,23 @@ export default function KycReviewWorkspace() {
     }
   };
 
+  const syncSumsub = async () => {
+    if (!customer) return;
+    setSubmitting(true);
+    setError('');
+    setSuccess('');
+    try {
+      await syncNeobankSumsubVerification(customer.id, userId);
+      setSuccess('Sumsub 同步任务已进入队列，页面将刷新一次；如状态未更新，可稍后再次同步。');
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Sumsub 状态同步失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (loading && !customer) {
     return (
       <Box sx={{ minHeight: 560, display: 'grid', placeItems: 'center' }}>
@@ -245,7 +295,9 @@ export default function KycReviewWorkspace() {
       <Container maxWidth="lg">
         <Alert
           severity="error"
-          action={<Button onClick={() => navigate(paths.dashboard.onboarding)}>返回申请列表</Button>}
+          action={
+            <Button onClick={() => navigate(paths.dashboard.onboarding)}>返回申请列表</Button>
+          }
         >
           {error || '未找到 KYC 申请'}
         </Alert>
@@ -283,7 +335,8 @@ export default function KycReviewWorkspace() {
                 <Label color={reviewPresentation.color}>{reviewPresentation.label}</Label>
               </Stack>
               <Typography color="text.secondary" sx={{ mt: 0.65 }}>
-                {customer.displayName} · {customer.type === 'BUSINESS' ? '企业客户' : '个人客户'} · {customer.id}
+                {customer.displayName} · {customer.type === 'BUSINESS' ? '企业客户' : '个人客户'} ·{' '}
+                {customer.id}
               </Typography>
             </Box>
           </Stack>
@@ -308,10 +361,7 @@ export default function KycReviewWorkspace() {
               severity="success"
               action={
                 decision === 'approve' ? (
-                  <Button
-                    color="inherit"
-                    onClick={() => navigate(paths.dashboard.customers.root)}
-                  >
+                  <Button color="inherit" onClick={() => navigate(paths.dashboard.customers.root)}>
                     进入客户管理
                   </Button>
                 ) : undefined
@@ -365,6 +415,123 @@ export default function KycReviewWorkspace() {
                 </Box>
               </Paper>
 
+              {record?.account_type === 'individual' && (
+                <Paper variant="outlined" sx={{ p: 2.5, boxShadow: 'none' }}>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    gap={1.5}
+                  >
+                    <Box>
+                      <Typography variant="overline" color="text.secondary">
+                        SUMSUB PROVIDER EVIDENCE
+                      </Typography>
+                      <Typography variant="h6">护照、人脸与住址证明</Typography>
+                    </Box>
+                    {sumsubVerification && (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={submitting || completed}
+                        onClick={() => syncSumsub().catch(() => undefined)}
+                        startIcon={<Iconify icon="solar:refresh-linear" />}
+                      >
+                        从 Sumsub 同步
+                      </Button>
+                    )}
+                  </Stack>
+                  {!sumsubVerification ? (
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                      此申请没有 Sumsub 验证记录，按接入前的历史个人申请处理；仍须完成下方人工核验。
+                    </Alert>
+                  ) : (
+                    <Stack spacing={2} sx={{ mt: 2 }}>
+                      <Alert severity={sumsubStatusSeverity(sumsubVerification.status)}>
+                        {sumsubStatusLabels[sumsubVerification.status]}
+                      </Alert>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                          columnGap: 3,
+                        }}
+                      >
+                        <Field label="Level" value={sumsubVerification.level_name} />
+                        <Field label="环境" value={sumsubVerification.environment} />
+                        <Field label="Applicant ID" value={sumsubVerification.applicant_id} />
+                        <Field
+                          label="最近同步"
+                          value={formatDate(sumsubVerification.last_synced_at)}
+                        />
+                      </Box>
+                      <Stack spacing={1.25}>
+                        {(
+                          Object.keys(sumsubStepLabels) as Array<keyof typeof sumsubStepLabels>
+                        ).map((stepType) => {
+                          const step = sumsubVerification.steps.find(
+                            (candidate) => candidate.step_type === stepType
+                          );
+                          const passed =
+                            step?.review_answer === 'GREEN' &&
+                            (stepType !== 'IDENTITY' || step.document_type === 'PASSPORT');
+                          return (
+                            <Paper key={stepType} variant="outlined" sx={{ p: 1.75 }}>
+                              <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                                <Iconify
+                                  icon={
+                                    passed ? 'solar:check-circle-bold' : 'solar:clock-circle-linear'
+                                  }
+                                  width={24}
+                                  sx={{ color: passed ? 'success.main' : 'warning.main', mt: 0.15 }}
+                                />
+                                <Box sx={{ minWidth: 0 }}>
+                                  <Typography variant="subtitle2">
+                                    {sumsubStepLabels[stepType]}
+                                  </Typography>
+                                  <Typography variant="body2" color="text.secondary">
+                                    {step
+                                      ? `${step.review_answer || '待审核'}${
+                                          step.document_type ? ` · ${step.document_type}` : ''
+                                        }${
+                                          step.document_country ? ` · ${step.document_country}` : ''
+                                        }`
+                                      : '尚未取得该步骤结果'}
+                                  </Typography>
+                                  {step?.moderation_comment && (
+                                    <Typography variant="body2" sx={{ mt: 0.75 }}>
+                                      客户可见说明：{step.moderation_comment}
+                                    </Typography>
+                                  )}
+                                  {step?.client_comment && (
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      sx={{ display: 'block', mt: 0.5 }}
+                                    >
+                                      内部说明：{step.client_comment}
+                                    </Typography>
+                                  )}
+                                </Box>
+                              </Stack>
+                            </Paper>
+                          );
+                        })}
+                      </Stack>
+                      {sumsubVerification.moderation_comment && (
+                        <Alert severity="info">
+                          客户可见反馈：{sumsubVerification.moderation_comment}
+                        </Alert>
+                      )}
+                      {sumsubVerification.client_comment && (
+                        <Alert severity="warning">
+                          Sumsub 内部反馈：{sumsubVerification.client_comment}
+                        </Alert>
+                      )}
+                    </Stack>
+                  )}
+                </Paper>
+              )}
+
               <Paper variant="outlined" sx={{ p: 2.5, boxShadow: 'none' }}>
                 <Typography variant="overline" color="text.secondary">
                   CONTROL CHECKLIST
@@ -382,7 +549,10 @@ export default function KycReviewWorkspace() {
                         <Checkbox
                           checked={checks[item.key]}
                           onChange={(event) =>
-                            setChecks((current) => ({ ...current, [item.key]: event.target.checked }))
+                            setChecks((current) => ({
+                              ...current,
+                              [item.key]: event.target.checked,
+                            }))
                           }
                         />
                       }
@@ -415,11 +585,18 @@ export default function KycReviewWorkspace() {
                   <Alert severity={customer.kycStatus === 'APPROVED' ? 'success' : 'error'}>
                     本申请已完成审核，不能重复提交决定。
                   </Alert>
-                  <Field label="审核状态" value={customer.kycStatus === 'APPROVED' ? '通过' : '拒绝'} />
+                  <Field
+                    label="审核状态"
+                    value={customer.kycStatus === 'APPROVED' ? '通过' : '拒绝'}
+                  />
                   <Field label="审核时间" value={formatDate(customer.kycReviewedAt)} />
                   <Field label="审核人" value={customer.kycReviewerId} />
                   <Field label="审核记录" value={customer.kycReviewNote} />
-                  <Button fullWidth variant="outlined" onClick={() => navigate(paths.dashboard.onboarding)}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={() => navigate(paths.dashboard.onboarding)}
+                  >
                     返回申请列表
                   </Button>
                 </Stack>
@@ -434,7 +611,11 @@ export default function KycReviewWorkspace() {
                         setConfirmed(false);
                       }}
                     >
-                      <FormControlLabel value="approve" control={<Radio />} label="通过 KYC 并自动开户" />
+                      <FormControlLabel
+                        value="approve"
+                        control={<Radio />}
+                        label="通过 KYC 并自动开户"
+                      />
                       <FormControlLabel value="reject" control={<Radio />} label="拒绝申请" />
                     </RadioGroup>
                   </FormControl>
@@ -470,6 +651,11 @@ export default function KycReviewWorkspace() {
 
                   {decision === 'approve' && !allChecksComplete && (
                     <Alert severity="warning">通过前必须完成左侧全部人工核验项目。</Alert>
+                  )}
+                  {decision === 'approve' && !sumsubReady && (
+                    <Alert severity="warning">
+                      Sumsub 的护照、人脸和住址证明尚未全部通过，服务端不会接受批准。
+                    </Alert>
                   )}
 
                   <FormControlLabel

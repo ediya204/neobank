@@ -81,16 +81,30 @@ type customerSession struct {
 	Email             string
 	DisplayName       string
 	Status            string
+	TOTPEnabled       bool
 	CSRFHash          string
 	CredentialVersion int64
 	ExpiresAt         time.Time
 	IdleExpiresAt     time.Time
 }
 
+type customerTOTPEnrollment struct {
+	CustomerID        string `json:"customer_id"`
+	Secret            string `json:"secret"`
+	CredentialVersion int64  `json:"credential_version"`
+	ExpiresAt         int64  `json:"expires_at"`
+}
+
 func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request) bool {
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/register":
 		app.registerCustomer(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/onboarding/login":
+		app.onboardingLogin(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/customer/onboarding/status":
+		app.onboardingStatus(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/onboarding/kyc/token":
+		app.createOnboardingSumsubToken(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/login":
 		app.customerLogin(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/setup/complete":
@@ -99,6 +113,10 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 		app.customerTOTPSetup(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/totp/verify":
 		app.verifyCustomerTOTP(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/totp/enroll/start":
+		app.startCustomerTOTPEnrollment(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/totp/enroll/verify":
+		app.verifyActiveCustomerTOTPEnrollment(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/step-up/totp":
 		app.createCustomerTOTPStepUp(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/password/change":
@@ -119,6 +137,10 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 		app.listAdminCustomers(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/customers":
 		app.createCustomer(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc-verification"):
+		app.writeAdminSumsubVerification(w, r, adminCustomerRouteID(r.URL.Path, "/kyc-verification"))
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc/sync"):
+		app.enqueueSumsubSync(w, r, adminCustomerRouteID(r.URL.Path, "/kyc/sync"))
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc"):
 		app.reviewCustomerKYC(w, r, adminCustomerRouteID(r.URL.Path, "/kyc"))
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/activate"):
@@ -292,6 +314,187 @@ func (app *application) customerTOTPSetup(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{
 		"secret": secret, "otpauth_uri": otpauth, "issuer": issuer, "account_name": email,
 		"enrollment_token": input.EnrollmentToken,
+	})
+}
+
+func (app *application) startCustomerTOTPEnrollment(w http.ResponseWriter, r *http.Request) {
+	session, _, err := app.requireCustomerMutation(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "session_expired"}})
+		return
+	}
+	var input struct {
+		CurrentPassword string `json:"current_password"`
+	}
+	if !decodeJSON(w, r, &input) || input.CurrentPassword == "" || len(input.CurrentPassword) > 128 {
+		validationError(w)
+		return
+	}
+	rows, err := app.db.Query(r.Context(), `SELECT password_salt, password_hash, password_algorithm,
+	    password_iterations, password_memory_kib, password_time_cost, password_parallelism,
+	    totp_secret_ciphertext, credential_version
+	  FROM customer_credentials WHERE customer_id=?`, session.CustomerID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(rows) != 1 {
+		conflict(w, "totp_enrollment_unavailable")
+		return
+	}
+	if text(rows[0]["totp_secret_ciphertext"]) != "" {
+		conflict(w, "totp_already_enrolled")
+		return
+	}
+	validPassword, _ := app.verifyCustomerPassword(input.CurrentPassword, rows[0])
+	if !validPassword {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_current_password"}})
+		return
+	}
+	credentialVersion := integer(rows[0]["credential_version"])
+	if credentialVersion != session.CredentialVersion {
+		conflict(w, "authentication_state_changed")
+		return
+	}
+	now := time.Now().UTC()
+	secret := randomTOTPSecret()
+	enrollmentToken, err := app.encryptCustomerTOTPEnrollment(customerTOTPEnrollment{
+		CustomerID:        session.CustomerID,
+		Secret:            secret,
+		CredentialVersion: credentialVersion,
+		ExpiresAt:         now.Add(customerEnrollmentDuration).Unix(),
+	})
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	nowText := databaseTimestamp(now)
+	results, err := app.db.Batch(r.Context(), d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
+	  (id, customer_id, event_type, actor, metadata_json, created_at)
+	  VALUES (?, ?, 'auth.totp_enrollment_started', ?, '{}', ?)`, Params: []any{
+		randomID("audit"), session.CustomerID, session.CustomerID, nowText,
+	}})
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != 1 || resultChanges(results) != 1 {
+		conflict(w, "totp_enrollment_conflict")
+		return
+	}
+	issuer := "SSC Digital Bank"
+	otpauth := "otpauth://totp/" + url.PathEscape(issuer+":"+session.Email) + "?secret=" + url.QueryEscape(secret) + "&issuer=" + url.QueryEscape(issuer) + "&algorithm=SHA1&digits=6&period=30"
+	writeJSON(w, http.StatusOK, map[string]any{
+		"secret": secret, "otpauth_uri": otpauth, "issuer": issuer, "account_name": session.Email,
+		"enrollment_token": enrollmentToken, "expires_at": databaseTimestamp(now.Add(customerEnrollmentDuration)),
+	})
+}
+
+func (app *application) verifyActiveCustomerTOTPEnrollment(w http.ResponseWriter, r *http.Request) {
+	session, _, err := app.requireCustomerMutation(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "session_expired"}})
+		return
+	}
+	var input struct {
+		EnrollmentToken string `json:"enrollment_token"`
+		Code            string `json:"code"`
+	}
+	if !decodeJSON(w, r, &input) || input.EnrollmentToken == "" || len(input.Code) != 6 {
+		validationError(w)
+		return
+	}
+	enrollment, err := app.decryptCustomerTOTPEnrollment(input.EnrollmentToken)
+	now := time.Now().UTC()
+	if err != nil || enrollment.CustomerID != session.CustomerID ||
+		enrollment.CredentialVersion != session.CredentialVersion || enrollment.ExpiresAt < now.Unix() {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_enrollment_token"}})
+		return
+	}
+	rows, err := app.db.Query(r.Context(), `SELECT totp_secret_ciphertext, credential_version
+	  FROM customer_credentials WHERE customer_id=?`, session.CustomerID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(rows) != 1 || text(rows[0]["totp_secret_ciphertext"]) != "" ||
+		integer(rows[0]["credential_version"]) != enrollment.CredentialVersion {
+		conflict(w, "totp_enrollment_state_changed")
+		return
+	}
+	totpCounter, validTOTP := verifyTOTPCode(enrollment.Secret, input.Code, now, -1)
+	if !validTOTP {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_totp_code"}})
+		return
+	}
+	encryptedSecret, err := app.encryptCustomerTOTP(enrollment.Secret)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	nowText := databaseTimestamp(now)
+	newCredentialVersion := enrollment.CredentialVersion + 1
+	nextIdleExpiry := now.Add(customerSessionIdleDuration)
+	if nextIdleExpiry.After(session.ExpiresAt) {
+		nextIdleExpiry = session.ExpiresAt
+	}
+	recoveryCodes := make([]string, 0, 10)
+	statements := []d1.Statement{
+		{SQL: `UPDATE customer_credentials
+	  SET totp_secret_ciphertext=?, totp_last_counter=?, credential_version=?,
+	      failed_attempts=0, locked_until=NULL, updated_at=?
+	  WHERE customer_id=? AND credential_version=? AND totp_secret_ciphertext IS NULL`, Params: []any{
+			encryptedSecret, totpCounter, newCredentialVersion, nowText, session.CustomerID,
+			enrollment.CredentialVersion,
+		}},
+		{SQL: `UPDATE customer_sessions SET revoked_at=?, last_seen_at=?
+	  WHERE customer_id=? AND id<>? AND revoked_at IS NULL`, Params: []any{
+			nowText, nowText, session.CustomerID, session.ID,
+		}},
+		{SQL: `UPDATE customer_sessions
+	  SET credential_version=?, last_seen_at=?, idle_expires_at=?
+	  WHERE id=? AND customer_id=? AND revoked_at IS NULL AND credential_version=?`, Params: []any{
+			newCredentialVersion, nowText, databaseTimestamp(nextIdleExpiry), session.ID,
+			session.CustomerID, enrollment.CredentialVersion,
+		}},
+		{SQL: `UPDATE customer_login_challenges SET consumed_at=?
+	  WHERE customer_id=? AND consumed_at IS NULL`, Params: []any{nowText, session.CustomerID}},
+		{SQL: `DELETE FROM customer_recovery_codes WHERE customer_id=?`, Params: []any{session.CustomerID}},
+	}
+	for index := 0; index < 10; index++ {
+		code := strings.ToUpper(randomToken(8))
+		recoveryCodes = append(recoveryCodes, code)
+		statements = append(statements, d1.Statement{SQL: `INSERT INTO customer_recovery_codes
+	  (id, customer_id, code_hash, created_at) VALUES (?, ?, ?, ?)`, Params: []any{
+			randomID("recovery"), session.CustomerID, app.recoveryCodeHash(code), nowText,
+		}})
+	}
+	statements = append(statements, d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
+	  (id, customer_id, event_type, actor, metadata_json, created_at)
+	  SELECT ?, ?, 'auth.totp_enrolled', ?, '{}', ?
+	  WHERE EXISTS (SELECT 1 FROM customer_sessions
+	    WHERE id=? AND customer_id=? AND credential_version=? AND revoked_at IS NULL)`, Params: []any{
+		randomID("audit"), session.CustomerID, session.CustomerID, nowText,
+		session.ID, session.CustomerID, newCredentialVersion,
+	}})
+	results, err := app.db.Batch(r.Context(), statements...)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != len(statements) || resultChanges(results[:1]) != 1 ||
+		resultChanges(results[2:3]) != 1 || resultChanges(results[len(results)-1:]) != 1 {
+		conflict(w, "totp_enrollment_conflict")
+		return
+	}
+	for index := 5; index < 15; index++ {
+		if resultChanges(results[index:index+1]) != 1 {
+			conflict(w, "totp_enrollment_conflict")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"totp_enabled": true, "recovery_codes": recoveryCodes, "other_sessions_revoked": true,
 	})
 }
 
@@ -656,7 +859,8 @@ func (app *application) customerSessionInfo(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"csrf_token": csrfToken, "user": map[string]any{
 		"id": session.CustomerID, "email": session.Email, "display_name": session.DisplayName, "role": "customer",
-		"permissions": []string{"customers.read", "balances.read", "transactions.read"},
+		"totp_enabled": session.TOTPEnabled,
+		"permissions":  []string{"customers.read", "balances.read", "transactions.read"},
 	}})
 }
 
@@ -851,7 +1055,7 @@ func (app *application) listCustomerHistory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	deposits, err := app.db.Query(r.Context(), `SELECT d.id, w.customer_id, d.wallet_id, 'deposit' AS direction, d.currency, d.amount_text AS amount,
-    d.status, d.address, d.txid, d.cregis_cid, d.received_at AS created_at
+		d.status, d.address, d.from_address, d.txid, d.cregis_cid, d.received_at AS created_at
     FROM cregis_deposits d JOIN cregis_wallets w ON w.id=d.wallet_id
     WHERE d.tenant_id=? AND w.customer_id=? AND w.status='active' AND w.custody_provider='cregis'
       AND w.ownership_verified_at IS NOT NULL ORDER BY d.received_at DESC LIMIT 200`, app.tenantID, session.CustomerID)
@@ -930,7 +1134,8 @@ func (app *application) loadCustomerSession(r *http.Request) (*customerSession, 
 	now := time.Now().UTC()
 	rows, err := app.db.Query(r.Context(), `SELECT s.id, s.customer_id, s.csrf_hash, s.credential_version,
 	      s.expires_at, s.idle_expires_at, s.last_seen_at,
-	      c.email, c.display_name, c.status, cc.credential_version AS current_credential_version
+	      c.email, c.display_name, c.status, cc.credential_version AS current_credential_version,
+	      (cc.totp_secret_ciphertext IS NOT NULL) AS totp_enabled
 	    FROM customer_sessions s JOIN customers c ON c.id=s.customer_id
 	    JOIN customer_credentials cc ON cc.customer_id=c.id
 		    WHERE c.tenant_id=? AND s.token_hash=? AND s.revoked_at IS NULL
@@ -961,7 +1166,8 @@ func (app *application) loadCustomerSession(r *http.Request) (*customerSession, 
 	}
 	session := &customerSession{
 		ID: text(rows[0]["id"]), CustomerID: text(rows[0]["customer_id"]), Email: text(rows[0]["email"]),
-		DisplayName: text(rows[0]["display_name"]), Status: text(rows[0]["status"]), CSRFHash: text(rows[0]["csrf_hash"]),
+		DisplayName: text(rows[0]["display_name"]), Status: text(rows[0]["status"]),
+		TOTPEnabled: strings.EqualFold(text(rows[0]["totp_enabled"]), "true"), CSRFHash: text(rows[0]["csrf_hash"]),
 		CredentialVersion: integer(rows[0]["credential_version"]), ExpiresAt: expiresAt, IdleExpiresAt: idleExpiresAt,
 	}
 	if now.Sub(lastSeenAt) < sessionTouchInterval {
@@ -1130,6 +1336,51 @@ func (app *application) decryptCustomerTOTP(encoded string) (string, error) {
 	return string(plaintext), err
 }
 
+func (app *application) encryptCustomerTOTPEnrollment(enrollment customerTOTPEnrollment) (string, error) {
+	plaintext, err := json.Marshal(enrollment)
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(app.customerTOTPKey)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := randomBytes(gcm.NonceSize())
+	aad := []byte(app.tenantID + "\x00customer-totp-enrollment-v1")
+	ciphertext := gcm.Seal(nil, nonce, plaintext, aad)
+	return base64.RawURLEncoding.EncodeToString(append(nonce, ciphertext...)), nil
+}
+
+func (app *application) decryptCustomerTOTPEnrollment(encoded string) (customerTOTPEnrollment, error) {
+	var enrollment customerTOTPEnrollment
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return enrollment, err
+	}
+	block, err := aes.NewCipher(app.customerTOTPKey)
+	if err != nil {
+		return enrollment, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil || len(raw) < gcm.NonceSize() {
+		return enrollment, errors.New("invalid TOTP enrollment token")
+	}
+	aad := []byte(app.tenantID + "\x00customer-totp-enrollment-v1")
+	plaintext, err := gcm.Open(nil, raw[:gcm.NonceSize()], raw[gcm.NonceSize():], aad)
+	if err != nil {
+		return enrollment, err
+	}
+	if err := json.Unmarshal(plaintext, &enrollment); err != nil || enrollment.CustomerID == "" ||
+		enrollment.Secret == "" || enrollment.CredentialVersion < 1 || enrollment.ExpiresAt < 1 {
+		return customerTOTPEnrollment{}, errors.New("invalid TOTP enrollment payload")
+	}
+	return enrollment, nil
+}
+
 func verifyTOTPCode(secret, code string, now time.Time, minimumCounter int64) (int64, bool) {
 	if len(code) != 6 {
 		return 0, false
@@ -1292,7 +1543,8 @@ func integer(value any) int64 {
 func customerUser(row map[string]any) map[string]any {
 	return map[string]any{
 		"id": text(row["id"]), "email": text(row["email"]), "display_name": text(row["display_name"]),
-		"role": "customer", "permissions": []string{"customers.read", "balances.read", "transactions.read"},
+		"role": "customer", "totp_enabled": text(row["totp_secret_ciphertext"]) != "",
+		"permissions": []string{"customers.read", "balances.read", "transactions.read"},
 	}
 }
 

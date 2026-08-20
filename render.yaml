@@ -32,6 +32,20 @@ services:
         sync: false
       - key: FASTFOREX_API_KEY
         sync: false
+      - key: SUMSUB_ENABLED
+        value: "false"
+      - key: SUMSUB_BASE_URL
+        value: https://api.sumsub.com
+      - key: SUMSUB_MODE
+        value: sandbox
+      - key: SUMSUB_LEVEL_NAME
+        value: neobank_individual_v1
+      - key: SUMSUB_APP_TOKEN
+        sync: false
+      - key: SUMSUB_SECRET_KEY
+        sync: false
+      - key: SUMSUB_WEBHOOK_SECRET
+        sync: false
       - key: CREGIS_BASE_URL
         value: https://t-wsmbuuhb.cregis.io
       - key: CREGIS_ENABLED

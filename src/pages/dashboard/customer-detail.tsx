@@ -1847,7 +1847,6 @@ function FiatAccountAsset({ account }: { account: MoneyAccount }) {
         />
         {isVa && account.iban && <AccountFact label="IBAN" value={account.iban} wide />}
         {isVa && account.swiftBic && <AccountFact label="SWIFT / BIC" value={account.swiftBic} />}
-        {isVa && account.branchName && <AccountFact label="分行" value={account.branchName} />}
       </Box>
     </Box>
   );

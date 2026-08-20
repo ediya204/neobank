@@ -43,6 +43,17 @@ type Response struct {
 	Data json.RawMessage `json:"data"`
 }
 
+type Trade struct {
+	CID         int64  `json:"cid"`
+	ChainID     string `json:"chain_id"`
+	TokenID     string `json:"token_id"`
+	ToAddress   string `json:"to_address"`
+	FromAddress string `json:"from_address"`
+	Amount      string `json:"amount"`
+	Status      int    `json:"status"`
+	TXID        string `json:"txid"`
+}
+
 func (r *Response) GetCode() string {
 	if r == nil {
 		return ""
@@ -84,6 +95,38 @@ func New(config Config) (*Client, error) {
 
 func (c *Client) ProjectID() int64 {
 	return c.projectID
+}
+
+func (c *Client) DepositTrade(ctx context.Context, cid int64, txid, chainID, tokenID string) (Trade, error) {
+	response, err := c.Call(ctx, "/api/v1/trade/page", map[string]any{
+		"cid":           cid,
+		"tx_id":         txid,
+		"trade_type":    1,
+		"business_type": 3,
+		"chain_id":      chainID,
+		"token_id":      tokenID,
+		"page_num":      1,
+		"page_size":     10,
+	})
+	if err != nil {
+		return Trade{}, err
+	}
+	var page struct {
+		Rows []Trade `json:"rows"`
+	}
+	if err := json.Unmarshal(response.Data, &page); err != nil {
+		return Trade{}, fmt.Errorf("decode Cregis trade page: %w", err)
+	}
+	var matched []Trade
+	for _, trade := range page.Rows {
+		if trade.CID == cid && trade.TXID == txid && trade.ChainID == chainID && trade.TokenID == tokenID {
+			matched = append(matched, trade)
+		}
+	}
+	if len(matched) != 1 {
+		return Trade{}, fmt.Errorf("Cregis deposit trade match count: %d", len(matched))
+	}
+	return matched[0], nil
 }
 
 func (c *Client) Call(ctx context.Context, path string, business map[string]any) (*Response, error) {

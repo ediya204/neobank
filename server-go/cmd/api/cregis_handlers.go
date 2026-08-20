@@ -633,7 +633,7 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 		return
 	}
 	depositSQL := `SELECT d.id, w.customer_id, 'deposit' AS direction, d.currency, d.amount_text AS amount,
-    d.status, d.address, d.txid, d.cregis_cid, d.received_at AS created_at
+		d.status, d.address, d.from_address, d.txid, d.cregis_cid, d.received_at AS created_at
     FROM cregis_deposits d JOIN cregis_wallets w ON w.id=d.wallet_id
     WHERE d.tenant_id=? AND w.status='active' AND w.custody_provider='cregis'
       AND w.ownership_verified_at IS NOT NULL`
@@ -667,6 +667,7 @@ func (app *application) cregisDepositCallback(w http.ResponseWriter, r *http.Req
 	cregisCID := text(payload["cid"])
 	address := text(payload["address"])
 	amountText := text(payload["amount"])
+	txid := text(payload["txid"])
 	amountMinor, amountOK := parseUSDTMicroUnits(amountText)
 	if cregisCID == "" || address == "" || text(payload["chain_id"]) != usdtTRC20ChainID ||
 		text(payload["token_id"]) != usdtTRC20TokenID || !amountOK {
@@ -694,15 +695,32 @@ func (app *application) cregisDepositCallback(w http.ResponseWriter, r *http.Req
 	if status == "1" {
 		finalStatus = "completed"
 	}
+	fromAddress := ""
+	if finalStatus == "completed" {
+		cid, parseErr := strconv.ParseInt(cregisCID, 10, 64)
+		if parseErr != nil || txid == "" {
+			http.Error(w, "invalid callback", http.StatusUnprocessableEntity)
+			return
+		}
+		trade, tradeErr := app.cregis.DepositTrade(r.Context(), cid, txid, usdtTRC20ChainID, usdtTRC20TokenID)
+		tradeAmountMinor, tradeAmountOK := parseUSDTMicroUnits(trade.Amount)
+		if tradeErr != nil || trade.ToAddress != address || tradeAmountMinor != amountMinor || !tradeAmountOK ||
+			trade.Status != 1 || !validTronAddress(trade.FromAddress) {
+			app.logger.Error("verify Cregis deposit source address failed", "cid", cregisCID, "error", tradeErr)
+			http.Error(w, "retry", http.StatusServiceUnavailable)
+			return
+		}
+		fromAddress = trade.FromAddress
+	}
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_callback_events
       (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'deposit', ?, ?, ?, ?)`, Params: []any{callbackID, cregisCID, status, hash, now}},
 		d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_deposits
-      (id, tenant_id, wallet_id, cregis_cid, chain_id, token_id, currency, address, amount_text, amount_minor,
-       status, txid, block_height, block_time, received_at, raw_sha256)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, Params: []any{randomID("deposit"), app.tenantID, walletID, cregisCID,
+		(id, tenant_id, wallet_id, cregis_cid, chain_id, token_id, currency, address, from_address,
+		 amount_text, amount_minor, status, txid, block_height, block_time, received_at, raw_sha256)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, Params: []any{randomID("deposit"), app.tenantID, walletID, cregisCID,
 			usdtTRC20ChainID, usdtTRC20TokenID, usdtTRC20Currency, address,
-			amountText, amountMinor, finalStatus, nullIfEmpty(text(payload["txid"])), nullIfEmpty(text(payload["block_height"])),
+			nullIfEmpty(fromAddress), amountText, amountMinor, finalStatus, nullIfEmpty(txid), nullIfEmpty(text(payload["block_height"])),
 			nullIfEmpty(text(payload["block_time"])), now, hash}},
 	)
 	if err != nil {
@@ -716,7 +734,7 @@ func (app *application) cregisDepositCallback(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if resultChanges(results[1:2]) != 1 {
-		rows, lookupErr := app.db.Query(r.Context(), `SELECT wallet_id, chain_id, token_id, currency, address,
+		rows, lookupErr := app.db.Query(r.Context(), `SELECT wallet_id, chain_id, token_id, currency, address, from_address,
       amount_text, CAST(amount_minor AS TEXT) AS amount_minor, status, txid, block_height, block_time, raw_sha256
       FROM cregis_deposits WHERE tenant_id=? AND cregis_cid=?`, app.tenantID, cregisCID)
 		if lookupErr != nil {
@@ -745,6 +763,20 @@ func (app *application) cregisDepositCallback(w http.ResponseWriter, r *http.Req
 		if !exact {
 			http.Error(w, "deposit state conflict", http.StatusConflict)
 			return
+		}
+		existingSource := text(existing["from_address"])
+		if existingSource != "" && existingSource != fromAddress {
+			http.Error(w, "deposit source conflict", http.StatusConflict)
+			return
+		}
+		if existingSource == "" && fromAddress != "" {
+			updated, updateErr := app.db.Batch(r.Context(), d1.Statement{SQL: `UPDATE cregis_deposits SET from_address=?
+      WHERE tenant_id=? AND cregis_cid=? AND from_address IS NULL`, Params: []any{fromAddress, app.tenantID, cregisCID}})
+			if updateErr != nil || resultChanges(updated) != 1 {
+				app.logger.Error("backfill Cregis deposit source address failed", "cid", cregisCID, "error", updateErr)
+				http.Error(w, "retry", http.StatusServiceUnavailable)
+				return
+			}
 		}
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

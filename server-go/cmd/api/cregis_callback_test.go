@@ -22,12 +22,14 @@ type callbackDatabase struct {
 
 type depositCallbackDatabase struct {
 	batchResults []d1.Result
+	batches      [][]d1.Statement
 	queries      [][]map[string]any
 	queryErrorAt int
 	queryIndex   int
 }
 
-func (db *depositCallbackDatabase) Batch(context.Context, ...d1.Statement) ([]d1.Result, error) {
+func (db *depositCallbackDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
+	db.batches = append(db.batches, statements)
 	return db.batchResults, nil
 }
 
@@ -53,6 +55,16 @@ func (db *callbackDatabase) Batch(context.Context, ...d1.Statement) ([]d1.Result
 
 func (db *callbackDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
 	return db.rows, nil
+}
+
+type callbackCregisClient struct {
+	*cregis.Client
+	trade    cregis.Trade
+	tradeErr error
+}
+
+func (client *callbackCregisClient) DepositTrade(context.Context, int64, string, string, string) (cregis.Trade, error) {
+	return client.trade, client.tradeErr
 }
 
 func TestPayoutCallbackDoesNotAcknowledgeUnknownOrConflictingState(t *testing.T) {
@@ -155,11 +167,18 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 	}
 	conflicting["amount_text"] = "2"
 	wallet := []map[string]any{{"id": "wallet_deposit"}}
+	trade := cregis.Trade{
+		CID: 1463535767997001, ChainID: usdtTRC20ChainID, TokenID: usdtTRC20TokenID,
+		ToAddress: text(payload["address"]), FromAddress: "TXsmKpEuW7qWnXzJLGP9eDLvWPR2GRn1FS",
+		Amount: "1.25", Status: 1, TXID: text(payload["txid"]),
+	}
 
 	for _, test := range []struct {
 		name         string
 		batchChanges float64
 		existing     []map[string]any
+		tradeErr     error
+		invalidTrade bool
 		queryErrorAt int
 		wantStatus   int
 	}{
@@ -168,8 +187,14 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 		{name: "unknown duplicate", queryErrorAt: -1, wantStatus: http.StatusUnprocessableEntity},
 		{name: "conflicting duplicate", existing: []map[string]any{conflicting}, queryErrorAt: -1, wantStatus: http.StatusConflict},
 		{name: "lookup failure", queryErrorAt: 1, wantStatus: http.StatusServiceUnavailable},
+		{name: "trade lookup failure", tradeErr: errors.New("trade unavailable"), queryErrorAt: -1, wantStatus: http.StatusServiceUnavailable},
+		{name: "trade mismatch", invalidTrade: true, queryErrorAt: -1, wantStatus: http.StatusServiceUnavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			tradeResult := trade
+			if test.invalidTrade {
+				tradeResult.ToAddress = "TMismatchedDepositAddress11111111111"
+			}
 			db := &depositCallbackDatabase{
 				batchResults: []d1.Result{
 					{Meta: map[string]any{"changes": float64(1)}},
@@ -179,7 +204,7 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 				queryErrorAt: test.queryErrorAt,
 			}
 			app := &application{
-				db: db, cregis: client, cregisLive: true, tenantID: "tenant_test",
+				db: db, cregis: &callbackCregisClient{Client: client, trade: tradeResult, tradeErr: test.tradeErr}, cregisLive: true, tenantID: "tenant_test",
 				logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 			}
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/callbacks/cregis/deposit", bytes.NewReader(body))
@@ -190,6 +215,14 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 			}
 			if test.wantStatus != http.StatusOK && response.Body.String() == "success" {
 				t.Fatal("invalid deposit callback must never be acknowledged as success")
+			}
+			if test.name == "new deposit" {
+				if len(db.batches) != 1 || len(db.batches[0]) != 2 || len(db.batches[0][1].Params) != 17 {
+					t.Fatalf("unexpected deposit insert batch: %#v", db.batches)
+				}
+				if source := db.batches[0][1].Params[8]; source != trade.FromAddress {
+					t.Fatalf("stored source address = %v; want %s", source, trade.FromAddress)
+				}
 			}
 		})
 	}

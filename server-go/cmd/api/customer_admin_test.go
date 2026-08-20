@@ -78,3 +78,31 @@ func TestManualActivationRemainsARepairPath(t *testing.T) {
 		t.Fatal("setup credentials may only be issued to pending_setup customers")
 	}
 }
+
+func TestSumsubApprovalGate(t *testing.T) {
+	tests := []struct {
+		name        string
+		account     string
+		status      string
+		level       string
+		environment string
+		configured  bool
+		want        string
+	}{
+		{name: "legacy individual remains reviewable", account: "individual"},
+		{name: "business remains manual", account: "business", status: "provider_reviewing"},
+		{name: "ready", account: "individual", status: "ready_for_admin_review", level: "neobank_individual_v1", environment: "sandbox", configured: true},
+		{name: "steps incomplete", account: "individual", status: "provider_reviewing", level: "neobank_individual_v1", environment: "sandbox", configured: true, want: "sumsub_verification_not_ready"},
+		{name: "wrong level", account: "individual", status: "ready_for_admin_review", level: "other", environment: "sandbox", configured: true, want: "sumsub_configuration_mismatch"},
+		{name: "provider disabled", account: "individual", status: "ready_for_admin_review", level: "neobank_individual_v1", environment: "sandbox", want: "sumsub_configuration_mismatch"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := sumsubApprovalBlockCode(test.account, test.status, test.level, test.environment,
+				"neobank_individual_v1", "sandbox", test.configured)
+			if got != test.want {
+				t.Fatalf("block code = %q, want %q", got, test.want)
+			}
+		})
+	}
+}

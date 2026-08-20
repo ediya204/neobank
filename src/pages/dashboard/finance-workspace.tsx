@@ -711,6 +711,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     setChannelSaving(true);
     setChannelFormError('');
     try {
+      const isVirtualAccountChannel = channelForm.type === 'VIRTUAL_ACCOUNT';
       const body = {
         ...(!editingChannel
           ? {
@@ -723,11 +724,15 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         supportedCurrencies: channelForm.supportedCurrencies,
         ...(editingChannel ? { active: channelForm.active } : {}),
         settlementBankName: channelForm.settlementBankName.trim(),
-        settlementAccount: channelForm.settlementAccount.trim(),
         swiftBic: channelForm.swiftBic.trim().toUpperCase(),
         bankCountry: channelForm.bankCountry.trim().toUpperCase(),
         bankAddress: channelForm.bankAddress.trim(),
-        branchName: channelForm.branchName.trim(),
+        ...(!isVirtualAccountChannel
+          ? {
+              settlementAccount: channelForm.settlementAccount.trim(),
+              branchName: channelForm.branchName.trim(),
+            }
+          : {}),
       };
       await coreApi(
         editingChannel ? `/funding-channels/${editingChannel.id}` : '/funding-channels',
@@ -738,11 +743,13 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         }
       );
       setChannelEditorOpen(false);
-      setSuccess(
-        editingChannel
-          ? '资金通道配置已保存。'
-          : '资金通道已创建并保持停用；核对结算资料后可编辑启用。'
-      );
+      let successMessage = '资金通道配置已保存。';
+      if (!editingChannel && channelForm.type === 'VIRTUAL_ACCOUNT') {
+        successMessage = 'VA 银行通道已创建并保持停用；核对银行固定资料后可编辑启用。';
+      } else if (!editingChannel) {
+        successMessage = '资金通道已创建并保持停用；核对结算资料后可编辑启用。';
+      }
+      setSuccess(successMessage);
       await load();
     } catch (value) {
       setChannelFormError(channelErrorMessage(value));
@@ -1911,20 +1918,24 @@ function ChannelWorkspace({
                 </Box>
                 <Box>
                   <Typography variant="caption" color="text.secondary">
-                    结算资料
+                    {channel.type === 'VIRTUAL_ACCOUNT' ? '银行资料' : '结算资料'}
                   </Typography>
                   <Typography variant="body2" sx={{ mt: 0.5 }}>
                     {channel.settlementBankName || '未配置银行'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {[
-                      channel.settlementAccount,
-                      channel.swiftBic,
-                      channel.branchName,
-                      channel.bankCountry,
-                    ]
+                    {(channel.type === 'VIRTUAL_ACCOUNT'
+                      ? [channel.swiftBic, channel.bankCountry]
+                      : [
+                          channel.settlementAccount,
+                          channel.swiftBic,
+                          channel.branchName,
+                          channel.bankCountry,
+                        ]
+                    )
                       .filter(Boolean)
-                      .join(' · ') || '未配置结算资料'}
+                      .join(' · ') ||
+                      (channel.type === 'VIRTUAL_ACCOUNT' ? '未配置银行资料' : '未配置结算资料')}
                   </Typography>
                 </Box>
                 <Button
@@ -2127,6 +2138,7 @@ function ChannelEditorDrawer({
     onChange({ ...form, [key]: value });
   const activeInbound = form.active && form.type === 'FIAT_INBOUND';
   const activeVa = form.active && form.type === 'VIRTUAL_ACCOUNT';
+  const isVa = form.type === 'VIRTUAL_ACCOUNT';
   let submitLabel = channel ? '保存配置' : '创建停用通道';
   if (saving) submitLabel = '正在保存…';
 
@@ -2213,21 +2225,29 @@ function ChannelEditorDrawer({
 
           <Divider>
             <Typography variant="caption" color="text.secondary">
-              银行与结算资料
+              {isVa ? '银行资料' : '银行与结算资料'}
             </Typography>
           </Divider>
+          {isVa && (
+            <Alert severity="info">
+              此处只配置银行通道固定资料。账户名称、账号和 IBAN 会在每位客户的 VA
+              开通审批中按银行实际分配结果单独录入。
+            </Alert>
+          )}
           <TextField
             label="银行名称"
             required={activeInbound || activeVa}
             value={form.settlementBankName}
             onChange={(event) => set('settlementBankName', event.target.value)}
           />
-          <TextField
-            label="收款 / 结算账号"
-            required={activeInbound}
-            value={form.settlementAccount}
-            onChange={(event) => set('settlementAccount', event.target.value)}
-          />
+          {!isVa && (
+            <TextField
+              label="收款 / 结算账号"
+              required={activeInbound}
+              value={form.settlementAccount}
+              onChange={(event) => set('settlementAccount', event.target.value)}
+            />
+          )}
           <TextField
             label="SWIFT / BIC"
             required={activeInbound || activeVa}
@@ -2244,12 +2264,14 @@ function ChannelEditorDrawer({
               helperText="ISO 两位代码，例如 HK、SG"
               onChange={(event) => set('bankCountry', event.target.value.toUpperCase())}
             />
-            <TextField
-              fullWidth
-              label="分行名称"
-              value={form.branchName}
-              onChange={(event) => set('branchName', event.target.value)}
-            />
+            {!isVa && (
+              <TextField
+                fullWidth
+                label="分行名称"
+                value={form.branchName}
+                onChange={(event) => set('branchName', event.target.value)}
+              />
+            )}
           </Stack>
           <TextField
             multiline
@@ -2294,6 +2316,8 @@ function channelErrorMessage(value: unknown) {
       '启用法币入账通道前，请完整填写银行名称、收款账号和 SWIFT / BIC。',
     virtual_account_channel_bank_details_required:
       '启用 VA 开户通道前，请完整填写银行名称、国家、地址和 SWIFT / BIC。',
+    virtual_account_channel_customer_details_not_allowed:
+      'VA 银行通道不配置分行或客户账号；请在具体客户的 VA 开通审批中录入账户资料。',
     va_payout_channel_merged: 'VA 出款已与 VA 银行通道合并，请直接配置对应的 VA 银行。',
     unsupported_funding_channel_currency: '资金通道目前只支持 USD 和 HKD。',
     admin_role_required: '只有平台管理员可以修改资金通道。',

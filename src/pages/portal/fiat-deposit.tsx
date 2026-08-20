@@ -84,7 +84,7 @@ export default function FiatDepositPage() {
   useEffect(() => {
     if (!customer) return;
     coreApi<FundingChannel[]>(
-      `/funding-channels?organizationId=${customer.organizationId}&type=FIAT_INBOUND`
+      `/funding-channels?organizationId=${customer.organizationId}&type=FIAT_INBOUND&active=true`
     )
       .then(setChannels)
       .catch((value) => setError(value instanceof Error ? value.message : '入款信息加载失败'));

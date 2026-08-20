@@ -84,6 +84,7 @@ type CustomerHistoryRow = {
   net_amount?: string;
   status: string;
   address: string;
+  from_address?: string | null;
   txid?: string;
   created_at: string;
 };
@@ -159,7 +160,7 @@ function toCustomerTransfer(row: CustomerHistoryRow, wallet: CryptoWallet): Cryp
     amount: row.amount,
     feeAmount: deposit ? '0' : row.fee_amount || '0',
     netAmount: deposit ? row.amount : row.net_amount || row.amount,
-    fromAddress: deposit ? '链上来源' : wallet.walletAddress,
+    fromAddress: deposit ? row.from_address || '' : wallet.walletAddress,
     toAddress: deposit ? row.address : row.address,
     txHash: row.txid,
     confirmations: status === 'COMPLETED' ? 20 : 0,
@@ -358,6 +359,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
               onOpenTransfer={setSelectedTransfer}
               onCreated={load}
               customerSession={user?.role === 'customer'}
+              totpEnabled={Boolean(user?.totpEnabled)}
               beneficiaries={beneficiaries}
             />
           )}
@@ -718,6 +720,7 @@ function WithdrawView({
   onOpenTransfer,
   onCreated,
   customerSession,
+  totpEnabled,
   beneficiaries,
 }: {
   wallets: CryptoWallet[];
@@ -727,6 +730,7 @@ function WithdrawView({
   onOpenTransfer: (transfer: CryptoTransfer) => void;
   onCreated: () => Promise<void>;
   customerSession: boolean;
+  totpEnabled: boolean;
   beneficiaries: Beneficiary[];
 }) {
   const navigate = useNavigate();
@@ -1096,9 +1100,26 @@ function WithdrawView({
           <DialogTitle>添加白名单地址</DialogTitle>
           <DialogContent>
             <Stack spacing={2.25} sx={{ pt: 0.5 }}>
-              <Alert severity="info" icon={<Iconify icon="solar:shield-keyhole-bold" />}>
-                新地址必须使用当前账户验证器生成的 6 位 OTP 确认。地址生效后才能用于付币。
-              </Alert>
+              {totpEnabled ? (
+                <Alert severity="info" icon={<Iconify icon="solar:shield-keyhole-bold" />}>
+                  新地址必须使用当前账户验证器生成的 6 位 OTP 确认。地址生效后才能用于付币。
+                </Alert>
+              ) : (
+                <Alert
+                  severity="warning"
+                  action={
+                    <Button
+                      color="inherit"
+                      size="small"
+                      onClick={() => navigate('/portal/settings')}
+                    >
+                      前往设置
+                    </Button>
+                  }
+                >
+                  当前账户尚未启用 2FA。请先在账户设置中绑定验证器，再添加白名单地址。
+                </Alert>
+              )}
               {error && <Alert severity="error">{error}</Alert>}
               <TextField
                 required
@@ -1121,6 +1142,7 @@ function WithdrawView({
               <Divider />
               <TextField
                 required
+                disabled={!totpEnabled}
                 label="6 位 OTP"
                 value={otpCode}
                 onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -1147,6 +1169,7 @@ function WithdrawView({
               variant="contained"
               disabled={
                 addingAddress ||
+                !totpEnabled ||
                 !addressLabel.trim() ||
                 !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(newAddress) ||
                 !/^\d{6}$/.test(otpCode)
@@ -1333,7 +1356,11 @@ function TransferDrawer({
                 />
                 <DetailRow label="链上金额" value={formatUsdt(transfer.amount)} />
                 <DetailRow label="手续费" value={formatUsdt(transfer.feeAmount)} />
-                <DetailRow label="源地址" value={shorten(transfer.fromAddress, 10, 8)} mono />
+                <DetailRow
+                  label={transfer.direction === 'DEPOSIT' ? '打款方地址' : '源地址'}
+                  value={transfer.fromAddress ? shorten(transfer.fromAddress, 10, 8) : '暂未获取'}
+                  mono={Boolean(transfer.fromAddress)}
+                />
                 <DetailRow label="目标地址" value={shorten(transfer.toAddress, 10, 8)} mono />
                 <DetailRow
                   label="TXID"

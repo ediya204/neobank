@@ -35,6 +35,24 @@ const navItems = [
   ['收款人', '/portal/money/beneficiaries', 'solar:user-id-bold-duotone'],
 ] as const;
 
+const customerNavItems = [
+  ['总览', '/portal/home', 'solar:home-2-bold-duotone'],
+  ['系统账户', '/portal/money/accounts', 'solar:wallet-money-bold-duotone'],
+  ['VA 账户', '/portal/virtual-accounts', 'solar:buildings-2-bold-duotone'],
+  ['USDT 钱包', '/portal/crypto-wallet', 'solar:wallet-2-bold-duotone'],
+  ['转入转出', '/portal/money/transfers', 'solar:transfer-horizontal-bold-duotone'],
+  ['OTC', '/portal/money/otc', 'solar:hand-money-bold-duotone'],
+  ['交易记录', '/portal/transactions', 'solar:history-bold-duotone'],
+] as const;
+
+const customerMobileNavPaths = new Set([
+  '/portal/home',
+  '/portal/money/accounts',
+  '/portal/money/transfers',
+  '/portal/money/otc',
+  '/portal/transactions',
+]);
+
 export default function PortalLayout() {
   return (
     <PortalCustomerProvider>
@@ -51,23 +69,21 @@ function PortalFrame() {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   let visibleNavItems: ReadonlyArray<readonly [string, string, string]> = [];
   if (user?.role === 'customer') {
-    visibleNavItems = [
-      ['USDT 钱包', '/portal/home', 'solar:wallet-2-bold-duotone'],
-      ['VA 账户', '/portal/virtual-accounts', 'solar:buildings-2-bold-duotone'],
-    ];
+    visibleNavItems = customerNavItems;
   } else if (user) {
     visibleNavItems = navItems.filter(([, path]) => canAccessPortalPath(user, path));
   }
-  const showAccountSettings =
-    !IS_NEOBANK_DEPLOYMENT && Boolean(user && canAccessPortalPath(user, '/portal/settings'));
+  const mobileNavItems =
+    user?.role === 'customer'
+      ? visibleNavItems.filter(([, path]) => customerMobileNavPaths.has(path))
+      : visibleNavItems;
+  const showAccountSettings = Boolean(user && canAccessPortalPath(user, '/portal/settings'));
   const isActive = (path: string) => {
     if (path === '/portal/home') {
-      return (
-        location.pathname === path ||
-        (user?.role === 'customer' && location.pathname.startsWith('/portal/crypto-wallet'))
-      );
+      return location.pathname === path;
     }
     if (path === '/portal/money/accounts') {
+      if (user?.role === 'customer') return location.pathname.startsWith(path);
       return (
         location.pathname.startsWith(path) || location.pathname.startsWith('/portal/crypto-wallet')
       );
@@ -77,7 +93,6 @@ function PortalFrame() {
         location.pathname.startsWith(path) ||
         location.pathname.startsWith('/portal/money/deposit') ||
         location.pathname.startsWith('/portal/money/fx') ||
-        location.pathname.startsWith('/portal/money/otc') ||
         location.pathname.startsWith('/portal/money/payouts')
       );
     }
@@ -213,7 +228,7 @@ function PortalFrame() {
       <Box
         sx={{
           display: { xs: 'grid', lg: 'none' },
-          gridTemplateColumns: `repeat(${Math.max(visibleNavItems.length, 1)}, 1fr)`,
+          gridTemplateColumns: `repeat(${Math.max(mobileNavItems.length, 1)}, 1fr)`,
           position: 'fixed',
           left: 0,
           right: 0,
@@ -225,7 +240,7 @@ function PortalFrame() {
           pb: 'env(safe-area-inset-bottom)',
         }}
       >
-        {visibleNavItems.map(([label, path, icon]) => (
+        {mobileNavItems.map(([label, path, icon]) => (
           <Button
             key={path}
             onClick={() => navigate(path)}

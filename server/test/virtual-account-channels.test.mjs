@@ -110,6 +110,7 @@ test('admin must enter the assigned account while bank details come from the cha
   assert.equal(accountData.bankAddress, channel.bankAddress);
   assert.equal(accountData.bankCountry, channel.bankCountry);
   assert.equal(accountData.swiftBic, channel.swiftBic);
+  assert.equal(accountData.branchName, undefined);
   assert.equal(accountData.fundingChannelId, channel.id);
 });
 

@@ -71,6 +71,23 @@ func TestRelayRoutesAddressOwnershipThroughAuthentication(t *testing.T) {
 	}
 }
 
+func TestRelayRoutesTradeQueryThroughAuthentication(t *testing.T) {
+	app := &relay{
+		secret: []byte("0123456789abcdef0123456789abcdef"),
+		now:    time.Now,
+		nonces: make(map[string]time.Time),
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/trade/page", strings.NewReader(`{}`))
+	response := httptest.NewRecorder()
+
+	app.routes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("trade query route must reach relay authentication, got status %d", response.Code)
+	}
+}
+
 func TestValidateUpstreamIsPinned(t *testing.T) {
 	valid, err := validateUpstream(defaultUpstreamURL)
 	if err != nil || valid.String() != defaultUpstreamURL {

@@ -405,7 +405,6 @@ export class CustomersService {
               bankName: channel.settlementBankName,
               bankAddress: channel.bankAddress,
               bankCountry: channel.bankCountry,
-              branchName: channel.branchName,
               swiftBic: channel.swiftBic,
               fundingChannelId: channel.id,
             },

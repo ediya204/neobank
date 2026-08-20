@@ -99,7 +99,13 @@ const copy: Record<CustomerAction, { title: string; description: string; icon: s
   },
 };
 
-export default function CustomerActionPage({ action }: { action: CustomerAction }) {
+export default function CustomerActionPage({
+  action,
+  submissionDisabledReason,
+}: {
+  action: CustomerAction;
+  submissionDisabledReason?: string;
+}) {
   const [searchParams] = useSearchParams();
   const { customer, refresh } = usePortalCustomer();
   const [detail, setDetail] = useState<Customer | null>(null);
@@ -121,11 +127,17 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
     if (!customer) return;
     const [customerDetail, channelRows, rateRows, feeRows] = await Promise.all([
       coreApi<Customer>(`/customers/${customer.id}`),
-      coreApi<FundingChannel[]>(`/funding-channels?organizationId=${customer.organizationId}`),
-      coreApi<RateVersion[]>('/rates'),
-      coreApi<WithdrawalFeeRule[]>(
-        `/withdrawal-fees?organizationId=${customer.organizationId}&active=true`
-      ),
+      submissionDisabledReason
+        ? Promise.resolve([] as FundingChannel[])
+        : coreApi<FundingChannel[]>(`/funding-channels?organizationId=${customer.organizationId}`),
+      action === 'fx' || action === 'otc'
+        ? coreApi<RateVersion[]>(`/rates?type=${action === 'fx' ? 'FX' : 'OTC'}`)
+        : Promise.resolve([] as RateVersion[]),
+      submissionDisabledReason
+        ? Promise.resolve([] as WithdrawalFeeRule[])
+        : coreApi<WithdrawalFeeRule[]>(
+            `/withdrawal-fees?organizationId=${customer.organizationId}&active=true`
+          ),
     ]);
     setDetail(customerDetail);
     setChannels(channelRows);
@@ -239,6 +251,10 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!customer) return;
+    if (submissionDisabledReason) {
+      setError(submissionDisabledReason);
+      return;
+    }
     setError('');
     setSuccess('');
     setSubmitting(true);
@@ -322,6 +338,7 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
     return (
       <BeneficiaryPage
         customer={detail}
+        readOnlyReason={submissionDisabledReason}
         onCreate={() => setBeneficiaryOpen(true)}
         onReload={loadDetail}
         dialogOpen={beneficiaryOpen}
@@ -343,6 +360,9 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
           <Typography color="text.secondary" sx={{ mt: -2 }}>
             {info.description}
           </Typography>
+          {submissionDisabledReason && (
+            <Alert severity="info">{submissionDisabledReason} 历史记录可在“交易记录”中查询。</Alert>
+          )}
           {error && (
             <Alert severity="error" onClose={() => setError('')}>
               {error}
@@ -634,17 +654,28 @@ export default function CustomerActionPage({ action }: { action: CustomerAction 
                     minRows={2}
                   />
                   <Alert severity="info">
-                    提交后进入平台单人审批；审批完成前你可以在交易记录中查看进度。
+                    {submissionDisabledReason
+                      ? '当前页面保留账户与报价展示，不会创建资金指令。'
+                      : '提交后进入平台单人审批；审批完成前你可以在交易记录中查看进度。'}
                   </Alert>
                   <Button
                     size="large"
                     type="submit"
                     variant="contained"
-                    disabled={submitting || !sourceId || !amount}
+                    disabled={
+                      Boolean(submissionDisabledReason) || submitting || !sourceId || !amount
+                    }
                   >
+                    {submissionDisabledReason && '暂未开放提交'}
                     {submitting && '正在提交…'}
-                    {!submitting && action === 'payout' && '确认并提交付款'}
-                    {!submitting && action !== 'payout' && '确认并提交'}
+                    {!submissionDisabledReason &&
+                      !submitting &&
+                      action === 'payout' &&
+                      '确认并提交付款'}
+                    {!submissionDisabledReason &&
+                      !submitting &&
+                      action !== 'payout' &&
+                      '确认并提交'}
                   </Button>
                 </Stack>
               </Box>
@@ -673,12 +704,14 @@ function payoutChannelType(method: PayoutMethod): FundingChannel['type'] {
 
 function BeneficiaryPage({
   customer,
+  readOnlyReason,
   onCreate,
   onReload,
   dialogOpen,
   setDialogOpen,
 }: {
   customer: Customer | null;
+  readOnlyReason?: string;
   onCreate: () => void;
   onReload: () => Promise<void>;
   dialogOpen: boolean;
@@ -703,14 +736,17 @@ function BeneficiaryPage({
                 统一管理银行账户和数字货币地址，付款时直接选择并再次核对。
               </Typography>
             </Box>
-            <Button
-              variant="contained"
-              startIcon={<Iconify icon="solar:add-circle-linear" />}
-              onClick={onCreate}
-            >
-              新增收款人
-            </Button>
+            {!readOnlyReason && (
+              <Button
+                variant="contained"
+                startIcon={<Iconify icon="solar:add-circle-linear" />}
+                onClick={onCreate}
+              >
+                新增收款人
+              </Button>
+            )}
           </Stack>
+          {readOnlyReason && <Alert severity="info">{readOnlyReason}</Alert>}
           <Card>
             <Tabs
               value={filter}
@@ -801,24 +837,28 @@ function BeneficiaryPage({
                       ? '添加经过核对的 USDT · TRON (TRC20) 地址。'
                       : '添加银行账户或数字货币地址后，可在付款页面直接选择。'}
                   </Typography>
-                  <Button onClick={onCreate} sx={{ mt: 1.5 }}>
-                    立即添加
-                  </Button>
+                  {!readOnlyReason && (
+                    <Button onClick={onCreate} sx={{ mt: 1.5 }}>
+                      立即添加
+                    </Button>
+                  )}
                 </Stack>
               )}
             </Stack>
           </Card>
         </Stack>
       </Container>
-      <BeneficiaryDialog
-        open={dialogOpen}
-        customerId={customer?.id || ''}
-        onClose={() => setDialogOpen(false)}
-        onCreated={() => {
-          setDialogOpen(false);
-          onReload().catch(() => undefined);
-        }}
-      />
+      {!readOnlyReason && (
+        <BeneficiaryDialog
+          open={dialogOpen}
+          customerId={customer?.id || ''}
+          onClose={() => setDialogOpen(false)}
+          onCreated={() => {
+            setDialogOpen(false);
+            onReload().catch(() => undefined);
+          }}
+        />
+      )}
     </>
   );
 }

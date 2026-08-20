@@ -81,8 +81,8 @@ export class ChannelsController {
   ) {
     await requireOrganizationAccess(this.db, currentUserId(request), organizationId);
     const customerId = request.header('x-authenticated-customer-id')?.trim();
-    if (customerId && type !== ChannelType.VIRTUAL_ACCOUNT) {
-      throw new ForbiddenException('customer_virtual_account_channels_only');
+    if (customerId && type !== ChannelType.VIRTUAL_ACCOUNT && type !== ChannelType.FIAT_INBOUND) {
+      throw new ForbiddenException('customer_readable_channels_only');
     }
     if (active !== undefined && active !== 'true' && active !== 'false') {
       throw new BadRequestException('invalid_active_filter');
@@ -113,10 +113,12 @@ export class ChannelsController {
           supportedCurrencies,
           active: channel.active,
           settlementBankName: channel.settlementBankName,
+          ...(channel.type === ChannelType.FIAT_INBOUND
+            ? { settlementAccount: channel.settlementAccount }
+            : {}),
           swiftBic: channel.swiftBic,
           bankCountry: channel.bankCountry,
           bankAddress: channel.bankAddress,
-          branchName: channel.branchName,
         };
       })
       .filter((channel) => channel.supportedCurrencies.length > 0);
@@ -131,6 +133,12 @@ export class ChannelsController {
     }
     if (dto.type === ChannelType.VA_PAYOUT) {
       throw new BadRequestException('va_payout_channel_merged');
+    }
+    if (
+      dto.type === ChannelType.VIRTUAL_ACCOUNT &&
+      (this.optionalText(dto.settlementAccount) || this.optionalText(dto.branchName))
+    ) {
+      throw new BadRequestException('virtual_account_channel_customer_details_not_allowed');
     }
     this.assertSupportedCurrencies(dto.supportedCurrencies);
     const name = dto.name.trim();
@@ -183,6 +191,12 @@ export class ChannelsController {
     }
     if (channel.type === ChannelType.VA_PAYOUT && dto.active === true) {
       throw new BadRequestException('va_payout_channel_merged');
+    }
+    if (
+      channel.type === ChannelType.VIRTUAL_ACCOUNT &&
+      (this.optionalText(dto.settlementAccount) || this.optionalText(dto.branchName))
+    ) {
+      throw new BadRequestException('virtual_account_channel_customer_details_not_allowed');
     }
     if (dto.supportedCurrencies) this.assertSupportedCurrencies(dto.supportedCurrencies);
     const data = {

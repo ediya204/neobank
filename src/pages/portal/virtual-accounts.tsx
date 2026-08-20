@@ -182,9 +182,7 @@ export default function VirtualAccountsPage() {
                           {selectedChannel.settlementBankName || selectedChannel.name}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                          {[selectedChannel.branchName, selectedChannel.bankAddress]
-                            .filter(Boolean)
-                            .join(' · ') || '银行地址由运营维护'}
+                          {selectedChannel.bankAddress || '银行地址由运营维护'}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           SWIFT / BIC：{selectedChannel.swiftBic || '—'}

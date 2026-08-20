@@ -99,6 +99,12 @@ async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<R
   if (csrfToken) headers.set('x-csrf-token', csrfToken);
   const idempotencyKey = request.headers.get('idempotency-key');
   if (idempotencyKey) headers.set('idempotency-key', idempotencyKey);
+  if (incoming.pathname === '/api/webhooks/sumsub') {
+    const payloadDigest = request.headers.get('x-payload-digest');
+    const payloadDigestAlgorithm = request.headers.get('x-payload-digest-alg');
+    if (payloadDigest) headers.set('x-payload-digest', payloadDigest);
+    if (payloadDigestAlgorithm) headers.set('x-payload-digest-alg', payloadDigestAlgorithm);
+  }
   if (incoming.pathname === '/api/auth/setup-token') {
     const authorization = request.headers.get('authorization');
     if (authorization) headers.set('authorization', authorization);
@@ -283,6 +289,14 @@ async function fetchLiveMarketQuote(
   return quote as LiveMarketQuote;
 }
 
+function hasOnlySearchParams(url: URL, allowed: ReadonlySet<string>) {
+  let allowedOnly = true;
+  url.searchParams.forEach((_value, key) => {
+    if (!allowed.has(key)) allowedOnly = false;
+  });
+  return allowedOnly;
+}
+
 function customerCoreRouteAllowed(
   url: URL,
   method: string,
@@ -290,14 +304,73 @@ function customerCoreRouteAllowed(
   organizationId: string
 ) {
   if (url.pathname === '/api/core/funding-channels' && method === 'GET') {
+    const type = url.searchParams.get('type');
     return (
       url.searchParams.get('organizationId') === organizationId &&
-      url.searchParams.get('type') === 'VIRTUAL_ACCOUNT' &&
-      url.searchParams.get('active') === 'true'
+      (type === 'VIRTUAL_ACCOUNT' || type === 'FIAT_INBOUND') &&
+      url.searchParams.get('active') === 'true' &&
+      hasOnlySearchParams(url, new Set(['organizationId', 'type', 'active']))
     );
   }
   const ownRequests = `/api/core/customers/${customerId}/virtual-account-requests`;
-  return url.pathname === ownRequests && (method === 'GET' || method === 'POST');
+  if (url.pathname === ownRequests) return method === 'GET' || method === 'POST';
+  if (method !== 'GET') return false;
+  if (url.pathname === `/api/core/customers/${customerId}`) {
+    return hasOnlySearchParams(url, new Set());
+  }
+  if (url.pathname === '/api/core/accounts/summary') {
+    return (
+      url.searchParams.get('customerId') === customerId &&
+      hasOnlySearchParams(url, new Set(['customerId']))
+    );
+  }
+  if (url.pathname === '/api/core/operations') {
+    return (
+      url.searchParams.get('organizationId') === organizationId &&
+      url.searchParams.get('customerId') === customerId &&
+      hasOnlySearchParams(url, new Set(['organizationId', 'customerId']))
+    );
+  }
+  if (url.pathname === '/api/core/crypto-wallets/transfers') {
+    return (
+      url.searchParams.get('customerId') === customerId &&
+      hasOnlySearchParams(url, new Set(['customerId', 'direction', 'status']))
+    );
+  }
+  if (url.pathname === '/api/core/rates') {
+    const type = url.searchParams.get('type');
+    return (
+      (type === null || type === 'FX' || type === 'OTC') &&
+      hasOnlySearchParams(url, new Set(['type']))
+    );
+  }
+  return false;
+}
+
+const CUSTOMER_CORE_INTERNAL_FIELDS = new Set([
+  'creatorId',
+  'reviewerId',
+  'checkerId',
+  'operatorId',
+  'makerId',
+  'kycReviewerId',
+  'kycReviewNote',
+  'reviewNote',
+  'operatorNote',
+  'metadata',
+  'maker',
+  'checker',
+  'operator',
+]);
+
+function redactCustomerCorePayload(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactCustomerCorePayload);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !CUSTOMER_CORE_INTERNAL_FIELDS.has(key))
+      .map(([key, item]) => [key, redactCustomerCorePayload(item)])
+  );
 }
 
 async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
@@ -347,7 +420,10 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
     }
     const requiredPermission = requiredAdminCorePermission(incoming.pathname, request.method);
     const isSuperAdmin = permissions.includes(ADMIN_PERMISSIONS.users);
-    if ((!requiredPermission && !isSuperAdmin) || (requiredPermission && !permissions.includes(requiredPermission))) {
+    if (
+      (!requiredPermission && !isSuperAdmin) ||
+      (requiredPermission && !permissions.includes(requiredPermission))
+    ) {
       return json({ error: { code: 'admin_permission_required' } }, 403);
     }
   }
@@ -657,6 +733,11 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
     );
     return json(decorated);
   }
+  if (role === 'customer' && response.ok) {
+    const payload = await response.json().catch(() => null);
+    if (payload === null) return json({ error: { code: 'invalid_core_response' } }, 502);
+    return json(redactCustomerCorePayload(payload), response.status);
+  }
   return new Response(response.body, {
     status: response.status,
     headers: {
@@ -670,7 +751,8 @@ function isApplicationAPI(pathname: string) {
   return (
     pathname.startsWith('/api/auth/') ||
     pathname.startsWith('/api/v1/') ||
-    pathname.startsWith('/api/core/')
+    pathname.startsWith('/api/core/') ||
+    pathname === '/api/webhooks/sumsub'
   );
 }
 
@@ -699,6 +781,10 @@ export default {
     }
     try {
       if (isApplicationAPI(url.pathname)) {
+        const sumsubWebhook = url.pathname === '/api/webhooks/sumsub';
+        if (sumsubWebhook && request.method !== 'POST') {
+          return json({ error: { code: 'method_not_allowed' } }, 405);
+        }
         if (
           customerAPIInMaintenance(env) &&
           (url.pathname.startsWith('/api/auth/customer/') ||
@@ -706,7 +792,7 @@ export default {
         ) {
           return json({ error: { code: 'customer_auth_maintenance' } }, 503);
         }
-        if (!hasValidMutationOrigin(request)) {
+        if (!sumsubWebhook && !hasValidMutationOrigin(request)) {
           return json({ error: { code: 'invalid_origin' } }, 403);
         }
         if (url.pathname.startsWith('/api/core/')) {

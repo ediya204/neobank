@@ -6,6 +6,8 @@ import {
   AuthSessionUser,
   ChangePasswordInput,
   CompleteSetupInput,
+  CustomerTotpEnrollmentResult,
+  CustomerTotpVerificationResult,
   TotpSetupData,
   VerifyTotpInput,
 } from 'src/auth/types';
@@ -103,6 +105,7 @@ export function normalizeAuthUser(payload: unknown): AuthSessionUser | null {
     email,
     displayName,
     role,
+    totpEnabled: readBoolean(candidate, ['totp_enabled', 'totpEnabled']) || false,
     accessRole: readString(candidate, ['access_role', 'accessRole']) as AuthSessionUser['accessRole'],
     photoURL,
     organization: organizationId
@@ -363,6 +366,49 @@ export async function changeCurrentPassword(
       ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
     },
   });
+}
+
+export async function beginCustomerTotpEnrollment(
+  currentPassword: string,
+  csrfToken: string | null
+): Promise<CustomerTotpEnrollmentResult> {
+  const payload = await authRequest('/api/auth/customer/totp/enroll/start', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword }),
+    headers: {
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+    },
+  });
+  const setup = normalizeTotpSetup(payload);
+  if (!setup) {
+    throw new AuthApiError(502, 'invalid_auth_response', 'TOTP setup data is missing');
+  }
+  const data = unwrapPayload(payload);
+  return {
+    ...setup,
+    expiresAt: readString(data, ['expires_at', 'expiresAt']),
+  };
+}
+
+export async function verifyCustomerTotpEnrollment(
+  enrollmentToken: string,
+  code: string,
+  csrfToken: string | null
+): Promise<CustomerTotpVerificationResult> {
+  const payload = await authRequest('/api/auth/customer/totp/enroll/verify', {
+    method: 'POST',
+    body: JSON.stringify({ enrollment_token: enrollmentToken, code }),
+    headers: {
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+    },
+  });
+  const data = unwrapPayload(payload);
+  return {
+    totpEnabled: readBoolean(data, ['totp_enabled', 'totpEnabled']) === true,
+    recoveryCodes: normalizeRecoveryCodes(data),
+    otherSessionsRevoked:
+      readBoolean(data, ['other_sessions_revoked', 'otherSessionsRevoked']) === true,
+  };
 }
 
 export async function logoutSession(csrfToken: string | null) {

@@ -20,6 +20,7 @@ const CustomerAccounts = lazy(() => import('src/pages/portal/customer-accounts')
 const CustomerActivity = lazy(() => import('src/pages/portal/customer-activity'));
 const CustomerActionPage = lazy(() => import('src/pages/portal/customer-action'));
 const PortalSettings = lazy(() => import('src/pages/portal-settings'));
+const CustomerSettings = lazy(() => import('src/pages/portal/customer-settings'));
 const PortalTeam = lazy(() => import('src/pages/portal-team'));
 const PortalMessages = lazy(() => import('src/pages/portal-messages'));
 const PortalWebhookDeliveries = lazy(() => import('src/pages/portal-webhook-deliveries'));
@@ -38,6 +39,11 @@ function HomeRedirect() {
 function PortalIndexRedirect() {
   const { user } = useAuthContext();
   return user ? <Navigate to={getUserHome(user)} replace /> : null;
+}
+
+function PortalSettingsEntry() {
+  const { user } = useAuthContext();
+  return user?.role === 'customer' ? <CustomerSettings /> : <PortalSettings />;
 }
 
 function FullPortalAuthBoundary({ children }: { children: React.ReactNode }) {
@@ -81,6 +87,7 @@ const isolatedWalletRoutes = [
       { path: 'crypto-wallet/deposit', element: <CryptoWalletPage view="deposit" /> },
       { path: 'crypto-wallet/withdraw', element: <CryptoWalletPage view="withdraw" /> },
       { path: 'virtual-accounts', element: <VirtualAccountsPage /> },
+      { path: 'settings', element: <CustomerSettings /> },
       { path: '*', element: <Page404 /> },
     ],
   },
@@ -113,11 +120,52 @@ const fullAdminWalletRoutes = [
     ),
     children: [
       { index: true, element: <Navigate to="/portal/home" replace /> },
-      { path: 'home', element: <CryptoWalletPage /> },
-      { path: 'crypto-wallet', element: <Navigate to="/portal/home" replace /> },
+      { path: 'home', element: <CustomerHome /> },
+      { path: 'money/accounts', element: <CustomerAccounts /> },
+      { path: 'money/transfers', element: <FundsHub /> },
+      { path: 'money/deposit', element: <FiatDepositPage /> },
+      {
+        path: 'money/fx',
+        element: (
+          <CustomerActionPage
+            action="fx"
+            submissionDisabledReason="当前版本仅展示账户与历史记录，客户主动换汇暂未开放。"
+          />
+        ),
+      },
+      {
+        path: 'money/otc',
+        element: (
+          <CustomerActionPage
+            action="otc"
+            submissionDisabledReason="当前版本的 OTC 由已清算法币自动生成，客户暂不能手动创建订单。"
+          />
+        ),
+      },
+      {
+        path: 'money/payouts',
+        element: (
+          <CustomerActionPage
+            action="payout"
+            submissionDisabledReason="当前版本暂未开放客户法币转出申请。"
+          />
+        ),
+      },
+      {
+        path: 'money/beneficiaries',
+        element: (
+          <CustomerActionPage
+            action="beneficiaries"
+            submissionDisabledReason="当前版本的收款人资料仅供查看，新增和修改暂未开放。"
+          />
+        ),
+      },
+      { path: 'transactions', element: <CustomerActivity /> },
+      { path: 'crypto-wallet', element: <CryptoWalletPage /> },
       { path: 'crypto-wallet/deposit', element: <CryptoWalletPage view="deposit" /> },
       { path: 'crypto-wallet/withdraw', element: <CryptoWalletPage view="withdraw" /> },
       { path: 'virtual-accounts', element: <VirtualAccountsPage /> },
+      { path: 'settings', element: <CustomerSettings /> },
       { path: '*', element: <Page404 /> },
     ],
   },
@@ -191,7 +239,7 @@ const fullApplicationRoutes = [
           )
         ),
       },
-      { path: 'settings', element: <PortalSettings /> },
+      { path: 'settings', element: <PortalSettingsEntry /> },
       {
         path: 'webhook-deliveries',
         element: permissionRoute('integrations.read', <PortalWebhookDeliveries />),

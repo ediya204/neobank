@@ -24,21 +24,28 @@ The production Go runtime must refuse every `DATABASE_BACKEND` value other than
 The production web build is selected at compile time with
 `REACT_APP_NEOBANK_DEPLOYMENT_MODE=full-admin-wallet`. It exposes:
 
-| Audience      | Browser routes                                                        | Authentication source                              |
-| ------------- | --------------------------------------------------------------------- | -------------------------------------------------- |
-| Customer      | `/customer/register`, `/customer/login`, `/customer/setup`            | Public application password; legacy setup fallback |
-| Customer      | `/portal/home`; wallet actions remain under `/portal/crypto-wallet/*` | Same validated customer session                    |
-| Administrator | `/admin/login`, `/admin/setup`, `/admin`, `/dashboard/*`              | Application password + TOTP session                |
+| Audience      | Browser routes                                                            | Authentication source                              |
+| ------------- | ------------------------------------------------------------------------- | -------------------------------------------------- |
+| Customer      | `/customer/register`, `/customer/login`, `/customer/setup`                | Public application password; legacy setup fallback |
+| Customer      | `/portal/home`, `/portal/money/*`, `/portal/transactions`                 | Same validated customer session                    |
+| Customer      | `/portal/crypto-wallet/*`, `/portal/virtual-accounts`, `/portal/settings` | Same validated customer session                    |
+| Administrator | `/admin/login`, `/admin/setup`, `/admin`, `/dashboard/*`                  | Application password + TOTP session                |
 
-For compatibility with saved links, `/portal/crypto-wallet` redirects to
-`/portal/home`, `/admin` redirects to `/dashboard/overview`, and
-`/admin/neobank-crypto` redirects to `/dashboard/operations/crypto-wallets`.
-These aliases do not change the authentication boundary.
+For compatibility with saved links, `/admin` redirects to `/dashboard/overview`
+and `/admin/neobank-crypto` redirects to
+`/dashboard/operations/crypto-wallets`. These aliases do not change the
+authentication boundary.
 
-The customer Portal remains wallet-only. The administrator Dashboard exposes
-customer and onboarding review, finance operations, accounts, channels, rates,
-ledger views, and the Go/Cregis digital-wallet operations page. Partner
-Portal routes are not part of this production profile.
+The customer Portal exposes the customer's own system accounts, VA accounts,
+USDT/TRON wallet, transfer/deposit information, automatic OTC visibility, and
+transaction history. Customer Core access is constrained at the Worker to the
+authenticated customer ID and response payloads remove operator identities,
+internal notes, and metadata. Manual customer OTC, customer fiat payout, and
+other disabled financial writes remain visibly unavailable; restoring the pages
+does not bypass those server-side state and authorization gates. The administrator
+Dashboard exposes customer and onboarding review, finance operations, accounts,
+channels, rates, ledger views, and the Go/Cregis digital-wallet operations page.
+Partner Portal routes are not part of this production profile.
 
 Use only the Neobank-prefixed commands for this deployment:
 
@@ -144,9 +151,20 @@ credential-version checks.
 `CREGIS_RELAY_URL` affects only the Cregis client. Do not configure a global
 `HTTP_PROXY` or `HTTPS_PROXY`.
 The relay accepts only the Cregis address-create, address-ownership,
-address-legality, and payout
+address-legality, transaction-query, and payout
 paths, authenticates the complete request body, rejects replayed nonces, and
 pins its upstream to the configured Cregis test gateway.
+
+The address-deposit callback does not contain the payer address. For a completed
+deposit, the Go service queries `POST /api/v1/trade/page` through the authenticated
+relay and accepts `from_address` only after CID, TXID, chain, token, destination,
+amount, and status all match the signed callback. PostgreSQL stores the verified
+address on `cregis_deposits`; existing rows remain explicitly unavailable until
+the same callback is re-pushed and passes the idempotent verification path.
+Release this path in dependency order: update the relay allowlist, apply reviewed
+PostgreSQL migration `0009_deposit_source_address.sql` through the backup and
+approval gate, release the Go service, then release the web Worker. Only after
+those checks may an operator re-push an existing Cregis callback.
 
 `GET /api/v1/admin/market-rate?base=USD&quote=HKD` and the customer-session
 equivalent `GET /api/v1/customer/market-rate` read FastForex midpoint spot

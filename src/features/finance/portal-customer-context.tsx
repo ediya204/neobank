@@ -45,7 +45,7 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
         }>('/customer/profile');
         const self: Customer = {
           id: profile.id,
-          organizationId: 'self',
+          organizationId: demoOrganizationId,
           type: 'INDIVIDUAL',
           status: profile.status.toUpperCase(),
           kycStatus: 'APPROVED',
@@ -55,9 +55,33 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
           countryCode: '',
           accounts: [],
         };
-        setCustomers([self]);
+        const [customerResult, operationResult] = await Promise.allSettled([
+          coreApi<Customer>(`/customers/${encodeURIComponent(profile.id)}`),
+          coreApi<Operation[]>(
+            `/operations?organizationId=${encodeURIComponent(
+              demoOrganizationId
+            )}&customerId=${encodeURIComponent(profile.id)}`
+          ),
+        ]);
+        const resolvedCustomer =
+          customerResult.status === 'fulfilled'
+            ? {
+                ...customerResult.value,
+                accounts: customerResult.value.accounts.filter(isSupportedPortalAccount),
+              }
+            : self;
+        const resolvedOperations =
+          operationResult.status === 'fulfilled'
+            ? operationResult.value.filter(
+                (row) => !(row.type === 'PAYOUT' && row.currency === 'USDT')
+              )
+            : [];
+        setCustomers([resolvedCustomer]);
         setCustomerId(self.id);
-        setOperations([]);
+        setOperations(resolvedOperations);
+        if (customerResult.status === 'rejected' || operationResult.status === 'rejected') {
+          setError('部分账户资料暂时不可用，请稍后刷新。');
+        }
         return;
       }
       const rows = await coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`);

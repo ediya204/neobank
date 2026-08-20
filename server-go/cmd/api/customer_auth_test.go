@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -173,6 +174,113 @@ func TestApprovedRegistrationCanLoginDirectlyWithPassword(t *testing.T) {
 	}
 	if strings.Contains(combined, "customer_login_challenges") {
 		t.Fatal("password-only registration login must not create a TOTP challenge")
+	}
+}
+
+func TestActiveCustomerCanEnrollTOTPWithoutStoringPendingSecret(t *testing.T) {
+	pepper := []byte("0123456789abcdef0123456789abcdef")
+	password := "Correct-Horse-7-Battery!"
+	salt := []byte("0123456789abcdef")
+	token := strings.Repeat("t", 32)
+	csrf := strings.Repeat("c", 32)
+	now := time.Now().UTC()
+	app := &application{
+		customerPasswordPepper: pepper,
+		customerTOTPKey:        []byte("0123456789abcdef0123456789abcdef"),
+		customerRecoveryPepper: []byte("abcdef0123456789abcdef0123456789"),
+		tenantID:               "tenant_test",
+		portalURL:              "http://localhost:3000",
+	}
+	hash := app.deriveCustomerArgon2id(password, salt)
+	db := &customerLoginDatabase{rows: []map[string]any{{
+		"id": "session_test", "customer_id": "customer_test", "csrf_hash": tokenHash(csrf),
+		"credential_version": int64(1), "current_credential_version": int64(1),
+		"expires_at":      databaseTimestamp(now.Add(time.Hour)),
+		"idle_expires_at": databaseTimestamp(now.Add(30 * time.Minute)),
+		"last_seen_at":    databaseTimestamp(now),
+		"email":           "customer@example.test", "display_name": "Customer", "status": "active",
+		"totp_enabled": false, "totp_secret_ciphertext": nil,
+		"password_salt": hex.EncodeToString(salt), "password_hash": hex.EncodeToString(hash),
+		"password_algorithm": customerPasswordAlgorithm, "password_iterations": int64(0),
+		"password_memory_kib": int64(customerArgonMemoryKiB), "password_time_cost": int64(customerArgonTimeCost),
+		"password_parallelism": int64(customerArgonParallelism),
+	}}}
+	app.db = db
+
+	startRequest := httptest.NewRequest(http.MethodPost, "/api/auth/customer/totp/enroll/start", bytes.NewBufferString(
+		`{"current_password":"Correct-Horse-7-Battery!"}`,
+	))
+	startRequest.Header.Set("Content-Type", "application/json")
+	startRequest.Header.Set("Origin", app.portalURL)
+	startRequest.Header.Set("X-CSRF-Token", csrf)
+	startRequest.AddCookie(&http.Cookie{Name: app.customerCookieName(), Value: token})
+	startRequest.AddCookie(&http.Cookie{Name: app.customerCSRFCookieName(), Value: csrf})
+	startResponse := httptest.NewRecorder()
+	app.startCustomerTOTPEnrollment(startResponse, startRequest)
+	if startResponse.Code != http.StatusOK {
+		t.Fatalf("start enrollment status=%d body=%q", startResponse.Code, startResponse.Body.String())
+	}
+	var startPayload map[string]any
+	if err := json.Unmarshal(startResponse.Body.Bytes(), &startPayload); err != nil {
+		t.Fatal(err)
+	}
+	secret := text(startPayload["secret"])
+	enrollmentToken := text(startPayload["enrollment_token"])
+	if secret == "" || enrollmentToken == "" || strings.Contains(enrollmentToken, secret) {
+		t.Fatal("enrollment must return a secret and an opaque bound token")
+	}
+	for _, statement := range db.statements {
+		if strings.Contains(statement.SQL, "UPDATE customer_credentials") {
+			t.Fatal("starting enrollment must not persist or activate the pending TOTP secret")
+		}
+	}
+
+	code := totpCodeForTest(t, secret, time.Now().UTC())
+	verifyRequest := httptest.NewRequest(http.MethodPost, "/api/auth/customer/totp/enroll/verify", bytes.NewBufferString(
+		fmt.Sprintf(`{"enrollment_token":%q,"code":%q}`, enrollmentToken, code),
+	))
+	verifyRequest.Header.Set("Content-Type", "application/json")
+	verifyRequest.Header.Set("Origin", app.portalURL)
+	verifyRequest.Header.Set("X-CSRF-Token", csrf)
+	verifyRequest.AddCookie(&http.Cookie{Name: app.customerCookieName(), Value: token})
+	verifyRequest.AddCookie(&http.Cookie{Name: app.customerCSRFCookieName(), Value: csrf})
+	verifyResponse := httptest.NewRecorder()
+	app.verifyActiveCustomerTOTPEnrollment(verifyResponse, verifyRequest)
+	if verifyResponse.Code != http.StatusOK || !strings.Contains(verifyResponse.Body.String(), `"totp_enabled":true`) {
+		t.Fatalf("verify enrollment status=%d body=%q", verifyResponse.Code, verifyResponse.Body.String())
+	}
+	var verifyPayload map[string]any
+	if err := json.Unmarshal(verifyResponse.Body.Bytes(), &verifyPayload); err != nil {
+		t.Fatal(err)
+	}
+	if codes, ok := verifyPayload["recovery_codes"].([]any); !ok || len(codes) != 10 {
+		t.Fatalf("expected ten one-time recovery codes, got %#v", verifyPayload["recovery_codes"])
+	}
+}
+
+func TestCustomerTOTPEnrollmentTokenRejectsTampering(t *testing.T) {
+	app := &application{
+		tenantID:        "tenant_test",
+		customerTOTPKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+	token, err := app.encryptCustomerTOTPEnrollment(customerTOTPEnrollment{
+		CustomerID: "customer_test", Secret: "JBSWY3DPEHPK3PXP", CredentialVersion: 1,
+		ExpiresAt: time.Now().Add(time.Minute).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := app.decryptCustomerTOTPEnrollment(token)
+	if err != nil || decoded.CustomerID != "customer_test" {
+		t.Fatalf("valid enrollment token failed: %#v %v", decoded, err)
+	}
+	last := token[len(token)-1]
+	replacement := byte('A')
+	if last == replacement {
+		replacement = 'B'
+	}
+	if _, err := app.decryptCustomerTOTPEnrollment(token[:len(token)-1] + string(replacement)); err == nil {
+		t.Fatal("tampered enrollment token must fail authentication")
 	}
 }
 

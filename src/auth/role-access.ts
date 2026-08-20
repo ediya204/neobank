@@ -55,13 +55,32 @@ function isCustomerWalletPath(pathname: string) {
     pathname === '/portal/home' ||
     pathname === '/portal/crypto-wallet' ||
     pathname.startsWith('/portal/crypto-wallet/') ||
-    pathname === '/portal/virtual-accounts'
+    pathname === '/portal/virtual-accounts' ||
+    pathname === '/portal/settings'
+  );
+}
+
+function isCustomerFullPortalPath(pathname: string) {
+  return (
+    isCustomerWalletPath(pathname) ||
+    pathname === '/portal/transactions' ||
+    pathname.startsWith('/portal/transactions/') ||
+    pathname === '/portal/money/accounts' ||
+    pathname === '/portal/money/transfers' ||
+    pathname === '/portal/money/deposit' ||
+    pathname === '/portal/money/fx' ||
+    pathname === '/portal/money/otc' ||
+    pathname === '/portal/money/payouts' ||
+    pathname === '/portal/money/beneficiaries'
   );
 }
 
 export function canAccessPortalPath(user: AuthSessionUser, pathname: string) {
   if (user.role === 'customer') {
-    return isCustomerWalletPath(pathname) || pathname === '/portal/settings';
+    const allowed = IS_FULL_ADMIN_WALLET_DEPLOYMENT
+      ? isCustomerFullPortalPath(pathname)
+      : isCustomerWalletPath(pathname);
+    return allowed || pathname === '/portal/settings';
   }
   if (user.role !== 'partner') return false;
   if (pathname === '/portal' || pathname === '/portal/settings') return true;
@@ -194,7 +213,10 @@ export function safeReturnTo(
     ) {
       return fallback;
     }
-    if (role === 'customer' && !isCustomerWalletPath(canonicalUrl.pathname)) {
+    const customerPathAllowed = IS_FULL_ADMIN_WALLET_DEPLOYMENT
+      ? isCustomerFullPortalPath(canonicalUrl.pathname)
+      : isCustomerWalletPath(canonicalUrl.pathname);
+    if (role === 'customer' && !customerPathAllowed) {
       return fallback;
     }
     if (role === 'partner') return fallback;
