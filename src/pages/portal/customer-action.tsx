@@ -39,6 +39,12 @@ import {
   WithdrawalFeeRule,
   supportedFiatCurrencies,
 } from 'src/features/finance/core-api';
+import {
+  mergeLiveCustomerWallets,
+  OtcDirection,
+  otcSourceAccounts,
+  otcTargetAccounts,
+} from 'src/features/finance/otc-account-selection';
 import { accountLabel, money } from './customer-shared';
 
 export type CustomerAction = 'transfer' | 'fx' | 'otc' | 'payout' | 'beneficiaries';
@@ -117,6 +123,9 @@ export default function CustomerActionPage({
   const [beneficiaryId, setBeneficiaryId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [otcDirection, setOtcDirection] = useState<OtcDirection>(() =>
+    searchParams.get('source') === 'USDT' ? 'SELL_USDT' : 'BUY_USDT'
+  );
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('PLATFORM');
   const [beneficiaryOpen, setBeneficiaryOpen] = useState(false);
   const [error, setError] = useState('');
@@ -149,40 +158,53 @@ export default function CustomerActionPage({
     loadDetail().catch((value) => setError(value instanceof Error ? value.message : '加载失败'));
   }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const accounts = useMemo(
-    () =>
-      (detail?.accounts || []).filter(
-        (row) =>
-          ['SYSTEM_WALLET', 'VIRTUAL_ACCOUNT', 'CRYPTO_WALLET'].includes(row.kind) &&
-          row.status === 'ACTIVE' &&
-          isSupportedPortalAccount(row)
-      ),
-    [detail]
-  );
+  const accounts = useMemo(() => {
+    const mergedAccounts = mergeLiveCustomerWallets(
+      detail?.accounts || [],
+      customer?.accounts || []
+    );
+    return mergedAccounts.filter(
+      (row) =>
+        ['SYSTEM_WALLET', 'VIRTUAL_ACCOUNT', 'CRYPTO_WALLET'].includes(row.kind) &&
+        row.status === 'ACTIVE' &&
+        isSupportedPortalAccount(row)
+    );
+  }, [customer?.accounts, detail?.accounts]);
   const source = accounts.find((row) => row.id === sourceId);
-  const targets = accounts.filter((row) => {
-    if (!source || row.id === source.id) return false;
-    if (action === 'transfer') return row.currency === source.currency;
-    if (action === 'fx') return row.kind !== 'CRYPTO_WALLET' && row.currency !== source.currency;
-    if (action === 'otc') return (source.currency === 'USDT') !== (row.currency === 'USDT');
-    return false;
-  });
+  const targets = useMemo(
+    () =>
+      action === 'otc'
+        ? otcTargetAccounts(accounts, otcDirection, sourceId)
+        : accounts.filter((row) => {
+            if (!source || row.id === source.id) return false;
+            if (action === 'transfer') return row.currency === source.currency;
+            if (action === 'fx')
+              return row.kind !== 'CRYPTO_WALLET' && row.currency !== source.currency;
+            return false;
+          }),
+    [accounts, action, otcDirection, source, sourceId]
+  );
   const beneficiaries = (detail?.beneficiaries || []).filter((row) => row.type === 'BANK');
   const selectedBeneficiary = beneficiaries.find((row) => row.id === beneficiaryId);
-  const payoutAccounts = accounts.filter((row) => {
-    if (!selectedBeneficiary) return false;
-    if (row.currency !== selectedBeneficiary.currency) return false;
-    const expectedKind = payoutMethod === 'VA' ? 'VIRTUAL_ACCOUNT' : 'SYSTEM_WALLET';
-    return row.kind === expectedKind && supportedFiatCurrencies.includes(row.currency);
-  });
-  const sourceOptions =
-    action === 'payout'
-      ? payoutAccounts
-      : accounts.filter((row) => {
-          if (action === 'otc') return true;
-          return row.kind === 'SYSTEM_WALLET' && supportedFiatCurrencies.includes(row.currency);
-        });
-  const sourceFieldLabel = action === 'payout' ? '付款账户' : '从账户';
+  const sourceOptions = useMemo(() => {
+    if (action === 'payout') {
+      return accounts.filter((row) => {
+        if (!selectedBeneficiary || row.currency !== selectedBeneficiary.currency) return false;
+        const expectedKind = payoutMethod === 'VA' ? 'VIRTUAL_ACCOUNT' : 'SYSTEM_WALLET';
+        return row.kind === expectedKind && supportedFiatCurrencies.includes(row.currency);
+      });
+    }
+    if (action === 'otc') return otcSourceAccounts(accounts, otcDirection);
+    return accounts.filter(
+      (row) => row.kind === 'SYSTEM_WALLET' && supportedFiatCurrencies.includes(row.currency)
+    );
+  }, [accounts, action, otcDirection, payoutMethod, selectedBeneficiary]);
+  let sourceFieldLabel = action === 'payout' ? '付款账户' : '从账户';
+  if (action === 'otc') {
+    sourceFieldLabel = otcDirection === 'BUY_USDT' ? '付款账户' : '付款钱包';
+  }
+  const targetFieldLabel =
+    action === 'otc' && otcDirection === 'BUY_USDT' ? '到账钱包' : '到账账户';
   const payoutChannel =
     action === 'payout' && source
       ? channels.find(
@@ -221,32 +243,50 @@ export default function CustomerActionPage({
 
   useEffect(() => {
     setTargetId('');
+    setAmount('');
   }, [sourceId]);
   useEffect(() => {
     if (action === 'payout') setSourceId('');
   }, [action, beneficiaryId, payoutMethod]);
 
   useEffect(() => {
-    if (action !== 'otc' || !accounts.length) return;
+    if (action !== 'otc' || !sourceOptions.length) return;
     const requestedSource = searchParams.get('source');
+    const currentSourceIsValid = sourceOptions.some((row) => row.id === sourceId);
+    if (currentSourceIsValid) return;
+    const preferredSource = sourceOptions.find((row) => row.currency === requestedSource);
+    const nextSource = preferredSource || (sourceOptions.length === 1 ? sourceOptions[0] : null);
+    setSourceId(nextSource?.id || '');
+  }, [action, searchParams, sourceId, sourceOptions]);
+
+  useEffect(() => {
+    if (action !== 'otc' || !source) return;
+    if (targets.some((row) => row.id === targetId)) return;
     const requestedTargetKind = searchParams.get('targetKind');
-    const preferredSource = accounts.find(
-      (row) => row.currency === requestedSource && row.kind === 'CRYPTO_WALLET'
-    );
-    const resolvedSource = preferredSource || source;
-    if (preferredSource && sourceId !== preferredSource.id) {
-      setSourceId(preferredSource.id);
-      return;
-    }
-    if (!resolvedSource || !requestedTargetKind) return;
-    const preferredTarget = accounts.find(
-      (row) =>
-        row.id !== resolvedSource.id &&
-        row.kind === requestedTargetKind &&
-        row.currency !== resolvedSource.currency
-    );
-    if (preferredTarget && targetId !== preferredTarget.id) setTargetId(preferredTarget.id);
-  }, [accounts, action, searchParams, source, sourceId, targetId]);
+    const preferredTarget = targets.find((row) => row.kind === requestedTargetKind);
+    const nextTarget = preferredTarget || (targets.length === 1 ? targets[0] : null);
+    setTargetId(nextTarget?.id || '');
+  }, [action, searchParams, source, targetId, targets]);
+
+  const changeOtcDirection = (direction: OtcDirection) => {
+    if (direction === otcDirection) return;
+    setOtcDirection(direction);
+    setSourceId('');
+    setTargetId('');
+    setAmount('');
+    setError('');
+  };
+
+  const insufficientBalance = Boolean(
+    source && amount && Number(amount) > Number(source.availableBalance)
+  );
+  const availableBalanceLabel = source ? money(source.availableBalance, source.currency) : '';
+  let amountHelperText = '请先选择付款账户';
+  if (action === 'otc' && otcDirection === 'SELL_USDT') {
+    amountHelperText = '请先选择付款钱包';
+  }
+  if (source) amountHelperText = `可用余额 ${availableBalanceLabel}`;
+  if (insufficientBalance) amountHelperText = `金额超过可用余额 ${availableBalanceLabel}`;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -509,7 +549,82 @@ export default function CustomerActionPage({
                       )}
                     </>
                   )}
-                  <FormControl required fullWidth>
+                  {action === 'otc' && (
+                    <>
+                      <Typography variant="h6">兑换方向</Typography>
+                      <Box
+                        role="radiogroup"
+                        aria-label="OTC 兑换方向"
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                          gap: 1.5,
+                        }}
+                      >
+                        {(
+                          [
+                            {
+                              value: 'BUY_USDT',
+                              title: '法币买入 USDT',
+                              description: 'USD / HKD → USDT · TRON（TRC20）',
+                            },
+                            {
+                              value: 'SELL_USDT',
+                              title: '卖出 USDT',
+                              description: 'USDT · TRON（TRC20）→ USD / HKD',
+                            },
+                          ] as const
+                        ).map((option) => {
+                          const selected = otcDirection === option.value;
+                          return (
+                            <ButtonBase
+                              key={option.value}
+                              role="radio"
+                              aria-checked={selected}
+                              onClick={() => changeOtcDirection(option.value)}
+                              sx={{
+                                minHeight: 78,
+                                p: 2,
+                                border: '1px solid',
+                                borderColor: selected ? 'primary.main' : 'divider',
+                                borderRadius: 1.5,
+                                bgcolor: selected ? 'primary.lighter' : 'background.paper',
+                                textAlign: 'left',
+                                justifyContent: 'space-between',
+                                gap: 2,
+                                '&:hover': { borderColor: 'primary.main' },
+                                '&:focus-visible': {
+                                  outline: '2px solid',
+                                  outlineColor: 'primary.main',
+                                  outlineOffset: 2,
+                                },
+                              }}
+                            >
+                              <Box>
+                                <Typography variant="subtitle2">{option.title}</Typography>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  sx={{ display: 'block', mt: 0.5 }}
+                                >
+                                  {option.description}
+                                </Typography>
+                              </Box>
+                              {selected && <Label color="primary">已选择</Label>}
+                            </ButtonBase>
+                          );
+                        })}
+                      </Box>
+                      {!sourceOptions.length && (
+                        <Alert severity="warning">
+                          {otcDirection === 'BUY_USDT'
+                            ? '当前没有可用于买入 USDT 的活动法币账户。'
+                            : '当前没有可用于卖出的活动 USDT-TRC20 钱包。'}
+                        </Alert>
+                      )}
+                    </>
+                  )}
+                  <FormControl required fullWidth disabled={!sourceOptions.length}>
                     <InputLabel>{sourceFieldLabel}</InputLabel>
                     <Select
                       label={sourceFieldLabel}
@@ -524,10 +639,10 @@ export default function CustomerActionPage({
                     </Select>
                   </FormControl>
                   {action !== 'payout' && (
-                    <FormControl required fullWidth disabled={!source}>
-                      <InputLabel>到账账户</InputLabel>
+                    <FormControl required fullWidth disabled={!source || !targets.length}>
+                      <InputLabel>{targetFieldLabel}</InputLabel>
                       <Select
-                        label="到账账户"
+                        label={targetFieldLabel}
                         value={targetId}
                         onChange={(event) => setTargetId(event.target.value)}
                       >
@@ -539,18 +654,22 @@ export default function CustomerActionPage({
                       </Select>
                     </FormControl>
                   )}
+                  {action === 'otc' && source && !targets.length && (
+                    <Alert severity="warning">
+                      {otcDirection === 'BUY_USDT'
+                        ? '当前没有可接收资产的活动 USDT-TRC20 钱包。'
+                        : '当前没有可接收卖出款项的活动 USD / HKD 账户。'}
+                    </Alert>
+                  )}
                   <TextField
                     required
                     label={source ? `金额（${source.currency}）` : '金额'}
                     type="number"
                     value={amount}
                     onChange={(event) => setAmount(event.target.value)}
-                    inputProps={{ min: 0.01, step: 0.01 }}
-                    helperText={
-                      source
-                        ? `可用余额 ${money(source.availableBalance, source.currency)}`
-                        : '请先选择付款账户'
-                    }
+                    error={insufficientBalance}
+                    inputProps={{ min: 0.01, step: source?.currency === 'USDT' ? 0.000001 : 0.01 }}
+                    helperText={amountHelperText}
                   />
                   {action === 'payout' && source && (
                     <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
@@ -663,7 +782,12 @@ export default function CustomerActionPage({
                     type="submit"
                     variant="contained"
                     disabled={
-                      Boolean(submissionDisabledReason) || submitting || !sourceId || !amount
+                      Boolean(submissionDisabledReason) ||
+                      submitting ||
+                      !sourceId ||
+                      !amount ||
+                      (action !== 'payout' && !targetId) ||
+                      insufficientBalance
                     }
                   >
                     {submissionDisabledReason && '暂未开放提交'}

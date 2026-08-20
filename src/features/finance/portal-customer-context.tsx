@@ -8,6 +8,7 @@ import {
   neobankApi,
   Operation,
 } from './core-api';
+import { activeCustomerWalletAccounts, CustomerWalletRow } from './customer-wallet';
 
 type PortalCustomerContextValue = {
   customers: Customer[];
@@ -55,21 +56,31 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
           countryCode: '',
           accounts: [],
         };
-        const [customerResult, operationResult] = await Promise.allSettled([
+        const [customerResult, operationResult, walletResult] = await Promise.allSettled([
           coreApi<Customer>(`/customers/${encodeURIComponent(profile.id)}`),
           coreApi<Operation[]>(
             `/operations?organizationId=${encodeURIComponent(
               demoOrganizationId
             )}&customerId=${encodeURIComponent(profile.id)}`
           ),
+          neobankApi<{ data: CustomerWalletRow[] }>('/customer/wallets'),
         ]);
+        const customerWalletAccounts =
+          walletResult.status === 'fulfilled'
+            ? activeCustomerWalletAccounts(walletResult.value.data)
+            : [];
         const resolvedCustomer =
           customerResult.status === 'fulfilled'
             ? {
                 ...customerResult.value,
-                accounts: customerResult.value.accounts.filter(isSupportedPortalAccount),
+                accounts: [
+                  ...customerResult.value.accounts.filter(
+                    (row) => row.kind !== 'CRYPTO_WALLET' && isSupportedPortalAccount(row)
+                  ),
+                  ...customerWalletAccounts,
+                ],
               }
-            : self;
+            : { ...self, accounts: customerWalletAccounts };
         const resolvedOperations =
           operationResult.status === 'fulfilled'
             ? operationResult.value.filter(
@@ -79,7 +90,11 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
         setCustomers([resolvedCustomer]);
         setCustomerId(self.id);
         setOperations(resolvedOperations);
-        if (customerResult.status === 'rejected' || operationResult.status === 'rejected') {
+        if (
+          customerResult.status === 'rejected' ||
+          operationResult.status === 'rejected' ||
+          walletResult.status === 'rejected'
+        ) {
           setError('部分账户资料暂时不可用，请稍后刷新。');
         }
         return;

@@ -33,7 +33,6 @@ export default function CustomerHome() {
   const [assetSummaryError, setAssetSummaryError] = useState('');
   const [assetSummaryReload, setAssetSummaryReload] = useState(0);
   const accounts = customer?.accounts || [];
-  const fiatAccounts = accounts.filter((row) => row.kind !== 'CRYPTO_WALLET');
   const assetSummaryLoading = loading || assetSummaryState === 'loading';
   const valuationLabel =
     assetSummary?.valuationStatus === 'partial' ? '部分资产估值' : '总资产估值';
@@ -90,7 +89,14 @@ export default function CustomerHome() {
       fullWidth: true,
     },
   ] as const;
-  const featured = fiatAccounts.filter((row) => row.kind === 'SYSTEM_WALLET').slice(0, 5);
+  const featured = accounts
+    .filter((row) => row.kind === 'SYSTEM_WALLET' || row.kind === 'CRYPTO_WALLET')
+    .sort(
+      (left, right) =>
+        (homeAssetOrder[left.currency] ?? Number.MAX_SAFE_INTEGER) -
+        (homeAssetOrder[right.currency] ?? Number.MAX_SAFE_INTEGER)
+    )
+    .slice(0, 5);
 
   useEffect(() => {
     let active = true;
@@ -611,6 +617,8 @@ const assetSummaryColor: Record<string, string> = {
   HKD: '#F0C97A',
   USDT: '#5FBFA4',
 };
+
+const homeAssetOrder: Record<string, number> = { USD: 0, HKD: 1, USDT: 2 };
 
 function AssetSummaryMetric({
   label,

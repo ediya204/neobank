@@ -57,22 +57,9 @@ import {
   normalizeCryptoWalletStatus,
 } from 'src/features/finance/crypto-wallet-status';
 import { createDepositQrCode } from 'src/features/finance/deposit-qr';
+import { CustomerWalletRow, toCustomerCryptoWallet } from 'src/features/finance/customer-wallet';
 
 export type CryptoWalletView = 'overview' | 'deposit' | 'withdraw';
-
-type CustomerWalletRow = {
-  id: string;
-  customer_id: string;
-  address?: string | null;
-  status: string;
-  custody_provider?: string | null;
-  ownership_verified_at?: string | null;
-  deposit_enabled?: boolean | number;
-  available_balance?: string;
-  frozen_balance?: string;
-  withdrawal_fee_amount?: string;
-  withdrawal_fee_rule_version?: string;
-};
 
 type CustomerHistoryRow = {
   id: string;
@@ -104,28 +91,6 @@ type CustomerWithdrawalAddressRow = {
   verified_at: string;
   revoked_at?: string | null;
 };
-
-function toCustomerWallet(row: CustomerWalletRow): CryptoWallet {
-  return {
-    id: row.id,
-    customerId: row.customer_id,
-    asset: 'USDT',
-    network: 'TRON',
-    networkLabel: 'Tron',
-    tokenStandard: 'TRC20',
-    walletAddress: row.deposit_enabled && row.address ? row.address : '',
-    status: normalizeCryptoWalletStatus(row.status),
-    availableBalance: row.available_balance || '0',
-    frozenBalance: row.frozen_balance || '0',
-    minimumDeposit: '0',
-    withdrawalFee: row.withdrawal_fee_amount || '0',
-    withdrawalFeeRuleVersion: row.withdrawal_fee_rule_version,
-    confirmationsRequired: 20,
-    custodyProvider: row.custody_provider === 'cregis' ? 'CREGIS' : null,
-    ownershipVerifiedAt: row.ownership_verified_at || null,
-    depositEnabled: Boolean(row.deposit_enabled && row.address),
-  };
-}
 
 function isDepositReady(wallet: CryptoWallet | undefined): wallet is CryptoWallet {
   return Boolean(
@@ -219,7 +184,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
           neobankApi<CustomerHistory>('/customer/history'),
           neobankApi<{ data: CustomerWithdrawalAddressRow[] }>('/customer/withdrawal-addresses'),
         ]);
-        const customerWallets = walletPayload.data.map(toCustomerWallet);
+        const customerWallets = walletPayload.data.map(toCustomerCryptoWallet);
         const walletById = new Map(customerWallets.map((row) => [row.id, row]));
         const customerTransfers = [...history.withdrawals, ...history.deposits]
           .map((row) => {
