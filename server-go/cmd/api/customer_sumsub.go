@@ -446,7 +446,12 @@ func (app *application) sumsubWebhook(w http.ResponseWriter, r *http.Request) {
 		}},
 	}
 	statements = append(statements, sumsubWebhookStepStatements(verificationID, payload, nowText)...)
-	statements = append(statements, sumsubSyncJobStatement(verificationID, nowText))
+	if providerStatus == "ready_for_admin_review" {
+		statements = append(statements, d1.Statement{SQL: `UPDATE sumsub_sync_jobs SET status='completed', locked_at=NULL,
+		  last_error_code=NULL, updated_at=? WHERE verification_id=?`, Params: []any{nowText, verificationID}})
+	} else {
+		statements = append(statements, sumsubSyncJobStatement(verificationID, nowText))
+	}
 	results, err := app.db.Batch(r.Context(), statements...)
 	if err != nil || len(results) != len(statements) {
 		if err == nil {
