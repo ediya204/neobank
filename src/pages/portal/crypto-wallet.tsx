@@ -56,6 +56,7 @@ import {
   isWithdrawalReady,
   normalizeCryptoWalletStatus,
 } from 'src/features/finance/crypto-wallet-status';
+import { createDepositQrCode } from 'src/features/finance/deposit-qr';
 
 export type CryptoWalletView = 'overview' | 'deposit' | 'withdraw';
 
@@ -169,21 +170,21 @@ function toCustomerTransfer(row: CustomerHistoryRow, wallet: CryptoWallet): Cryp
   };
 }
 
-function renderDepositQrCode(wallet: CryptoWallet, qrCode: string, customerSession: boolean) {
+function renderDepositQrCode(wallet: CryptoWallet, qrCode: string | null) {
   if (qrCode) {
     return (
       <Box
         component="img"
         src={qrCode}
         alt={`${wallet.network} USDT 收币二维码`}
-        sx={{ width: 170, height: 170 }}
+        sx={{ width: 170, height: 170, imageRendering: 'crisp-edges' }}
       />
     );
   }
-  if (customerSession) {
+  if (qrCode === '') {
     return (
       <Typography variant="caption" color="text.secondary" align="center" sx={{ px: 2 }}>
-        请复制并逐字核对上方 TRC20 地址
+        二维码生成失败，请复制并逐字核对上方 TRC20 地址
       </Typography>
     );
   }
@@ -345,9 +346,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
               wallets={wallets}
               transfers={transfers.filter((row) => row.direction === 'DEPOSIT')}
               loading={loading}
-              customerId={customer?.id || ''}
               onOpenTransfer={setSelectedTransfer}
-              customerSession={user?.role === 'customer'}
             />
           )}
           {view === 'withdraw' && (
@@ -511,19 +510,15 @@ function DepositView({
   wallets,
   transfers,
   loading,
-  customerId,
   onOpenTransfer,
-  customerSession,
 }: {
   wallets: CryptoWallet[];
   transfers: CryptoTransfer[];
   loading: boolean;
-  customerId: string;
   onOpenTransfer: (transfer: CryptoTransfer) => void;
-  customerSession: boolean;
 }) {
   const [network, setNetwork] = useState<CryptoNetwork>('TRON');
-  const [qrCode, setQrCode] = useState('');
+  const [qrCode, setQrCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const depositWallets = wallets.filter((row) => isDepositReady(row));
   const wallet = depositWallets.find((row) => row.network === network) || depositWallets[0];
@@ -531,12 +526,22 @@ function DepositView({
   const visibleTransfers = transfers.filter((row) => depositWalletIds.has(row.walletId));
 
   useEffect(() => {
-    if (!isDepositReady(wallet) || !customerId || customerSession) return;
-    setQrCode('');
-    coreApi<{ dataUrl: string }>(`/crypto-wallets/${wallet.id}/qr?customerId=${customerId}`)
-      .then((result) => setQrCode(result.dataUrl))
-      .catch(() => setQrCode(''));
-  }, [customerId, customerSession, wallet]);
+    let active = true;
+    setQrCode(null);
+    if (!isDepositReady(wallet)) return () => undefined;
+
+    createDepositQrCode(wallet.walletAddress)
+      .then((result) => {
+        if (active) setQrCode(result);
+      })
+      .catch(() => {
+        if (active) setQrCode('');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [wallet]);
 
   const copyAddress = async () => {
     if (!isDepositReady(wallet)) return;
@@ -664,7 +669,7 @@ function DepositView({
                           bgcolor: 'common.white',
                         }}
                       >
-                        {renderDepositQrCode(wallet, qrCode, customerSession)}
+                        {renderDepositQrCode(wallet, qrCode)}
                       </Box>
                     </Stack>
                   )}

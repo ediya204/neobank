@@ -29,6 +29,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthContext } from 'src/auth/hooks';
 import { AdminAccessRole } from 'src/auth/types';
 import Iconify from 'src/components/iconify';
+import UiIconBadge from 'src/components/ui-icon-badge';
 import { useSettingsContext } from 'src/components/settings';
 import { useSnackbar } from 'src/components/snackbar';
 import { ACTION_ICONS } from 'src/theme/iconography';
@@ -96,7 +97,8 @@ export default function AdminUsersPage() {
   const roles = overview?.roles || [];
   const activeCount = overview?.users.filter((item) => item.status === 'active').length || 0;
   const pendingCount =
-    overview?.users.filter((item) => !item.setup_completed_at && item.status === 'active').length || 0;
+    overview?.users.filter((item) => !item.setup_completed_at && item.status === 'active').length ||
+    0;
 
   const errorMessage = useMemo(
     () =>
@@ -220,7 +222,7 @@ export default function AdminUsersPage() {
           </Box>
           <Button
             variant="contained"
-            startIcon={<Iconify icon="solar:user-plus-bold-duotone" />}
+            startIcon={<Iconify icon={ACTION_ICONS.onboarding} />}
             onClick={openCreate}
           >
             {t('adminUsers.actions.add')}
@@ -324,7 +326,11 @@ export default function AdminUsersPage() {
                         <TableCell align="right">
                           <Stack direction="row" spacing={1} justifyContent="flex-end">
                             {!target.setup_completed_at && target.status === 'active' && (
-                              <Button size="small" onClick={() => handleReissue(target)} disabled={saving}>
+                              <Button
+                                size="small"
+                                onClick={() => handleReissue(target)}
+                                disabled={saving}
+                              >
                                 {t('adminUsers.actions.reissue')}
                               </Button>
                             )}
@@ -343,7 +349,12 @@ export default function AdminUsersPage() {
         </Card>
       </Container>
 
-      <Dialog open={createOpen} onClose={() => !saving && setCreateOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={createOpen}
+        onClose={() => !saving && setCreateOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>{t('adminUsers.create.title')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ pt: 1 }}>
@@ -379,15 +390,16 @@ export default function AdminUsersPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(editing)} onClose={() => !saving && setEditing(null)} fullWidth maxWidth="sm">
+      <Dialog
+        open={Boolean(editing)}
+        onClose={() => !saving && setEditing(null)}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>{t('adminUsers.edit.title')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ pt: 1 }}>
-            <TextField
-              label={t('adminUsers.fields.email')}
-              value={editing?.email || ''}
-              disabled
-            />
+            <TextField label={t('adminUsers.fields.email')} value={editing?.email || ''} disabled />
             <TextField
               label={t('adminUsers.fields.displayName')}
               value={editDisplayName}
@@ -454,7 +466,11 @@ export default function AdminUsersPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSetupLink(null)}>{t('adminUsers.actions.close')}</Button>
-          <Button variant="contained" startIcon={<Iconify icon={ACTION_ICONS.copy} />} onClick={copySetupLink}>
+          <Button
+            variant="contained"
+            startIcon={<Iconify icon={ACTION_ICONS.copy} />}
+            onClick={copySetupLink}
+          >
             {t('adminUsers.actions.copyLink')}
           </Button>
         </DialogActions>
@@ -487,15 +503,33 @@ function RoleMatrix({ roles, t }: { roles: AdminRoleDefinition[]; t: (key: strin
               bgcolor: role.code === 'super_admin' ? 'primary.lighter' : 'background.neutral',
             }}
           >
-            <Typography variant="subtitle2">{t(`adminUsers.roles.${role.code}.name`)}</Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-              {t(`adminUsers.roles.${role.code}.description`)}
-            </Typography>
+            <Stack direction="row" spacing={1.25} alignItems="center">
+              <UiIconBadge
+                icon="solar:shield-user-bold-duotone"
+                tone={role.code === 'super_admin' ? 'primary' : 'neutral'}
+                size={36}
+                iconSize={20}
+              />
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="subtitle2">
+                  {t(`adminUsers.roles.${role.code}.name`)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {t(`adminUsers.roles.${role.code}.description`)}
+                </Typography>
+              </Box>
+            </Stack>
             <Stack spacing={0.75} sx={{ mt: 1.5 }}>
               {role.permissions.map((permission) => (
                 <Stack key={permission} direction="row" spacing={0.75} alignItems="center">
-                  <Iconify icon="solar:check-circle-bold" width={16} sx={{ color: 'success.main' }} />
-                  <Typography variant="caption">{t(`adminUsers.permissions.${permission}`)}</Typography>
+                  <Iconify
+                    icon="solar:check-circle-bold"
+                    width={16}
+                    sx={{ color: 'success.main' }}
+                  />
+                  <Typography variant="caption">
+                    {t(`adminUsers.permissions.${permission}`)}
+                  </Typography>
                 </Stack>
               ))}
             </Stack>

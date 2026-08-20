@@ -18,12 +18,12 @@
 
 ## 2. 固定角色
 
-| 角色 | 权限 | 业务边界 |
-| --- | --- | --- |
-| `super_admin` | 全部权限及 `admin_users.manage` | 可管理管理员、客户、资金、系统配置和报表 |
-| `operations_admin` | `customers.read`、`funds.read`、`funds.manage`、`reports.read` | 可处理资金业务；不能管理管理员、KYC 决策或系统配置 |
-| `compliance_admin` | `customers.read`、`customers.review`、`funds.read`、`reports.read` | 可处理客户、KYC 与 VA；资金仅供读取 |
-| `read_only_admin` | `customers.read`、`funds.read`、`reports.read` | 只读查看客户、资金与报表 |
+| 角色               | 权限                                                               | 业务边界                                           |
+| ------------------ | ------------------------------------------------------------------ | -------------------------------------------------- |
+| `super_admin`      | 全部权限及 `admin_users.manage`                                    | 可管理管理员、客户、资金、系统配置和报表           |
+| `operations_admin` | `customers.read`、`funds.read`、`funds.manage`、`reports.read`     | 可处理资金业务；不能管理管理员、KYC 决策或系统配置 |
+| `compliance_admin` | `customers.read`、`customers.review`、`funds.read`、`reports.read` | 可处理客户、KYC 与 VA；资金仅供读取                |
+| `read_only_admin`  | `customers.read`、`funds.read`、`reports.read`                     | 只读查看客户、资金与报表                           |
 
 所有权限都在服务端执行。导航隐藏和路由守卫只改善体验，不能代替 Go API 与
 Worker Core 代理的权限校验。未知 Core 路由对非超级管理员默认拒绝。
@@ -64,7 +64,7 @@ setup token；前端只把它放在 `/admin/setup#setup_token=...` 的 fragment 
 3. 先发布兼容新旧签名身份格式的 Core API。
 4. 使用受审 migration runner 应用 `0007_admin_rbac.sql`，执行迁移后查询确认：
    - 每个 `admin_users.core_user_id` 非空且唯一；
-   - 每个绑定的 Core `User.role='ADMIN'`；
+   - 每个绑定的 Core `User.role='ADMIN'`，并且属于 Neobank Core organization；
    - 至少一名 `status='active' AND access_role='super_admin'`；
    - `neobank_schema_migrations` 只出现一次 `0007_admin_rbac`。
 5. 发布 Go API，确认 `/healthz` 的数据库状态正常，并使用现有管理员验证登录与

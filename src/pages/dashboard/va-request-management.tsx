@@ -22,8 +22,10 @@ import {
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
+import UiIconBadge from 'src/components/ui-icon-badge';
 import { coreApi, demoOrganizationId, VirtualAccountRequest } from 'src/features/finance/core-api';
 import { paths } from 'src/routes/paths';
+import { ACTION_ICONS } from 'src/theme/iconography';
 
 function formatDate(value?: string) {
   if (!value) return '—';
@@ -319,10 +321,11 @@ export default function VaRequestManagementPage() {
                           <CircularProgress size={28} />
                         ) : (
                           <Stack alignItems="center" spacing={1}>
-                            <Iconify
-                              icon="solar:buildings-2-bold-duotone"
-                              width={34}
-                              sx={{ color: 'text.disabled' }}
+                            <UiIconBadge
+                              icon={ACTION_ICONS.bankAccount}
+                              tone="info"
+                              size={48}
+                              iconSize={28}
                             />
                             <Typography color="text.secondary">
                               当前没有符合条件的 VA 申请

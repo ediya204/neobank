@@ -17,8 +17,32 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ediya204/neobank/server-go/internal/d1"
 	postgresdb "github.com/ediya204/neobank/server-go/internal/postgres"
 )
+
+type adminBootstrapIdentityDatabase struct {
+	queryResults [][]map[string]any
+	statements   []d1.Statement
+}
+
+func (db *adminBootstrapIdentityDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+	if len(db.queryResults) == 0 {
+		return nil, nil
+	}
+	rows := db.queryResults[0]
+	db.queryResults = db.queryResults[1:]
+	return rows, nil
+}
+
+func (db *adminBootstrapIdentityDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
+	db.statements = append(db.statements, statements...)
+	results := make([]d1.Result, len(statements))
+	for index := range results {
+		results[index] = d1.Result{Meta: map[string]any{"changes": float64(1)}}
+	}
+	return results, nil
+}
 
 func TestAdminPasswordDerivationIsDomainSeparated(t *testing.T) {
 	pepper := []byte("0123456789abcdef0123456789abcdef")
@@ -32,6 +56,63 @@ func TestAdminPasswordDerivationIsDomainSeparated(t *testing.T) {
 	row := map[string]any{"password_salt": hex.EncodeToString(salt), "password_hash": hex.EncodeToString(adminHash)}
 	if !app.verifyAdminPassword("Correct-Horse-7-Battery!", row) || app.verifyAdminPassword("wrong-password", row) {
 		t.Fatal("admin password verification result is incorrect")
+	}
+}
+
+func TestAdminBootstrapRejectsCoreIdentityFromAnotherOrganization(t *testing.T) {
+	bootstrap := []byte("bootstrap-secret-0123456789abcdef")
+	db := &adminBootstrapIdentityDatabase{queryResults: [][]map[string]any{
+		{},
+		{{"id": "foreign_admin", "role": "ADMIN", "organizationId": "org_other"}},
+	}}
+	app := &application{
+		db: db, adminBootstrapSecret: bootstrap, coreOrganizationID: "org_neobank",
+		logger: slog.New(slog.NewTextHandler(os.Stderr, nil)),
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/setup-token", bytes.NewBufferString(
+		`{"email":"admin@example.test","display_name":"Admin"}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+string(bootstrap))
+	response := httptest.NewRecorder()
+
+	app.createAdminSetupToken(response, request)
+
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"core_identity_conflict"`) {
+		t.Fatalf("foreign Core identity status=%d body=%q", response.Code, response.Body.String())
+	}
+	if len(db.statements) != 0 {
+		t.Fatal("foreign Core identity must not create an administrator or setup token")
+	}
+}
+
+func TestAdminBootstrapReusesCoreIdentityFromNeobankOrganization(t *testing.T) {
+	bootstrap := []byte("bootstrap-secret-0123456789abcdef")
+	db := &adminBootstrapIdentityDatabase{queryResults: [][]map[string]any{
+		{},
+		{{"id": "neobank_admin", "role": "ADMIN", "organizationId": "org_neobank"}},
+	}}
+	app := &application{
+		db: db, adminBootstrapSecret: bootstrap, coreOrganizationID: "org_neobank",
+		logger: slog.New(slog.NewTextHandler(os.Stderr, nil)),
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/setup-token", bytes.NewBufferString(
+		`{"email":"admin@example.test","display_name":"Admin"}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+string(bootstrap))
+	response := httptest.NewRecorder()
+
+	app.createAdminSetupToken(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("Neobank Core identity status=%d body=%q", response.Code, response.Body.String())
+	}
+	if len(db.statements) != 4 || !strings.Contains(db.statements[0].SQL, "core_user_id") {
+		t.Fatalf("expected administrator plus setup records, statements=%d", len(db.statements))
+	}
+	if got := text(db.statements[0].Params[1]); got != "neobank_admin" {
+		t.Fatalf("expected existing Neobank Core identity, got %q", got)
 	}
 }
 

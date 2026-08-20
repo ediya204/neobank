@@ -21,14 +21,27 @@ BEGIN
 END $$;
 
 DO $$
+DECLARE
+  neobank_organization_id TEXT;
 BEGIN
+  SELECT id INTO neobank_organization_id
+  FROM "Organization"
+  WHERE slug = 'ssc-digital-bank' OR id = 'org_neobank'
+  ORDER BY (id = 'org_neobank') DESC
+  LIMIT 1;
+
+  IF neobank_organization_id IS NULL THEN
+    RAISE EXCEPTION 'Neobank Core organization is missing';
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM admin_users admin_user
     JOIN "User" core_user ON LOWER(core_user.email) = LOWER(admin_user.email)
     WHERE core_user.role <> 'ADMIN'
+       OR core_user."organizationId" <> neobank_organization_id
   ) THEN
-    RAISE EXCEPTION 'an administrator email is already assigned to a non-admin Core user';
+    RAISE EXCEPTION 'an administrator email is already assigned to an incompatible Core identity';
   END IF;
 END $$;
 
@@ -66,13 +79,25 @@ WHERE NOT EXISTS (
 UPDATE admin_users admin_user
 SET core_user_id = core_user.id
 FROM "User" core_user
+JOIN "Organization" organization ON organization.id = core_user."organizationId"
 WHERE LOWER(core_user.email) = LOWER(admin_user.email)
+  AND (organization.slug = 'ssc-digital-bank' OR organization.id = 'org_neobank')
   AND admin_user.core_user_id IS NULL;
 
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM admin_users WHERE core_user_id IS NULL) THEN
     RAISE EXCEPTION 'every administrator must be linked to a Core user';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM admin_users admin_user
+    JOIN "User" core_user ON core_user.id = admin_user.core_user_id
+    JOIN "Organization" organization ON organization.id = core_user."organizationId"
+    WHERE core_user.role <> 'ADMIN'
+       OR (organization.slug <> 'ssc-digital-bank' AND organization.id <> 'org_neobank')
+  ) THEN
+    RAISE EXCEPTION 'every administrator must be linked to a Neobank Core administrator';
   END IF;
 END $$;
 

@@ -47,9 +47,7 @@ function requestBodiesForSignature(request: Request & { rawBody?: Buffer }): Buf
   if (request.body === undefined || request.body === null) return [rawBody];
   const canonicalBody = Buffer.isBuffer(request.body)
     ? request.body
-    : Buffer.from(
-        typeof request.body === 'string' ? request.body : JSON.stringify(request.body)
-      );
+    : Buffer.from(typeof request.body === 'string' ? request.body : JSON.stringify(request.body));
   return rawBody.equals(canonicalBody) ? [rawBody] : [rawBody, canonicalBody];
 }
 
@@ -104,14 +102,25 @@ export function edgeAuthMiddleware(options: { adminUserId: string; secret: strin
       request.headers['x-authenticated-role'] = 'admin';
       if (identity.startsWith('admin:')) {
         const separator = identity.indexOf(':', 'admin:'.length);
-        const userId = separator > 0 ? identity.slice('admin:'.length, separator) : '';
-        const email = separator > 0 ? identity.slice(separator + 1) : '';
-        if (!userId || !email || userId.length > 128 || email.length > 320) {
-          response.status(401).json({ error: { code: 'unauthorized_edge_request' } });
-          return;
+        if (separator < 0) {
+          const legacyEmail = identity.slice('admin:'.length);
+          if (!legacyEmail || legacyEmail.length > 320) {
+            response.status(401).json({ error: { code: 'unauthorized_edge_request' } });
+            return;
+          }
+          // Previous Workers signed admin:<email>. Keep the configured
+          // fallback Core id only for this staged-rollout compatibility path.
+          request.headers['x-authenticated-email'] = legacyEmail;
+        } else {
+          const userId = identity.slice('admin:'.length, separator);
+          const email = identity.slice(separator + 1);
+          if (!userId || !email || userId.length > 128 || email.length > 320) {
+            response.status(401).json({ error: { code: 'unauthorized_edge_request' } });
+            return;
+          }
+          request.headers['x-user-id'] = userId;
+          request.headers['x-authenticated-email'] = email;
         }
-        request.headers['x-user-id'] = userId;
-        request.headers['x-authenticated-email'] = email;
       } else {
         // Compatibility for the existing signed edge identity during the
         // staged Core -> auth API -> web Worker rollout.

@@ -198,15 +198,13 @@ type LiveMarketQuote = {
   referenceOnly: true;
 };
 
-function constantTimeTextEqual(left: string, right: string): boolean {
-  const leftBytes = new TextEncoder().encode(left);
-  const rightBytes = new TextEncoder().encode(right);
-  let mismatch = leftBytes.length ^ rightBytes.length;
-  const length = Math.max(leftBytes.length, rightBytes.length);
-  for (let index = 0; index < length; index += 1) {
-    mismatch |= (leftBytes[index] || 0) ^ (rightBytes[index] || 0);
-  }
-  return mismatch === 0;
+async function constantTimeTextEqual(left: string, right: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [leftHash, rightHash] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(left)),
+    crypto.subtle.digest('SHA-256', encoder.encode(right)),
+  ]);
+  return crypto.subtle.timingSafeEqual(leftHash, rightHash);
 }
 
 async function loadApplicationSession(
@@ -356,7 +354,7 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
     const expected = typeof session?.csrf_token === 'string' ? session.csrf_token : '';
     const provided = request.headers.get('x-csrf-token') || '';
-    if (!expected || !provided || !constantTimeTextEqual(expected, provided)) {
+    if (!expected || !provided || !(await constantTimeTextEqual(expected, provided))) {
       return json({ error: { code: 'invalid_csrf_token' } }, 403);
     }
   }

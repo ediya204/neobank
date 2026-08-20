@@ -13,6 +13,8 @@
 
 全局别名与标准尺寸位于 `src/theme/iconography.ts`；资产、网络映射位于
 `src/utils/asset-icons.ts`；业务页面通过 `src/components/asset-icon` 展示币种图标。
+功能卡片、指标和空状态的图标容器统一使用 `src/components/ui-icon-badge`，该组件基于
+MUI `Avatar variant="rounded"` 与主题语义色，不在业务页面重复手写背景、圆角和尺寸。
 
 ## 语义与样式
 
@@ -22,6 +24,8 @@
 - 彩色国旗和品牌图标保留原色，不叠加主题色。
 - 图标容器优先使用主题 `background.neutral` 或语义色的 `lighter` token；圆形用于资产，
   圆角矩形用于功能入口。
+- Button、IconButton 与 InputAdornment 内的图标沿用 MUI 组件自身的间距、交互态与
+  无障碍语义，不额外套自定义图标容器。
 
 ## 尺寸
 

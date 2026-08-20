@@ -108,14 +108,14 @@ func (app *application) createAdminSetupToken(w http.ResponseWriter, r *http.Req
 	token := randomToken(32)
 	statements := []d1.Statement{}
 	if len(rows) == 0 {
-		coreRows, coreErr := app.db.Query(r.Context(), `SELECT id, role FROM "User" WHERE LOWER(email)=?`, email)
+		coreRows, coreErr := app.db.Query(r.Context(), `SELECT id, role, "organizationId" FROM "User" WHERE LOWER(email)=?`, email)
 		if coreErr != nil {
 			databaseError(app, w, coreErr)
 			return
 		}
 		coreUserID = userID
 		if len(coreRows) == 1 {
-			if text(coreRows[0]["role"]) != "ADMIN" {
+			if text(coreRows[0]["role"]) != "ADMIN" || text(coreRows[0]["organizationId"]) != app.coreOrganizationID {
 				conflict(w, "core_identity_conflict")
 				return
 			}

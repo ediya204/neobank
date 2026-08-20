@@ -27,6 +27,7 @@ import AssetIcon from 'src/components/asset-icon';
 import Chart, { useChart } from 'src/components/chart';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
+import UiIconBadge from 'src/components/ui-icon-badge';
 import {
   coreApi,
   Customer,
@@ -626,20 +627,7 @@ function SummaryMetric({
         '&:nth-of-type(n+3)': { borderBottom: 0 },
       }}
     >
-      <Box
-        sx={{
-          width: 42,
-          height: 42,
-          display: 'grid',
-          placeItems: 'center',
-          flexShrink: 0,
-          borderRadius: 1.5,
-          bgcolor: `${color}.lighter`,
-          color: `${color}.dark`,
-        }}
-      >
-        <Iconify icon={icon} width={ICON_SIZES.navigation} />
-      </Box>
+      <UiIconBadge icon={icon} tone={color} size={42} />
       <Box sx={{ minWidth: 0 }}>
         <Typography variant="caption" color="text.secondary">
           {label}

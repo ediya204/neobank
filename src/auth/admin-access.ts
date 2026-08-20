@@ -1,11 +1,18 @@
 import { AdminPermission } from './types';
 
 export function requiredAdminPermissionForPath(pathname: string): AdminPermission {
-  if (pathname === '/dashboard' || pathname.startsWith('/dashboard/overview')) {
+  if (
+    pathname === '/dashboard' ||
+    pathname === '/dashboard/operations' ||
+    pathname === '/dashboard/404' ||
+    pathname === '/dashboard/500' ||
+    pathname.startsWith('/dashboard/overview')
+  ) {
     return 'reports.read';
   }
   if (pathname.startsWith('/dashboard/admin-users')) return 'admin_users.manage';
   if (pathname.startsWith('/dashboard/onboarding')) return 'customers.review';
+  if (pathname.startsWith('/dashboard/va-applications')) return 'customers.review';
   if (pathname.startsWith('/dashboard/operations/virtual-accounts')) {
     return 'customers.review';
   }
@@ -19,6 +26,7 @@ export function requiredAdminPermissionForPath(pathname: string): AdminPermissio
     return 'reports.read';
   }
   if (
+    pathname === '/dashboard/settings' ||
     pathname.startsWith('/dashboard/funding-channels') ||
     pathname.startsWith('/dashboard/settings')
   ) {

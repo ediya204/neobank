@@ -36,6 +36,7 @@ const [
   financeWorkspace,
   coreApi,
   accountsService,
+  coreReconciliation,
 ] = await Promise.all([
   read('package.json'),
   read('wrangler.neobank.jsonc'),
@@ -68,6 +69,7 @@ const [
   read('src/pages/dashboard/finance-workspace.tsx'),
   read('src/features/finance/core-api.ts'),
   read('server/src/accounts/accounts.service.ts'),
+  read('src/pages/dashboard/core-reconciliation.tsx'),
 ]);
 
 const packageJson = JSON.parse(packageSource);
@@ -182,7 +184,11 @@ assert.match(dashboardRoutes, /path: 'approvals',[\s\S]*?\?status=SUBMITTED/);
 assert.match(financeWorkspace, /useSearchParams/);
 assert.match(financeWorkspace, /operationActionText/);
 assert.doesNotMatch(financeWorkspace, /section === 'approvals'/);
-assert.match(dashboardRoutes, /<ReconciliationPage scope="admin" \/>/);
+assert.match(dashboardRoutes, /<CoreReconciliationPage \/>/);
+assert.match(coreReconciliation, /buildCoreReconciliationSnapshot/);
+assert.match(coreReconciliation, /\/operations\?organizationId=/);
+assert.match(coreReconciliation, /\/ledger\?organizationId=/);
+assert.doesNotMatch(coreReconciliation, /\/api\/browser\/v1/);
 assert.doesNotMatch(dashboardRoutes, /<OperationsPage section="audit" \/>/);
 assert.match(dashboardRoutes, /path: 'audit-logs',[\s\S]*?paths\.dashboard\.notFound/);
 assert.match(dashboardRoutes, /path: 'balances',[\s\S]*?paths\.dashboard\.accounts/);

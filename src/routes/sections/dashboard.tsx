@@ -25,7 +25,7 @@ const CoreOverview = lazy(() => import('src/pages/dashboard/core-overview'));
 const CryptoOperationsAdmin = lazy(() => import('src/pages/dashboard/crypto-operations'));
 const VaRequestManagementPage = lazy(() => import('src/pages/dashboard/va-request-management'));
 const VaRequestReviewPage = lazy(() => import('src/pages/dashboard/va-request-review'));
-const ReconciliationPage = lazy(() => import('src/pages/reconciliation'));
+const CoreReconciliationPage = lazy(() => import('src/pages/dashboard/core-reconciliation'));
 const AdminUsersPage = lazy(() => import('src/pages/dashboard/admin-users'));
 
 export const dashboardRoutes = [
@@ -88,7 +88,7 @@ export const dashboardRoutes = [
             index: true,
           },
           { path: 'deposits', element: <FinanceWorkspace section="deposits" /> },
-          { path: 'reconciliation', element: <ReconciliationPage scope="admin" /> },
+          { path: 'reconciliation', element: <CoreReconciliationPage /> },
           { path: 'withdrawals', element: <FinanceWorkspace section="payouts" /> },
           {
             path: 'transfers',

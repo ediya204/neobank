@@ -28,12 +28,14 @@ import {
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
+import UiIconBadge from 'src/components/ui-icon-badge';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import {
   loadNeobankCustomerRecords,
   mapNeobankCustomer,
 } from 'src/features/customers/neobank-customer';
 import { paths } from 'src/routes/paths';
+import { ACTION_ICONS } from 'src/theme/iconography';
 import { coreApi, Customer, demoOrganizationId } from 'src/features/finance/core-api';
 
 type CustomerForm = {
@@ -322,7 +324,19 @@ function CustomerTable({
           {!rows.length && (
             <TableRow>
               <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
-                {loading ? '加载中…' : '暂无开户申请'}
+                {loading ? (
+                  '加载中…'
+                ) : (
+                  <Stack alignItems="center" spacing={1.25}>
+                    <UiIconBadge
+                      icon={ACTION_ICONS.onboarding}
+                      tone="info"
+                      size={48}
+                      iconSize={28}
+                    />
+                    <Typography color="text.secondary">暂无开户申请</Typography>
+                  </Stack>
+                )}
               </TableCell>
             </TableRow>
           )}

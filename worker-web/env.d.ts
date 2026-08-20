@@ -10,6 +10,10 @@ interface Env {
   CUSTOMER_AUTH_RATE_LIMITER: RateLimit;
 }
 
+interface SubtleCrypto {
+  timingSafeEqual(left: ArrayBuffer, right: ArrayBuffer): boolean;
+}
+
 interface RateLimit {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }
