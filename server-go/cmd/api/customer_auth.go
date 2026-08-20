@@ -103,6 +103,8 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 		app.onboardingLogin(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/customer/onboarding/status":
 		app.onboardingStatus(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/onboarding/restart":
+		app.restartCustomerOnboarding(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/onboarding/kyc/token":
 		app.createOnboardingSumsubToken(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/login":

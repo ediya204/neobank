@@ -6,6 +6,11 @@ import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
 import Checkbox from '@mui/material/Checkbox';
 import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import LinearProgress from '@mui/material/LinearProgress';
@@ -130,6 +135,9 @@ export default function JwtRegisterView({ loginPath }: Props) {
   const [sumsubLoading, setSumsubLoading] = useState(false);
   const [sumsubError, setSumsubError] = useState('');
   const [sumsubFeedback, setSumsubFeedback] = useState<string[]>([]);
+  const [restartDialogOpen, setRestartDialogOpen] = useState(false);
+  const [restartError, setRestartError] = useState('');
+  const [restarting, setRestarting] = useState(false);
   const idempotencyKey = useRef(crypto.randomUUID());
 
   useAuthClassicContentMode(submittedReference || activeStep > 0 ? 'focused' : 'split');
@@ -313,6 +321,45 @@ export default function JwtRegisterView({ loginPath }: Props) {
       );
     } finally {
       setSumsubLoading(false);
+    }
+  };
+
+  const restartApplication = async () => {
+    if (!sumsubCSRFToken) {
+      setRestartError(t('auth.registration.success.restart_error'));
+      return;
+    }
+    setRestarting(true);
+    setRestartError('');
+    try {
+      const response = await fetch('/api/auth/customer/onboarding/restart', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': sumsubCSRFToken },
+        body: '{}',
+      });
+      if (!response.ok) {
+        throw new Error(t('auth.registration.success.restart_error'));
+      }
+
+      setActiveStep(0);
+      setForm(INITIAL_FORM);
+      setErrors({});
+      setSubmittedReference('');
+      setSubmissionError('');
+      setSumsubRequired(false);
+      setSumsubCSRFToken('');
+      setSumsubAccessToken('');
+      setSumsubReady(false);
+      setSumsubStatus('');
+      setSumsubError('');
+      setSumsubFeedback([]);
+      idempotencyKey.current = crypto.randomUUID();
+      setRestartDialogOpen(false);
+    } catch {
+      setRestartError(t('auth.registration.success.restart_error'));
+    } finally {
+      setRestarting(false);
     }
   };
 
@@ -1075,17 +1122,85 @@ export default function JwtRegisterView({ loginPath }: Props) {
             </Stack>
           ))}
         </Stack>
-        <Button
-          fullWidth
-          component={RouterLink}
-          href={loginPath}
-          variant="outlined"
-          color="inherit"
-          size="large"
-          sx={{ maxWidth: 360, alignSelf: 'center' }}
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.5}
+          justifyContent="center"
+          sx={{ width: 1 }}
         >
-          {t('auth.registration.success.back_to_login')}
-        </Button>
+          <Button
+            component={RouterLink}
+            href={loginPath}
+            variant="outlined"
+            color="inherit"
+            size="large"
+            sx={{ minWidth: { sm: 240 } }}
+          >
+            {t('auth.registration.success.back_to_login')}
+          </Button>
+          {sumsubRequired && sumsubCSRFToken && (
+            <Button
+              variant="text"
+              color="inherit"
+              size="large"
+              startIcon={<Iconify icon="solar:add-circle-linear" />}
+              onClick={() => {
+                setRestartError('');
+                setRestartDialogOpen(true);
+              }}
+              sx={{ minWidth: { sm: 240 } }}
+            >
+              {t('auth.registration.success.start_new_application')}
+            </Button>
+          )}
+        </Stack>
+
+        <Dialog
+          open={restartDialogOpen}
+          onClose={restarting ? undefined : () => setRestartDialogOpen(false)}
+          aria-labelledby="restart-onboarding-dialog-title"
+          fullWidth
+          maxWidth="sm"
+        >
+          <DialogTitle id="restart-onboarding-dialog-title">
+            {t('auth.registration.success.restart_title')}
+          </DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              {t('auth.registration.success.restart_description', {
+                reference: submittedReference,
+              })}
+            </DialogContentText>
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              {t('auth.registration.success.restart_duplicate_notice')}
+            </Alert>
+            {restartError && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {restartError}
+              </Alert>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 3 }}>
+            <Button
+              color="inherit"
+              onClick={() => setRestartDialogOpen(false)}
+              disabled={restarting}
+            >
+              {t('auth.registration.success.restart_cancel')}
+            </Button>
+            <Button
+              variant="contained"
+              color="warning"
+              onClick={() => restartApplication().catch(() => undefined)}
+              disabled={restarting}
+              startIcon={restarting ? <CircularProgress size={16} color="inherit" /> : undefined}
+            >
+              {restarting
+                ? t('auth.registration.success.restarting')
+                : t('auth.registration.success.restart_confirm')}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Stack>
     );
   }

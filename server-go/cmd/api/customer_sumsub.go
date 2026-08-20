@@ -247,6 +247,44 @@ func (app *application) onboardingStatus(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+func (app *application) restartCustomerOnboarding(w http.ResponseWriter, r *http.Request) {
+	session, err := app.requireOnboardingMutation(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "onboarding_session_expired"}})
+		return
+	}
+
+	nowText := databaseTimestamp(time.Now())
+	results, err := app.db.Batch(r.Context(),
+		d1.Statement{SQL: `UPDATE customer_onboarding_sessions
+		  SET revoked_at=?, last_seen_at=?
+		  WHERE id=? AND customer_id=? AND revoked_at IS NULL`, Params: []any{
+			nowText, nowText, session.ID, session.CustomerID,
+		}},
+		d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
+		  (id, customer_id, event_type, actor, metadata_json, created_at)
+		  SELECT ?, ?, 'customer.onboarding_session_revoked', 'customer', ?, ?
+		  WHERE EXISTS (SELECT 1 FROM customer_onboarding_sessions
+		    WHERE id=? AND customer_id=? AND revoked_at=?)`, Params: []any{
+			randomID("audit"), session.CustomerID, mustJSON(map[string]string{
+				"application_reference": session.ApplicationReference,
+				"reason":                "start_new_application",
+			}), nowText, session.ID, session.CustomerID, nowText,
+		}},
+	)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != 2 || resultChanges(results[:1]) != 1 || resultChanges(results[1:]) != 1 {
+		conflict(w, "onboarding_session_revocation_conflict")
+		return
+	}
+
+	app.clearOnboardingSessionCookies(w)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "onboarding_session_revoked"})
+}
+
 func customerVisibleVerification(row map[string]any, steps []map[string]any) map[string]any {
 	return map[string]any{
 		"status": text(row["status"]), "review_status": text(row["review_status"]),

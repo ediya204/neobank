@@ -281,7 +281,15 @@
         "next_email": "妥善保存申请编号，并留意补件联络。",
         "next_kyc": "等待合规人员完成人工 KYC / KYB 审核。",
         "next_review": "等待合规人员审核；KYC / KYB 通过并自动激活后，即可使用该邮箱和密码直接登录。",
-        "back_to_login": "返回登录"
+        "back_to_login": "返回登录",
+        "start_new_application": "开始新的开户申请",
+        "restart_title": "开始新的开户申请？",
+        "restart_description": "当前申请 {{reference}} 及其 Sumsub 验证资料会继续保留。系统只会安全撤销此浏览器的开户会话，并返回空白开户注册表。",
+        "restart_duplicate_notice": "再次使用相同邮箱提交不会创建重复申请。如需继续当前申请，请取消此操作。",
+        "restart_cancel": "继续当前申请",
+        "restart_confirm": "撤销会话并开始新申请",
+        "restarting": "正在安全退出…",
+        "restart_error": "暂时无法安全退出当前申请，请重试。当前申请和验证资料未受影响。"
       }
     },
     "local_dev": {

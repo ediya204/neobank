@@ -4,10 +4,84 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	sumsubapi "github.com/ediya204/neobank/server-go/internal/sumsub"
 )
+
+func onboardingRestartFixture(t *testing.T) (*application, *sessionTouchDatabase, *http.Request) {
+	t.Helper()
+	now := time.Now().UTC()
+	token := strings.Repeat("t", 32)
+	csrf := strings.Repeat("c", 32)
+	db := &sessionTouchDatabase{batchChanges: 1, rows: []map[string]any{{
+		"id": "onboarding_session_test", "customer_id": "customer_test", "csrf_hash": tokenHash(csrf),
+		"expires_at": databaseTimestamp(now.Add(time.Hour)), "idle_expires_at": databaseTimestamp(now.Add(30 * time.Minute)),
+		"email": "applicant@example.test", "phone_country_code": "+852", "phone": "61234567",
+		"residence_country": "HK", "application_reference": "SSC-20260820-ABC123",
+		"verification_id": "verification_test", "external_user_id": "neobank:customer_test",
+		"applicant_id": "0123456789abcdef01234567", "provider_status": "awaiting_applicant",
+	}}}
+	app := &application{db: db, portalURL: "http://localhost:3000", tenantID: "neobank"}
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/onboarding/restart", strings.NewReader(`{}`))
+	request.AddCookie(&http.Cookie{Name: app.onboardingCookieName(), Value: token})
+	request.AddCookie(&http.Cookie{Name: app.onboardingCSRFCookieName(), Value: csrf})
+	request.Header.Set("X-CSRF-Token", csrf)
+	return app, db, request
+}
+
+func TestRestartCustomerOnboardingRevokesSessionAuditsAndClearsCookies(t *testing.T) {
+	app, db, request := onboardingRestartFixture(t)
+	response := httptest.NewRecorder()
+
+	app.restartCustomerOnboarding(response, request)
+
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"onboarding_session_revoked"`) {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	if db.batchCalls != 2 || len(db.statements) != 3 {
+		t.Fatalf("batch calls=%d statements=%d", db.batchCalls, len(db.statements))
+	}
+	if !strings.Contains(db.statements[1].SQL, "UPDATE customer_onboarding_sessions") ||
+		!strings.Contains(db.statements[1].SQL, "revoked_at") ||
+		!strings.Contains(db.statements[2].SQL, "customer.onboarding_session_revoked") {
+		t.Fatalf("restart statements do not revoke and audit: %#v", db.statements[1:])
+	}
+	if got := db.statements[1].Params[2]; got != "onboarding_session_test" {
+		t.Fatalf("revoked session id=%v", got)
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 2 {
+		t.Fatalf("cleared cookies=%d", len(cookies))
+	}
+	for _, cookie := range cookies {
+		if cookie.Value != "" || cookie.MaxAge >= 0 {
+			t.Fatalf("cookie %s was not expired: value=%q maxAge=%d", cookie.Name, cookie.Value, cookie.MaxAge)
+		}
+	}
+}
+
+func TestRestartCustomerOnboardingRequiresMatchingCSRF(t *testing.T) {
+	app, db, request := onboardingRestartFixture(t)
+	request.Header.Del("X-CSRF-Token")
+	response := httptest.NewRecorder()
+
+	app.restartCustomerOnboarding(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	if db.batchCalls != 1 || len(db.statements) != 1 || strings.Contains(db.statements[0].SQL, "SET revoked_at") {
+		t.Fatalf("invalid CSRF must not revoke the session: calls=%d statements=%#v", db.batchCalls, db.statements)
+	}
+	if len(response.Result().Cookies()) != 0 {
+		t.Fatal("invalid CSRF must not clear session cookies")
+	}
+}
 
 func TestVerifySumsubWebhookUsesRawPayloadAndDeclaredAlgorithm(t *testing.T) {
 	app := &application{sumsubWebhookSecret: []byte("0123456789abcdef0123456789abcdef")}

@@ -281,7 +281,15 @@
         "next_email": "Keep the application reference and watch for document follow-up.",
         "next_kyc": "Wait for Compliance to complete the manual KYC / KYB review.",
         "next_review": "Wait for Compliance approval. After automatic activation, sign in directly with this email and password.",
-        "back_to_login": "Back to sign in"
+        "back_to_login": "Back to sign in",
+        "start_new_application": "Start a new application",
+        "restart_title": "Start a new application?",
+        "restart_description": "Application {{reference}} and its Sumsub verification data will remain unchanged. This only securely revokes the onboarding session in this browser and returns you to a blank application form.",
+        "restart_duplicate_notice": "Submitting the same email again will not create a duplicate application. Cancel if you want to continue the current application.",
+        "restart_cancel": "Continue current application",
+        "restart_confirm": "Revoke session and start again",
+        "restarting": "Exiting securely…",
+        "restart_error": "The current application could not be exited securely. Try again; the application and verification data were not changed."
       }
     },
     "local_dev": {
