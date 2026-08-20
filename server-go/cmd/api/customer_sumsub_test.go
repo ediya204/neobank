@@ -71,6 +71,23 @@ func TestSumsubProviderStatusSeparatesRetryAndFinalRejection(t *testing.T) {
 	}
 }
 
+func TestSumsubRejectLabelsJSONAlwaysReturnsAnArray(t *testing.T) {
+	for name, test := range map[string]struct {
+		labels []string
+		want   string
+	}{
+		"nil":       {labels: nil, want: "[]"},
+		"empty":     {labels: []string{}, want: "[]"},
+		"populated": {labels: []string{"LOW_QUALITY", "UNSATISFACTORY_PHOTOS"}, want: `["LOW_QUALITY","UNSATISFACTORY_PHOTOS"]`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := sumsubRejectLabelsJSON(test.labels); got != test.want {
+				t.Fatalf("sumsubRejectLabelsJSON() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestSumsubProviderOrNilKeepsDisabledProviderNil(t *testing.T) {
 	if provider := sumsubProviderOrNil(nil); provider != nil {
 		t.Fatal("disabled Sumsub provider must remain a nil interface")

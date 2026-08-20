@@ -424,7 +424,7 @@ func (app *application) sumsubWebhook(w http.ResponseWriter, r *http.Request) {
 		occurredAt = payload.CreatedAt
 	}
 	providerStatus := webhookProviderStatus(payload)
-	rejectLabels, _ := json.Marshal(payload.ReviewResult.RejectLabels)
+	rejectLabels := sumsubRejectLabelsJSON(payload.ReviewResult.RejectLabels)
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: `INSERT OR IGNORE INTO sumsub_webhook_events
 		  (id, verification_id, event_type, payload_sha256, applicant_id, external_user_id,
@@ -439,7 +439,7 @@ func (app *application) sumsubWebhook(w http.ResponseWriter, r *http.Request) {
 		  WHERE id=? AND (applicant_id IS NULL OR applicant_id=?)`, Params: []any{
 			payload.ApplicantID, providerStatus, nullIfEmpty(safeWebhookText(payload.ReviewStatus, 40)),
 			nullIfEmpty(safeWebhookText(payload.ReviewResult.ReviewAnswer, 16)),
-			nullIfEmpty(safeWebhookText(payload.ReviewResult.ReviewRejectType, 16)), string(rejectLabels),
+			nullIfEmpty(safeWebhookText(payload.ReviewResult.ReviewRejectType, 16)), rejectLabels,
 			nullIfEmpty(safeWebhookText(payload.ReviewResult.ModerationComment, 4000)),
 			nullIfEmpty(safeWebhookText(payload.ReviewResult.ClientComment, 4000)), nowText, nowText,
 			verificationID, payload.ApplicantID,
@@ -462,6 +462,17 @@ func safeWebhookText(value string, maximum int) string {
 		return value
 	}
 	return string([]rune(value)[:maximum])
+}
+
+func sumsubRejectLabelsJSON(labels []string) string {
+	if len(labels) == 0 {
+		return "[]"
+	}
+	encoded, err := json.Marshal(labels)
+	if err != nil {
+		return "[]"
+	}
+	return string(encoded)
 }
 
 func webhookProviderStatus(payload sumsubWebhookPayload) string {
@@ -616,13 +627,13 @@ func (app *application) processOneSumsubSync(ctx context.Context) {
 		return
 	}
 	nextStatus := sumsubProviderStatus(review, steps)
-	rejectLabels, _ := json.Marshal(review.ReviewResult.RejectLabels)
+	rejectLabels := sumsubRejectLabelsJSON(review.ReviewResult.RejectLabels)
 	statements := []d1.Statement{{SQL: `UPDATE customer_kyc_verifications
 	  SET status=?, review_status=?, review_answer=?, review_reject_type=?, reject_labels_json=?,
 	      moderation_comment=?, client_comment=?, provider_created_at=?, provider_reviewed_at=?,
 	      last_synced_at=?, updated_at=?, version=version+1 WHERE id=?`, Params: []any{
 		nextStatus, nullIfEmpty(review.ReviewStatus), nullIfEmpty(review.ReviewResult.ReviewAnswer),
-		nullIfEmpty(review.ReviewResult.ReviewRejectType), string(rejectLabels),
+		nullIfEmpty(review.ReviewResult.ReviewRejectType), rejectLabels,
 		nullIfEmpty(safeWebhookText(review.ReviewResult.ModerationComment, 4000)),
 		nullIfEmpty(safeWebhookText(review.ReviewResult.ClientComment, 4000)),
 		nullIfEmpty(safeWebhookText(review.CreateDate, 80)), nullIfEmpty(safeWebhookText(review.ReviewDate, 80)),
@@ -630,7 +641,7 @@ func (app *application) processOneSumsubSync(ctx context.Context) {
 	}}}
 	for _, stepType := range []string{"IDENTITY", "SELFIE", "PROOF_OF_RESIDENCE"} {
 		step := steps[stepType]
-		labels, _ := json.Marshal(step.ReviewResult.RejectLabels)
+		labels := sumsubRejectLabelsJSON(step.ReviewResult.RejectLabels)
 		statements = append(statements, d1.Statement{SQL: `INSERT INTO customer_kyc_steps
 		  (verification_id, step_type, review_answer, review_reject_type, document_type, document_country,
 		   reject_labels_json, moderation_comment, client_comment, updated_at)
@@ -642,7 +653,7 @@ func (app *application) processOneSumsubSync(ctx context.Context) {
 		    updated_at=excluded.updated_at`, Params: []any{
 			verificationID, stepType, nullIfEmpty(step.ReviewResult.ReviewAnswer),
 			nullIfEmpty(step.ReviewResult.ReviewRejectType), nullIfEmpty(step.IDDocType), nullIfEmpty(step.Country),
-			string(labels), nullIfEmpty(safeWebhookText(step.ReviewResult.ModerationComment, 4000)),
+			labels, nullIfEmpty(safeWebhookText(step.ReviewResult.ModerationComment, 4000)),
 			nullIfEmpty(safeWebhookText(step.ReviewResult.ClientComment, 4000)), nowText,
 		}})
 	}
