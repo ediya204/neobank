@@ -37,6 +37,7 @@ import {
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
 import {
+  buildIntegerCountAxis,
   buildOverviewAnalytics,
   OverviewAccountKind,
   OverviewAsset,
@@ -168,6 +169,9 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
   const selectedTrend = analytics.trendByAsset[selectedAsset];
   const trendHasData = selectedTrend.some((point) => point.inflow || point.outflow);
   const productHasData = selectedFund.products.some((product) => product.total > 0);
+  const operationCountAxis = buildIntegerCountAxis(
+    Math.max(0, ...analytics.operationMix.map((item) => item.count))
+  );
 
   const trendOptions = useChart({
     chart: { toolbar: { show: false }, zoom: { enabled: false } },
@@ -213,7 +217,13 @@ export default function CoreOverview({ portal = false }: { portal?: boolean }) {
     colors: [theme.palette.info.main],
     xaxis: {
       categories: analytics.operationMix.map((item) => OPERATION_LABELS[item.type]),
-      labels: { formatter: (value: string) => `${value} 笔` },
+      min: 0,
+      max: operationCountAxis.max,
+      tickAmount: operationCountAxis.tickAmount,
+      decimalsInFloat: 0,
+      labels: {
+        formatter: (value: string) => `${Math.round(Number(value)).toLocaleString('zh-CN')} 笔`,
+      },
     },
     plotOptions: { bar: { horizontal: true, borderRadius: 5, barHeight: '48%' } },
     dataLabels: { enabled: false },

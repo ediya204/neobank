@@ -54,6 +54,15 @@ function amount(value: string | number | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export function buildIntegerCountAxis(maxCount: number, maxTickAmount = 5) {
+  const normalizedMax = Math.max(1, Math.ceil(Number.isFinite(maxCount) ? maxCount : 0));
+  const normalizedTickLimit = Math.max(1, Math.floor(maxTickAmount));
+  const step = Math.max(1, Math.ceil(normalizedMax / normalizedTickLimit));
+  const max = Math.ceil(normalizedMax / step) * step;
+
+  return { max, tickAmount: max / step };
+}
+
 function dayKey(value: Date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: HONG_KONG_TIME_ZONE,

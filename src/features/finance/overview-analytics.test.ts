@@ -1,5 +1,5 @@
 import type { Customer, JournalEntry, Operation, VirtualAccountRequest } from './core-api';
-import { buildOverviewAnalytics } from './overview-analytics';
+import { buildIntegerCountAxis, buildOverviewAnalytics } from './overview-analytics';
 
 const account = (input: Partial<Customer['accounts'][number]>) =>
   ({
@@ -82,6 +82,14 @@ function journal(input: {
 }
 
 describe('overview analytics', () => {
+  it('builds integer count axes without fractional tick intervals', () => {
+    expect(buildIntegerCountAxis(0)).toEqual({ max: 1, tickAmount: 1 });
+    expect(buildIntegerCountAxis(1)).toEqual({ max: 1, tickAmount: 1 });
+    expect(buildIntegerCountAxis(3)).toEqual({ max: 3, tickAmount: 3 });
+    expect(buildIntegerCountAxis(7)).toEqual({ max: 8, tickAmount: 4 });
+    expect(buildIntegerCountAxis(26)).toEqual({ max: 30, tickAmount: 5 });
+  });
+
   it('keeps assets separate and groups balances by account product', () => {
     const result = buildOverviewAnalytics({
       customers: [customer],
