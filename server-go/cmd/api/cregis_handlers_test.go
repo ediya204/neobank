@@ -40,8 +40,24 @@ func TestOnlyUSDTTRC20AssetIdentifiers(t *testing.T) {
 	if usdtTRC20Currency != "195@TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" {
 		t.Fatalf("unexpected USDT-TRC20 currency: %s", usdtTRC20Currency)
 	}
-	if cregisSubAddressWithdrawalPath != "/api/v1/sub_address_withdrawal" {
-		t.Fatalf("customer wallets must use the Cregis sub-address withdrawal API: %s", cregisSubAddressWithdrawalPath)
+	if cregisPayoutPath != "/api/v2/payout" {
+		t.Fatalf("customer withdrawals must use the Cregis wallet payout API: %s", cregisPayoutPath)
+	}
+}
+
+func TestCregisPayoutUsesProjectDefaultWallet(t *testing.T) {
+	payload := cregisDefaultWalletPayout(map[string]any{
+		"currency": "195@token", "net_amount_text": "0.1", "to_address": "destination",
+		"from_address": "customer-deposit-sub-address", "third_party_id": "business-id",
+	}, "https://api.example.com")
+	if _, exists := payload["wallet_id"]; exists {
+		t.Fatal("wallet_id must be omitted so Cregis uses the project default payout wallet")
+	}
+	if _, exists := payload["from_address"]; exists {
+		t.Fatal("customer deposit sub-address must not be sent as the Cregis payout source")
+	}
+	if payload["to_address"] != "destination" {
+		t.Fatalf("unexpected payout destination: %v", payload["to_address"])
 	}
 }
 

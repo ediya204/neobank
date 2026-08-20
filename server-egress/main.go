@@ -33,11 +33,11 @@ const (
 )
 
 var allowedPaths = map[string]struct{}{
-	"/api/v1/address/create":         {},
-	"/api/v1/address/inner":          {},
-	"/api/v1/address/legal":          {},
-	"/api/v1/sub_address_withdrawal": {},
-	"/api/v1/trade/page":             {},
+	"/api/v1/address/create": {},
+	"/api/v1/address/inner":  {},
+	"/api/v1/address/legal":  {},
+	"/api/v1/trade/page":     {},
+	"/api/v2/payout":         {},
 }
 
 type relay struct {
@@ -113,8 +113,8 @@ func (app *relay) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/address/create", app.forward)
 	mux.HandleFunc("POST /api/v1/address/inner", app.forward)
 	mux.HandleFunc("POST /api/v1/address/legal", app.forward)
-	mux.HandleFunc("POST /api/v1/sub_address_withdrawal", app.forward)
 	mux.HandleFunc("POST /api/v1/trade/page", app.forward)
+	mux.HandleFunc("POST /api/v2/payout", app.forward)
 	mux.HandleFunc("/", app.notFound)
 	return mux
 }

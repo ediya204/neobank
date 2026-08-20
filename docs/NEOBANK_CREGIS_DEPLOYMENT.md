@@ -151,7 +151,7 @@ credential-version checks.
 `CREGIS_RELAY_URL` affects only the Cregis client. Do not configure a global
 `HTTP_PROXY` or `HTTPS_PROXY`.
 The relay accepts only the Cregis address-create, address-ownership,
-address-legality, transaction-query, and sub-address-withdrawal
+address-legality, transaction-query, and payout
 paths, authenticates the complete request body, rejects replayed nonces, and
 pins its upstream to the configured Cregis test gateway.
 
@@ -239,8 +239,10 @@ for audit, and a Cregis callback is required for the final result.
 USDT/TRON withdrawal fees are read from the versioned PostgreSQL rule scoped to
 `CRYPTO / USDT / ON_CHAIN / CREGIS / TRON`. The customer-entered amount is the
 total wallet debit; the service stores the fee and net snapshots and submits only
-the net amount to Cregis through `POST /api/v1/sub_address_withdrawal`, because
-customer wallets are project sub-addresses rather than a configured payout wallet.
+the net amount to Cregis through `POST /api/v2/payout`. The request deliberately
+omits both `wallet_id` and `from_address`, so Cregis uses the WaaS project's
+configured default payout wallet; the customer's deposit sub-address remains an
+internal accounting attribution and must never be submitted as the payout source.
 A retry with the same idempotency key returns the original
 snapshot. Follow `docs/WITHDRAWAL_FEE_RUNBOOK.md` for configuration, migration,
 and acceptance gates.

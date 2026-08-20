@@ -37,10 +37,10 @@ func (err *walletProvisionError) Error() string {
 }
 
 const (
-	usdtTRC20ChainID               = "195"
-	usdtTRC20TokenID               = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
-	usdtTRC20Currency              = usdtTRC20ChainID + "@" + usdtTRC20TokenID
-	cregisSubAddressWithdrawalPath = "/api/v1/sub_address_withdrawal"
+	usdtTRC20ChainID  = "195"
+	usdtTRC20TokenID  = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+	usdtTRC20Currency = usdtTRC20ChainID + "@" + usdtTRC20TokenID
+	cregisPayoutPath  = "/api/v2/payout"
 
 	approveWithdrawalSQL = `UPDATE cregis_withdrawals
     SET status='approved', checker_id=?, approved_at=?, updated_at=?
@@ -537,7 +537,7 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: startWithdrawalExecutionSQL, Params: []any{edgeUser(r), now, id, app.tenantID}},
-		d1.Statement{SQL: `SELECT id, third_party_id, currency, net_amount_text, from_address, to_address, memo, remark
+		d1.Statement{SQL: `SELECT id, third_party_id, currency, net_amount_text, to_address, memo, remark
       FROM cregis_withdrawals WHERE id=? AND tenant_id=?`, Params: []any{id, app.tenantID}},
 	)
 	if err != nil {
@@ -551,7 +551,6 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 	row := results[1].Results[0]
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	currency := text(row["currency"])
 	legalResponse, legalErr := app.cregis.Call(ctx, "/api/v1/address/legal", map[string]any{
 		"chain_id": usdtTRC20ChainID,
 		"address":  text(row["to_address"]),
@@ -565,20 +564,8 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "invalid_payout_address"}})
 		return
 	}
-	response, callErr := app.cregis.Call(ctx, cregisSubAddressWithdrawalPath, map[string]any{
-		"currency": currency, "amount": text(row["net_amount_text"]),
-		"from_address": text(row["from_address"]), "to_address": text(row["to_address"]),
-		"memo": text(row["memo"]), "remark": text(row["remark"]),
-		"third_party_id": text(row["third_party_id"]),
-		"callback_url":   app.publicURL + "/api/v1/callbacks/cregis/payout",
-	})
+	response, callErr := app.cregis.Call(ctx, cregisPayoutPath, cregisDefaultWalletPayout(row, app.publicURL))
 	if callErr != nil {
-		if responseCode(response) == "E0008" {
-			_, _ = app.db.Query(r.Context(), `UPDATE cregis_withdrawals SET status='failed', updated_at=? WHERE id=? AND status='executing'`, now, id)
-			app.logger.Warn("Cregis payout address rejected", "withdrawal_id", id, "code", responseCode(response))
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "invalid_payout_address"}})
-			return
-		}
 		_, _ = app.db.Query(r.Context(), `UPDATE cregis_withdrawals SET status='exception', updated_at=? WHERE id=? AND status='executing'`, now, id)
 		app.logger.Error("Cregis payout submission failed", "withdrawal_id", id, "code", responseCode(response), "error", callErr)
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "cregis_payout_failed"}})
@@ -615,6 +602,21 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": storedStatus, "cregis_cid": data.CID.String()})
+}
+
+func cregisDefaultWalletPayout(row map[string]any, publicURL string) map[string]any {
+	// Customer sub-addresses identify deposits and ledger ownership only. Funds are
+	// collected separately; omitting source selectors makes WaaS use the project's
+	// configured default payout wallet.
+	return map[string]any{
+		"currency":       text(row["currency"]),
+		"amount":         text(row["net_amount_text"]),
+		"to_address":     text(row["to_address"]),
+		"memo":           text(row["memo"]),
+		"remark":         text(row["remark"]),
+		"third_party_id": text(row["third_party_id"]),
+		"callback_url":   publicURL + "/api/v1/callbacks/cregis/payout",
+	}
 }
 
 func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request) {
