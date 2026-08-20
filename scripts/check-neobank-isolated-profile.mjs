@@ -276,10 +276,12 @@ assert.match(customerAdmin, /operations_status='active'/);
 assert.match(customerAdmin, /automaticWalletIdempotency\(id\)/);
 assert.match(customerAdmin, /automaticWalletAlias\(id\)/);
 assert.match(customerAdmin, /provisionCregisWallet/);
-assert.match(portalCustomerContext, /neobankApi<[\s\S]*?>\('\/customer\/profile'\)/);
-assert.doesNotMatch(portalCustomerContext, /coreApi<[\s\S]*?>\('\/customer\/profile'\)/);
-assert.match(portalCustomerContext, /coreApi<Customer>\(`\/customers\/\$\{encodeURIComponent/);
-assert.match(portalCustomerContext, /customerId=\$\{encodeURIComponent\(profile\.id\)\}/);
+assert.match(
+  portalCustomerContext,
+  /coreApi<CustomerHomeBootstrap>\('\/customer\/home',[\s\S]*?onTransientRetry/
+);
+assert.doesNotMatch(portalCustomerContext, /neobankApi<[\s\S]*?>\('\/customer\/profile'\)/);
+assert.match(portalCustomerContext, /\.slice\(0, 5\)/);
 for (const label of ['总览', '钱包', '转入转出', 'OTC', '交易记录']) {
   assert.match(portalLayout, new RegExp(`\\['${label}',`));
 }
@@ -295,6 +297,9 @@ assert.match(customerCryptoWallet, /neobankApi<CustomerHistory>\('\/customer\/hi
 assert.match(worker, /proxyAPI\(request, env, 'application-session-edge'\)/);
 assert.match(worker, /proxyCoreAPI\(request, env\)/);
 assert.match(worker, /loadApplicationSession\(request, env\)/);
+assert.match(worker, /customerHomeAPI\(request, env\)/);
+assert.match(worker, /internalGetRequest\(request, '\/api\/v1\/customer\/profile'\)/);
+assert.match(worker, /customerId=\$\{encodedCustomerId\}&limit=5/);
 assert.match(worker, /customerCoreRouteAllowed\(incoming, request\.method, userId/);
 assert.match(worker, /type === 'VIRTUAL_ACCOUNT'/);
 assert.match(worker, /type === 'FIAT_INBOUND'/);
@@ -329,6 +334,8 @@ assert.match(worker, /hasValidMutationOrigin\(request\)/);
 assert.match(renderConfig, /key: DATABASE_BACKEND\s+value: postgres/);
 assert.match(renderConfig, /name: neobank-core/);
 assert.match(renderConfig, /rootDir: server/);
+assert.match(coreRenderService, /plan: starter/);
+assert.match(coreRenderService, /healthCheckPath: \/api\/v1\/health/);
 assert.match(renderConfig, /key: CORE_EDGE_SHARED_SECRET\s+sync: false/);
 assert.match(renderConfig, /key: CORE_EDGE_AUTH_REQUIRED\s+value: ['"]true['"]/);
 assert.match(renderConfig, /key: NEOBANK_SOURCE_TENANT_ID\s+value: neobank/);

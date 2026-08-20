@@ -66,10 +66,17 @@ export class OperationsController {
     @Req() request: Request,
     @Query('status') status?: OperationStatus,
     @Query('type') type?: OperationType,
-    @Query('customerId') customerId?: string
+    @Query('customerId') customerId?: string,
+    @Query('limit') limit?: string
   ) {
     return this.operations.list(
-      { organizationId, status, type, customerId },
+      {
+        organizationId,
+        status,
+        type,
+        customerId,
+        limit: limit === undefined ? undefined : Number(limit),
+      },
       currentUserId(request)
     );
   }

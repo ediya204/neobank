@@ -390,10 +390,12 @@ function customerCoreRouteAllowed(
     );
   }
   if (url.pathname === '/api/core/operations') {
+    const limit = url.searchParams.get('limit');
     return (
       url.searchParams.get('organizationId') === organizationId &&
       url.searchParams.get('customerId') === customerId &&
-      hasOnlySearchParams(url, new Set(['organizationId', 'customerId']))
+      (limit === null || limit === '5') &&
+      hasOnlySearchParams(url, new Set(['organizationId', 'customerId', 'limit']))
     );
   }
   if (url.pathname === '/api/core/crypto-wallets/transfers') {
@@ -438,7 +440,14 @@ function redactCustomerCorePayload(value: unknown): unknown {
   );
 }
 
-async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
+async function proxyCoreAPI(
+  request: Request,
+  env: Env,
+  options: {
+    session?: ApplicationSessionPayload | null;
+    customerWalletRows?: CustomerWalletSummaryRow[];
+  } = {}
+): Promise<Response> {
   const contentLength = Number(request.headers.get('content-length') || '0');
   if (contentLength > MAX_BODY_BYTES) return json({ error: { code: 'payload_too_large' } }, 413);
   const incomingBody = await request.arrayBuffer();
@@ -457,7 +466,8 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
   }
 
   const incoming = new URL(request.url);
-  const session = await loadApplicationSession(request, env);
+  const session =
+    options.session === undefined ? await loadApplicationSession(request, env) : options.session;
   const role = typeof session?.user?.role === 'string' ? session.user.role : '';
   const userId = typeof session?.user?.id === 'string' ? session.user.id : '';
   const coreUserId =
@@ -669,7 +679,7 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
     if (role === 'customer') {
       let walletRows: CustomerWalletSummaryRow[];
       try {
-        walletRows = await fetchCustomerWalletSummary(request, env);
+        walletRows = options.customerWalletRows || (await fetchCustomerWalletSummary(request, env));
       } catch {
         return json({ error: { code: 'customer_wallet_summary_unavailable' } }, 502);
       }
@@ -866,6 +876,80 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
   });
 }
 
+function internalGetRequest(request: Request, pathname: string): Request {
+  const headers = new Headers({ accept: 'application/json' });
+  for (const name of ['cookie', 'origin', 'user-agent', 'cf-connecting-ip']) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return new Request(new URL(pathname, request.url), { method: 'GET', headers });
+}
+
+async function customerHomeAPI(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'GET') {
+    return json({ error: { code: 'method_not_allowed' } }, 405);
+  }
+  const session = await loadApplicationSession(request, env);
+  const role = typeof session?.user?.role === 'string' ? session.user.role : '';
+  const customerId = typeof session?.user?.id === 'string' ? session.user.id : '';
+  const email = typeof session?.user?.email === 'string' ? session.user.email : '';
+  if (role !== 'customer' || !customerId || !email) {
+    return json({ error: { code: 'authentication_required' } }, 401);
+  }
+
+  const [profileResponse, walletRows] = await Promise.all([
+    proxyAPI(
+      internalGetRequest(request, '/api/v1/customer/profile'),
+      env,
+      'application-session-edge'
+    ),
+    fetchCustomerWalletSummary(request, env),
+  ]);
+  if (!profileResponse.ok) return profileResponse;
+  const profile = (await profileResponse.json().catch(() => null)) as {
+    id?: unknown;
+    [key: string]: unknown;
+  } | null;
+  if (!profile || profile.id !== customerId) {
+    return json({ error: { code: 'customer_profile_scope_mismatch' } }, 403);
+  }
+
+  const organizationId = encodeURIComponent(env.CORE_ORGANIZATION_ID);
+  const encodedCustomerId = encodeURIComponent(customerId);
+  const coreOptions = { session, customerWalletRows: walletRows };
+  const [customerResponse, operationsResponse, summaryResponse] = await Promise.all([
+    proxyCoreAPI(
+      internalGetRequest(request, `/api/core/customers/${encodedCustomerId}`),
+      env,
+      coreOptions
+    ),
+    proxyCoreAPI(
+      internalGetRequest(
+        request,
+        `/api/core/operations?organizationId=${organizationId}&customerId=${encodedCustomerId}&limit=5`
+      ),
+      env,
+      coreOptions
+    ),
+    proxyCoreAPI(
+      internalGetRequest(request, `/api/core/accounts/summary?customerId=${encodedCustomerId}`),
+      env,
+      coreOptions
+    ),
+  ]);
+  const failed = [customerResponse, operationsResponse, summaryResponse].find(
+    (response) => !response.ok
+  );
+  if (failed) return failed;
+
+  const [customer, operations, assetSummary] = await Promise.all([
+    customerResponse.json(),
+    operationsResponse.json(),
+    summaryResponse.json(),
+  ]);
+  return json({ profile, customer, operations, wallets: walletRows, assetSummary });
+}
+
 function isApplicationAPI(pathname: string) {
   return (
     pathname.startsWith('/api/auth/') ||
@@ -907,12 +991,16 @@ export default {
         if (
           customerAPIInMaintenance(env) &&
           (url.pathname.startsWith('/api/auth/customer/') ||
-            url.pathname.startsWith('/api/v1/customer/'))
+            url.pathname.startsWith('/api/v1/customer/') ||
+            url.pathname === '/api/core/customer/home')
         ) {
           return json({ error: { code: 'customer_auth_maintenance' } }, 503);
         }
         if (!sumsubWebhook && !hasValidMutationOrigin(request)) {
           return json({ error: { code: 'invalid_origin' } }, 403);
+        }
+        if (url.pathname === '/api/core/customer/home') {
+          return await customerHomeAPI(request, env);
         }
         if (url.pathname.startsWith('/api/core/')) {
           return await proxyCoreAPI(request, env);

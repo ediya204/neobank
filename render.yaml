@@ -77,7 +77,7 @@ services:
     runtime: node
     rootDir: server
     region: singapore
-    plan: free
+    plan: starter
     buildCommand: npm ci --include=dev && npm run prisma:generate && npm run build
     startCommand: npm run start
     healthCheckPath: /api/v1/health
