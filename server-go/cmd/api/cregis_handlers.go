@@ -37,9 +37,10 @@ func (err *walletProvisionError) Error() string {
 }
 
 const (
-	usdtTRC20ChainID  = "195"
-	usdtTRC20TokenID  = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
-	usdtTRC20Currency = usdtTRC20ChainID + "@" + usdtTRC20TokenID
+	usdtTRC20ChainID               = "195"
+	usdtTRC20TokenID               = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+	usdtTRC20Currency              = usdtTRC20ChainID + "@" + usdtTRC20TokenID
+	cregisSubAddressWithdrawalPath = "/api/v1/sub_address_withdrawal"
 
 	approveWithdrawalSQL = `UPDATE cregis_withdrawals
     SET status='approved', checker_id=?, approved_at=?, updated_at=?
@@ -564,7 +565,7 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "invalid_payout_address"}})
 		return
 	}
-	response, callErr := app.cregis.Call(ctx, "/api/v2/payout", map[string]any{
+	response, callErr := app.cregis.Call(ctx, cregisSubAddressWithdrawalPath, map[string]any{
 		"currency": currency, "amount": text(row["net_amount_text"]),
 		"from_address": text(row["from_address"]), "to_address": text(row["to_address"]),
 		"memo": text(row["memo"]), "remark": text(row["remark"]),
@@ -572,6 +573,12 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 		"callback_url":   app.publicURL + "/api/v1/callbacks/cregis/payout",
 	})
 	if callErr != nil {
+		if responseCode(response) == "E0008" {
+			_, _ = app.db.Query(r.Context(), `UPDATE cregis_withdrawals SET status='failed', updated_at=? WHERE id=? AND status='executing'`, now, id)
+			app.logger.Warn("Cregis payout address rejected", "withdrawal_id", id, "code", responseCode(response))
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "invalid_payout_address"}})
+			return
+		}
 		_, _ = app.db.Query(r.Context(), `UPDATE cregis_withdrawals SET status='exception', updated_at=? WHERE id=? AND status='executing'`, now, id)
 		app.logger.Error("Cregis payout submission failed", "withdrawal_id", id, "code", responseCode(response), "error", callErr)
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "cregis_payout_failed"}})

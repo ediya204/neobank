@@ -40,6 +40,9 @@ func TestOnlyUSDTTRC20AssetIdentifiers(t *testing.T) {
 	if usdtTRC20Currency != "195@TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" {
 		t.Fatalf("unexpected USDT-TRC20 currency: %s", usdtTRC20Currency)
 	}
+	if cregisSubAddressWithdrawalPath != "/api/v1/sub_address_withdrawal" {
+		t.Fatalf("customer wallets must use the Cregis sub-address withdrawal API: %s", cregisSubAddressWithdrawalPath)
+	}
 }
 
 func TestSingleAdministratorWithdrawalStateTransitions(t *testing.T) {

@@ -104,6 +104,22 @@ function automaticWalletStatusLabel(customer: AdminCustomer) {
   return '已自动激活，钱包生成中';
 }
 
+function operationErrorMessage(value: unknown) {
+  const message = value instanceof Error ? value.message : '';
+  if (message === 'invalid_payout_address')
+    return 'Cregis 拒绝了出款地址，请核对地址与 TRON 网络后重新创建指令';
+  if (message === 'withdrawal_not_executable')
+    return '该指令已离开“已审批”状态，请刷新后按当前状态处理';
+  if (message === 'cregis_payout_failed') return 'Cregis 未接受该出款请求，指令已进入异常调单状态';
+  return message || '操作失败';
+}
+
+function executeActionLabel(performing: boolean) {
+  if (performing) return '提交中…';
+  if (IS_NEOBANK_DEPLOYMENT) return '提交至 Cregis';
+  return '模拟通道执行并回填 TXID';
+}
+
 function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
   const status = normalizedCregisStatus(row.status);
   const wallet: CryptoTransfer['wallet'] = {
@@ -163,6 +179,9 @@ export default function CryptoOperationsAdmin() {
   const [customerEmail, setCustomerEmail] = useState('');
   const [provisioning, setProvisioning] = useState(false);
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
+  const [performingAction, setPerformingAction] = useState<'approve' | 'reject' | 'execute' | null>(
+    null
+  );
 
   const load = useCallback(async () => {
     setError('');
@@ -217,7 +236,10 @@ export default function CryptoOperationsAdmin() {
   );
 
   const perform = async (action: 'approve' | 'reject' | 'execute') => {
-    if (!selected) return;
+    if (!selected || performingAction) return;
+    setPerformingAction(action);
+    setError('');
+    setSuccess('');
     try {
       let body: string | undefined;
       if (action === 'reject') body = JSON.stringify({ reason });
@@ -258,7 +280,14 @@ export default function CryptoOperationsAdmin() {
       await load();
       setSelected(null);
     } catch (value) {
-      setError(value instanceof Error ? value.message : '操作失败');
+      const message = operationErrorMessage(value);
+      if (action === 'execute') {
+        setSelected(null);
+        await load().catch(() => undefined);
+      }
+      setError(message);
+    } finally {
+      setPerformingAction(null);
     }
   };
 
@@ -397,12 +426,19 @@ export default function CryptoOperationsAdmin() {
               <Info label="目标地址" value={selected.toAddress} mono />
               <Info label="交易哈希" value={selected.txHash || '执行后生成'} mono />
             </Card>
+            {selected.rawStatus === 'exception' && (
+              <Alert severity="warning">
+                该指令的 Cregis 提交结果未确认，已进入异常调单。请先核对 Cregis
+                订单记录，再按调单流程处理；不要重复提交。
+              </Alert>
+            )}
             {selected.status === 'SUBMITTED' && (
               <Stack direction="row" spacing={1}>
                 <Button
                   fullWidth
                   color="error"
                   variant="outlined"
+                  disabled={Boolean(performingAction)}
                   onClick={() => setRejectOpen(true)}
                 >
                   拒绝
@@ -410,7 +446,10 @@ export default function CryptoOperationsAdmin() {
                 <Button
                   fullWidth
                   variant="contained"
-                  disabled={!IS_NEOBANK_DEPLOYMENT && selected.maker?.id === userId}
+                  disabled={
+                    Boolean(performingAction) ||
+                    (!IS_NEOBANK_DEPLOYMENT && selected.maker?.id === userId)
+                  }
                   onClick={() => perform('approve').catch(() => undefined)}
                 >
                   {IS_NEOBANK_DEPLOYMENT ? '审批通过' : '复核通过'}
@@ -420,8 +459,12 @@ export default function CryptoOperationsAdmin() {
             {(IS_NEOBANK_DEPLOYMENT
               ? selected.rawStatus === 'approved'
               : selected.status === 'PROCESSING') && (
-              <Button variant="contained" onClick={() => perform('execute').catch(() => undefined)}>
-                {IS_NEOBANK_DEPLOYMENT ? '提交至 Cregis' : '模拟通道执行并回填 TXID'}
+              <Button
+                variant="contained"
+                disabled={Boolean(performingAction)}
+                onClick={() => perform('execute').catch(() => undefined)}
+              >
+                {executeActionLabel(performingAction === 'execute')}
               </Button>
             )}
           </Stack>
@@ -445,7 +488,7 @@ export default function CryptoOperationsAdmin() {
           <Button
             variant="contained"
             color="error"
-            disabled={!reason.trim()}
+            disabled={!reason.trim() || Boolean(performingAction)}
             onClick={() => perform('reject').catch(() => undefined)}
           >
             确认拒绝

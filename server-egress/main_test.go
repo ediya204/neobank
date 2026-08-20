@@ -44,7 +44,7 @@ func TestRelayAuthenticationRejectsTamperedBody(t *testing.T) {
 	tampered := []byte(`{"amount":"2"}`)
 	timestampMillis := "1786579200000"
 	nonce := "unique-nonce-123456789"
-	request := httptest.NewRequest(http.MethodPost, "/api/v2/payout", strings.NewReader(string(tampered)))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sub_address_withdrawal", strings.NewReader(string(tampered)))
 	request.Header.Set("X-Neobank-Relay-Timestamp", timestampMillis)
 	request.Header.Set("X-Neobank-Relay-Nonce", nonce)
 	request.Header.Set("X-Neobank-Relay-Signature", hex.EncodeToString(relaySignature(secret, timestampMillis, nonce, request.Method, request.URL.Path, original)))
@@ -85,6 +85,27 @@ func TestRelayRoutesTradeQueryThroughAuthentication(t *testing.T) {
 
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("trade query route must reach relay authentication, got status %d", response.Code)
+	}
+}
+
+func TestRelayAllowsSubAddressWithdrawalAndRejectsWalletPayout(t *testing.T) {
+	app := &relay{
+		secret: []byte("0123456789abcdef0123456789abcdef"),
+		now:    time.Now,
+		nonces: make(map[string]time.Time),
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	allowed := httptest.NewRecorder()
+	app.routes().ServeHTTP(allowed, httptest.NewRequest(http.MethodPost, "/api/v1/sub_address_withdrawal", strings.NewReader(`{}`)))
+	if allowed.Code != http.StatusUnauthorized {
+		t.Fatalf("sub-address withdrawal must reach relay authentication, got status %d", allowed.Code)
+	}
+
+	blocked := httptest.NewRecorder()
+	app.routes().ServeHTTP(blocked, httptest.NewRequest(http.MethodPost, "/api/v2/payout", strings.NewReader(`{}`)))
+	if blocked.Code != http.StatusNotFound {
+		t.Fatalf("wallet payout must remain outside the relay allowlist, got status %d", blocked.Code)
 	}
 }
 
