@@ -37,9 +37,7 @@ const navItems = [
 
 const customerNavItems = [
   ['总览', '/portal/home', 'solar:home-2-bold-duotone'],
-  ['系统账户', '/portal/money/accounts', 'solar:wallet-money-bold-duotone'],
-  ['VA 账户', '/portal/virtual-accounts', 'solar:buildings-2-bold-duotone'],
-  ['USDT 钱包', '/portal/crypto-wallet', 'solar:wallet-2-bold-duotone'],
+  ['钱包', '/portal/money/accounts', 'solar:wallet-money-bold-duotone'],
   ['转入转出', '/portal/money/transfers', 'solar:transfer-horizontal-bold-duotone'],
   ['OTC', '/portal/money/otc', 'solar:hand-money-bold-duotone'],
   ['交易记录', '/portal/transactions', 'solar:history-bold-duotone'],
@@ -83,7 +81,13 @@ function PortalFrame() {
       return location.pathname === path;
     }
     if (path === '/portal/money/accounts') {
-      if (user?.role === 'customer') return location.pathname.startsWith(path);
+      if (user?.role === 'customer') {
+        return (
+          location.pathname.startsWith(path) ||
+          location.pathname.startsWith('/portal/virtual-accounts') ||
+          location.pathname.startsWith('/portal/crypto-wallet')
+        );
+      }
       return (
         location.pathname.startsWith(path) || location.pathname.startsWith('/portal/crypto-wallet')
       );

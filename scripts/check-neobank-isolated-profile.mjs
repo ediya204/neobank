@@ -221,9 +221,11 @@ assert.match(portalCustomerContext, /neobankApi<[\s\S]*?>\('\/customer\/profile'
 assert.doesNotMatch(portalCustomerContext, /coreApi<[\s\S]*?>\('\/customer\/profile'\)/);
 assert.match(portalCustomerContext, /coreApi<Customer>\(`\/customers\/\$\{encodeURIComponent/);
 assert.match(portalCustomerContext, /customerId=\$\{encodeURIComponent\(profile\.id\)\}/);
-for (const label of ['总览', '系统账户', 'VA 账户', 'USDT 钱包', '转入转出', 'OTC', '交易记录']) {
+for (const label of ['总览', '钱包', '转入转出', 'OTC', '交易记录']) {
   assert.match(portalLayout, new RegExp(`\\['${label}',`));
 }
+assert.doesNotMatch(portalLayout, /\['VA 账户', '\/portal\/virtual-accounts'/);
+assert.doesNotMatch(portalLayout, /\['USDT 钱包', '\/portal\/crypto-wallet'/);
 assert.match(portalLayout, /customerMobileNavPaths/);
 assert.match(
   customerCryptoWallet,
