@@ -37,6 +37,23 @@ The direct Admin customer-password change remains a break-glass operation. Norma
 customer recovery should use the customer-owned email flow so staff never know or
 choose the customer's password.
 
+## Incomplete first-time setup repair
+
+Self-service password recovery is intentionally unavailable before the customer has
+completed first-time password and TOTP enrollment. If the original setup link, or the
+follow-on TOTP enrollment, expires while the customer remains `pending_setup`, a Super
+Admin with `customer_credentials.manage` may use **重新签发设置链接** on the customer
+detail page. The API is `POST /api/v1/admin/customers/{id}/setup-link` and requires a
+non-empty audit reason.
+
+The repair is allowed only when KYC is `approved`, operations are `active`, and the
+customer status is still `pending_setup`. It replaces the setup-token hash, clears any
+incomplete password/TOTP enrollment, increments `credential_version`, revokes any
+defensive residual sessions/challenges, and records `auth.setup_link_reissued`. It
+does not activate the customer, set a staff-chosen password, change KYC or operations
+state, or touch balances and wallet bindings. The raw link is returned once, uses a URL
+fragment, expires after 30 minutes, and must not be pasted into tickets or logs.
+
 ## Token and data handling
 
 - PostgreSQL stores a random request ID, customer ID, credential version, expiry,
@@ -56,12 +73,13 @@ choose the customer's password.
 
 ## API contract
 
-| Operation | Endpoint | Success |
-| --- | --- | --- |
-| Request recovery | `POST /api/auth/customer/password-reset/request` | `202 {"accepted":true}` |
-| Inspect reset link | `POST /api/auth/customer/password-reset/inspect` | `200` with `totp_required` and `expires_at` |
-| Complete reset | `POST /api/auth/customer/password-reset/complete` | `200` with `sessions_revoked=true` |
-| Verify email | `POST /api/auth/customer/email-verification/complete` | `200` with `email_verified=true` |
+| Operation                | Endpoint                                              | Success                                                |
+| ------------------------ | ----------------------------------------------------- | ------------------------------------------------------ |
+| Request recovery         | `POST /api/auth/customer/password-reset/request`      | `202 {"accepted":true}`                                |
+| Inspect reset link       | `POST /api/auth/customer/password-reset/inspect`      | `200` with `totp_required` and `expires_at`            |
+| Complete reset           | `POST /api/auth/customer/password-reset/complete`     | `200` with `sessions_revoked=true`                     |
+| Verify email             | `POST /api/auth/customer/email-verification/complete` | `200` with `email_verified=true`                       |
+| Reissue incomplete setup | `POST /api/v1/admin/customers/{id}/setup-link`        | `201` with one-time `setup_url` and `setup_expires_at` |
 
 All responses use `Cache-Control: no-store`. Invalid, expired, consumed, cancelled,
 email-changed, or credential-version-stale links fail closed.
@@ -110,3 +128,6 @@ local tests pass.
   through a fresh login.
 - No reset path changes KYC, account activation, balances, wallet bindings, or any
   financial state.
+- Setup-link reissue rejects active, KYC-pending/rejected, and operations-pending
+  customers; the old setup/enrollment token fails immediately after a successful
+  reissue.

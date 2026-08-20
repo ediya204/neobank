@@ -86,6 +86,17 @@ const (
       enrollment_token_hash=NULL,
       enrollment_expires_at=NULL,
       updated_at=excluded.updated_at`
+	reissueCustomerSetupCredentialSQL = `UPDATE customer_credentials
+    SET password_salt=NULL, password_hash=NULL, password_algorithm='pbkdf2-sha256-v1',
+      password_iterations=?, password_memory_kib=0, password_time_cost=0,
+      password_parallelism=0, password_changed_at=NULL, totp_secret_ciphertext=NULL,
+      totp_last_counter=-1, setup_token_hash=?, setup_expires_at=?, setup_consumed_at=NULL,
+      enrollment_token_hash=NULL, enrollment_expires_at=NULL, failed_attempts=0,
+      locked_until=NULL, credential_version=credential_version+1, updated_at=?
+    WHERE customer_id=? AND EXISTS (SELECT 1 FROM customers c
+      WHERE c.id=customer_credentials.customer_id AND c.tenant_id=?
+        AND c.status='pending_setup' AND c.kyc_status='approved'
+        AND c.operations_status='active')`
 	auditCustomerActivationSQL = `INSERT INTO customer_auth_audit_events
     (id, customer_id, event_type, actor, metadata_json, created_at)
     SELECT ?, ?, 'customer.operations_activated', ?, ?, ?
@@ -197,6 +208,84 @@ func (app *application) adminChangeCustomerPassword(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, map[string]any{
 		"password_changed_at": nowText,
 		"sessions_revoked":    resultChanges(results[1:2]),
+	})
+}
+
+func (app *application) adminReissueCustomerSetupLink(w http.ResponseWriter, r *http.Request, id string) {
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if !safeIdentifier.MatchString(id) || reason == "" || len(reason) > 500 {
+		validationError(w)
+		return
+	}
+
+	rows, err := app.db.Query(r.Context(), `SELECT c.status, c.kyc_status, c.operations_status
+	  FROM customers c WHERE c.id=? AND c.tenant_id=?`, id, app.tenantID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(rows) != 1 {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]string{"code": "customer_not_found"}})
+		return
+	}
+	if text(rows[0]["status"]) != "pending_setup" || text(rows[0]["kyc_status"]) != "approved" ||
+		text(rows[0]["operations_status"]) != "active" {
+		conflict(w, "customer_setup_reissue_unavailable")
+		return
+	}
+
+	now := time.Now().UTC()
+	nowText := databaseTimestamp(now)
+	expiresAt := databaseTimestamp(now.Add(customerSetupDuration))
+	token := randomToken(32)
+	setupHash := tokenHash(token)
+	actor := edgeUser(r)
+	results, err := app.db.Batch(r.Context(),
+		d1.Statement{SQL: reissueCustomerSetupCredentialSQL, Params: []any{
+			customerLegacyPasswordIterations, setupHash, expiresAt, nowText, id, app.tenantID,
+		}},
+		d1.Statement{SQL: `UPDATE customer_sessions SET revoked_at=?, last_seen_at=?
+	  WHERE customer_id=? AND revoked_at IS NULL AND EXISTS (
+	    SELECT 1 FROM customer_credentials WHERE customer_id=? AND setup_token_hash=?)`, Params: []any{
+			nowText, nowText, id, id, setupHash,
+		}},
+		d1.Statement{SQL: `UPDATE customer_login_challenges SET consumed_at=?
+	  WHERE customer_id=? AND consumed_at IS NULL AND EXISTS (
+	    SELECT 1 FROM customer_credentials WHERE customer_id=? AND setup_token_hash=?)`, Params: []any{
+			nowText, id, id, setupHash,
+		}},
+		d1.Statement{SQL: `DELETE FROM customer_recovery_codes WHERE customer_id=? AND EXISTS (
+	    SELECT 1 FROM customer_credentials WHERE customer_id=? AND setup_token_hash=?)`, Params: []any{
+			id, id, setupHash,
+		}},
+		d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
+	  (id, customer_id, event_type, actor, metadata_json, created_at)
+	  SELECT ?, ?, 'auth.setup_link_reissued', ?, ?, ?
+	  WHERE EXISTS (SELECT 1 FROM customer_credentials
+	    WHERE customer_id=? AND setup_token_hash=? AND setup_expires_at=?)`, Params: []any{
+			randomID("audit"), id, actor,
+			mustJSON(map[string]string{"reason": reason, "method": "admin_reissue"}), nowText,
+			id, setupHash, expiresAt,
+		}},
+	)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != 5 || resultChanges(results[:1]) != 1 || resultChanges(results[4:5]) != 1 {
+		conflict(w, "customer_setup_reissue_conflict")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"setup_url":        app.portalURL + "/customer/setup#setup_token=" + url.QueryEscape(token),
+		"setup_expires_at": expiresAt,
+		"sessions_revoked": resultChanges(results[1:2]),
 	})
 }
 

@@ -55,4 +55,11 @@ func TestAdminRequestPermissionsCoverGoAdminRoutes(t *testing.T) {
 	if adminRequestPermitted(compliance, http.MethodPatch, "/api/v1/admin/customers/customer_1/password") {
 		t.Fatal("compliance administrator must not change a customer password")
 	}
+	if !adminRequestPermitted(&adminSession{AccessRole: adminRoleSuperAdmin}, http.MethodPost,
+		"/api/v1/admin/customers/customer_1/setup-link") {
+		t.Fatal("super administrator must be able to reissue a customer setup link")
+	}
+	if adminRequestPermitted(compliance, http.MethodPost, "/api/v1/admin/customers/customer_1/setup-link") {
+		t.Fatal("compliance administrator must not reissue a customer setup link")
+	}
 }

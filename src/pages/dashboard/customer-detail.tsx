@@ -520,6 +520,14 @@ export default function CustomerDetailPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [setupLinkDialogOpen, setSetupLinkDialogOpen] = useState(false);
+  const [setupLinkReason, setSetupLinkReason] = useState('原设置链接已过期，重新签发');
+  const [setupLinkError, setSetupLinkError] = useState('');
+  const [setupLinkSaving, setSetupLinkSaving] = useState(false);
+  const [setupLinkResult, setSetupLinkResult] = useState<{
+    setupUrl: string;
+    expiresAt: string;
+  } | null>(null);
   const canManageCustomerCredentials =
     IS_NEOBANK_DEPLOYMENT && hasAdminPermission(user, 'customer_credentials.manage');
 
@@ -911,6 +919,43 @@ export default function CustomerDetailPage() {
     }
   };
 
+  const closeSetupLinkDialog = () => {
+    if (setupLinkSaving) return;
+    setSetupLinkDialogOpen(false);
+    setSetupLinkReason('原设置链接已过期，重新签发');
+    setSetupLinkError('');
+    setSetupLinkResult(null);
+  };
+
+  const reissueCustomerSetupLink = async () => {
+    if (!customer || !setupLinkReason.trim()) return;
+    setSetupLinkSaving(true);
+    setSetupLinkError('');
+    try {
+      const result = await neobankApi<{
+        setup_url: string;
+        setup_expires_at: string;
+      }>(`/admin/customers/${customer.id}/setup-link`, {
+        method: 'POST',
+        userId,
+        body: JSON.stringify({ reason: setupLinkReason.trim() }),
+      });
+      setSetupLinkResult({ setupUrl: result.setup_url, expiresAt: result.setup_expires_at });
+      setSuccess('新的客户设置链接已签发；旧链接与未完成的设置凭证已失效');
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : 'request_failed';
+      if (code === 'customer_setup_reissue_unavailable') {
+        setSetupLinkError('仅可为已通过 KYC、运营已激活但尚未完成设置的客户重签链接');
+      } else if (code === 'customer_setup_reissue_conflict') {
+        setSetupLinkError('客户设置状态已被其他操作更新，请关闭窗口后重试');
+      } else {
+        setSetupLinkError('设置链接重签失败，请重试');
+      }
+    } finally {
+      setSetupLinkSaving(false);
+    }
+  };
+
   if (loading && !customer) {
     return (
       <Box sx={{ minHeight: 520, display: 'grid', placeItems: 'center' }}>
@@ -1186,28 +1231,46 @@ export default function CustomerDetailPage() {
                     <Box>
                       <Typography variant="h6">登录与安全</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        管理员修改密码后，客户现有登录会话会立即失效；TOTP 与恢复码保持不变。
+                        {customer.status === 'ACTIVE'
+                          ? '管理员修改密码后，客户现有登录会话会立即失效；TOTP 与恢复码保持不变。'
+                          : '客户未完成首次设置时，可重新签发一次性链接；旧链接和未完成凭证会立即失效。'}
                       </Typography>
                     </Box>
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      startIcon={<Iconify icon="solar:lock-password-bold" />}
-                      disabled={customer.status !== 'ACTIVE'}
-                      onClick={() => {
-                        setNewPassword('');
-                        setConfirmPassword('');
-                        setPasswordError('');
-                        setPasswordDialogOpen(true);
-                      }}
-                      sx={{ flex: '0 0 auto' }}
-                    >
-                      修改客户密码
-                    </Button>
+                    {customer.status === 'ACTIVE' ? (
+                      <Button
+                        variant="outlined"
+                        color="warning"
+                        startIcon={<Iconify icon="solar:lock-password-bold" />}
+                        onClick={() => {
+                          setNewPassword('');
+                          setConfirmPassword('');
+                          setPasswordError('');
+                          setPasswordDialogOpen(true);
+                        }}
+                        sx={{ flex: '0 0 auto' }}
+                      >
+                        修改客户密码
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outlined"
+                        color="warning"
+                        startIcon={<Iconify icon="solar:link-circle-bold" />}
+                        onClick={() => {
+                          setSetupLinkReason('原设置链接已过期，重新签发');
+                          setSetupLinkError('');
+                          setSetupLinkResult(null);
+                          setSetupLinkDialogOpen(true);
+                        }}
+                        sx={{ flex: '0 0 auto' }}
+                      >
+                        重新签发设置链接
+                      </Button>
+                    )}
                   </Stack>
                   {customer.status !== 'ACTIVE' && (
                     <Alert severity="info" sx={{ mt: 2 }}>
-                      客户完成激活并设置登录密码后，才能由管理员修改密码。
+                      重签只适用于 KYC 已通过、运营已激活、但首次密码与 TOTP 设置尚未完成的客户。
                     </Alert>
                   )}
                 </Paper>
@@ -1376,12 +1439,74 @@ export default function CustomerDetailPage() {
         onSubmit={() => submitReview().catch(() => undefined)}
       />
 
-      <Dialog
-        open={passwordDialogOpen}
-        onClose={closePasswordDialog}
-        fullWidth
-        maxWidth="xs"
-      >
+      <Dialog open={setupLinkDialogOpen} onClose={closeSetupLinkDialog} fullWidth maxWidth="sm">
+        <DialogTitle>重新签发客户设置链接</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="warning">
+              此操作会立即作废旧设置链接，并清除尚未完成的密码与 TOTP
+              设置。已激活客户不能执行此操作。
+            </Alert>
+            {setupLinkError && <Alert severity="error">{setupLinkError}</Alert>}
+            {setupLinkResult ? (
+              <>
+                <Alert severity="success">
+                  新链接仅在本窗口显示，有效期至 {formatDate(setupLinkResult.expiresAt)}。
+                </Alert>
+                <TextField
+                  fullWidth
+                  label="一次性设置链接"
+                  value={setupLinkResult.setupUrl}
+                  InputProps={{ readOnly: true }}
+                />
+                <Button
+                  variant="outlined"
+                  onClick={() =>
+                    navigator.clipboard.writeText(setupLinkResult.setupUrl).catch(() => {
+                      setSetupLinkError('复制失败，请手动选择链接复制');
+                    })
+                  }
+                >
+                  复制设置链接
+                </Button>
+              </>
+            ) : (
+              <TextField
+                autoFocus
+                fullWidth
+                required
+                multiline
+                minRows={2}
+                label="重签原因"
+                value={setupLinkReason}
+                onChange={(event) => {
+                  setSetupLinkReason(event.target.value);
+                  setSetupLinkError('');
+                }}
+                inputProps={{ maxLength: 500 }}
+                helperText="原因会写入客户认证审计记录，不会包含一次性链接。"
+              />
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeSetupLinkDialog} disabled={setupLinkSaving}>
+            {setupLinkResult ? '关闭' : '取消'}
+          </Button>
+          {!setupLinkResult && (
+            <Button
+              variant="contained"
+              color="warning"
+              disabled={setupLinkSaving || !setupLinkReason.trim()}
+              onClick={() => reissueCustomerSetupLink().catch(() => undefined)}
+            >
+              {setupLinkSaving ? '签发中…' : '确认重签'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={passwordDialogOpen} onClose={closePasswordDialog} fullWidth maxWidth="xs">
         <DialogTitle>修改客户密码</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,26 @@ import (
 type adminCustomerPasswordDatabase struct {
 	rows       []map[string]any
 	statements []d1.Statement
+}
+
+type adminCustomerSetupDatabase struct {
+	rows       []map[string]any
+	statements []d1.Statement
+}
+
+func (db *adminCustomerSetupDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+	return db.rows, nil
+}
+
+func (db *adminCustomerSetupDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
+	db.statements = append(db.statements, statements...)
+	return []d1.Result{
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(0)}},
+		{Meta: map[string]any{"changes": float64(0)}},
+		{Meta: map[string]any{"changes": float64(0)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+	}, nil
 }
 
 func (db *adminCustomerPasswordDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
@@ -131,6 +152,84 @@ func TestAdminCustomerPasswordChangeRejectsUnchangedPassword(t *testing.T) {
 	}
 	if len(db.statements) != 0 {
 		t.Fatal("unchanged password must not write to the datastore")
+	}
+}
+
+func TestAdminCustomerSetupLinkReissueInvalidatesIncompleteCredentialsAndAudits(t *testing.T) {
+	db := &adminCustomerSetupDatabase{rows: []map[string]any{{
+		"status": "pending_setup", "kyc_status": "approved", "operations_status": "active",
+	}}}
+	app := &application{db: db, tenantID: "neobank", portalURL: "https://portal.example.test"}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/customers/customer_1/setup-link",
+		bytes.NewBufferString(`{"reason":"Original setup link expired"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Neobank-User", "super-admin@example.test")
+	response := httptest.NewRecorder()
+
+	app.adminReissueCustomerSetupLink(response, request, "customer_1")
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("setup reissue status=%d body=%q", response.Code, response.Body.String())
+	}
+	var payload struct {
+		SetupURL string `json:"setup_url"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode setup response: %v", err)
+	}
+	const prefix = "https://portal.example.test/customer/setup#setup_token="
+	if !strings.HasPrefix(payload.SetupURL, prefix) {
+		t.Fatalf("setup URL=%q", payload.SetupURL)
+	}
+	token := strings.TrimPrefix(payload.SetupURL, prefix)
+	if len(token) < 32 {
+		t.Fatal("setup response must contain a strong one-time token")
+	}
+	if len(db.statements) != 5 {
+		t.Fatalf("setup reissue statements=%d, want 5", len(db.statements))
+	}
+	for _, required := range []string{
+		"password_salt=NULL", "totp_secret_ciphertext=NULL", "setup_consumed_at=NULL",
+		"enrollment_token_hash=NULL", "credential_version=credential_version+1",
+		"status='pending_setup'", "kyc_status='approved'", "operations_status='active'",
+	} {
+		if !strings.Contains(reissueCustomerSetupCredentialSQL, required) {
+			t.Fatalf("setup reissue SQL must contain %q", required)
+		}
+	}
+	if !strings.Contains(db.statements[4].SQL, "auth.setup_link_reissued") {
+		t.Fatal("setup reissue must create a dedicated audit event")
+	}
+	for _, statement := range db.statements {
+		for _, param := range statement.Params {
+			if value, ok := param.(string); ok && value == token {
+				t.Fatal("raw setup token must never be written to the datastore")
+			}
+		}
+	}
+	if got := db.statements[0].Params[1]; got != tokenHash(token) {
+		t.Fatal("datastore must receive only the setup token hash")
+	}
+}
+
+func TestAdminCustomerSetupLinkReissueRejectsActiveCustomer(t *testing.T) {
+	db := &adminCustomerSetupDatabase{rows: []map[string]any{{
+		"status": "active", "kyc_status": "approved", "operations_status": "active",
+	}}}
+	app := &application{db: db, tenantID: "neobank", portalURL: "https://portal.example.test"}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/customers/customer_1/setup-link",
+		bytes.NewBufferString(`{"reason":"Unexpected request"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	app.adminReissueCustomerSetupLink(response, request, "customer_1")
+
+	if response.Code != http.StatusConflict ||
+		!strings.Contains(response.Body.String(), `"code":"customer_setup_reissue_unavailable"`) {
+		t.Fatalf("active customer status=%d body=%q", response.Code, response.Body.String())
+	}
+	if len(db.statements) != 0 {
+		t.Fatal("active customer setup reissue must not write to the datastore")
 	}
 }
 
