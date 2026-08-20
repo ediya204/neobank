@@ -1,3 +1,4 @@
+import { createContext, useContext, useLayoutEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { alpha, useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
@@ -17,10 +18,27 @@ type Props = {
   children: React.ReactNode;
 };
 
+type AuthClassicContentMode = 'split' | 'focused';
+
+const AuthClassicLayoutContext = createContext<
+  ((mode: AuthClassicContentMode) => void) | undefined
+>(undefined);
+
+export function useAuthClassicContentMode(mode: AuthClassicContentMode) {
+  const setContentMode = useContext(AuthClassicLayoutContext);
+
+  useLayoutEffect(() => {
+    setContentMode?.(mode);
+    return () => setContentMode?.('split');
+  }, [mode, setContentMode]);
+}
+
 export default function AuthClassicLayout({ children, image, workspaceRole, title }: Props) {
   const { t } = useTranslation('common');
   const theme = useTheme();
   const mdUp = useResponsive('up', 'md');
+  const [contentMode, setContentMode] = useState<AuthClassicContentMode>('split');
+  const focused = contentMode === 'focused';
   let copyScope = 'auth.layout';
   if (workspaceRole === 'partner') copyScope = 'auth.layout.partner';
   if (workspaceRole === 'customer') copyScope = 'auth.layout.customer';
@@ -48,15 +66,17 @@ export default function AuthClassicLayout({ children, image, workspaceRole, titl
       sx={{
         width: 1,
         mx: 'auto',
-        maxWidth: 520,
-        px: { xs: 3, sm: 6, md: 8 },
-        pt: { xs: 13, md: 16 },
-        pb: { xs: 8, md: 10 },
+        maxWidth: focused ? 1180 : 520,
+        px: focused ? { xs: 2, sm: 4, md: 6 } : { xs: 3, sm: 6, md: 8 },
+        pt: focused ? { xs: 12, md: 13 } : { xs: 13, md: 16 },
+        pb: focused ? { xs: 6, md: 8 } : { xs: 8, md: 10 },
         justifyContent: 'center',
         minHeight: '100vh',
       }}
     >
-      {children}
+      <AuthClassicLayoutContext.Provider value={setContentMode}>
+        {children}
+      </AuthClassicLayoutContext.Provider>
     </Stack>
   );
 
@@ -141,9 +161,17 @@ export default function AuthClassicLayout({ children, image, workspaceRole, titl
   );
 
   return (
-    <Stack component="main" direction="row" sx={{ minHeight: '100vh', position: 'relative' }}>
+    <Stack
+      component="main"
+      direction="row"
+      sx={{
+        minHeight: '100vh',
+        position: 'relative',
+        bgcolor: focused ? 'background.neutral' : 'background.default',
+      }}
+    >
       {renderHeader}
-      {mdUp && renderSection}
+      {mdUp && !focused && renderSection}
       {renderContent}
     </Stack>
   );

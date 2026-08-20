@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
 import { RouterLink } from 'src/routes/components';
+import { useAuthClassicContentMode } from 'src/layouts/auth/classic';
 import Iconify from 'src/components/iconify';
 
 const SumsubWebSdk = lazy(() => import('@sumsub/websdk-react'));
@@ -130,6 +131,8 @@ export default function JwtRegisterView({ loginPath }: Props) {
   const [sumsubError, setSumsubError] = useState('');
   const [sumsubFeedback, setSumsubFeedback] = useState<string[]>([]);
   const idempotencyKey = useRef(crypto.randomUUID());
+
+  useAuthClassicContentMode(submittedReference || activeStep > 0 ? 'focused' : 'split');
 
   const fieldError = (field: FieldName) => {
     const key = errors[field];
@@ -613,6 +616,8 @@ export default function JwtRegisterView({ loginPath }: Props) {
         </>
       )}
 
+      {countrySelect('residenceCountry', t('auth.registration.fields.residence_country'))}
+
       <Divider>{t('auth.registration.details.contact')}</Divider>
       <TextField
         fullWidth
@@ -624,30 +629,6 @@ export default function JwtRegisterView({ loginPath }: Props) {
         helperText={fieldError('email') || t('auth.registration.details.email_hint')}
         autoComplete="email"
       />
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-        <TextField
-          fullWidth
-          type="password"
-          label={t('auth.registration.fields.password')}
-          value={form.password}
-          onChange={handleTextChange('password')}
-          error={Boolean(errors.password)}
-          helperText={fieldError('password') || t('auth.registration.details.password_hint')}
-          autoComplete="new-password"
-          inputProps={{ minLength: 14, maxLength: 128 }}
-        />
-        <TextField
-          fullWidth
-          type="password"
-          label={t('auth.registration.fields.confirm_password')}
-          value={form.confirmPassword}
-          onChange={handleTextChange('confirmPassword')}
-          error={Boolean(errors.confirmPassword)}
-          helperText={fieldError('confirmPassword')}
-          autoComplete="new-password"
-          inputProps={{ minLength: 14, maxLength: 128 }}
-        />
-      </Stack>
       <Stack direction="row" spacing={2}>
         <TextField
           select
@@ -673,7 +654,32 @@ export default function JwtRegisterView({ loginPath }: Props) {
           inputProps={{ inputMode: 'tel' }}
         />
       </Stack>
-      {countrySelect('residenceCountry', t('auth.registration.fields.residence_country'))}
+
+      <Divider>{t('auth.registration.details.security')}</Divider>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+        <TextField
+          fullWidth
+          type="password"
+          label={t('auth.registration.fields.password')}
+          value={form.password}
+          onChange={handleTextChange('password')}
+          error={Boolean(errors.password)}
+          helperText={fieldError('password') || t('auth.registration.details.password_hint')}
+          autoComplete="new-password"
+          inputProps={{ minLength: 14, maxLength: 128 }}
+        />
+        <TextField
+          fullWidth
+          type="password"
+          label={t('auth.registration.fields.confirm_password')}
+          value={form.confirmPassword}
+          onChange={handleTextChange('confirmPassword')}
+          error={Boolean(errors.confirmPassword)}
+          helperText={fieldError('confirmPassword')}
+          autoComplete="new-password"
+          inputProps={{ minLength: 14, maxLength: 128 }}
+        />
+      </Stack>
     </Stack>
   );
 
@@ -825,67 +831,138 @@ export default function JwtRegisterView({ loginPath }: Props) {
   );
 
   if (submittedReference) {
+    const sumsubReviewReady = sumsubStatus === 'ready_for_admin_review';
+    const sumsubRejected = sumsubStatus === 'provider_rejected';
+    const sumsubSubmitted = sumsubStatus === 'provider_reviewing' || sumsubReviewReady;
+    const showSumsubWorkspace = Boolean(sumsubAccessToken) && !sumsubReviewReady && !sumsubRejected;
+    let sumsubNoticeKey = 'auth.registration.sumsub.required_notice';
+    let sumsubStatusColor = 'text.primary';
+    let sumsubNoticeSeverity: 'info' | 'success' | 'error' = 'info';
+    let sumsubNextStep = t('auth.registration.sumsub.next_step');
+    if (sumsubReviewReady) {
+      sumsubNoticeKey = 'auth.registration.sumsub.ready_notice';
+      sumsubStatusColor = 'success.dark';
+      sumsubNoticeSeverity = 'success';
+      sumsubNextStep = t('auth.registration.sumsub.ready_next_step');
+    } else if (sumsubRejected) {
+      sumsubNoticeKey = 'auth.registration.sumsub.rejected_notice';
+      sumsubStatusColor = 'error.main';
+      sumsubNoticeSeverity = 'error';
+    } else if (sumsubSubmitted) {
+      sumsubNoticeKey = 'auth.registration.sumsub.reviewing_notice';
+    }
+
     return (
-      <Stack spacing={3.5} alignItems="flex-start">
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-            {APP_NAME_CN}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            {APP_NAME_EN}
-          </Typography>
-        </Box>
+      <Stack
+        spacing={{ xs: 3, md: 4 }}
+        alignItems="stretch"
+        sx={{ width: 1, maxWidth: sumsubRequired ? 1040 : 720, mx: 'auto' }}
+      >
+        <Stack direction="row" spacing={{ xs: 2, sm: 2.5 }} alignItems="flex-start">
+          <Box
+            sx={{
+              width: { xs: 48, sm: 60 },
+              height: { xs: 48, sm: 60 },
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              bgcolor: sumsubReviewReady ? 'success.lighter' : 'primary.lighter',
+              color: sumsubReviewReady ? 'success.dark' : 'primary.dark',
+              flexShrink: 0,
+            }}
+          >
+            <Iconify
+              icon={
+                sumsubReviewReady ? 'solar:check-circle-bold' : 'solar:document-add-bold-duotone'
+              }
+              width={32}
+            />
+          </Box>
+          <Stack spacing={0.75} sx={{ minWidth: 0 }}>
+            <Typography
+              variant="overline"
+              sx={{ color: sumsubReviewReady ? 'success.dark' : 'primary.main', fontWeight: 700 }}
+            >
+              {t('auth.registration.success.eyebrow')}
+            </Typography>
+            <Typography variant="h2" sx={{ fontSize: { xs: 30, sm: 38, md: 44 } }}>
+              {t('auth.registration.success.title')}
+            </Typography>
+            <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: 760 }}>
+              {t('auth.registration.success.subtitle')}
+            </Typography>
+          </Stack>
+        </Stack>
+
         <Box
           sx={{
-            width: 64,
-            height: 64,
-            borderRadius: '50%',
             display: 'grid',
-            placeItems: 'center',
-            bgcolor: 'success.lighter',
-            color: 'success.dark',
+            gridTemplateColumns: { xs: '1fr', sm: sumsubRequired ? 'minmax(0, 1fr) auto' : '1fr' },
+            gap: { xs: 2, sm: 4 },
+            py: 2.5,
+            borderTop: 1,
+            borderBottom: 1,
+            borderColor: 'divider',
           }}
         >
-          <Iconify icon="solar:check-circle-bold" width={36} />
+          <Box>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              {t('auth.registration.success.reference')}
+            </Typography>
+            <Typography
+              variant="h6"
+              sx={{ mt: 0.5, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}
+            >
+              {submittedReference}
+            </Typography>
+          </Box>
+          {sumsubRequired && (
+            <Box sx={{ minWidth: { sm: 240 } }}>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                {t('auth.registration.sumsub.status_label')}
+              </Typography>
+              <Typography
+                variant="subtitle1"
+                sx={{
+                  mt: 0.5,
+                  color: sumsubStatusColor,
+                }}
+              >
+                {t(`auth.registration.sumsub.statuses.${sumsubStatus || 'initializing'}`)}
+              </Typography>
+            </Box>
+          )}
         </Box>
-        <Stack spacing={1}>
-          <Typography variant="overline" sx={{ color: 'success.dark', fontWeight: 700 }}>
-            {t('auth.registration.success.eyebrow')}
-          </Typography>
-          <Typography variant="h3">{t('auth.registration.success.title')}</Typography>
-          <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-            {t('auth.registration.success.subtitle')}
-          </Typography>
-        </Stack>
-        <Paper variant="outlined" sx={{ width: 1, p: 2.5 }}>
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            {t('auth.registration.success.reference')}
-          </Typography>
-          <Typography variant="h6" sx={{ mt: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-            {submittedReference}
-          </Typography>
-        </Paper>
+
         {sumsubRequired && (
-          <Stack spacing={2} sx={{ width: 1 }}>
-            <Alert severity="info">{t('auth.registration.sumsub.required_notice')}</Alert>
+          <Stack spacing={3} sx={{ width: 1 }}>
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
-              spacing={1}
-              alignItems={{ sm: 'center' }}
+              spacing={1.5}
+              alignItems={{ sm: 'flex-end' }}
+              justifyContent="space-between"
             >
-              <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
-                {t('auth.registration.sumsub.status', {
-                  status: t(`auth.registration.sumsub.statuses.${sumsubStatus || 'initializing'}`),
-                })}
-              </Typography>
+              <Box>
+                <Typography variant="h4">
+                  {t('auth.registration.sumsub.workspace_title')}
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.75 }}>
+                  {t('auth.registration.sumsub.workspace_description')}
+                </Typography>
+              </Box>
               <Button
                 size="small"
+                variant="outlined"
+                color="inherit"
+                startIcon={<Iconify icon="solar:refresh-linear" />}
                 onClick={() => refreshSumsubStatus().catch(() => undefined)}
                 disabled={sumsubLoading}
               >
                 {t('auth.registration.sumsub.refresh')}
               </Button>
             </Stack>
+
+            <Alert severity={sumsubNoticeSeverity}>{t(sumsubNoticeKey)}</Alert>
             {sumsubError && (
               <Alert
                 severity="error"
@@ -908,15 +985,21 @@ export default function JwtRegisterView({ loginPath }: Props) {
               </Alert>
             ))}
             {sumsubLoading && !sumsubAccessToken && <LinearProgress />}
-            {sumsubAccessToken && (
-              <Paper
-                variant="outlined"
+            {showSumsubWorkspace && (
+              <Box
                 sx={{
                   width: 1,
-                  minHeight: 620,
-                  p: { xs: 1, sm: 2 },
+                  maxWidth: 920,
+                  minHeight: { xs: 680, sm: 740 },
+                  mx: 'auto',
+                  p: { xs: 0, sm: 1.5 },
                   overflow: 'hidden',
                   position: 'relative',
+                  bgcolor: 'background.paper',
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: { xs: 2, sm: 3 },
+                  boxShadow: (theme) => `0 24px 64px ${alpha(theme.palette.grey[500], 0.14)}`,
                 }}
               >
                 <Suspense fallback={<LinearProgress />}>
@@ -941,7 +1024,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
                       setSumsubReady(true);
                       setSumsubError(t('auth.registration.sumsub.unavailable'));
                     }}
-                    style={{ width: '100%', minHeight: 620 }}
+                    style={{ width: '100%', minHeight: 720 }}
                   />
                 </Suspense>
                 {!sumsubReady && (
@@ -961,16 +1044,15 @@ export default function JwtRegisterView({ loginPath }: Props) {
                     <Typography variant="body2">{t('auth.registration.sumsub.loading')}</Typography>
                   </Stack>
                 )}
-              </Paper>
+              </Box>
             )}
           </Stack>
         )}
-        <Stack spacing={1.5} sx={{ width: 1 }}>
+
+        <Stack spacing={1.5} sx={{ width: 1, maxWidth: 720 }}>
           {[
             t('auth.registration.success.next_email'),
-            sumsubRequired
-              ? t('auth.registration.sumsub.next_step')
-              : t('auth.registration.success.next_kyc'),
+            sumsubRequired ? sumsubNextStep : t('auth.registration.success.next_kyc'),
             t('auth.registration.success.next_review'),
           ].map((item, index) => (
             <Stack key={item} direction="row" spacing={1.5} alignItems="center">
@@ -997,9 +1079,10 @@ export default function JwtRegisterView({ loginPath }: Props) {
           fullWidth
           component={RouterLink}
           href={loginPath}
-          variant="contained"
+          variant="outlined"
           color="inherit"
           size="large"
+          sx={{ maxWidth: 360, alignSelf: 'center' }}
         >
           {t('auth.registration.success.back_to_login')}
         </Button>
@@ -1019,9 +1102,18 @@ export default function JwtRegisterView({ loginPath }: Props) {
       ? t('auth.registration.actions.submitting')
       : t('auth.registration.actions.submit');
   }
+  let registrationContentWidth = 520;
+  if (activeStep === 1) registrationContentWidth = 760;
+  if (activeStep === 2) registrationContentWidth = 720;
 
   return (
-    <Box sx={{ width: 1 }}>
+    <Box
+      sx={{
+        width: 1,
+        maxWidth: registrationContentWidth,
+        mx: 'auto',
+      }}
+    >
       <Stack spacing={1.25} sx={{ mb: 3.5 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>

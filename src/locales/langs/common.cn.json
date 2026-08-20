@@ -166,6 +166,7 @@
         "authorized_contact": "授权联系人",
         "beneficial_owner": "最终受益人",
         "contact": "联系方式",
+        "security": "登录安全",
         "email_hint": "该邮箱用于申请识别、KYC 补件及审核联络，审批通过后也是登录邮箱。",
         "password_hint": "密码须为 14–128 位，并包含大写字母、小写字母、数字和符号。密码会安全哈希保存，审批前不能用于登录。"
       },
@@ -247,7 +248,14 @@
       },
       "sumsub": {
         "required_notice": "请在下方完成 Sumsub 三项核验。服务商通过只代表申请具备进入合规人工审核的条件，不代表账户已经开通。",
+        "reviewing_notice": "Sumsub 已收到验证资料并正在处理。服务商完成核验后，结果会显示在本页上方；账户仍不会自动开通。",
+        "ready_notice": "护照、本人活体人脸及住址证明三项 Sumsub 核验已完成。申请现可进入合规人工审核；账户仍未开通。",
+        "rejected_notice": "Sumsub 核验未通过。请查看下方反馈；如允许补件，可在验证区继续提交。账户不会因此开通。",
+        "workspace_title": "完成身份验证",
+        "workspace_description": "无需离开 SSC 数字银行，在页面中央完成 Sumsub 护照、人脸和住址证明核验。",
+        "status_label": "Sumsub 验证状态",
         "next_step": "在下方完成护照、本人活体人脸和住址证明三项核验。",
+        "ready_next_step": "Sumsub 核验已完成，无需重复提交；申请将进入合规人工审核。",
         "status": "验证状态：{{status}}",
         "refresh": "刷新状态",
         "retry": "重试",

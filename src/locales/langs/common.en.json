@@ -166,6 +166,7 @@
         "authorized_contact": "Authorized contact",
         "beneficial_owner": "Beneficial owner",
         "contact": "Contact details",
+        "security": "Sign-in security",
         "email_hint": "This address identifies your application and becomes your sign-in email after approval.",
         "password_hint": "Use 14–128 characters with uppercase, lowercase, number, and symbol. Your password is securely hashed and cannot be used before approval."
       },
@@ -247,7 +248,14 @@
       },
       "sumsub": {
         "required_notice": "Complete all three Sumsub checks below. A successful provider result only makes the application eligible for Compliance review; it does not open the account.",
+        "reviewing_notice": "Sumsub has received your verification details and is processing them. The result will appear above when ready; your account will not open automatically.",
+        "ready_notice": "The passport, facial liveness, and proof-of-address checks are complete. The application is now eligible for Compliance review; the account is not yet open.",
+        "rejected_notice": "Sumsub did not pass the verification. Review the feedback below and resubmit in the verification area if allowed. The account will remain closed.",
+        "workspace_title": "Complete identity verification",
+        "workspace_description": "Stay on SSC Digital Bank and complete the Sumsub passport, facial, and proof-of-address checks in the workspace below.",
+        "status_label": "Sumsub verification status",
         "next_step": "Complete the passport, facial liveness, and proof-of-address checks below.",
+        "ready_next_step": "Sumsub verification is complete. Do not submit again; the application will proceed to Compliance review.",
         "status": "Verification status: {{status}}",
         "refresh": "Refresh status",
         "retry": "Try again",

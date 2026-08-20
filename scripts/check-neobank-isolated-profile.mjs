@@ -9,6 +9,7 @@ const [
   neobankWrangler,
   router,
   authRoutes,
+  authLayout,
   registrationPage,
   provider,
   roleAccess,
@@ -49,6 +50,7 @@ const [
   read('wrangler.neobank.jsonc'),
   read('src/routes/sections/index.tsx'),
   read('src/routes/sections/auth.tsx'),
+  read('src/layouts/auth/classic.tsx'),
   read('src/sections/auth/jwt/jwt-register-view.tsx'),
   read('src/auth/context/jwt/auth-provider.tsx'),
   read('src/auth/role-access.ts'),
@@ -141,6 +143,9 @@ assert.match(authRoutes, /export const adminAuthRoutes/);
 assert.match(authRoutes, /export const customerAuthRoutes/);
 assert.match(authRoutes, /path: 'customer\/register'/);
 assert.match(authRoutes, /const partnerAuthRoutes/);
+assert.match(authLayout, /type AuthClassicContentMode = 'split' \| 'focused'/);
+assert.match(authLayout, /mdUp && !focused && renderSection/);
+assert.match(authLayout, /maxWidth: focused \? 1180 : 520/);
 assert.match(
   registrationPage,
   /const individualStartsSumsub = form\.accountType === 'individual' && activeStep === 2/
@@ -151,6 +156,30 @@ assert.match(
 );
 assert.match(registrationPage, /auth\.registration\.actions\.start_sumsub/);
 assert.match(registrationPage, /type === 'idCheck\.onReady'/);
+assert.match(
+  registrationPage,
+  /useAuthClassicContentMode\(submittedReference \|\| activeStep > 0 \? 'focused' : 'split'\)/
+);
+assert.match(registrationPage, /maxWidth: 920/);
+const registrationDetails = registrationPage.slice(
+  registrationPage.indexOf('const renderDetails ='),
+  registrationPage.indexOf('const kycItems =')
+);
+const registrationFieldOrder = [
+  "countrySelect('residenceCountry'",
+  'auth.registration.details.contact',
+  'auth.registration.fields.email',
+  'auth.registration.fields.phone',
+  'auth.registration.details.security',
+  'auth.registration.fields.password',
+].map((marker) => registrationDetails.indexOf(marker));
+assert.ok(
+  registrationFieldOrder.every(
+    (position, index) =>
+      position >= 0 && (index === 0 || position > registrationFieldOrder[index - 1])
+  ),
+  'registration details must keep identity, contact, and sign-in security fields grouped'
+);
 assert.match(roleAccess, /admin: IS_ISOLATED_WALLET_DEPLOYMENT \? '\/admin'/);
 assert.match(roleAccess, /customer: '\/portal\/home'/);
 assert.match(roleAccess, /pathname === '\/portal\/virtual-accounts'/);
