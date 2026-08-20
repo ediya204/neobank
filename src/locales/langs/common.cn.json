@@ -305,6 +305,8 @@
       "title": "设置动态验证码",
       "subtitle": "在验证器应用中扫描二维码；若没有二维码，请手动输入密钥。",
       "qr_alt": "验证器绑定二维码",
+      "qr_generating": "正在生成绑定二维码…",
+      "qr_unavailable": "二维码生成失败，请使用下方密钥手动绑定。",
       "manual_key": "手动输入密钥",
       "copy_manual_key": "复制手动输入密钥",
       "otpauth_uri": "验证器配置 URI",

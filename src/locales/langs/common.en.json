@@ -305,6 +305,8 @@
       "title": "Set up verification codes",
       "subtitle": "Scan the QR code in your authenticator app. If no QR code is available, enter the key manually.",
       "qr_alt": "Authenticator enrollment QR code",
+      "qr_generating": "Generating the enrollment QR code…",
+      "qr_unavailable": "The QR code could not be generated. Use the key below to enroll manually.",
       "manual_key": "Manual setup key",
       "copy_manual_key": "Copy manual setup key",
       "otpauth_uri": "Authenticator configuration URI",

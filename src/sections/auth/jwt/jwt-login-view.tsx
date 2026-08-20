@@ -2,6 +2,7 @@ import * as Yup from 'yup';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import QRCode from 'qrcode';
 import { yupResolver } from '@hookform/resolvers/yup';
 import LoadingButton from '@mui/lab/LoadingButton';
 import Alert from '@mui/material/Alert';
@@ -100,6 +101,8 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
   const [setupToken, setSetupToken] = useState(invitationToken);
   const [totpSetupData, setTotpSetupData] = useState<TotpSetupData | null>(null);
+  const [totpQrCode, setTotpQrCode] = useState('');
+  const [totpQrCodeFailed, setTotpQrCodeFailed] = useState(false);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [authenticatedUser, setAuthenticatedUser] = useState<AuthSessionUser | null>(null);
   const [verificationMethod, setVerificationMethod] = useState<'totp' | 'recovery'>('totp');
@@ -112,6 +115,40 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     url.hash = '';
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
   }, [fragmentSetupToken]);
+
+  useEffect(() => {
+    let active = true;
+    setTotpQrCode('');
+    setTotpQrCodeFailed(false);
+    if (!totpSetupData) return () => undefined;
+    if (totpSetupData.qrCodeDataUri) {
+      setTotpQrCode(totpSetupData.qrCodeDataUri);
+      return () => {
+        active = false;
+      };
+    }
+    if (!totpSetupData.otpauthUri) {
+      setTotpQrCodeFailed(true);
+      return () => {
+        active = false;
+      };
+    }
+    QRCode.toDataURL(totpSetupData.otpauthUri, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 220,
+      color: { dark: '#111827', light: '#FFFFFF' },
+    })
+      .then((value) => {
+        if (active) setTotpQrCode(value);
+      })
+      .catch(() => {
+        if (active) setTotpQrCodeFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [totpSetupData]);
 
   const loginSchema = useMemo(() => {
     const accountSchema = Yup.string()
@@ -739,21 +776,39 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
 
   const renderTotpEnrollment = totpSetupData ? (
     <Stack spacing={3}>
-      {totpSetupData.qrCodeDataUri && (
-        <Box
-          component="img"
-          src={totpSetupData.qrCodeDataUri}
-          alt={t('auth.totp_setup.qr_alt')}
-          sx={{
-            width: 200,
-            height: 200,
-            p: 1.5,
-            mx: 'auto',
-            borderRadius: 1.5,
-            border: (theme) => `1px solid ${theme.palette.divider}`,
-          }}
-        />
-      )}
+      <Box
+        sx={{
+          width: 220,
+          height: 220,
+          mx: 'auto',
+          borderRadius: 1.5,
+          border: (theme) => `1px solid ${theme.palette.divider}`,
+          bgcolor: 'common.white',
+          display: 'grid',
+          placeItems: 'center',
+          overflow: 'hidden',
+        }}
+      >
+        {totpQrCode ? (
+          <Box
+            component="img"
+            src={totpQrCode}
+            alt={t('auth.totp_setup.qr_alt')}
+            sx={{ width: 220, height: 220 }}
+          />
+        ) : (
+          <Typography
+            variant="caption"
+            sx={{ px: 2, color: 'text.secondary', textAlign: 'center' }}
+          >
+            {t(
+              totpQrCodeFailed ? 'auth.totp_setup.qr_unavailable' : 'auth.totp_setup.qr_generating'
+            )}
+          </Typography>
+        )}
+      </Box>
+
+      {totpQrCodeFailed && <Alert severity="warning">{t('auth.totp_setup.qr_unavailable')}</Alert>}
 
       <Paper variant="outlined" sx={{ p: 2.5 }}>
         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -774,29 +829,6 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
           </IconButton>
         </Stack>
       </Paper>
-
-      {totpSetupData.otpauthUri && (
-        <Stack spacing={1}>
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            {t('auth.totp_setup.otpauth_uri')}
-          </Typography>
-          <Stack direction="row" alignItems="flex-start" spacing={1}>
-            <Link
-              href={totpSetupData.otpauthUri}
-              sx={{ typography: 'caption', flexGrow: 1, overflowWrap: 'anywhere' }}
-            >
-              {totpSetupData.otpauthUri}
-            </Link>
-            <IconButton
-              size="small"
-              aria-label={t('auth.totp_setup.copy_otpauth_uri')}
-              onClick={() => copyText(totpSetupData.otpauthUri || '')}
-            >
-              <Iconify icon="solar:copy-linear" />
-            </IconButton>
-          </Stack>
-        </Stack>
-      )}
 
       <Alert severity="info">{t('auth.totp_setup.no_external_qr')}</Alert>
 
@@ -828,10 +860,11 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
           </LoadingButton>
         </Stack>
       </FormProvider>
+      <Button color="inherit" onClick={resetToLogin}>
+        {t('auth.back_to_sign_in')}
+      </Button>
     </Stack>
-  ) : (
-    <Alert severity="warning">{t('auth.errors.totp_setup_missing')}</Alert>
-  );
+  ) : null;
 
   const renderTotpVerification = (
     <Stack spacing={3}>
