@@ -236,6 +236,8 @@
       "actions": {
         "back": "Back",
         "continue": "Continue",
+        "start_sumsub": "Submit and start Sumsub verification",
+        "starting_sumsub": "Starting Sumsub securely…",
         "submit": "Submit application",
         "submitting": "Submitting securely…"
       },
@@ -249,6 +251,7 @@
         "status": "Verification status: {{status}}",
         "refresh": "Refresh status",
         "retry": "Try again",
+        "loading": "Loading secure Sumsub verification…",
         "unavailable": "Identity verification is temporarily unavailable. Your application is saved; try again without submitting a new application.",
         "status_unavailable": "The verification status could not be refreshed. Try again shortly.",
         "session_expired": "The secure onboarding session has expired. Contact support to resume this application.",

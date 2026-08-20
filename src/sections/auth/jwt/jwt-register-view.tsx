@@ -5,6 +5,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
 import Checkbox from '@mui/material/Checkbox';
+import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import LinearProgress from '@mui/material/LinearProgress';
@@ -123,6 +124,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
   const [sumsubRequired, setSumsubRequired] = useState(false);
   const [sumsubCSRFToken, setSumsubCSRFToken] = useState('');
   const [sumsubAccessToken, setSumsubAccessToken] = useState('');
+  const [sumsubReady, setSumsubReady] = useState(false);
   const [sumsubStatus, setSumsubStatus] = useState('');
   const [sumsubLoading, setSumsubLoading] = useState(false);
   const [sumsubError, setSumsubError] = useState('');
@@ -134,15 +136,17 @@ export default function JwtRegisterView({ loginPath }: Props) {
     return key ? t(key) : '';
   };
 
-  const steps = useMemo(
-    () => [
+  const steps = useMemo(() => {
+    const registrationSteps = [
       t('auth.registration.steps.account_type'),
       t('auth.registration.steps.details'),
       t('auth.registration.steps.kyc'),
-      t('auth.registration.steps.review'),
-    ],
-    [t]
-  );
+    ];
+    if (form.accountType !== 'individual') {
+      registrationSteps.push(t('auth.registration.steps.review'));
+    }
+    return registrationSteps;
+  }, [form.accountType, t]);
 
   const updateField = (field: FieldName, value: string | boolean) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -222,8 +226,13 @@ export default function JwtRegisterView({ loginPath }: Props) {
       }
     }
 
-    if (activeStep === 2 && !form.kycConsent) {
-      nextErrors.kycConsent = 'auth.registration.validation.kyc_consent';
+    if (activeStep === 2) {
+      if (!form.kycConsent) {
+        nextErrors.kycConsent = 'auth.registration.validation.kyc_consent';
+      }
+      if (form.accountType === 'individual' && !form.termsAccepted) {
+        nextErrors.termsAccepted = 'auth.registration.validation.terms';
+      }
     }
 
     if (activeStep === 3 && !form.termsAccepted) {
@@ -266,6 +275,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
 
   const startSumsub = async (csrfToken = sumsubCSRFToken) => {
     setSumsubLoading(true);
+    setSumsubReady(false);
     setSumsubError('');
     try {
       await requestSumsubToken(csrfToken);
@@ -736,6 +746,21 @@ export default function JwtRegisterView({ loginPath }: Props) {
         sx={{ alignItems: 'flex-start', '.MuiCheckbox-root': { mt: -0.75 } }}
       />
       {errors.kycConsent && <Alert severity="error">{fieldError('kycConsent')}</Alert>}
+      {form.accountType === 'individual' && (
+        <>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={form.termsAccepted}
+                onChange={(event) => updateField('termsAccepted', event.target.checked)}
+              />
+            }
+            label={t('auth.registration.review.declaration')}
+            sx={{ alignItems: 'flex-start', '.MuiCheckbox-root': { mt: -0.75 } }}
+          />
+          {errors.termsAccepted && <Alert severity="error">{fieldError('termsAccepted')}</Alert>}
+        </>
+      )}
     </Stack>
   );
 
@@ -884,7 +909,16 @@ export default function JwtRegisterView({ loginPath }: Props) {
             ))}
             {sumsubLoading && !sumsubAccessToken && <LinearProgress />}
             {sumsubAccessToken && (
-              <Paper variant="outlined" sx={{ width: 1, p: { xs: 1, sm: 2 }, overflow: 'hidden' }}>
+              <Paper
+                variant="outlined"
+                sx={{
+                  width: 1,
+                  minHeight: 620,
+                  p: { xs: 1, sm: 2 },
+                  overflow: 'hidden',
+                  position: 'relative',
+                }}
+              >
                 <Suspense fallback={<LinearProgress />}>
                   <SumsubWebSdk
                     accessToken={sumsubAccessToken}
@@ -892,6 +926,9 @@ export default function JwtRegisterView({ loginPath }: Props) {
                     config={{ lang: i18n.language.toLowerCase().startsWith('zh') ? 'zh' : 'en' }}
                     options={{ adaptIframeHeight: true, addViewportTag: false }}
                     onMessage={(type) => {
+                      if (type === 'idCheck.onReady') {
+                        setSumsubReady(true);
+                      }
                       if (
                         type === 'idCheck.onApplicantSubmitted' ||
                         type === 'idCheck.onApplicantResubmitted' ||
@@ -900,10 +937,30 @@ export default function JwtRegisterView({ loginPath }: Props) {
                         setSumsubStatus('provider_reviewing');
                       }
                     }}
-                    onError={() => setSumsubError(t('auth.registration.sumsub.unavailable'))}
+                    onError={() => {
+                      setSumsubReady(true);
+                      setSumsubError(t('auth.registration.sumsub.unavailable'));
+                    }}
                     style={{ width: '100%', minHeight: 620 }}
                   />
                 </Suspense>
+                {!sumsubReady && (
+                  <Stack
+                    spacing={1.5}
+                    alignItems="center"
+                    justifyContent="center"
+                    sx={{
+                      position: 'absolute',
+                      inset: 0,
+                      zIndex: 1,
+                      bgcolor: 'background.paper',
+                      color: 'text.secondary',
+                    }}
+                  >
+                    <CircularProgress size={32} />
+                    <Typography variant="body2">{t('auth.registration.sumsub.loading')}</Typography>
+                  </Stack>
+                )}
               </Paper>
             )}
           </Stack>
@@ -950,8 +1007,14 @@ export default function JwtRegisterView({ loginPath }: Props) {
     );
   }
 
+  const individualStartsSumsub = form.accountType === 'individual' && activeStep === 2;
+  const submitsApplication = individualStartsSumsub || activeStep === steps.length - 1;
   let primaryActionLabel = t('auth.registration.actions.continue');
-  if (activeStep === steps.length - 1) {
+  if (individualStartsSumsub) {
+    primaryActionLabel = submitting
+      ? t('auth.registration.actions.starting_sumsub')
+      : t('auth.registration.actions.start_sumsub');
+  } else if (activeStep === steps.length - 1) {
     primaryActionLabel = submitting
       ? t('auth.registration.actions.submitting')
       : t('auth.registration.actions.submit');
@@ -1020,13 +1083,9 @@ export default function JwtRegisterView({ loginPath }: Props) {
           color="inherit"
           size="large"
           disabled={submitting}
-          onClick={
-            activeStep === steps.length - 1
-              ? () => submitApplication().catch(() => undefined)
-              : nextStep
-          }
+          onClick={submitsApplication ? () => submitApplication().catch(() => undefined) : nextStep}
           endIcon={
-            activeStep === steps.length - 1 ? (
+            submitsApplication ? (
               <Iconify icon="solar:plain-2-bold-duotone" />
             ) : (
               <Iconify icon="solar:arrow-right-linear" />

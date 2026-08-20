@@ -9,6 +9,7 @@ const [
   neobankWrangler,
   router,
   authRoutes,
+  registrationPage,
   provider,
   roleAccess,
   adminPage,
@@ -48,6 +49,7 @@ const [
   read('wrangler.neobank.jsonc'),
   read('src/routes/sections/index.tsx'),
   read('src/routes/sections/auth.tsx'),
+  read('src/sections/auth/jwt/jwt-register-view.tsx'),
   read('src/auth/context/jwt/auth-provider.tsx'),
   read('src/auth/role-access.ts'),
   read('src/pages/dashboard/crypto-operations.tsx'),
@@ -139,6 +141,16 @@ assert.match(authRoutes, /export const adminAuthRoutes/);
 assert.match(authRoutes, /export const customerAuthRoutes/);
 assert.match(authRoutes, /path: 'customer\/register'/);
 assert.match(authRoutes, /const partnerAuthRoutes/);
+assert.match(
+  registrationPage,
+  /const individualStartsSumsub = form\.accountType === 'individual' && activeStep === 2/
+);
+assert.match(
+  registrationPage,
+  /const submitsApplication = individualStartsSumsub \|\| activeStep === steps\.length - 1/
+);
+assert.match(registrationPage, /auth\.registration\.actions\.start_sumsub/);
+assert.match(registrationPage, /type === 'idCheck\.onReady'/);
 assert.match(roleAccess, /admin: IS_ISOLATED_WALLET_DEPLOYMENT \? '\/admin'/);
 assert.match(roleAccess, /customer: '\/portal\/home'/);
 assert.match(roleAccess, /pathname === '\/portal\/virtual-accounts'/);

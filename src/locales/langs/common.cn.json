@@ -236,6 +236,8 @@
       "actions": {
         "back": "上一步",
         "continue": "继续",
+        "start_sumsub": "提交申请并开始 Sumsub 验证",
+        "starting_sumsub": "正在安全启动 Sumsub…",
         "submit": "提交开户申请",
         "submitting": "正在安全提交…"
       },
@@ -249,6 +251,7 @@
         "status": "验证状态：{{status}}",
         "refresh": "刷新状态",
         "retry": "重试",
+        "loading": "正在安全加载 Sumsub 身份验证…",
         "unavailable": "身份验证服务暂时不可用。申请资料已保存，请稍后重试，无需重复提交开户注册。",
         "status_unavailable": "暂时无法刷新验证状态，请稍后重试。",
         "session_expired": "安全开户会话已过期，请联系客户服务继续该申请。",
