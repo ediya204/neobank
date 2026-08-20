@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useAuthContext } from 'src/auth/hooks';
 import {
   AssetSummary,
@@ -127,8 +135,7 @@ export function PortalCustomerProvider({ children }: { children: React.ReactNode
         ? customerId
         : active.find((row) => row.id === 'cus_demo_business')?.id || active[0]?.id || '';
       if (resolvedId !== customerId) setCustomerId(resolvedId);
-      latestCustomerRef.current =
-        active.find((row) => row.id === resolvedId) || active[0] || null;
+      latestCustomerRef.current = active.find((row) => row.id === resolvedId) || active[0] || null;
       const operationRows = await coreApi<Operation[]>(
         `/operations?organizationId=${demoOrganizationId}`
       );

@@ -77,8 +77,8 @@ async function enforceAuthRateLimit(
         typeof payload.reset_token === 'string'
           ? payload.reset_token
           : typeof payload.verification_token === 'string'
-            ? payload.verification_token
-            : '';
+          ? payload.verification_token
+          : '';
       recoveryRequestId = token.split('.', 1)[0];
     } catch {
       // The source bucket still limits malformed reset-token traffic.
@@ -900,7 +900,7 @@ async function customerHomeAPI(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') {
     return json({ error: { code: 'method_not_allowed' } }, 405);
   }
-  const session = await loadApplicationSession(request, env);
+  const session = await loadApplicationSession(request, env, 'customer');
   const role = typeof session?.user?.role === 'string' ? session.user.role : '';
   const customerId = typeof session?.user?.id === 'string' ? session.user.id : '';
   const email = typeof session?.user?.email === 'string' ? session.user.email : '';

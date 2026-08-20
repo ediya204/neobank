@@ -208,7 +208,11 @@ export default function CustomerHome() {
               }
             >
               {assetSummaryRateCurrencies.length
-                ? `实时汇率暂未更新，${assetSummaryRateCurrencies.join('、')} 正按最后一次成功汇率显示${cachedRatesAsOf ? `（截至 ${cachedRatesAsOf}）` : ''}。`
+                ? `实时汇率暂未更新，${assetSummaryRateCurrencies.join(
+                    '、'
+                  )} 正按最后一次成功汇率显示${
+                    cachedRatesAsOf ? `（截至 ${cachedRatesAsOf}）` : ''
+                  }。`
                 : '实时估值暂未更新，当前仅显示无需折算或已有有效历史汇率的资产。'}
             </Alert>
           )}
@@ -330,8 +334,7 @@ export default function CustomerHome() {
                           fontWeight: period === value ? 700 : 500,
                           color: period === value ? 'text.primary' : 'text.secondary',
                           bgcolor: period === value ? 'background.paper' : 'transparent',
-                          boxShadow:
-                            period === value ? '0 1px 4px rgba(16,24,40,.10)' : 'none',
+                          boxShadow: period === value ? '0 1px 4px rgba(16,24,40,.10)' : 'none',
                         }}
                       >
                         {value}天
@@ -556,11 +559,7 @@ function BalanceCard({
           flexShrink: 0,
         }}
       >
-        <AssetIcon
-          asset={currency}
-          network={currency === 'USDT' ? 'TRON' : undefined}
-          size={28}
-        />
+        <AssetIcon asset={currency} network={currency === 'USDT' ? 'TRON' : undefined} size={28} />
       </Box>
       <Box sx={{ ml: 1.6, minWidth: 0 }}>
         <Typography variant="caption" color="text.secondary">
@@ -775,10 +774,7 @@ function emptyCurrencyValues(): Record<DisplayCurrency, number> {
   return { USD: 0, HKD: 0, USDT: 0 };
 }
 
-function applyOperationMovement(
-  movement: Record<DisplayCurrency, number>,
-  operation: Operation
-) {
+function applyOperationMovement(movement: Record<DisplayCurrency, number>, operation: Operation) {
   const currency = operation.currency as DisplayCurrency;
   if (!DISPLAY_CURRENCIES.includes(currency)) return;
   if (operation.type === 'DEPOSIT') movement[currency] += Number(operation.amount || 0);

@@ -93,7 +93,8 @@ const scripts = packageJson.scripts || {};
 const coreRenderService =
   renderConfig.match(/- type: web\s+name: neobank-core[\s\S]*?(?=\n  - type:)/)?.[0] || '';
 const emailRenderService =
-  renderConfig.match(/- type: worker\s+name: neobank-email-worker[\s\S]*?(?=\n  - type:)/)?.[0] || '';
+  renderConfig.match(/- type: worker\s+name: neobank-email-worker[\s\S]*?(?=\n  - type:)/)?.[0] ||
+  '';
 
 assert.match(neobankWrangler, /"name": "neobank-web"/);
 assert.match(neobankWrangler, /"pattern": "portal\.sscdigitalbank\.com"/);
