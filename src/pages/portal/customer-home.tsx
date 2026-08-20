@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import {
   Alert,
@@ -20,11 +20,10 @@ import Iconify from 'src/components/iconify';
 import AssetIcon from 'src/components/asset-icon';
 import { APP_DISPLAY_NAME } from 'src/config-global';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
-import { AssetSummary, coreApi, MoneyAccount, Operation } from 'src/features/finance/core-api';
+import { MoneyAccount, Operation } from 'src/features/finance/core-api';
 import { ACTION_ICONS } from 'src/theme/iconography';
 import { money, OperationStatus } from './customer-shared';
 
-type AssetSummaryRequestState = 'idle' | 'loading' | 'ready' | 'unavailable';
 type DisplayCurrency = 'USD' | 'HKD' | 'USDT';
 type Period = 7 | 30 | 90;
 
@@ -38,11 +37,8 @@ const TREND_COLORS: Record<DisplayCurrency, string> = {
 
 export default function CustomerHome() {
   const navigate = useNavigate();
-  const { customer, operations, loading, error } = usePortalCustomer();
-  const [assetSummary, setAssetSummary] = useState<AssetSummary | null>(null);
-  const [assetSummaryState, setAssetSummaryState] = useState<AssetSummaryRequestState>('idle');
-  const [assetSummaryError, setAssetSummaryError] = useState('');
-  const [assetSummaryReload, setAssetSummaryReload] = useState(0);
+  const { customer, operations, assetSummary, backendStarting, loading, error, refresh } =
+    usePortalCustomer();
   const [period, setPeriod] = useState<Period>(30);
 
   const accounts = useMemo(() => customer?.accounts || [], [customer?.accounts]);
@@ -154,37 +150,6 @@ export default function CustomerHome() {
     },
   });
 
-  useEffect(() => {
-    let active = true;
-    if (!customer) {
-      setAssetSummary(null);
-      setAssetSummaryState('idle');
-      setAssetSummaryError('');
-      return () => {
-        active = false;
-      };
-    }
-    setAssetSummaryState('loading');
-    setAssetSummaryError('');
-    coreApi<AssetSummary>(`/accounts/summary?customerId=${customer.id}`)
-      .then((result) => {
-        if (active) {
-          setAssetSummary(result);
-          setAssetSummaryState('ready');
-        }
-      })
-      .catch((value) => {
-        if (active) {
-          setAssetSummary(null);
-          setAssetSummaryState('unavailable');
-          setAssetSummaryError(value instanceof Error ? value.message : '资产估值加载失败');
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [assetSummaryReload, customer]);
-
   return (
     <>
       <Helmet>
@@ -192,21 +157,19 @@ export default function CustomerHome() {
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={2.5}>
-          {error && <Alert severity="error">{error}</Alert>}
-          {assetSummaryState === 'unavailable' && customer && (
+          {backendStarting && (
+            <Alert severity="info">后台服务正在启动，账户数据将在连接就绪后自动显示。</Alert>
+          )}
+          {error && (
             <Alert
-              severity="warning"
+              severity="error"
               action={
-                <Button
-                  color="inherit"
-                  size="small"
-                  onClick={() => setAssetSummaryReload((value) => value + 1)}
-                >
+                <Button color="inherit" size="small" onClick={() => refresh()}>
                   重试
                 </Button>
               }
             >
-              资产估值暂不可用：{assetSummaryError}。各币种原币余额仍可正常查看。
+              {error}
             </Alert>
           )}
 

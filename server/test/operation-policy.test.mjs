@@ -271,7 +271,10 @@ test('deposit approval fails closed with an actionable error when clearing is mi
       }),
   });
 
-  await assert.rejects(service.approve(operation.id, maker.id), /clearing_account_not_configured/);
+  await assert.rejects(
+    service.approve(operation.id, maker.id),
+    /clearing_account_not_configured/
+  );
   assert.equal(credited, false);
 });
 
@@ -303,10 +306,7 @@ test('deposit approval fails closed with an actionable error when clearing is mi
       }),
   });
 
-  await assert.rejects(
-    service.approve(operation.id, maker.id),
-    /clearing_account_not_configured/
-  );
+  await assert.rejects(service.approve(operation.id, maker.id), /clearing_account_not_configured/);
   assert.equal(credited, false);
 });
 
@@ -532,7 +532,7 @@ test('mirrored USDT operations cannot use generic approval, rejection, or execut
   );
 });
 
-test('generic operation lists and approval queues exclude mirrored crypto operations', async () => {
+test('generic operation lists support a bounded recent view and exclude mirrored crypto operations', async () => {
   const observed = [];
   const service = new OperationsService({
     user: {
@@ -545,7 +545,7 @@ test('generic operation lists and approval queues exclude mirrored crypto operat
       },
     },
   });
-  await service.list({ organizationId: customer.organizationId }, maker.id);
+  await service.list({ organizationId: customer.organizationId, limit: 5 }, maker.id);
   await service.approvals(customer.organizationId, maker.id);
   assert.equal(observed.length, 2);
   for (const query of observed) {
@@ -554,5 +554,10 @@ test('generic operation lists and approval queues exclude mirrored crypto operat
       equals: Prisma.AnyNull,
     });
   }
+  assert.equal(observed[0].take, 5);
   assert.deepEqual(observed[1].orderBy, { submittedAt: 'desc' });
+  await assert.rejects(
+    service.list({ organizationId: customer.organizationId, limit: 0 }, maker.id),
+    /invalid_operations_limit/
+  );
 });

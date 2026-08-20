@@ -28,7 +28,13 @@ import Iconify from 'src/components/iconify';
 import { TableHeadCustom } from 'src/components/table';
 import { APP_DISPLAY_NAME } from 'src/config-global';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
-import { coreApi, CryptoTransfer, Currency, Operation } from 'src/features/finance/core-api';
+import {
+  coreApi,
+  CryptoTransfer,
+  Currency,
+  demoOrganizationId,
+  Operation,
+} from 'src/features/finance/core-api';
 import { USDT_ASSET_ICON } from 'src/utils/asset-icons';
 import { money, OperationStatus } from './customer-shared';
 
@@ -71,7 +77,8 @@ const operationNames: Record<Operation['type'], string> = {
 };
 
 export default function CustomerActivity() {
-  const { customer, operations } = usePortalCustomer();
+  const { customer, operations: recentOperations } = usePortalCustomer();
+  const [operations, setOperations] = useState<Operation[]>(recentOperations);
   const [cryptoTransfers, setCryptoTransfers] = useState<CryptoTransfer[]>([]);
   const [type, setType] = useState<ActivityType>('all');
   const [status, setStatus] = useState('all');
@@ -80,14 +87,47 @@ export default function CustomerActivity() {
   const [selectedRow, setSelectedRow] = useState<ActivityRow | null>(null);
 
   useEffect(() => {
-    if (!customer) return;
+    setOperations(recentOperations);
+  }, [recentOperations]);
+
+  useEffect(() => {
+    let active = true;
+    if (!customer) {
+      setOperations([]);
+      setCryptoTransfers([]);
+      return () => {
+        active = false;
+      };
+    }
     setError('');
-    coreApi<CryptoTransfer[]>(`/crypto-wallets/transfers?customerId=${customer.id}`)
-      .then((rows) => setCryptoTransfers(rows.filter((row) => row.network === 'TRON')))
-      .catch((value) => {
+    Promise.allSettled([
+      coreApi<Operation[]>(
+        `/operations?organizationId=${encodeURIComponent(
+          demoOrganizationId
+        )}&customerId=${encodeURIComponent(customer.id)}`
+      ),
+      coreApi<CryptoTransfer[]>(
+        `/crypto-wallets/transfers?customerId=${encodeURIComponent(customer.id)}`
+      ),
+    ]).then(([operationResult, cryptoResult]) => {
+      if (!active) return;
+      if (operationResult.status === 'fulfilled') {
+        setOperations(
+          operationResult.value.filter((row) => !(row.type === 'PAYOUT' && row.currency === 'USDT'))
+        );
+      }
+      if (cryptoResult.status === 'fulfilled') {
+        setCryptoTransfers(cryptoResult.value.filter((row) => row.network === 'TRON'));
+      } else {
         setCryptoTransfers([]);
-        setError(value instanceof Error ? value.message : '数字货币记录加载失败');
-      });
+      }
+      if (operationResult.status === 'rejected' || cryptoResult.status === 'rejected') {
+        setError('部分交易记录暂时不可用，请稍后刷新。');
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, [customer]);
 
   const allRows = useMemo<ActivityRow[]>(() => {

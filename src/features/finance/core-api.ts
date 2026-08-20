@@ -337,6 +337,14 @@ export type CryptoTransfer = {
 
 const coreBaseUrl = process.env.REACT_APP_CORE_API_URL || '/api/v1';
 const transientReadStatuses = new Set([502, 503, 504]);
+const defaultRequestTimeoutMs = 10_000;
+const maxReadAttempts = 2;
+
+type ApiRequestInit = RequestInit & {
+  userId?: string;
+  timeoutMs?: number;
+  onTransientRetry?: () => void;
+};
 
 function retryDelay(attempt: number) {
   return new Promise((resolve) => {
@@ -344,31 +352,65 @@ function retryDelay(attempt: number) {
   });
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  if (init.signal?.aborted) controller.abort();
+  init.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) throw new Error('请求超时，请稍后重试。');
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    init.signal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
 async function fetchWithTransientReadRetry(
   url: string,
   init: RequestInit,
   retryable: boolean,
+  timeoutMs: number,
+  onTransientRetry?: () => void,
   attempt = 0
 ): Promise<Response> {
   try {
-    const response = await fetch(url, init);
-    if (!retryable || !transientReadStatuses.has(response.status) || attempt >= 2) {
-      return response;
-    }
+    const response = await fetchWithTimeout(url, init, timeoutMs);
+    const canRetry =
+      retryable && transientReadStatuses.has(response.status) && attempt < maxReadAttempts - 1;
+    if (!canRetry) return response;
+    onTransientRetry?.();
     await response.body?.cancel();
   } catch (error) {
-    if (!retryable || attempt >= 2 || init.signal?.aborted) throw error;
+    if (!retryable || attempt >= maxReadAttempts - 1 || init.signal?.aborted) throw error;
+    onTransientRetry?.();
   }
   await retryDelay(attempt);
-  return fetchWithTransientReadRetry(url, init, retryable, attempt + 1);
+  return fetchWithTransientReadRetry(
+    url,
+    init,
+    retryable,
+    timeoutMs,
+    onTransientRetry,
+    attempt + 1
+  );
 }
 
-async function requestApi<T>(
-  baseUrl: string,
-  path: string,
-  init?: RequestInit & { userId?: string }
-): Promise<T> {
-  const { userId = 'usr_admin', headers, ...requestInit } = init || {};
+async function requestApi<T>(baseUrl: string, path: string, init?: ApiRequestInit): Promise<T> {
+  const {
+    userId = 'usr_admin',
+    headers,
+    timeoutMs = defaultRequestTimeoutMs,
+    onTransientRetry,
+    ...requestInit
+  } = init || {};
   const method = (requestInit.method || 'GET').toUpperCase();
   const csrfToken = getCsrfToken();
   const response = await fetchWithTransientReadRetry(
@@ -386,7 +428,9 @@ async function requestApi<T>(
         ...headers,
       },
     },
-    method === 'GET' || method === 'HEAD'
+    method === 'GET' || method === 'HEAD',
+    timeoutMs,
+    onTransientRetry
   );
   const contentType = response.headers.get('content-type') || '';
   const payload = contentType.toLowerCase().includes('application/json')
@@ -406,15 +450,15 @@ async function requestApi<T>(
   return payload as T;
 }
 
-export function coreApi<T>(path: string, init?: RequestInit & { userId?: string }) {
+export function coreApi<T>(path: string, init?: ApiRequestInit) {
   return requestApi<T>(coreBaseUrl, path, init);
 }
 
-export function neobankApi<T>(path: string, init?: RequestInit & { userId?: string }) {
+export function neobankApi<T>(path: string, init?: ApiRequestInit) {
   return requestApi<T>('/api/v1', path, init);
 }
 
-export function customerAuthApi<T>(path: string, init?: RequestInit & { userId?: string }) {
+export function customerAuthApi<T>(path: string, init?: ApiRequestInit) {
   return requestApi<T>('/api/auth/customer', path, init);
 }
 

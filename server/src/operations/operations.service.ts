@@ -87,9 +87,16 @@ export class OperationsService {
       status?: OperationStatus;
       type?: OperationType;
       customerId?: string;
+      limit?: number;
     },
     userId: string
   ) {
+    if (
+      filters.limit !== undefined &&
+      (!Number.isInteger(filters.limit) || filters.limit < 1 || filters.limit > 100)
+    ) {
+      throw new BadRequestException('invalid_operations_limit');
+    }
     await requireOrganizationAccess(this.db, userId, filters.organizationId);
     return this.db.operation.findMany({
       where: {
@@ -101,6 +108,7 @@ export class OperationsService {
       },
       include: operationInclude,
       orderBy: { createdAt: 'desc' },
+      ...(filters.limit === undefined ? {} : { take: filters.limit }),
     });
   }
 
