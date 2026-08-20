@@ -195,7 +195,7 @@
         "us": "美国"
       },
       "kyc": {
-        "provider_handoff": "提交申请后，合规人员会人工审核 KYC / KYB 资料；如需补件，将通过预留邮箱联系。当前流程不接入第三方 KYC 服务商。",
+        "provider_handoff": "个人申请提交后，须通过 Sumsub 完成护照、本人活体人脸及住址证明三项核验；企业申请仍沿用现有人工 KYB。无论哪种类型，最终批准权均在合规后台。",
         "item_label": "验证 {{number}}",
         "individual": {
           "document": "有效身份证或护照",
@@ -242,6 +242,25 @@
       "errors": {
         "submit": "申请暂时无法提交，请稍后重试。系统不会因此自动开通账户。",
         "already_exists": "该邮箱已有待审核申请或账户，请联系客户服务核实进度。"
+      },
+      "sumsub": {
+        "required_notice": "请在下方完成 Sumsub 三项核验。服务商通过只代表申请具备进入合规人工审核的条件，不代表账户已经开通。",
+        "next_step": "在下方完成护照、本人活体人脸和住址证明三项核验。",
+        "status": "验证状态：{{status}}",
+        "refresh": "刷新状态",
+        "retry": "重试",
+        "unavailable": "身份验证服务暂时不可用。申请资料已保存，请稍后重试，无需重复提交开户注册。",
+        "status_unavailable": "暂时无法刷新验证状态，请稍后重试。",
+        "session_expired": "安全开户会话已过期，请联系客户服务继续该申请。",
+        "statuses": {
+          "initializing": "正在安全初始化",
+          "awaiting_applicant": "待提交验证资料",
+          "provider_reviewing": "Sumsub 审核中",
+          "resubmission_required": "需要补充或重新提交资料",
+          "provider_rejected": "服务商核验未通过",
+          "ready_for_admin_review": "可进入合规人工审核",
+          "provider_error": "服务商暂时不可用"
+        }
       },
       "success": {
         "eyebrow": "待人工身份审核",

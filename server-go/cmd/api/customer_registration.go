@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -145,8 +146,19 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	fingerprint := app.registrationFingerprint(input)
-	existing, err := app.db.Query(r.Context(), `SELECT application_reference, request_fingerprint
-	    FROM customer_applications WHERE tenant_id=? AND idempotency_key=?`, app.tenantID, idempotencyKey)
+	existingSQL := `SELECT ca.application_reference, ca.request_fingerprint, ca.customer_id, ca.account_type,
+	    0 AS has_sumsub_verification, '' AS sumsub_status
+	    FROM customer_applications ca WHERE ca.tenant_id=? AND ca.idempotency_key=?`
+	if app.sumsubSchemaReady {
+		existingSQL = `SELECT ca.application_reference, ca.request_fingerprint, ca.customer_id, ca.account_type,
+	      CASE WHEN v.id IS NOT NULL AND c.kyc_status='pending' AND c.operations_status='pending' THEN 1 ELSE 0 END AS has_sumsub_verification,
+	      COALESCE(v.status, '') AS sumsub_status
+	      FROM customer_applications ca
+	      JOIN customers c ON c.id=ca.customer_id AND c.tenant_id=ca.tenant_id
+	      LEFT JOIN customer_kyc_verifications v ON v.tenant_id=ca.tenant_id AND v.customer_id=ca.customer_id
+	      WHERE ca.tenant_id=? AND ca.idempotency_key=?`
+	}
+	existing, err := app.db.Query(r.Context(), existingSQL, app.tenantID, idempotencyKey)
 	if err != nil {
 		databaseError(app, w, err)
 		return
@@ -156,10 +168,27 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 			conflict(w, "idempotency_payload_mismatch")
 			return
 		}
-		writeJSON(w, http.StatusAccepted, map[string]any{
+		response := map[string]any{
 			"application_reference": text(existing[0]["application_reference"]),
 			"status":                "pending_review",
-		})
+		}
+		if app.sumsub != nil && text(existing[0]["account_type"]) == "individual" && integer(existing[0]["has_sumsub_verification"]) == 1 {
+			now := time.Now().UTC()
+			_, token, csrfToken, sessionStatement := newCustomerOnboardingSession(text(existing[0]["customer_id"]), now)
+			results, sessionErr := app.db.Batch(r.Context(), sessionStatement)
+			if sessionErr != nil || len(results) != 1 || resultChanges(results) != 1 {
+				if sessionErr == nil {
+					sessionErr = fmt.Errorf("unexpected onboarding session result")
+				}
+				databaseError(app, w, sessionErr)
+				return
+			}
+			app.setOnboardingSessionCookies(w, token, csrfToken, now.Add(onboardingSessionDuration))
+			response["csrf_token"] = csrfToken
+			response["kyc_provider"] = "sumsub"
+			response["kyc_status"] = text(existing[0]["sumsub_status"])
+		}
+		writeJSON(w, http.StatusAccepted, response)
 		return
 	}
 
@@ -174,7 +203,7 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 	}
 	passwordSalt := randomBytes(16)
 	passwordHash := app.deriveCustomerArgon2id(input.Password, passwordSalt)
-	results, err := app.db.Batch(r.Context(),
+	statements := []d1.Statement{
 		d1.Statement{SQL: `INSERT OR IGNORE INTO customers
 	      (id, tenant_id, email, display_name, status, kyc_status, operations_status, created_by, created_at, updated_at)
 	      VALUES (?, ?, ?, ?, 'pending_setup', 'pending', 'pending', ?, ?, ?)`, Params: []any{
@@ -206,19 +235,40 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 			mustJSON(map[string]string{"application_reference": reference, "account_type": input.AccountType}),
 			nowText, applicationID, customerID, app.tenantID,
 		}},
-	)
+	}
+	var onboardingToken string
+	var onboardingCSRFToken string
+	if input.AccountType == "individual" && app.sumsub != nil {
+		verificationID := randomID("verification")
+		statements = append(statements, newSumsubVerificationStatement(app, verificationID, customerID, nowText))
+		var sessionStatement d1.Statement
+		_, onboardingToken, onboardingCSRFToken, sessionStatement = newCustomerOnboardingSession(customerID, now)
+		statements = append(statements, sessionStatement)
+	}
+	results, err := app.db.Batch(r.Context(), statements...)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
-	if len(results) != 4 || resultChanges(results[:1]) != 1 ||
-		resultChanges(results[1:2]) != 1 || resultChanges(results[2:3]) != 1 ||
-		resultChanges(results[3:4]) != 1 {
+	if len(results) != len(statements) {
 		conflict(w, "application_already_exists")
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	for _, result := range results {
+		if resultChanges([]d1.Result{result}) != 1 {
+			conflict(w, "application_already_exists")
+			return
+		}
+	}
+	response := map[string]any{
 		"application_reference": reference,
 		"status":                "pending_review",
-	})
+	}
+	if onboardingToken != "" {
+		app.setOnboardingSessionCookies(w, onboardingToken, onboardingCSRFToken, now.Add(onboardingSessionDuration))
+		response["csrf_token"] = onboardingCSRFToken
+		response["kyc_provider"] = "sumsub"
+		response["kyc_status"] = "initializing"
+	}
+	writeJSON(w, http.StatusAccepted, response)
 }

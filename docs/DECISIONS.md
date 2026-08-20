@@ -40,6 +40,12 @@ that the assumption no longer applies.
   including USDT. Missing provider data produces an explicit partial valuation;
   stored fee-policy snapshots and assumed stablecoin parity are not fallbacks.
 - In the Neobank profile, manual KYC approval is the final account-opening gate.
+  For new individual applications that have a Sumsub verification record, approval
+  is allowed only after the dedicated `neobank_individual_v1` Level reports GREEN
+  for passport identity, liveness/face, and proof of residence. A Sumsub result never
+  auto-approves, auto-activates, or provisions an account. Applications created
+  before this integration remain on the documented legacy manual-review path;
+  business KYB is unchanged.
   Approval automatically activates the customer, assigns zero-balance USD and HKD
   standard fiat accounts, and idempotently provisions one Cregis-verified
   USDT-TRC20 wallet. Core customer synchronization repairs any missing standard fiat

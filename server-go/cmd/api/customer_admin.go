@@ -164,15 +164,48 @@ func walletProvisioningRetryMetadata(provisionErr *walletProvisionError) map[str
 	}
 }
 
+func sumsubApprovalBlockCode(accountType, verificationStatus, levelName, environment, expectedLevel, expectedEnvironment string, configured bool) string {
+	if accountType != "individual" || verificationStatus == "" {
+		return ""
+	}
+	if !configured || levelName != expectedLevel || environment != expectedEnvironment {
+		return "sumsub_configuration_mismatch"
+	}
+	if verificationStatus != "ready_for_admin_review" {
+		return "sumsub_verification_not_ready"
+	}
+	return ""
+}
+
 func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWriter, r *http.Request, id, actor, note, metadata, now string) {
-	stateRows, err := app.db.Query(r.Context(), `SELECT c.status, c.kyc_status, c.operations_status,
+	stateSQL := `SELECT c.status, c.kyc_status, c.operations_status,
+	  ca.account_type, NULL::text AS sumsub_status, NULL::text AS sumsub_level_name,
+	  NULL::text AS sumsub_environment,
 	  CASE WHEN EXISTS (SELECT 1 FROM customer_credentials cc WHERE cc.customer_id=c.id
 	    AND cc.password_salt IS NOT NULL AND cc.password_hash IS NOT NULL AND (
 	      (cc.password_algorithm='argon2id-v1' AND cc.password_memory_kib=? AND cc.password_time_cost=?
 	        AND cc.password_parallelism=?)
 	      OR (cc.password_algorithm='pbkdf2-sha256-v1' AND cc.password_iterations=?)))
 	  THEN 1 ELSE 0 END AS password_ready
-	  FROM customers c WHERE c.id=? AND c.tenant_id=?`, customerArgonMemoryKiB,
+	  FROM customers c
+	  LEFT JOIN customer_applications ca ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id
+	  WHERE c.id=? AND c.tenant_id=?`
+	if app.sumsubSchemaReady {
+		stateSQL = `SELECT c.status, c.kyc_status, c.operations_status,
+	    ca.account_type, v.status AS sumsub_status, v.level_name AS sumsub_level_name,
+	    v.environment AS sumsub_environment,
+	    CASE WHEN EXISTS (SELECT 1 FROM customer_credentials cc WHERE cc.customer_id=c.id
+	      AND cc.password_salt IS NOT NULL AND cc.password_hash IS NOT NULL AND (
+	        (cc.password_algorithm='argon2id-v1' AND cc.password_memory_kib=? AND cc.password_time_cost=?
+	          AND cc.password_parallelism=?)
+	        OR (cc.password_algorithm='pbkdf2-sha256-v1' AND cc.password_iterations=?)))
+	    THEN 1 ELSE 0 END AS password_ready
+	    FROM customers c
+	    LEFT JOIN customer_applications ca ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id
+	    LEFT JOIN customer_kyc_verifications v ON v.customer_id=c.id AND v.tenant_id=c.tenant_id
+	    WHERE c.id=? AND c.tenant_id=?`
+	}
+	stateRows, err := app.db.Query(r.Context(), stateSQL, customerArgonMemoryKiB,
 		customerArgonTimeCost, customerArgonParallelism, customerLegacyPasswordIterations, id, app.tenantID)
 	if err != nil {
 		databaseError(app, w, err)
@@ -183,6 +216,16 @@ func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWrit
 		return
 	}
 	state := stateRows[0]
+	expectedLevel := ""
+	if app.sumsub != nil {
+		expectedLevel = app.sumsub.LevelName()
+	}
+	if blockCode := sumsubApprovalBlockCode(text(state["account_type"]), text(state["sumsub_status"]),
+		text(state["sumsub_level_name"]), text(state["sumsub_environment"]), expectedLevel,
+		app.sumsubEnvironment, app.sumsub != nil); blockCode != "" {
+		conflict(w, blockCode)
+		return
+	}
 	kycStatus := text(state["kyc_status"])
 	operationsStatus := text(state["operations_status"])
 	extra := map[string]any{}

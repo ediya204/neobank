@@ -99,6 +99,12 @@ async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<R
   if (csrfToken) headers.set('x-csrf-token', csrfToken);
   const idempotencyKey = request.headers.get('idempotency-key');
   if (idempotencyKey) headers.set('idempotency-key', idempotencyKey);
+  if (incoming.pathname === '/api/webhooks/sumsub') {
+    const payloadDigest = request.headers.get('x-payload-digest');
+    const payloadDigestAlgorithm = request.headers.get('x-payload-digest-alg');
+    if (payloadDigest) headers.set('x-payload-digest', payloadDigest);
+    if (payloadDigestAlgorithm) headers.set('x-payload-digest-alg', payloadDigestAlgorithm);
+  }
   if (incoming.pathname === '/api/auth/setup-token') {
     const authorization = request.headers.get('authorization');
     if (authorization) headers.set('authorization', authorization);
@@ -670,7 +676,8 @@ function isApplicationAPI(pathname: string) {
   return (
     pathname.startsWith('/api/auth/') ||
     pathname.startsWith('/api/v1/') ||
-    pathname.startsWith('/api/core/')
+    pathname.startsWith('/api/core/') ||
+    pathname === '/api/webhooks/sumsub'
   );
 }
 
@@ -699,6 +706,10 @@ export default {
     }
     try {
       if (isApplicationAPI(url.pathname)) {
+        const sumsubWebhook = url.pathname === '/api/webhooks/sumsub';
+        if (sumsubWebhook && request.method !== 'POST') {
+          return json({ error: { code: 'method_not_allowed' } }, 405);
+        }
         if (
           customerAPIInMaintenance(env) &&
           (url.pathname.startsWith('/api/auth/customer/') ||
@@ -706,7 +717,7 @@ export default {
         ) {
           return json({ error: { code: 'customer_auth_maintenance' } }, 503);
         }
-        if (!hasValidMutationOrigin(request)) {
+        if (!sumsubWebhook && !hasValidMutationOrigin(request)) {
           return json({ error: { code: 'invalid_origin' } }, 403);
         }
         if (url.pathname.startsWith('/api/core/')) {

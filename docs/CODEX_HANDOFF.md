@@ -75,6 +75,12 @@ The source includes:
   `/dashboard/onboarding`, decisions are made at
   `/dashboard/onboarding/:id/review`, and `/dashboard/customers` contains only
   KYC-approved customers with real account, wallet, balance, and sync fields.
+- Sumsub individual KYC integration is present in source but disabled by default:
+  `/portal/register` can launch WebSDK passport, liveness/face, and proof-of-address
+  checks; signed Webhooks plus an idempotent reconciliation worker feed the Admin KYC
+  workspace. Provider GREEN only unlocks manual review. Production still requires
+  reviewed PostgreSQL migration `0008`, Sumsub Level/Webhook setup, secrets, explicit
+  `SUMSUB_ENABLED=true`, deployment, and Sandbox acceptance evidence.
 - Dedicated Admin VA fulfilment: Portal customers submit bank/currency/purpose
   requests after activation; Admin processes them at
   `/dashboard/operations/virtual-accounts` and its detail route, where customer

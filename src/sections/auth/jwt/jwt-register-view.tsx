@@ -1,4 +1,4 @@
-import { ChangeEvent, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -17,6 +17,8 @@ import { alpha } from '@mui/material/styles';
 import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
 import { RouterLink } from 'src/routes/components';
 import Iconify from 'src/components/iconify';
+
+const SumsubWebSdk = lazy(() => import('@sumsub/websdk-react'));
 
 type AccountType = 'individual' | 'business';
 
@@ -81,14 +83,50 @@ type Props = {
   loginPath: string;
 };
 
+function onboardingCSRFCookie() {
+  const cookies = document.cookie.split(';').map((part) => part.trim());
+  const names = ['__Host-neobank_onboarding_csrf', 'neobank_onboarding_csrf'];
+  const matched = names
+    .map((name) => ({ name, value: cookies.find((part) => part.startsWith(`${name}=`)) }))
+    .find((candidate) => candidate.value);
+  return matched?.value ? decodeURIComponent(matched.value.slice(`${matched.name}=`.length)) : '';
+}
+
+type PublicSumsubVerification = {
+  status?: string;
+  moderation_comment?: string;
+  steps?: Array<{ moderation_comment?: string }>;
+};
+
+function customerVisibleSumsubFeedback(verification?: PublicSumsubVerification) {
+  return Array.from(
+    new Set(
+      [
+        verification?.moderation_comment,
+        ...(verification?.steps || []).map((step) => step.moderation_comment),
+      ]
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 export default function JwtRegisterView({ loginPath }: Props) {
-  const { t } = useTranslation('common');
+  const { t, i18n } = useTranslation('common');
   const [activeStep, setActiveStep] = useState(0);
   const [form, setForm] = useState<ApplicationForm>(INITIAL_FORM);
   const [errors, setErrors] = useState<Errors>({});
   const [submittedReference, setSubmittedReference] = useState('');
   const [submissionError, setSubmissionError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [sumsubRequired, setSumsubRequired] = useState(false);
+  const [sumsubCSRFToken, setSumsubCSRFToken] = useState('');
+  const [sumsubAccessToken, setSumsubAccessToken] = useState('');
+  const [sumsubStatus, setSumsubStatus] = useState('');
+  const [sumsubLoading, setSumsubLoading] = useState(false);
+  const [sumsubError, setSumsubError] = useState('');
+  const [sumsubFeedback, setSumsubFeedback] = useState<string[]>([]);
   const idempotencyKey = useRef(crypto.randomUUID());
 
   const fieldError = (field: FieldName) => {
@@ -206,6 +244,99 @@ export default function JwtRegisterView({ loginPath }: Props) {
     setActiveStep((step) => Math.max(step - 1, 0));
   };
 
+  const requestSumsubToken = async (csrfToken = sumsubCSRFToken): Promise<string> => {
+    if (!csrfToken) throw new Error(t('auth.registration.sumsub.session_expired'));
+    const response = await fetch('/api/auth/customer/onboarding/kyc/token', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken },
+      body: '{}',
+    });
+    const payload = (await response.json().catch(() => null)) as {
+      access_token?: string;
+      verification_status?: string;
+    } | null;
+    if (!response.ok || !payload?.access_token) {
+      throw new Error(t('auth.registration.sumsub.unavailable'));
+    }
+    setSumsubAccessToken(payload.access_token);
+    setSumsubStatus(payload.verification_status || 'awaiting_applicant');
+    return payload.access_token;
+  };
+
+  const startSumsub = async (csrfToken = sumsubCSRFToken) => {
+    setSumsubLoading(true);
+    setSumsubError('');
+    try {
+      await requestSumsubToken(csrfToken);
+    } catch (caught) {
+      setSumsubError(
+        caught instanceof Error ? caught.message : t('auth.registration.sumsub.unavailable')
+      );
+    } finally {
+      setSumsubLoading(false);
+    }
+  };
+
+  const refreshSumsubStatus = async () => {
+    setSumsubLoading(true);
+    setSumsubError('');
+    try {
+      const response = await fetch('/api/auth/customer/onboarding/status', {
+        credentials: 'same-origin',
+        headers: { accept: 'application/json' },
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        verification?: PublicSumsubVerification;
+      } | null;
+      if (!response.ok || !payload?.verification?.status) {
+        throw new Error(t('auth.registration.sumsub.status_unavailable'));
+      }
+      setSumsubStatus(payload.verification.status);
+      setSumsubFeedback(customerVisibleSumsubFeedback(payload.verification));
+    } catch (caught) {
+      setSumsubError(
+        caught instanceof Error ? caught.message : t('auth.registration.sumsub.status_unavailable')
+      );
+    } finally {
+      setSumsubLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    const resume = async () => {
+      const response = await fetch('/api/auth/customer/onboarding/status', {
+        credentials: 'same-origin',
+        headers: { accept: 'application/json' },
+      });
+      if (!response.ok || !active) return;
+      const payload = (await response.json().catch(() => null)) as {
+        application_reference?: string;
+        verification?: PublicSumsubVerification;
+      } | null;
+      const csrfToken = onboardingCSRFCookie();
+      if (!payload?.application_reference || !payload.verification?.status || !csrfToken) return;
+      setSubmittedReference(payload.application_reference);
+      setSumsubRequired(true);
+      setSumsubCSRFToken(csrfToken);
+      setSumsubStatus(payload.verification.status);
+      setSumsubFeedback(customerVisibleSumsubFeedback(payload.verification));
+      if (
+        payload.verification.status !== 'ready_for_admin_review' &&
+        payload.verification.status !== 'provider_rejected'
+      ) {
+        await startSumsub(csrfToken);
+      }
+    };
+    resume().catch(() => undefined);
+    return () => {
+      active = false;
+    };
+    // A valid server session is the source of truth; this probe runs once when the page opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const submitApplication = async () => {
     if (!validateStep()) return;
     setSubmitting(true);
@@ -241,6 +372,9 @@ export default function JwtRegisterView({ loginPath }: Props) {
       });
       const payload = (await response.json().catch(() => null)) as {
         application_reference?: string;
+        csrf_token?: string;
+        kyc_provider?: string;
+        kyc_status?: string;
         error?: { code?: string };
       } | null;
       if (!response.ok || !payload?.application_reference) {
@@ -252,6 +386,13 @@ export default function JwtRegisterView({ loginPath }: Props) {
         );
       }
       setSubmittedReference(payload.application_reference);
+      const requiresSumsub = form.accountType === 'individual' && payload.kyc_provider === 'sumsub';
+      setSumsubRequired(requiresSumsub);
+      if (requiresSumsub && payload.csrf_token) {
+        setSumsubCSRFToken(payload.csrf_token);
+        setSumsubStatus(payload.kyc_status || 'initializing');
+        startSumsub(payload.csrf_token).catch(() => undefined);
+      }
       setForm((current) => ({ ...current, password: '', confirmPassword: '' }));
     } catch (caught) {
       setSubmissionError(
@@ -699,10 +840,80 @@ export default function JwtRegisterView({ loginPath }: Props) {
             {submittedReference}
           </Typography>
         </Paper>
+        {sumsubRequired && (
+          <Stack spacing={2} sx={{ width: 1 }}>
+            <Alert severity="info">{t('auth.registration.sumsub.required_notice')}</Alert>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1}
+              alignItems={{ sm: 'center' }}
+            >
+              <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
+                {t('auth.registration.sumsub.status', {
+                  status: t(`auth.registration.sumsub.statuses.${sumsubStatus || 'initializing'}`),
+                })}
+              </Typography>
+              <Button
+                size="small"
+                onClick={() => refreshSumsubStatus().catch(() => undefined)}
+                disabled={sumsubLoading}
+              >
+                {t('auth.registration.sumsub.refresh')}
+              </Button>
+            </Stack>
+            {sumsubError && (
+              <Alert
+                severity="error"
+                action={
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => startSumsub().catch(() => undefined)}
+                  >
+                    {t('auth.registration.sumsub.retry')}
+                  </Button>
+                }
+              >
+                {sumsubError}
+              </Alert>
+            )}
+            {sumsubFeedback.map((message) => (
+              <Alert key={message} severity="warning">
+                {message}
+              </Alert>
+            ))}
+            {sumsubLoading && !sumsubAccessToken && <LinearProgress />}
+            {sumsubAccessToken && (
+              <Paper variant="outlined" sx={{ width: 1, p: { xs: 1, sm: 2 }, overflow: 'hidden' }}>
+                <Suspense fallback={<LinearProgress />}>
+                  <SumsubWebSdk
+                    accessToken={sumsubAccessToken}
+                    expirationHandler={() => requestSumsubToken()}
+                    config={{ lang: i18n.language.toLowerCase().startsWith('zh') ? 'zh' : 'en' }}
+                    options={{ adaptIframeHeight: true, addViewportTag: false }}
+                    onMessage={(type) => {
+                      if (
+                        type === 'idCheck.onApplicantSubmitted' ||
+                        type === 'idCheck.onApplicantResubmitted' ||
+                        type === 'idCheck.onApplicantStatusChanged'
+                      ) {
+                        setSumsubStatus('provider_reviewing');
+                      }
+                    }}
+                    onError={() => setSumsubError(t('auth.registration.sumsub.unavailable'))}
+                    style={{ width: '100%', minHeight: 620 }}
+                  />
+                </Suspense>
+              </Paper>
+            )}
+          </Stack>
+        )}
         <Stack spacing={1.5} sx={{ width: 1 }}>
           {[
             t('auth.registration.success.next_email'),
-            t('auth.registration.success.next_kyc'),
+            sumsubRequired
+              ? t('auth.registration.sumsub.next_step')
+              : t('auth.registration.success.next_kyc'),
             t('auth.registration.success.next_review'),
           ].map((item, index) => (
             <Stack key={item} direction="row" spacing={1.5} alignItems="center">

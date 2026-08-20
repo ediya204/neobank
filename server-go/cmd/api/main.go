@@ -21,6 +21,7 @@ import (
 	"github.com/ediya204/neobank/server-go/internal/d1"
 	"github.com/ediya204/neobank/server-go/internal/fastforex"
 	postgresdb "github.com/ediya204/neobank/server-go/internal/postgres"
+	sumsubapi "github.com/ediya204/neobank/server-go/internal/sumsub"
 )
 
 type application struct {
@@ -40,6 +41,10 @@ type application struct {
 	coreOrganizationID     string
 	databaseBackend        string
 	marketData             marketDataClient
+	sumsub                 sumsubProvider
+	sumsubSchemaReady      bool
+	sumsubEnvironment      string
+	sumsubWebhookSecret    []byte
 	logger                 *slog.Logger
 }
 
@@ -137,21 +142,62 @@ func main() {
 	} else {
 		logger.Warn("FastForex market data is disabled because FASTFOREX_API_KEY is not configured")
 	}
+	var sumsubClient *sumsubapi.Client
+	sumsubEnabled := strings.EqualFold(os.Getenv("SUMSUB_ENABLED"), "true")
+	schemaContext, cancelSchemaCheck := context.WithTimeout(context.Background(), 3*time.Second)
+	sumsubMigrationRows, schemaErr := db.Query(schemaContext,
+		`SELECT version FROM neobank_schema_migrations WHERE version='0008_sumsub_individual_kyc'`)
+	cancelSchemaCheck()
+	if schemaErr != nil {
+		logger.Error("could not read Sumsub migration state", "error", schemaErr)
+		os.Exit(1)
+	}
+	sumsubSchemaReady := len(sumsubMigrationRows) == 1
+	sumsubEnvironment := strings.ToLower(strings.TrimSpace(envOr("SUMSUB_MODE", "sandbox")))
+	if sumsubEnvironment != "sandbox" && sumsubEnvironment != "production" {
+		logger.Error("invalid Sumsub configuration", "error", "SUMSUB_MODE must be sandbox or production")
+		os.Exit(1)
+	}
+	sumsubWebhookSecret := []byte(strings.TrimSpace(os.Getenv("SUMSUB_WEBHOOK_SECRET")))
+	if sumsubEnabled {
+		if !sumsubSchemaReady {
+			logger.Error("invalid Sumsub configuration", "error", "PostgreSQL migration 0008_sumsub_individual_kyc is required")
+			os.Exit(1)
+		}
+		if len(sumsubWebhookSecret) < 16 {
+			logger.Error("invalid Sumsub configuration", "error", "SUMSUB_WEBHOOK_SECRET must be at least 16 characters")
+			os.Exit(1)
+		}
+		sumsubClient, err = sumsubapi.New(sumsubapi.Config{
+			BaseURL: envOr("SUMSUB_BASE_URL", "https://api.sumsub.com"), AppToken: os.Getenv("SUMSUB_APP_TOKEN"),
+			Secret: os.Getenv("SUMSUB_SECRET_KEY"), Level: os.Getenv("SUMSUB_LEVEL_NAME"),
+		})
+		if err != nil {
+			logger.Error("invalid Sumsub configuration", "error", err)
+			os.Exit(1)
+		}
+	}
 	app := &application{
 		db: db, cregis: cregisClient, cregisLive: cregisLive, edgeSecret: []byte(edgeSecret),
 		customerPasswordPepper: passwordPepper, customerTOTPKey: totpKey, customerRecoveryPepper: recoveryPepper,
 		adminPasswordPepper: adminPasswordPepper, adminTOTPKey: adminTOTPKey, adminBootstrapSecret: adminBootstrapSecret,
 		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"),
 		coreOrganizationID: envOr("CORE_ORGANIZATION_ID", "org_neobank"),
-		databaseBackend:    databaseBackend, marketData: marketData, logger: logger,
+		databaseBackend:    databaseBackend, marketData: marketData, sumsub: sumsubClient,
+		sumsubSchemaReady: sumsubSchemaReady,
+		sumsubEnvironment: sumsubEnvironment, sumsubWebhookSecret: sumsubWebhookSecret, logger: logger,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", app.health)
 	mux.HandleFunc("POST /api/v1/callbacks/cregis/deposit", app.cregisDepositCallback)
 	mux.HandleFunc("POST /api/v1/callbacks/cregis/payout", app.cregisPayoutCallback)
+	mux.Handle("POST /api/webhooks/sumsub", app.authenticateEdge(http.HandlerFunc(app.sumsubWebhook)))
 	mux.Handle("/api/auth/", app.authenticateEdge(http.HandlerFunc(app.auth)))
 	mux.Handle("/api/v1/", app.authenticateEdge(http.HandlerFunc(app.api)))
+	workerContext, stopWorker := context.WithCancel(context.Background())
+	defer stopWorker()
+	go app.runSumsubSyncWorker(workerContext)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -196,6 +242,7 @@ func (app *application) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "ok", "service": "neobank-go-api", "database": app.databaseBackend,
 		"cregis": map[bool]string{true: "enabled", false: "disabled"}[app.cregisLive],
+		"sumsub": map[bool]string{true: "enabled", false: "disabled"}[app.sumsub != nil],
 	})
 }
 

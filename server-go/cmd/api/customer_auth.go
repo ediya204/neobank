@@ -91,6 +91,12 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/register":
 		app.registerCustomer(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/onboarding/login":
+		app.onboardingLogin(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/customer/onboarding/status":
+		app.onboardingStatus(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/onboarding/kyc/token":
+		app.createOnboardingSumsubToken(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/login":
 		app.customerLogin(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/setup/complete":
@@ -119,6 +125,10 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 		app.listAdminCustomers(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/customers":
 		app.createCustomer(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc-verification"):
+		app.writeAdminSumsubVerification(w, r, adminCustomerRouteID(r.URL.Path, "/kyc-verification"))
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc/sync"):
+		app.enqueueSumsubSync(w, r, adminCustomerRouteID(r.URL.Path, "/kyc/sync"))
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc"):
 		app.reviewCustomerKYC(w, r, adminCustomerRouteID(r.URL.Path, "/kyc"))
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/activate"):

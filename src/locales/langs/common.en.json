@@ -195,7 +195,7 @@
         "us": "United States"
       },
       "kyc": {
-        "provider_handoff": "After submission, Compliance reviews the KYC / KYB information manually and will contact the registered email if more documents are needed. No third-party KYC provider is connected in this flow.",
+        "provider_handoff": "Individual applicants complete passport, facial liveness, and proof-of-address checks with Sumsub after submission. Business applications remain subject to the existing manual KYB process. In both cases, only Compliance can give final approval.",
         "item_label": "Check {{number}}",
         "individual": {
           "document": "Valid identity card or passport",
@@ -242,6 +242,25 @@
       "errors": {
         "submit": "The application cannot be submitted right now. Please try again later. No account will be activated automatically.",
         "already_exists": "An application or account already exists for this email. Contact customer support to confirm its status."
+      },
+      "sumsub": {
+        "required_notice": "Complete all three Sumsub checks below. A successful provider result only makes the application eligible for Compliance review; it does not open the account.",
+        "next_step": "Complete the passport, facial liveness, and proof-of-address checks below.",
+        "status": "Verification status: {{status}}",
+        "refresh": "Refresh status",
+        "retry": "Try again",
+        "unavailable": "Identity verification is temporarily unavailable. Your application is saved; try again without submitting a new application.",
+        "status_unavailable": "The verification status could not be refreshed. Try again shortly.",
+        "session_expired": "The secure onboarding session has expired. Contact support to resume this application.",
+        "statuses": {
+          "initializing": "starting securely",
+          "awaiting_applicant": "documents required",
+          "provider_reviewing": "under Sumsub review",
+          "resubmission_required": "additional documents required",
+          "provider_rejected": "provider checks not passed",
+          "ready_for_admin_review": "ready for Compliance review",
+          "provider_error": "provider temporarily unavailable"
+        }
       },
       "success": {
         "eyebrow": "Manual identity review pending",
