@@ -7,6 +7,7 @@ func TestReviewedMigrationFilename(t *testing.T) {
 		"0004_admin_auth.sql",
 		"0005_customer_withdrawal_address_whitelist.sql",
 		"0006_withdrawal_fee_rules.sql",
+		"0007_admin_rbac.sql",
 	} {
 		if !migrationFilename.MatchString(name) {
 			t.Fatalf("reviewed migration filename rejected: %s", name)

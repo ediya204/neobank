@@ -37,6 +37,7 @@ type application struct {
 	publicURL              string
 	portalURL              string
 	tenantID               string
+	coreOrganizationID     string
 	databaseBackend        string
 	marketData             marketDataClient
 	logger                 *slog.Logger
@@ -141,7 +142,8 @@ func main() {
 		customerPasswordPepper: passwordPepper, customerTOTPKey: totpKey, customerRecoveryPepper: recoveryPepper,
 		adminPasswordPepper: adminPasswordPepper, adminTOTPKey: adminTOTPKey, adminBootstrapSecret: adminBootstrapSecret,
 		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"),
-		databaseBackend: databaseBackend, marketData: marketData, logger: logger,
+		coreOrganizationID: envOr("CORE_ORGANIZATION_ID", "org_neobank"),
+		databaseBackend:    databaseBackend, marketData: marketData, logger: logger,
 	}
 
 	mux := http.NewServeMux()
@@ -216,6 +218,13 @@ func (app *application) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Header.Set("X-Neobank-User", adminSession.Email)
+	if app.routeAdminUsers(w, r, adminSession) {
+		return
+	}
+	if !adminRequestPermitted(adminSession, r.Method, r.URL.Path) {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]string{"code": "admin_permission_required"}})
+		return
+	}
 	if r.URL.Path == "/api/v1/admin/market-rate" && r.Method == http.MethodGet {
 		app.marketRate(w, r)
 		return

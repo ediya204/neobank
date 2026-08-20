@@ -40,6 +40,23 @@ export type PortalPermission =
   | 'credentials.reveal'
   | 'notifications.read';
 
+export type AdminPermission =
+  | 'admin_users.manage'
+  | 'customers.read'
+  | 'customers.review'
+  | 'funds.read'
+  | 'funds.manage'
+  | 'settings.manage'
+  | 'reports.read';
+
+export type SessionPermission = PortalPermission | AdminPermission;
+
+export type AdminAccessRole =
+  | 'super_admin'
+  | 'operations_admin'
+  | 'compliance_admin'
+  | 'read_only_admin';
+
 export type AuthOrganization = {
   id: string;
   name: string;
@@ -56,13 +73,15 @@ export type AuthMembership = {
 
 export type AuthSessionUser = {
   id: string;
+  coreUserId?: string | null;
   email: string;
   displayName: string;
   role: AuthRole;
+  accessRole?: AdminAccessRole | null;
   photoURL?: string | null;
   organization: AuthOrganization | null;
   membership: AuthMembership | null;
-  permissions: PortalPermission[];
+  permissions: SessionPermission[];
 };
 
 export type AuthFlowStep =

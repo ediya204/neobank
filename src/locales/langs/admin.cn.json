@@ -94,7 +94,113 @@
     "usdtSweepDirectory": "资金归集",
     "usdtSweeps": "USDT 归集",
     "vaApplications": "VA 申请",
-    "ledgerEntries": "账本分录"
+    "ledgerEntries": "账本分录",
+    "adminUsers": "管理员与权限"
+  },
+  "adminUsers": {
+    "pageTitle": "管理员与权限",
+    "title": "管理员与权限",
+    "description": "创建后台账号、分配最小权限，并查看激活与最近登录状态。",
+    "current": "当前账号",
+    "never": "从未登录",
+    "summary": {
+      "active": "{{count}} 个启用账号",
+      "pending": "{{count}} 个待激活"
+    },
+    "matrix": {
+      "title": "权限范围",
+      "description": "角色使用固定权限组合，避免临时勾选造成越权或遗漏。"
+    },
+    "list": {
+      "title": "管理员账号",
+      "description": "角色或状态变更会撤销该账号的现有会话，并写入认证审计。"
+    },
+    "columns": {
+      "user": "用户",
+      "role": "角色",
+      "security": "账号状态",
+      "lastLogin": "最近登录"
+    },
+    "fields": {
+      "email": "登录邮箱",
+      "displayName": "显示名称",
+      "role": "管理员角色",
+      "status": "账号状态"
+    },
+    "actions": {
+      "add": "增加管理员",
+      "create": "创建并生成激活链接",
+      "manage": "管理",
+      "save": "保存更改",
+      "reissue": "重新生成链接",
+      "copyLink": "复制激活链接",
+      "close": "我已安全保存"
+    },
+    "create": {
+      "title": "增加管理员",
+      "noDefaultPassword": "系统不会生成默认密码。新管理员通过 30 分钟有效的一次性链接自行设置密码并绑定 TOTP。"
+    },
+    "edit": {
+      "title": "管理管理员账号",
+      "selfProtection": "为避免误锁定，不能在这里停用当前账号或修改当前账号的角色。"
+    },
+    "setup": {
+      "title": "一次性激活链接",
+      "oneTime": "此链接只显示在本次操作中。请通过批准的安全渠道发送，不要放入工单、日志或查询参数。",
+      "recipient": "接收人：{{email}}",
+      "expires": "有效期至 {{time}}"
+    },
+    "status": {
+      "active": "已启用",
+      "disabled": "已停用"
+    },
+    "security": {
+      "totpReady": "密码 + TOTP 已就绪",
+      "pendingSetup": "待首次激活"
+    },
+    "roles": {
+      "super_admin": {
+        "name": "超级管理员",
+        "description": "管理管理员、客户、资金、配置和报表。"
+      },
+      "operations_admin": {
+        "name": "运营管理员",
+        "description": "处理资金业务并读取客户与报表。"
+      },
+      "compliance_admin": {
+        "name": "合规管理员",
+        "description": "审核客户、KYC 与 VA，资金仅供查阅。"
+      },
+      "read_only_admin": {
+        "name": "只读管理员",
+        "description": "只读查看客户、资金和账务报表。"
+      }
+    },
+    "permissions": {
+      "admin_users": { "manage": "管理管理员账号" },
+      "customers": { "read": "查看客户资料", "review": "审核客户与 KYC / VA" },
+      "funds": { "read": "查看资金数据", "manage": "处理资金业务" },
+      "settings": { "manage": "管理通道、汇率与手续费" },
+      "reports": { "read": "查看账务和对账报表" }
+    },
+    "messages": {
+      "created": "管理员已创建",
+      "updated": "管理员已更新",
+      "linkReissued": "新的激活链接已生成",
+      "linkCopied": "激活链接已复制"
+    },
+    "errors": {
+      "request_failed": "管理员操作失败，请刷新后重试。",
+      "invalid_response": "管理员接口返回了无效数据。",
+      "admin_user_exists": "该邮箱已经是管理员账号。",
+      "core_identity_conflict": "该邮箱已绑定到其他系统身份。",
+      "cannot_change_own_admin_access": "不能修改当前账号的角色或状态。",
+      "last_super_admin_required": "必须保留至少一名已启用的超级管理员。",
+      "admin_user_version_conflict": "账号已被其他管理员更新，请刷新后重试。",
+      "admin_setup_already_completed": "该账号已完成激活，不能重新签发首次激活链接。",
+      "admin_user_disabled": "已停用账号不能签发激活链接。",
+      "admin_users_permission_required": "当前账号没有管理员管理权限。"
+    }
   },
   "reconciliation": {
     "pageTitle": "资金对账",

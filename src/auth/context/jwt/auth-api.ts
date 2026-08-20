@@ -9,7 +9,7 @@ import {
   TotpSetupData,
   VerifyTotpInput,
 } from 'src/auth/types';
-import { isPortalPermission } from 'src/auth/permissions';
+import { isSessionPermission } from 'src/auth/permissions';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -87,7 +87,7 @@ export function normalizeAuthUser(payload: unknown): AuthSessionUser | null {
   const membershipStatus = readString(membershipRecord, ['status']);
   const permissionsSource = candidate.permissions || data.permissions;
   const permissions = Array.isArray(permissionsSource)
-    ? permissionsSource.filter(isPortalPermission)
+    ? permissionsSource.filter(isSessionPermission)
     : [];
 
   const displayName =
@@ -99,9 +99,11 @@ export function normalizeAuthUser(payload: unknown): AuthSessionUser | null {
 
   return {
     id,
+    coreUserId: readString(candidate, ['core_user_id', 'coreUserId']),
     email,
     displayName,
     role,
+    accessRole: readString(candidate, ['access_role', 'accessRole']) as AuthSessionUser['accessRole'],
     photoURL,
     organization: organizationId
       ? {

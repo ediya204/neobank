@@ -94,7 +94,113 @@
     "usdtSweepDirectory": "Treasury operations",
     "usdtSweeps": "USDT sweeps",
     "vaApplications": "VA applications",
-    "ledgerEntries": "Ledger entries"
+    "ledgerEntries": "Ledger entries",
+    "adminUsers": "Administrators & access"
+  },
+  "adminUsers": {
+    "pageTitle": "Administrators & access",
+    "title": "Administrators & access",
+    "description": "Create back-office accounts, assign least privilege, and review activation and login status.",
+    "current": "Current account",
+    "never": "Never signed in",
+    "summary": {
+      "active": "{{count}} active accounts",
+      "pending": "{{count}} awaiting activation"
+    },
+    "matrix": {
+      "title": "Access scope",
+      "description": "Roles use fixed permission sets so ad hoc selections cannot introduce hidden gaps or excessive access."
+    },
+    "list": {
+      "title": "Administrator accounts",
+      "description": "Changing a role or status revokes that account's existing sessions and records an authentication audit event."
+    },
+    "columns": {
+      "user": "User",
+      "role": "Role",
+      "security": "Account status",
+      "lastLogin": "Last login"
+    },
+    "fields": {
+      "email": "Login email",
+      "displayName": "Display name",
+      "role": "Administrator role",
+      "status": "Account status"
+    },
+    "actions": {
+      "add": "Add administrator",
+      "create": "Create and generate link",
+      "manage": "Manage",
+      "save": "Save changes",
+      "reissue": "Generate a new link",
+      "copyLink": "Copy activation link",
+      "close": "I saved it securely"
+    },
+    "create": {
+      "title": "Add administrator",
+      "noDefaultPassword": "No default password is generated. The new administrator uses a 30-minute one-time link to set a password and enroll TOTP."
+    },
+    "edit": {
+      "title": "Manage administrator",
+      "selfProtection": "To prevent accidental lockout, you cannot disable the current account or change its role here."
+    },
+    "setup": {
+      "title": "One-time activation link",
+      "oneTime": "This link is shown only for this action. Send it through an approved secure channel; never place it in tickets, logs, or query parameters.",
+      "recipient": "Recipient: {{email}}",
+      "expires": "Expires {{time}}"
+    },
+    "status": {
+      "active": "Active",
+      "disabled": "Disabled"
+    },
+    "security": {
+      "totpReady": "Password + TOTP ready",
+      "pendingSetup": "Activation pending"
+    },
+    "roles": {
+      "super_admin": {
+        "name": "Super administrator",
+        "description": "Manage administrators, customers, funds, settings, and reports."
+      },
+      "operations_admin": {
+        "name": "Operations administrator",
+        "description": "Process fund operations and read customer and reporting data."
+      },
+      "compliance_admin": {
+        "name": "Compliance administrator",
+        "description": "Review customers, KYC, and VA requests with read-only fund access."
+      },
+      "read_only_admin": {
+        "name": "Read-only administrator",
+        "description": "Read customer, fund, accounting, and reconciliation data."
+      }
+    },
+    "permissions": {
+      "admin_users": { "manage": "Manage administrator accounts" },
+      "customers": { "read": "Read customer profiles", "review": "Review customers and KYC / VA" },
+      "funds": { "read": "Read fund data", "manage": "Process fund operations" },
+      "settings": { "manage": "Manage channels, rates, and fees" },
+      "reports": { "read": "Read accounting and reconciliation reports" }
+    },
+    "messages": {
+      "created": "Administrator created",
+      "updated": "Administrator updated",
+      "linkReissued": "A new activation link was generated",
+      "linkCopied": "Activation link copied"
+    },
+    "errors": {
+      "request_failed": "The administrator action failed. Refresh and try again.",
+      "invalid_response": "The administrator API returned invalid data.",
+      "admin_user_exists": "That email is already an administrator account.",
+      "core_identity_conflict": "That email is already bound to another system identity.",
+      "cannot_change_own_admin_access": "You cannot change the current account's role or status.",
+      "last_super_admin_required": "At least one active super administrator must remain.",
+      "admin_user_version_conflict": "Another administrator changed this account. Refresh and try again.",
+      "admin_setup_already_completed": "This account is already activated and cannot receive a first-time setup link.",
+      "admin_user_disabled": "A disabled account cannot receive an activation link.",
+      "admin_users_permission_required": "The current account cannot manage administrators."
+    }
   },
   "reconciliation": {
     "pageTitle": "Fund reconciliation",

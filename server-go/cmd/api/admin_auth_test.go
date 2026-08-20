@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -96,6 +97,8 @@ func TestAdminAuthPostgresIntegration(t *testing.T) {
 		adminPasswordPepper:  []byte("admin-password-pepper-0123456789abcdef"),
 		adminTOTPKey:         []byte("0123456789abcdef0123456789abcdef"),
 		adminBootstrapSecret: bootstrap,
+		coreOrganizationID:   "org_neobank",
+		logger:               slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 	email := "admin-integration@example.test"
 	setupRequest := httptest.NewRequest(http.MethodPost, "/api/auth/setup-token", bytes.NewBufferString(`{"email":"`+email+`","display_name":"Integration Admin"}`))
@@ -156,6 +159,36 @@ func TestAdminAuthPostgresIntegration(t *testing.T) {
 		t.Fatalf("me status=%d body=%q", meResponse.Code, meResponse.Body.String())
 	}
 
+	managedRequest := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", bytes.NewBufferString(
+		`{"email":"backoffice-integration@example.test","display_name":"Backoffice Integration","access_role":"operations_admin"}`,
+	))
+	managedRequest.Header.Set("Content-Type", "application/json")
+	managedResponse := httptest.NewRecorder()
+	app.createManagedAdminUser(managedResponse, managedRequest, &adminSession{
+		UserID: userIDFromSetupPayload(t, db, email), Email: email, AccessRole: adminRoleSuperAdmin,
+	})
+	if managedResponse.Code != http.StatusCreated || !strings.Contains(managedResponse.Body.String(), `"access_role":"operations_admin"`) {
+		t.Fatalf("managed admin create status=%d body=%q", managedResponse.Code, managedResponse.Body.String())
+	}
+	var managedPayload map[string]any
+	if err := json.Unmarshal(managedResponse.Body.Bytes(), &managedPayload); err != nil {
+		t.Fatal(err)
+	}
+	managedUser := readTestMap(managedPayload["user"])
+	managedUserID := text(managedUser["id"])
+	managedVersion := integer(managedUser["version"])
+	updateRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/users/"+managedUserID, bytes.NewBufferString(
+		fmt.Sprintf(`{"display_name":"Backoffice Compliance","access_role":"compliance_admin","status":"active","version":%d}`, managedVersion),
+	))
+	updateRequest.Header.Set("Content-Type", "application/json")
+	updateResponse := httptest.NewRecorder()
+	app.updateManagedAdminUser(updateResponse, updateRequest, &adminSession{
+		UserID: "different_super_admin", Email: email, AccessRole: adminRoleSuperAdmin,
+	}, managedUserID)
+	if updateResponse.Code != http.StatusOK || !strings.Contains(updateResponse.Body.String(), `"access_role":"compliance_admin"`) {
+		t.Fatalf("managed admin update status=%d body=%q", updateResponse.Code, updateResponse.Body.String())
+	}
+
 	loginRequest := httptest.NewRequest(http.MethodPost, "/api/auth/admin/login", bytes.NewBufferString(`{"email":"`+email+`","password":"Correct-Horse-7-Battery!"}`))
 	loginRequest.Header.Set("Content-Type", "application/json")
 	loginResponse := httptest.NewRecorder()
@@ -174,6 +207,22 @@ func TestAdminAuthPostgresIntegration(t *testing.T) {
 	if verifyLoginResponse.Code != http.StatusOK || !strings.Contains(verifyLoginResponse.Body.String(), `"next_step":"authenticated"`) {
 		t.Fatalf("login verify status=%d body=%q", verifyLoginResponse.Code, verifyLoginResponse.Body.String())
 	}
+}
+
+func userIDFromSetupPayload(t *testing.T, db *postgresdb.Client, email string) string {
+	t.Helper()
+	rows, err := db.Query(context.Background(), `SELECT id FROM admin_users WHERE LOWER(email)=?`, email)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("load integration admin: rows=%d err=%v", len(rows), err)
+	}
+	return text(rows[0]["id"])
+}
+
+func readTestMap(value any) map[string]any {
+	if result, ok := value.(map[string]any); ok {
+		return result
+	}
+	return map[string]any{}
 }
 
 func totpCodeAt(t *testing.T, secret string, at time.Time) string {

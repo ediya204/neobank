@@ -55,8 +55,12 @@
 | 账务查询   | 资金对账    | `/dashboard/operations/reconciliation`       | 按上海时区汇总入账、自动兑换、已完成归集、当前资金与账本平衡，并下钻当日明细 |
 | 账务查询   | 交易记录    | `/dashboard/operations/transactions`         | 按客户、类型、状态、资产、网络和日期检索业务交易                             |
 | 账务查询   | 账本分录    | `/dashboard/operations/ledger`               | 查看不可变的借贷分录及其来源业务记录                                         |
+| 系统管理   | 管理员与权限 | `/dashboard/admin-users`                     | 创建后台账号、分配固定最小权限、停用账号并查看激活状态                         |
 
 兼容路由 `/dashboard/operations` 应跳转到 `/dashboard/operations/deposits`；`/dashboard` 应跳转到 `/dashboard/overview`。重复入口 `/dashboard/operations/balances` 统一跳转到 `/dashboard/accounts`，旧 `/dashboard/usdt-sweeps` 统一跳转到 `/dashboard/operations/crypto-wallets`；导航不得再为同一页面提供不同名称的入口。独立的 `/dashboard/operations/approvals` 不再作为业务页面或导航入口，旧链接统一跳转到带 `status=SUBMITTED` 筛选的交易记录。旧 `/dashboard/audit-logs` 依赖已停用的历史 Admin API，在 Render-only 版本中进入明确的 404，且不得出现在导航中；在 Render PostgreSQL 审计存储与接口落地前不得恢复该入口。
+
+管理员账号与固定角色的创建、权限边界、最后一名超级管理员保护和生产发布顺序见
+[管理员用户与权限运行手册](./ADMIN_RBAC_RUNBOOK.md)。
 
 运营总览的待处理、执行中和失败提醒分别进入带对应 `status` 筛选的交易记录；每个业务列表和交易记录详情都保留批准、拒绝或执行入口，并复用同一业务状态与审计接口，不再维护独立审批队列页面。
 

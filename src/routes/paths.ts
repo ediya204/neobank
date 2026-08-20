@@ -83,6 +83,7 @@ export const paths = {
       rates: `${DASHBOARD_ROOT}/settings/rates`,
     },
     auditLogs: `${DASHBOARD_ROOT}/audit-logs`,
+    adminUsers: `${DASHBOARD_ROOT}/admin-users`,
     user: {
       profile: `${DASHBOARD_ROOT}/user/profile`,
       account: `${DASHBOARD_ROOT}/user/account`,

@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { paths } from 'src/routes/paths';
 import { usePathname } from 'src/routes/hooks';
 import { useAuthContext } from 'src/auth/hooks';
-import { hasPortalPermission } from 'src/auth/permissions';
+import { hasAdminPermission, hasPortalPermission } from 'src/auth/permissions';
+import { requiredAdminPermissionForPath } from 'src/auth/admin-access';
+import { AuthSessionUser } from 'src/auth/types';
 import Iconify from 'src/components/iconify';
 import { ACTION_ICONS } from 'src/theme/iconography';
 
@@ -168,7 +170,7 @@ export function useNavData() {
               ],
             },
           ]
-        : [
+        : filterAdminNavigation([
             {
               subheader: t('navigation.workspace'),
               items: [
@@ -279,7 +281,34 @@ export function useNavData() {
                 },
               ],
             },
-          ],
+            ...(hasAdminPermission(user, 'admin_users.manage')
+              ? [
+                  {
+                    subheader: t('navigation.systemManagement'),
+                    items: [
+                      {
+                        title: t('navigation.adminUsers'),
+                        path: paths.dashboard.adminUsers,
+                        icon: <Iconify icon="solar:shield-user-bold-duotone" />,
+                      },
+                    ],
+                  },
+                ]
+              : []),
+          ], user),
     [isPartnerPortal, t, user]
   );
+}
+
+function filterAdminNavigation<
+  T extends { items: Array<{ path: string }>; subheader: string },
+>(sections: T[], user: AuthSessionUser | null | undefined): T[] {
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) =>
+        hasAdminPermission(user, requiredAdminPermissionForPath(item.path))
+      ),
+    }))
+    .filter((section) => section.items.length > 0) as T[];
 }

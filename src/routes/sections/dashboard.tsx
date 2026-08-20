@@ -3,7 +3,12 @@ import { Navigate, Outlet } from 'react-router-dom';
 import DashboardLayout from 'src/layouts/dashboard';
 import { LoadingScreen } from 'src/components/loading-screen';
 import { paths } from 'src/routes/paths';
-import { AuthGuard, RoleRouteGuard } from 'src/auth/guard';
+import {
+  AdminPathAccessGuard,
+  AdminPermissionRouteGuard,
+  AuthGuard,
+  RoleRouteGuard,
+} from 'src/auth/guard';
 
 const DashboardNotFoundPage = lazy(() => import('src/pages/dashboard/404'));
 const DashboardServerErrorPage = lazy(() => import('src/pages/dashboard/500'));
@@ -21,6 +26,7 @@ const CryptoOperationsAdmin = lazy(() => import('src/pages/dashboard/crypto-oper
 const VaRequestManagementPage = lazy(() => import('src/pages/dashboard/va-request-management'));
 const VaRequestReviewPage = lazy(() => import('src/pages/dashboard/va-request-review'));
 const ReconciliationPage = lazy(() => import('src/pages/reconciliation'));
+const AdminUsersPage = lazy(() => import('src/pages/dashboard/admin-users'));
 
 export const dashboardRoutes = [
   {
@@ -30,7 +36,9 @@ export const dashboardRoutes = [
         <RoleRouteGuard roles={['admin']}>
           <DashboardLayout>
             <Suspense fallback={<LoadingScreen />}>
-              <Outlet />
+              <AdminPathAccessGuard>
+                <Outlet />
+              </AdminPathAccessGuard>
             </Suspense>
           </DashboardLayout>
         </RoleRouteGuard>
@@ -41,6 +49,14 @@ export const dashboardRoutes = [
       { path: '404', element: <DashboardNotFoundPage /> },
       { path: '500', element: <DashboardServerErrorPage /> },
       { path: 'overview', element: <CoreOverview /> },
+      {
+        path: 'admin-users',
+        element: (
+          <AdminPermissionRouteGuard permission="admin_users.manage">
+            <AdminUsersPage />
+          </AdminPermissionRouteGuard>
+        ),
+      },
       {
         path: 'customers',
         children: [

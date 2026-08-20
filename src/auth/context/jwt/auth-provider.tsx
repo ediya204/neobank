@@ -113,7 +113,17 @@ function localDemoUser(): AuthSessionUser | null {
           'credentials.reveal',
           'notifications.read',
         ]
-      : [],
+      : [
+          'admin_users.manage',
+          'customers.read',
+          'customers.review',
+          'funds.read',
+          'funds.manage',
+          'settings.manage',
+          'reports.read',
+        ],
+    accessRole: partner ? null : 'super_admin',
+    coreUserId: partner ? null : id,
   };
 }
 

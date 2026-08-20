@@ -128,8 +128,64 @@ async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<R
 
 type ApplicationSessionPayload = {
   csrf_token?: unknown;
-  user?: { id?: unknown; email?: unknown; role?: unknown };
+  user?: {
+    id?: unknown;
+    core_user_id?: unknown;
+    email?: unknown;
+    role?: unknown;
+    access_role?: unknown;
+    permissions?: unknown;
+  };
 };
+
+const ADMIN_PERMISSIONS = {
+  users: 'admin_users.manage',
+  customerRead: 'customers.read',
+  customerReview: 'customers.review',
+  fundsRead: 'funds.read',
+  fundsManage: 'funds.manage',
+  settings: 'settings.manage',
+  reports: 'reports.read',
+} as const;
+
+function requiredAdminCorePermission(pathname: string, method: string): string | null {
+  const readOnly = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+  if (pathname === '/api/core/customers' || pathname.startsWith('/api/core/customers/')) {
+    return readOnly ? ADMIN_PERMISSIONS.customerRead : ADMIN_PERMISSIONS.customerReview;
+  }
+  if (
+    pathname === '/api/core/virtual-account-requests' ||
+    pathname.startsWith('/api/core/virtual-account-requests/')
+  ) {
+    return readOnly ? ADMIN_PERMISSIONS.customerRead : ADMIN_PERMISSIONS.customerReview;
+  }
+  if (
+    pathname === '/api/core/funding-channels' ||
+    pathname.startsWith('/api/core/funding-channels/') ||
+    pathname === '/api/core/rates' ||
+    pathname.startsWith('/api/core/rates/') ||
+    pathname === '/api/core/withdrawal-fees' ||
+    pathname.startsWith('/api/core/withdrawal-fees/')
+  ) {
+    return readOnly ? ADMIN_PERMISSIONS.fundsRead : ADMIN_PERMISSIONS.settings;
+  }
+  if (
+    pathname === '/api/core/accounts' ||
+    pathname.startsWith('/api/core/accounts/') ||
+    pathname === '/api/core/operations' ||
+    pathname.startsWith('/api/core/operations/') ||
+    pathname === '/api/core/crypto-wallets' ||
+    pathname.startsWith('/api/core/crypto-wallets/') ||
+    pathname === '/api/core/beneficiaries' ||
+    pathname.startsWith('/api/core/beneficiaries/')
+  ) {
+    return readOnly ? ADMIN_PERMISSIONS.fundsRead : ADMIN_PERMISSIONS.fundsManage;
+  }
+  if (pathname === '/api/core/ledger' || pathname.startsWith('/api/core/ledger/')) {
+    return ADMIN_PERMISSIONS.reports;
+  }
+  return null;
+}
 
 type LiveMarketQuote = {
   provider: 'fastforex';
@@ -268,7 +324,15 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
   const session = await loadApplicationSession(request, env);
   const role = typeof session?.user?.role === 'string' ? session.user.role : '';
   const userId = typeof session?.user?.id === 'string' ? session.user.id : '';
+  const coreUserId =
+    typeof session?.user?.core_user_id === 'string' ? session.user.core_user_id : '';
   const email = typeof session?.user?.email === 'string' ? session.user.email : '';
+  const sessionPermissions = session?.user?.permissions;
+  const permissions = Array.isArray(sessionPermissions)
+    ? sessionPermissions.filter(
+        (permission): permission is string => typeof permission === 'string'
+      )
+    : [];
   if (!email || (role !== 'admin' && role !== 'customer')) {
     return json({ error: { code: 'authentication_required' } }, 401);
   }
@@ -278,6 +342,16 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
       !customerCoreRouteAllowed(incoming, request.method, userId, env.CORE_ORGANIZATION_ID))
   ) {
     return json({ error: { code: 'customer_core_route_forbidden' } }, 403);
+  }
+  if (role === 'admin') {
+    if (!coreUserId) {
+      return json({ error: { code: 'admin_identity_incomplete' } }, 401);
+    }
+    const requiredPermission = requiredAdminCorePermission(incoming.pathname, request.method);
+    const isSuperAdmin = permissions.includes(ADMIN_PERMISSIONS.users);
+    if ((!requiredPermission && !isSuperAdmin) || (requiredPermission && !permissions.includes(requiredPermission))) {
+      return json({ error: { code: 'admin_permission_required' } }, 403);
+    }
   }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
     const expected = typeof session?.csrf_token === 'string' ? session.csrf_token : '';
@@ -392,7 +466,8 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const identity = role === 'customer' ? `customer:${userId}:${email}` : `admin:${email}`;
+  const identity =
+    role === 'customer' ? `customer:${userId}:${email}` : `admin:${coreUserId}:${email}`;
   const canonical = [
     timestamp,
     request.method,

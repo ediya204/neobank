@@ -106,3 +106,43 @@ test('authenticates canonical JSON when the reverse proxy preserves different fo
 
   assert.equal(nextCalled, true);
 });
+
+test('propagates the signed administrator Core identity instead of the shared fallback', () => {
+  const identity = 'admin:usr_backoffice:backoffice@sscdigitalbank.com';
+  const signedRequest = signed({
+    identity,
+    requestTarget: '/api/v1/customers',
+    method: 'GET',
+    body: Buffer.alloc(0),
+    timestamp: String(Math.floor(Date.now() / 1000)),
+  });
+  const request = {
+    body: undefined,
+    headers: {
+      'x-neobank-user': identity,
+      'x-core-edge-timestamp': signedRequest.timestamp,
+      'x-core-edge-signature': signedRequest.signature,
+    },
+    method: 'GET',
+    originalUrl: '/api/v1/customers',
+    rawBody: Buffer.alloc(0),
+    header(name) {
+      return this.headers[name.toLowerCase()];
+    },
+  };
+  let nextCalled = false;
+  const response = {
+    status() {
+      assert.fail('the signed administrator identity should be accepted');
+    },
+  };
+
+  edgeAuthMiddleware({ adminUserId: 'shared-admin', secret })(request, response, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(request.headers['x-user-id'], 'usr_backoffice');
+  assert.equal(request.headers['x-authenticated-email'], 'backoffice@sscdigitalbank.com');
+  assert.equal(request.headers['x-authenticated-role'], 'admin');
+});

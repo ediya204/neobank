@@ -34,8 +34,10 @@ const (
 type adminSession struct {
 	ID                string
 	UserID            string
+	CoreUserID        string
 	Email             string
 	DisplayName       string
+	AccessRole        string
 	CSRFHash          string
 	CredentialVersion int64
 	ExpiresAt         time.Time
@@ -88,14 +90,16 @@ func (app *application) createAdminSetupToken(w http.ResponseWriter, r *http.Req
 	}
 	now := time.Now().UTC()
 	nowText := databaseTimestamp(now)
-	rows, err := app.db.Query(r.Context(), `SELECT id, setup_completed_at FROM admin_users WHERE LOWER(email)=?`, email)
+	rows, err := app.db.Query(r.Context(), `SELECT id, setup_completed_at, core_user_id, access_role FROM admin_users WHERE LOWER(email)=?`, email)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
 	userID := randomID("admin")
+	coreUserID := ""
 	if len(rows) == 1 {
 		userID = text(rows[0]["id"])
+		coreUserID = text(rows[0]["core_user_id"])
 		if input.Purpose != "credential_reset" && text(rows[0]["setup_completed_at"]) != "" {
 			conflict(w, "setup_already_completed")
 			return
@@ -104,8 +108,28 @@ func (app *application) createAdminSetupToken(w http.ResponseWriter, r *http.Req
 	token := randomToken(32)
 	statements := []d1.Statement{}
 	if len(rows) == 0 {
+		coreRows, coreErr := app.db.Query(r.Context(), `SELECT id, role FROM "User" WHERE LOWER(email)=?`, email)
+		if coreErr != nil {
+			databaseError(app, w, coreErr)
+			return
+		}
+		coreUserID = userID
+		if len(coreRows) == 1 {
+			if text(coreRows[0]["role"]) != "ADMIN" {
+				conflict(w, "core_identity_conflict")
+				return
+			}
+			coreUserID = text(coreRows[0]["id"])
+		} else {
+			statements = append(statements, d1.Statement{SQL: `INSERT INTO "User"
+			  (id, "organizationId", email, "displayName", role, active, "createdAt", "updatedAt")
+			  VALUES (?, ?, ?, ?, 'ADMIN', TRUE, ?::timestamptz, ?::timestamptz)`, Params: []any{
+				coreUserID, app.coreOrganizationID, email, displayName, nowText, nowText,
+			}})
+		}
 		statements = append(statements, d1.Statement{SQL: `INSERT INTO admin_users
-		  (id, email, display_name, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)`, Params: []any{userID, email, displayName, nowText, nowText}})
+		  (id, core_user_id, email, display_name, access_role, status, version, created_at, updated_at)
+		  VALUES (?, ?, ?, ?, 'super_admin', 'active', 1, ?, ?)`, Params: []any{userID, coreUserID, email, displayName, nowText, nowText}})
 	}
 	statements = append(statements,
 		d1.Statement{SQL: `UPDATE admin_setup_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL`, Params: []any{nowText, userID}},
@@ -273,12 +297,12 @@ func (app *application) verifyAdminTOTP(w http.ResponseWriter, r *http.Request) 
 	var rows []map[string]any
 	var err error
 	if enrollment {
-		rows, err = app.db.Query(r.Context(), `SELECT id, email, display_name, totp_secret_ciphertext, totp_last_counter, credential_version
+		rows, err = app.db.Query(r.Context(), `SELECT id, core_user_id, email, display_name, access_role, totp_secret_ciphertext, totp_last_counter, credential_version
 		  FROM admin_users WHERE enrollment_token_hash=? AND enrollment_expires_at>? AND status='active' AND totp_enabled=FALSE`, tokenHash(input.EnrollmentToken), nowText)
 	} else {
 		results, batchErr := app.db.Batch(r.Context(),
 			d1.Statement{SQL: `UPDATE admin_login_challenges SET attempts=attempts+1 WHERE token_hash=? AND consumed_at IS NULL AND expires_at>? AND attempts<?`, Params: []any{tokenHash(input.ChallengeID), nowText, adminMaxAttempts}},
-			d1.Statement{SQL: `SELECT u.id, u.email, u.display_name, u.totp_secret_ciphertext, u.totp_last_counter,
+			d1.Statement{SQL: `SELECT u.id, u.core_user_id, u.email, u.display_name, u.access_role, u.totp_secret_ciphertext, u.totp_last_counter,
 			  u.credential_version, c.id AS challenge_row_id FROM admin_login_challenges c JOIN admin_users u ON u.id=c.user_id
 			  WHERE c.token_hash=? AND c.consumed_at IS NULL AND c.expires_at>? AND c.attempts BETWEEN 1 AND ?
 			    AND c.credential_version=u.credential_version AND u.status='active' AND u.totp_enabled=TRUE`, Params: []any{tokenHash(input.ChallengeID), nowText, adminMaxAttempts}},
@@ -341,9 +365,7 @@ func (app *application) adminSessionInfo(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "session_expired"}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"csrf_token": csrf, "user": map[string]any{
-		"id": session.UserID, "email": session.Email, "display_name": session.DisplayName, "role": "admin", "permissions": []string{},
-	}})
+	writeJSON(w, http.StatusOK, map[string]any{"csrf_token": csrf, "user": adminSessionUser(session)})
 }
 
 func (app *application) adminLogout(w http.ResponseWriter, r *http.Request) {
@@ -392,7 +414,7 @@ func (app *application) loadAdminSession(r *http.Request) (*adminSession, string
 	}
 	now := time.Now().UTC()
 	rows, err := app.db.Query(r.Context(), `SELECT s.id, s.user_id, s.csrf_hash, s.credential_version, s.expires_at, s.last_seen_at,
-	  u.email, u.display_name, u.credential_version AS current_credential_version
+	  u.core_user_id, u.email, u.display_name, u.access_role, u.credential_version AS current_credential_version
 	  FROM admin_sessions s JOIN admin_users u ON u.id=s.user_id
 	  WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND s.idle_expires_at>?
 	    AND u.status='active' AND u.totp_enabled=TRUE`, tokenHash(cookie.Value), databaseTimestamp(now), databaseTimestamp(now))
@@ -411,7 +433,11 @@ func (app *application) loadAdminSession(r *http.Request) (*adminSession, string
 	if err != nil || lastSeen.After(now.Add(30*time.Second)) {
 		return nil, "", errors.New("session last seen invalid")
 	}
-	session := &adminSession{ID: text(rows[0]["id"]), UserID: text(rows[0]["user_id"]), Email: text(rows[0]["email"]), DisplayName: text(rows[0]["display_name"]), CSRFHash: text(rows[0]["csrf_hash"]), CredentialVersion: integer(rows[0]["credential_version"]), ExpiresAt: expires}
+	session := &adminSession{
+		ID: text(rows[0]["id"]), UserID: text(rows[0]["user_id"]), CoreUserID: text(rows[0]["core_user_id"]),
+		Email: text(rows[0]["email"]), DisplayName: text(rows[0]["display_name"]), AccessRole: text(rows[0]["access_role"]),
+		CSRFHash: text(rows[0]["csrf_hash"]), CredentialVersion: integer(rows[0]["credential_version"]), ExpiresAt: expires,
+	}
 	if now.Sub(lastSeen) < sessionTouchInterval {
 		return session, csrfCookie.Value, nil
 	}
@@ -535,5 +561,10 @@ func (app *application) clearAdminCookies(w http.ResponseWriter) {
 }
 
 func adminUser(row map[string]any) map[string]any {
-	return map[string]any{"id": text(row["id"]), "email": text(row["email"]), "display_name": text(row["display_name"]), "role": "admin", "permissions": []string{}}
+	accessRole := text(row["access_role"])
+	return map[string]any{
+		"id": text(row["id"]), "core_user_id": text(row["core_user_id"]), "email": text(row["email"]),
+		"display_name": text(row["display_name"]), "role": "admin", "access_role": accessRole,
+		"permissions": adminPermissions(accessRole),
+	}
 }

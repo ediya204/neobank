@@ -102,9 +102,21 @@ export function edgeAuthMiddleware(options: { adminUserId: string; secret: strin
       request.headers['x-authenticated-email'] = email;
     } else {
       request.headers['x-authenticated-role'] = 'admin';
-      request.headers['x-authenticated-email'] = identity.startsWith('admin:')
-        ? identity.slice('admin:'.length)
-        : identity;
+      if (identity.startsWith('admin:')) {
+        const separator = identity.indexOf(':', 'admin:'.length);
+        const userId = separator > 0 ? identity.slice('admin:'.length, separator) : '';
+        const email = separator > 0 ? identity.slice(separator + 1) : '';
+        if (!userId || !email || userId.length > 128 || email.length > 320) {
+          response.status(401).json({ error: { code: 'unauthorized_edge_request' } });
+          return;
+        }
+        request.headers['x-user-id'] = userId;
+        request.headers['x-authenticated-email'] = email;
+      } else {
+        // Compatibility for the existing signed edge identity during the
+        // staged Core -> auth API -> web Worker rollout.
+        request.headers['x-authenticated-email'] = identity;
+      }
     }
     next();
   };
