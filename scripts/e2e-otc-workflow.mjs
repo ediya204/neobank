@@ -12,6 +12,10 @@ function assert(condition, message) {
   console.log(`PASS ${message}`);
 }
 
+function amountsEqual(actual, expected) {
+  return Math.abs(Number(actual) - Number(expected)) < 1e-8;
+}
+
 async function request(path, userId, init = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
@@ -95,8 +99,10 @@ assert(
   'confirmed OTC atomically consumes the USD source amount'
 );
 assert(
-  Number(targetAfter.availableBalance) ===
-    Number(target.availableBalance) + Number(completed.quoteAmount),
+  amountsEqual(
+    targetAfter.availableBalance,
+    Number(target.availableBalance) + Number(completed.quoteAmount)
+  ),
   'confirmed OTC credits the quoted USDT amount'
 );
 assert(

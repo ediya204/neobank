@@ -124,15 +124,7 @@ const fullAdminWalletRoutes = [
       { path: 'money/accounts', element: <CustomerAccounts /> },
       { path: 'money/transfers', element: <FundsHub /> },
       { path: 'money/deposit', element: <FiatDepositPage /> },
-      {
-        path: 'money/fx',
-        element: (
-          <CustomerActionPage
-            action="fx"
-            submissionDisabledReason="当前版本仅展示账户与历史记录，客户主动换汇暂未开放。"
-          />
-        ),
-      },
+      { path: 'money/fx', element: <CustomerActionPage action="fx" /> },
       {
         path: 'money/otc',
         element: <CustomerActionPage action="otc" />,

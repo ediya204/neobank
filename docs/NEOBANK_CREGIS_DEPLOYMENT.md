@@ -77,6 +77,12 @@ Neobank workspace reads and closes its session through the scoped endpoints:
 must not use the shared compatibility endpoints for a role-specific workspace,
 because a shared endpoint cannot identify which workspace the current tab intends
 to open.
+The `/admin/login` and `/customer/login` shells render before their scoped `me`
+request completes. That initial session read is a background check: an ordinary
+unauthenticated response must not block the login form, while a validated existing
+same-role session redirects to its workspace after the check finishes. Protected
+workspace routes continue to wait for validation. A stale background result must
+not overwrite a newer successful login or clear its CSRF token.
 For `/api/core/*`, the browser also sends `X-Neobank-Session-Role` from the current
 Admin or customer route. The Worker accepts only `admin` or `customer` and uses it
 solely to select the corresponding server-validated session endpoint; the header

@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CustomersService } from '../dist/src/customers/customers.service.js';
-import { syncNeobankCustomers } from '../dist/src/customers/neobank-customer-sync.js';
+import {
+  ensureCustomerCryptoWalletMirror,
+  syncNeobankCustomers,
+} from '../dist/src/customers/neobank-customer-sync.js';
+
+const verifiedTronAddress = 'TXsmKpEuW7qWnXzJLGP9eDLvWPR2GRn1FS';
 
 test('PostgreSQL customer sync preserves business profile and original creation time', async () => {
   let upsert;
@@ -80,8 +85,12 @@ test('PostgreSQL customer sync automatically assigns standard fiat accounts afte
     residence_country: 'HK',
     status: 'active',
   };
+  let sourceQuery = 0;
   const db = {
-    $queryRaw: async () => [activeCustomer],
+    $queryRaw: async () => {
+      sourceQuery += 1;
+      return sourceQuery % 2 === 1 ? [activeCustomer] : [];
+    },
     customer: {
       upsert: async (input) => customerUpserts.push(input),
     },
@@ -112,6 +121,165 @@ test('PostgreSQL customer sync automatically assigns standard fiat accounts afte
   );
   assert.ok(accountUpserts.every((input) => input.create.kind === 'SYSTEM_WALLET'));
   assert.ok(accountUpserts.every((input) => input.create.status === 'ACTIVE'));
+});
+
+test('PostgreSQL customer sync creates zero-balance Core mirrors for one verified Cregis wallet', async () => {
+  const accountCreates = [];
+  const walletCreates = [];
+  const activeCustomer = {
+    account_type: 'individual',
+    activated_at: '2026-08-19T02:03:04.000Z',
+    beneficial_owner_name: null,
+    beneficial_owner_ownership: null,
+    contact_name: null,
+    contact_role: null,
+    created_at: '2026-08-19T01:02:03.000Z',
+    customer_id: 'cus_verified_wallet',
+    date_of_birth: '1990-01-01',
+    display_name: 'Verified Wallet Customer',
+    email: 'wallet@example.test',
+    full_name: 'Verified Wallet Customer',
+    incorporation_country: null,
+    kyc_review_note: 'approved',
+    kyc_reviewed_at: '2026-08-19T02:00:00.000Z',
+    kyc_status: 'approved',
+    legal_name: null,
+    nationality: 'HK',
+    operations_status: 'active',
+    phone: '5550002',
+    phone_country_code: '+852',
+    registration_number: null,
+    residence_country: 'HK',
+    status: 'active',
+  };
+  let sourceQuery = 0;
+  const account = {
+    findMany: async () => [],
+    upsert: async ({ create }) => {
+      if (create.kind === 'CRYPTO_WALLET') accountCreates.push(create);
+      return { id: 'core-account', ...create };
+    },
+    update: async () => assert.fail('new account already has the verified address'),
+  };
+  const cryptoWallet = {
+    findUnique: async () => null,
+    upsert: async ({ create }) => {
+      walletCreates.push(create);
+      return { id: 'core-wallet', ...create };
+    },
+    update: async () => assert.fail('new wallet already has the verified address'),
+  };
+  await syncNeobankCustomers(
+    {
+      $queryRaw: async () => {
+        sourceQuery += 1;
+        return sourceQuery === 1
+          ? [activeCustomer]
+          : [
+              {
+                wallet_id: 'cregis-wallet',
+                customer_id: activeCustomer.customer_id,
+                address: verifiedTronAddress,
+              },
+            ];
+      },
+      customer: { upsert: async () => undefined },
+      account: { upsert: async () => undefined },
+      $transaction: async (callback) => callback({ account, cryptoWallet }),
+    },
+    { adminUserId: 'usr_admin', organizationId: 'org_neobank', tenantId: 'neobank' }
+  );
+
+  assert.equal(accountCreates.length, 1);
+  assert.equal(walletCreates.length, 1);
+  assert.equal(accountCreates[0].walletAddress, verifiedTronAddress);
+  assert.equal(walletCreates[0].walletAddress, verifiedTronAddress);
+  assert.equal(accountCreates[0].availableBalance, 0);
+  assert.equal(walletCreates[0].availableBalance, 0);
+});
+
+test('Core mirror sync rejects a conflicting existing wallet binding without overwriting it', async () => {
+  let writes = 0;
+  await assert.rejects(
+    ensureCustomerCryptoWalletMirror(
+      {
+        account: {
+          findMany: async () => [
+            {
+              id: 'core-account',
+              customerId: 'cus_conflict',
+              kind: 'CRYPTO_WALLET',
+              status: 'ACTIVE',
+              currency: 'USDT',
+              network: 'TRON',
+              walletAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            },
+          ],
+          update: async () => {
+            writes += 1;
+          },
+        },
+        cryptoWallet: {
+          findUnique: async () => null,
+          upsert: async () => {
+            writes += 1;
+          },
+          update: async () => {
+            writes += 1;
+          },
+        },
+      },
+      { customerId: 'cus_conflict', address: verifiedTronAddress }
+    ),
+    /core_crypto_account_binding_conflict:cus_conflict/
+  );
+  assert.equal(writes, 0);
+});
+
+test('Core mirror sync rejects divergent materialized balances instead of reconciling silently', async () => {
+  let writes = 0;
+  await assert.rejects(
+    ensureCustomerCryptoWalletMirror(
+      {
+        account: {
+          findMany: async () => [
+            {
+              id: 'core-account',
+              customerId: 'cus_balance_conflict',
+              kind: 'CRYPTO_WALLET',
+              status: 'ACTIVE',
+              currency: 'USDT',
+              network: 'TRON',
+              walletAddress: verifiedTronAddress,
+              availableBalance: '10',
+              frozenBalance: '0',
+            },
+          ],
+          update: async () => {
+            writes += 1;
+          },
+        },
+        cryptoWallet: {
+          findUnique: async () => ({
+            id: 'core-wallet',
+            customerId: 'cus_balance_conflict',
+            asset: 'USDT',
+            network: 'TRON',
+            status: 'ACTIVE',
+            walletAddress: verifiedTronAddress,
+            availableBalance: '9',
+            frozenBalance: '0',
+          }),
+          update: async () => {
+            writes += 1;
+          },
+        },
+      },
+      { customerId: 'cus_balance_conflict', address: verifiedTronAddress }
+    ),
+    /core_crypto_wallet_balance_conflict:cus_balance_conflict/
+  );
+  assert.equal(writes, 0);
 });
 
 test('customer detail refreshes the PostgreSQL source customer before reading the Core view', async () => {

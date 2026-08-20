@@ -21,9 +21,29 @@ export function mergeLiveCustomerWallets(
     (account) =>
       account.status === 'ACTIVE' && isUsdtWallet(account) && isSupportedPortalAccount(account)
   );
+  const activeCoreWallets = detailAccounts.filter(
+    (account) =>
+      account.status === 'ACTIVE' && isUsdtWallet(account) && isSupportedPortalAccount(account)
+  );
   return [
     ...detailAccounts.filter((account) => account.kind !== 'CRYPTO_WALLET'),
-    ...activeLiveWallets,
+    ...activeCoreWallets.flatMap((coreWallet) => {
+      const liveWallet = activeLiveWallets.find(
+        (account) =>
+          account.customerId === coreWallet.customerId &&
+          account.currency === coreWallet.currency &&
+          account.network === coreWallet.network
+      );
+      if (!liveWallet) return [];
+      return [
+        {
+          ...coreWallet,
+          walletAddress: liveWallet.walletAddress,
+          availableBalance: liveWallet.availableBalance,
+          frozenBalance: liveWallet.frozenBalance,
+        },
+      ];
+    }),
   ];
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import {
   AuthFlowResult,
   AuthRole,
@@ -159,28 +159,33 @@ type Props = {
 
 export function AuthProvider({ children }: Props) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const latestSessionRequestRef = useRef(0);
 
   const refreshSession = useCallback(async (expectedRole?: AuthRole) => {
+    const requestId = latestSessionRequestRef.current + 1;
+    latestSessionRequestRef.current = requestId;
     const demoUser = localDemoUser();
     if (demoUser) {
-      dispatch({ type: Types.INITIAL, payload: { user: demoUser, sessionError: null } });
+      if (latestSessionRequestRef.current === requestId) {
+        dispatch({ type: Types.INITIAL, payload: { user: demoUser, sessionError: null } });
+      }
       return demoUser;
     }
-    const session = await getSession(
-      expectedRole || requiredRoleForPath(window.location.pathname) || undefined
-    );
-    setCsrfToken(session?.csrfToken);
-    dispatch({
-      type: Types.INITIAL,
-      payload: { user: session?.user || null, sessionError: null },
-    });
-    return session?.user || null;
-  }, []);
-
-  const initialize = useCallback(async () => {
     try {
-      await refreshSession();
+      const session = await getSession(
+        expectedRole || requiredRoleForPath(window.location.pathname) || undefined
+      );
+      if (latestSessionRequestRef.current !== requestId) return null;
+
+      setCsrfToken(session?.csrfToken);
+      dispatch({
+        type: Types.INITIAL,
+        payload: { user: session?.user || null, sessionError: null },
+      });
+      return session?.user || null;
     } catch (error) {
+      if (latestSessionRequestRef.current !== requestId) return null;
+
       dispatch({
         type: Types.INITIAL,
         payload: {
@@ -188,6 +193,15 @@ export function AuthProvider({ children }: Props) {
           sessionError: error instanceof Error ? error.message : 'session_unavailable',
         },
       });
+      throw error;
+    }
+  }, []);
+
+  const initialize = useCallback(async () => {
+    try {
+      await refreshSession();
+    } catch {
+      // refreshSession records the current request failure. Login routes remain usable.
     }
   }, [refreshSession]);
 
@@ -197,6 +211,7 @@ export function AuthProvider({ children }: Props) {
 
   useEffect(() => {
     const handleSessionExpired = () => {
+      latestSessionRequestRef.current += 1;
       clearCsrfToken();
       dispatch({ type: Types.LOGOUT });
     };
@@ -207,28 +222,52 @@ export function AuthProvider({ children }: Props) {
   const applyFlowResult = useCallback(async (result: AuthFlowResult, expectedRole: AuthRole) => {
     if (result.nextStep !== 'authenticated') return result;
 
+    const requestId = latestSessionRequestRef.current + 1;
+    latestSessionRequestRef.current = requestId;
+
     // The authentication response only establishes identity. Always refresh
     // the server-derived Partner membership and permissions before rendering.
-    const session = await getSession(expectedRole);
-    const user = session?.user || result.user || null;
-    const csrfToken = result.csrfToken || session?.csrfToken || null;
-    if (!user || !csrfToken) {
+    try {
+      const session = await getSession(expectedRole);
+      if (latestSessionRequestRef.current !== requestId) {
+        return { ...result, nextStep: 'unknown' as const };
+      }
+
+      const user = session?.user || result.user || null;
+      const csrfToken = result.csrfToken || session?.csrfToken || null;
+      if (!user || !csrfToken) {
+        dispatch({
+          type: Types.INITIAL,
+          payload: { user: null, sessionError: 'invalid_auth_response' },
+        });
+        return {
+          ...result,
+          nextStep: 'unknown' as const,
+        };
+      }
+
+      setCsrfToken(csrfToken);
+      dispatch({
+        type: Types.AUTHENTICATED,
+        payload: { user },
+      });
+
       return {
         ...result,
-        nextStep: 'unknown' as const,
+        user,
       };
+    } catch (error) {
+      if (latestSessionRequestRef.current === requestId) {
+        dispatch({
+          type: Types.INITIAL,
+          payload: {
+            user: null,
+            sessionError: error instanceof Error ? error.message : 'session_unavailable',
+          },
+        });
+      }
+      throw error;
     }
-
-    setCsrfToken(csrfToken);
-    dispatch({
-      type: Types.AUTHENTICATED,
-      payload: { user },
-    });
-
-    return {
-      ...result,
-      user,
-    };
   }, []);
 
   const login = useCallback(
@@ -257,6 +296,7 @@ export function AuthProvider({ children }: Props) {
 
   const logout = useCallback(
     async (expectedRole?: AuthRole) => {
+      latestSessionRequestRef.current += 1;
       if (localDemoUser()) {
         dispatch({ type: Types.LOGOUT });
         return;

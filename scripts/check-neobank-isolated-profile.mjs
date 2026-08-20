@@ -137,6 +137,7 @@ assert.match(router, /path: 'money\/transfers', element: <FundsHub \/>/);
 assert.match(router, /path: 'money\/deposit', element: <FiatDepositPage \/>/);
 assert.match(router, /path: 'money\/otc'/);
 assert.match(router, /path: 'money\/payouts'/);
+assert.doesNotMatch(router, /客户主动换汇暂未开放/);
 assert.doesNotMatch(router, /submissionDisabledReason="当前版本的 OTC/);
 assert.match(router, /submissionDisabledReason="当前版本暂未开放客户法币转出申请/);
 assert.match(router, /path: 'transactions', element: <CustomerActivity \/>/);

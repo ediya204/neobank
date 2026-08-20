@@ -143,7 +143,7 @@ test('customer OTC quote stays draft for five seconds without reserving funds', 
   assert.ok(expiresAt >= before + 4_900 && expiresAt <= Date.now() + 5_100);
 });
 
-test('OTC quote confirmation atomically completes without an approval step', async () => {
+test('OTC quote confirmation posts only Core ledger balances without approval or custody transfer', async () => {
   const expiresAt = new Date(Date.now() + 5_000).toISOString();
   const operation = {
     id: 'quote_confirm_test',

@@ -20,33 +20,52 @@ const account = (input: Partial<MoneyAccount>): MoneyAccount => ({
 const usd = account({ id: 'usd' });
 const hkdVa = account({ id: 'hkd-va', kind: 'VIRTUAL_ACCOUNT', currency: 'HKD' });
 const staleUsdt = account({
-  id: 'usdt',
+  id: 'core-usdt-account',
   kind: 'CRYPTO_WALLET',
   currency: 'USDT',
   network: 'TRON',
   availableBalance: '100',
   frozenBalance: '0',
 });
-const liveUsdt = { ...staleUsdt, availableBalance: '75', frozenBalance: '25' };
+const liveUsdt = {
+  ...staleUsdt,
+  id: 'custody-wallet',
+  walletAddress: 'TLiveWalletAddress',
+  availableBalance: '75',
+  frozenBalance: '25',
+};
 
 describe('OTC account selection', () => {
-  it('uses the live customer wallet instead of the stale Core mirror', () => {
+  it('uses live wallet balances while preserving the Core account identity', () => {
     expect(mergeLiveCustomerWallets([usd, hkdVa, staleUsdt], [liveUsdt])).toEqual([
       usd,
       hkdVa,
-      liveUsdt,
+      {
+        ...staleUsdt,
+        walletAddress: liveUsdt.walletAddress,
+        availableBalance: '75',
+        frozenBalance: '25',
+      },
     ]);
   });
 
+  it('does not offer a custody wallet that has no Core ledger account', () => {
+    expect(mergeLiveCustomerWallets([usd, hkdVa], [liveUsdt])).toEqual([usd, hkdVa]);
+  });
+
   it('limits buy-USDT flow to fiat sources and the USDT wallet target', () => {
-    const accounts = [usd, hkdVa, liveUsdt];
+    const accounts = mergeLiveCustomerWallets([usd, hkdVa, staleUsdt], [liveUsdt]);
     expect(otcSourceAccounts(accounts, 'BUY_USDT')).toEqual([usd, hkdVa]);
-    expect(otcTargetAccounts(accounts, 'BUY_USDT', usd.id)).toEqual([liveUsdt]);
+    expect(otcTargetAccounts(accounts, 'BUY_USDT', usd.id)).toEqual([
+      expect.objectContaining({ id: staleUsdt.id, availableBalance: '75' }),
+    ]);
   });
 
   it('limits sell-USDT flow to the wallet source and fiat targets', () => {
-    const accounts = [usd, hkdVa, liveUsdt];
-    expect(otcSourceAccounts(accounts, 'SELL_USDT')).toEqual([liveUsdt]);
-    expect(otcTargetAccounts(accounts, 'SELL_USDT', liveUsdt.id)).toEqual([usd, hkdVa]);
+    const accounts = mergeLiveCustomerWallets([usd, hkdVa, staleUsdt], [liveUsdt]);
+    expect(otcSourceAccounts(accounts, 'SELL_USDT')).toEqual([
+      expect.objectContaining({ id: staleUsdt.id, availableBalance: '75' }),
+    ]);
+    expect(otcTargetAccounts(accounts, 'SELL_USDT', staleUsdt.id)).toEqual([usd, hkdVa]);
   });
 });

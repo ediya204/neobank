@@ -1,5 +1,10 @@
 import { CustomerStatus, CustomerType, KycStatus, Prisma, PrismaClient } from '@prisma/client';
 import { supportedFiatCurrencies } from '../supported-assets';
+import { isValidTronAddress } from '../crypto-wallets/tron-address';
+
+const CREGIS_TRON_CHAIN_ID = '195';
+// Public TRON USDT contract address, not a credential.
+const CREGIS_USDT_TRC20_TOKEN_ID = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'; // gitleaks:allow
 
 type NeobankCustomer = {
   account_type: string | null;
@@ -28,6 +33,12 @@ type NeobankCustomer = {
   status: string;
 };
 
+type VerifiedCregisWallet = {
+  address: string;
+  customer_id: string;
+  wallet_id: string;
+};
+
 function date(value: string | null | undefined) {
   if (!value) return undefined;
   const parsed = new Date(value);
@@ -53,12 +64,141 @@ function coreKycStatus(value: string): KycStatus {
   return 'PENDING';
 }
 
+export async function ensureCustomerCryptoWalletMirror(
+  tx: Prisma.TransactionClient,
+  input: { customerId: string; address: string }
+) {
+  if (!isValidTronAddress(input.address)) {
+    throw new Error(`core_crypto_wallet_source_address_invalid:${input.customerId}`);
+  }
+
+  const [matchingAccounts, existingWallet] = await Promise.all([
+    tx.account.findMany({
+      where: {
+        customerId: input.customerId,
+        kind: 'CRYPTO_WALLET',
+        currency: 'USDT',
+        network: 'TRON',
+      },
+    }),
+    tx.cryptoWallet.findUnique({
+      where: {
+        customerId_asset_network: {
+          customerId: input.customerId,
+          asset: 'USDT',
+          network: 'TRON',
+        },
+      },
+    }),
+  ]);
+  if (matchingAccounts.length > 1) {
+    throw new Error(`core_crypto_account_conflict:${input.customerId}`);
+  }
+
+  if (
+    existingWallet &&
+    (existingWallet.customerId !== input.customerId ||
+      existingWallet.asset !== 'USDT' ||
+      existingWallet.network !== 'TRON' ||
+      existingWallet.status !== 'ACTIVE' ||
+      (existingWallet.walletAddress && existingWallet.walletAddress !== input.address))
+  ) {
+    throw new Error(`core_crypto_wallet_binding_conflict:${input.customerId}`);
+  }
+
+  const account =
+    matchingAccounts[0] ||
+    (await tx.account.upsert({
+      where: { accountNumber: `CRYPTO-${input.customerId}-USDT` },
+      update: {},
+      create: {
+        customerId: input.customerId,
+        kind: 'CRYPTO_WALLET',
+        status: 'ACTIVE',
+        currency: 'USDT',
+        name: 'USDT 钱包（Cregis TRON）',
+        accountNumber: `CRYPTO-${input.customerId}-USDT`,
+        walletAddress: input.address,
+        network: 'TRON',
+        availableBalance: existingWallet?.availableBalance || 0,
+        frozenBalance: existingWallet?.frozenBalance || 0,
+      },
+    }));
+  if (
+    account.customerId !== input.customerId ||
+    account.kind !== 'CRYPTO_WALLET' ||
+    account.status !== 'ACTIVE' ||
+    account.currency !== 'USDT' ||
+    account.network !== 'TRON' ||
+    (account.walletAddress && account.walletAddress !== input.address)
+  ) {
+    throw new Error(`core_crypto_account_binding_conflict:${input.customerId}`);
+  }
+  if (!account.walletAddress) {
+    await tx.account.update({
+      where: { id: account.id },
+      data: { walletAddress: input.address },
+    });
+  }
+
+  const wallet =
+    existingWallet ||
+    (await tx.cryptoWallet.upsert({
+      where: {
+        customerId_asset_network: {
+          customerId: input.customerId,
+          asset: 'USDT',
+          network: 'TRON',
+        },
+      },
+      update: {},
+      create: {
+        customerId: input.customerId,
+        asset: 'USDT',
+        network: 'TRON',
+        networkLabel: 'TRON (TRC20)',
+        tokenStandard: 'TRC20',
+        walletAddress: input.address,
+        status: 'ACTIVE',
+        availableBalance: account.availableBalance,
+        frozenBalance: account.frozenBalance,
+        confirmationsRequired: 20,
+      },
+    }));
+  if (
+    wallet.customerId !== input.customerId ||
+    wallet.asset !== 'USDT' ||
+    wallet.network !== 'TRON' ||
+    wallet.status !== 'ACTIVE' ||
+    (wallet.walletAddress && wallet.walletAddress !== input.address)
+  ) {
+    throw new Error(`core_crypto_wallet_binding_conflict:${input.customerId}`);
+  }
+  if (!wallet.walletAddress) {
+    await tx.cryptoWallet.update({
+      where: { id: wallet.id },
+      data: { walletAddress: input.address },
+    });
+  }
+  if (
+    !new Prisma.Decimal(account.availableBalance).equals(wallet.availableBalance) ||
+    !new Prisma.Decimal(account.frozenBalance).equals(wallet.frozenBalance)
+  ) {
+    throw new Error(`core_crypto_wallet_balance_conflict:${input.customerId}`);
+  }
+
+  return { accountId: account.id, walletId: wallet.id };
+}
+
 export async function syncNeobankCustomers(
   db: PrismaClient,
   input: { adminUserId: string; organizationId: string; tenantId: string; customerId?: string }
 ) {
   const customerFilter = input.customerId
     ? Prisma.sql`AND c.id = ${input.customerId}`
+    : Prisma.empty;
+  const walletCustomerFilter = input.customerId
+    ? Prisma.sql`AND w.customer_id = ${input.customerId}`
     : Prisma.empty;
   const customers = await db.$queryRaw<NeobankCustomer[]>(Prisma.sql`
     SELECT
@@ -93,6 +233,35 @@ export async function syncNeobankCustomers(
       ${customerFilter}
     ORDER BY c.created_at ASC
   `);
+
+  const hasActiveApprovedCustomer = customers.some(
+    (row) => coreStatus(row) === 'ACTIVE' && coreKycStatus(row.kyc_status) === 'APPROVED'
+  );
+  const verifiedWallets = hasActiveApprovedCustomer
+    ? await db.$queryRaw<VerifiedCregisWallet[]>(Prisma.sql`
+        SELECT
+          w.id AS wallet_id,
+          w.customer_id,
+          w.address
+        FROM cregis_wallets w
+        WHERE w.tenant_id = ${input.tenantId}
+          AND w.chain_id = ${CREGIS_TRON_CHAIN_ID}
+          AND w.token_id = ${CREGIS_USDT_TRC20_TOKEN_ID}
+          AND w.status = 'active'
+          AND w.custody_provider = 'cregis'
+          AND w.ownership_verified_at IS NOT NULL
+          AND w.address IS NOT NULL
+          AND w.address <> ''
+          ${walletCustomerFilter}
+        ORDER BY w.created_at ASC
+      `)
+    : [];
+  const walletsByCustomer = new Map<string, VerifiedCregisWallet[]>();
+  for (const wallet of verifiedWallets) {
+    const wallets = walletsByCustomer.get(wallet.customer_id) || [];
+    wallets.push(wallet);
+    walletsByCustomer.set(wallet.customer_id, wallets);
+  }
 
   for (const row of customers) {
     const type: CustomerType = row.account_type === 'business' ? 'BUSINESS' : 'INDIVIDUAL';
@@ -146,6 +315,18 @@ export async function syncNeobankCustomers(
             accountNumber: `WALLET-${row.customer_id}-${currency}`,
           },
         });
+      }
+      const verifiedCustomerWallets = walletsByCustomer.get(row.customer_id) || [];
+      if (verifiedCustomerWallets.length > 1) {
+        throw new Error(`core_crypto_wallet_source_conflict:${row.customer_id}`);
+      }
+      if (verifiedCustomerWallets.length === 1) {
+        await db.$transaction((tx) =>
+          ensureCustomerCryptoWalletMirror(tx, {
+            customerId: row.customer_id,
+            address: verifiedCustomerWallets[0].address,
+          })
+        );
       }
     }
   }

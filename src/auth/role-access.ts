@@ -154,6 +154,11 @@ export function getRoleSetup(role: AuthRole) {
   return ROLE_SETUP[role];
 }
 
+export function isNonBlockingSessionCheckPath(pathname: string) {
+  const normalizedPathname = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  return normalizedPathname === ROLE_LOGIN.admin || normalizedPathname === ROLE_LOGIN.customer;
+}
+
 export function requiredRoleForPath(
   pathname: string,
   neobankDeployment = IS_NEOBANK_DEPLOYMENT
