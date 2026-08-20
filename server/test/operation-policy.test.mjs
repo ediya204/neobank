@@ -66,6 +66,41 @@ test('manual OTC creation and approval stay closed until USDT uses one ledger', 
   );
 });
 
+test('deposit approval fails closed with an actionable error when clearing is missing', async () => {
+  let credited = false;
+  const operation = {
+    id: 'deposit_without_clearing',
+    type: 'DEPOSIT',
+    status: 'SUBMITTED',
+    currency: 'USD',
+    amount: new Prisma.Decimal('10'),
+    feeAmount: new Prisma.Decimal('0'),
+    targetAccountId: 'target_test',
+    makerId: maker.id,
+    metadata: null,
+    customer,
+  };
+  const service = new OperationsService({
+    $transaction: async (callback) =>
+      callback({
+        operation: { findUnique: async () => operation },
+        user: { findUnique: async () => maker },
+        account: {
+          findFirst: async () => null,
+          update: async () => {
+            credited = true;
+          },
+        },
+      }),
+  });
+
+  await assert.rejects(
+    service.approve(operation.id, maker.id),
+    /clearing_account_not_configured/
+  );
+  assert.equal(credited, false);
+});
+
 test('fiat deposit rejects a target account with a different currency', async () => {
   const target = {
     id: 'target_test',

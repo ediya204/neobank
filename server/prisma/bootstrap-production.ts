@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { ensureSystemLedgerAccounts } from '../src/accounts/system-ledger-accounts';
 import { syncNeobankCustomers } from '../src/customers/neobank-customer-sync';
 
 const db = new PrismaClient();
@@ -40,6 +41,11 @@ async function main() {
     },
   });
 
+  const systemLedgerAccounts = await db.$transaction(
+    (tx) => ensureSystemLedgerAccounts(tx),
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
+
   const importedCustomers = await syncNeobankCustomers(db, {
     adminUserId,
     organizationId,
@@ -49,6 +55,7 @@ async function main() {
   console.log(
     JSON.stringify({
       importedCustomers,
+      systemLedgerAccounts: systemLedgerAccounts.length,
       organizationId,
       adminUserId,
     })

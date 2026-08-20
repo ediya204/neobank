@@ -797,10 +797,12 @@ export class OperationsService {
     });
   }
 
-  private clearingAccount(tx: Prisma.TransactionClient, currency: Currency) {
-    return tx.account.findFirstOrThrow({
+  private async clearingAccount(tx: Prisma.TransactionClient, currency: Currency) {
+    const account = await tx.account.findFirst({
       where: { kind: 'PLATFORM_CLEARING', currency, status: 'ACTIVE' },
     });
+    if (!account) throw new ConflictException('clearing_account_not_configured');
+    return account;
   }
 
   private async freeze(tx: Prisma.TransactionClient, accountId: string, amount: Prisma.Decimal) {
