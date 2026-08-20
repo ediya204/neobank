@@ -147,10 +147,13 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 	}
 	fingerprint := app.registrationFingerprint(input)
 	existingSQL := `SELECT ca.application_reference, ca.request_fingerprint, ca.customer_id, ca.account_type,
+	    c.email_verified_at,
 	    0 AS has_sumsub_verification, '' AS sumsub_status
-	    FROM customer_applications ca WHERE ca.tenant_id=? AND ca.idempotency_key=?`
+	    FROM customer_applications ca JOIN customers c ON c.id=ca.customer_id AND c.tenant_id=ca.tenant_id
+	    WHERE ca.tenant_id=? AND ca.idempotency_key=?`
 	if app.sumsubSchemaReady {
 		existingSQL = `SELECT ca.application_reference, ca.request_fingerprint, ca.customer_id, ca.account_type,
+	      c.email_verified_at,
 	      CASE WHEN v.id IS NOT NULL AND c.kyc_status='pending' AND c.operations_status='pending' THEN 1 ELSE 0 END AS has_sumsub_verification,
 	      COALESCE(v.status, '') AS sumsub_status
 	      FROM customer_applications ca
@@ -169,8 +172,9 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		response := map[string]any{
-			"application_reference": text(existing[0]["application_reference"]),
-			"status":                "pending_review",
+			"application_reference":       text(existing[0]["application_reference"]),
+			"status":                      "pending_review",
+			"email_verification_required": text(existing[0]["email_verified_at"]) == "",
 		}
 		if app.sumsub != nil && text(existing[0]["account_type"]) == "individual" && integer(existing[0]["has_sumsub_verification"]) == 1 {
 			now := time.Now().UTC()
@@ -191,6 +195,10 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusAccepted, response)
 		return
 	}
+	if !app.emailNotifications || len(app.customerPasswordResetSecret) < 32 {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"code": "customer_email_verification_unavailable"}})
+		return
+	}
 
 	now := time.Now().UTC()
 	nowText := databaseTimestamp(now)
@@ -203,6 +211,10 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 	}
 	passwordSalt := randomBytes(16)
 	passwordHash := app.deriveCustomerArgon2id(input.Password, passwordSalt)
+	emailVerificationID := randomID("email_verify")
+	emailVerificationPayload := mustJSON(map[string]string{
+		"displayName": displayName, "verificationRequestId": emailVerificationID,
+	})
 	statements := []d1.Statement{
 		d1.Statement{SQL: `INSERT OR IGNORE INTO customers
 	      (id, tenant_id, email, display_name, status, kyc_status, operations_status, created_by, created_at, updated_at)
@@ -235,6 +247,22 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 			mustJSON(map[string]string{"application_reference": reference, "account_type": input.AccountType}),
 			nowText, applicationID, customerID, app.tenantID,
 		}},
+		d1.Statement{SQL: `INSERT INTO customer_email_verification_requests
+	      (id, customer_id, email_snapshot, credential_version, expires_at, request_ip_hash,
+	       user_agent_hash, created_at)
+	      SELECT ?, ?, ?, 1, ?, ?, ?, ?
+	      WHERE EXISTS (SELECT 1 FROM customers WHERE id=? AND tenant_id=? AND created_by='public_registration')`, Params: []any{
+			emailVerificationID, customerID, input.Email, databaseTimestamp(now.Add(customerEmailVerifyDuration)),
+			recoveryContextHash(r.Header.Get("X-Neobank-Source-IP-SHA256")),
+			recoveryContextHash(r.Header.Get("X-Neobank-User-Agent-SHA256")), nowText, customerID, app.tenantID,
+		}},
+		app.customerEmailOutboxStatement(emailVerificationID, customerID, "CUSTOMER_EMAIL_VERIFICATION", input.Email, emailVerificationPayload),
+		d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
+	      (id, customer_id, event_type, actor, metadata_json, created_at)
+	      SELECT ?, ?, 'auth.email_verification_requested', 'public_registration', '{}', ?
+	      WHERE EXISTS (SELECT 1 FROM customer_email_verification_requests WHERE id=?)`, Params: []any{
+			randomID("audit"), customerID, nowText, emailVerificationID,
+		}},
 	}
 	var onboardingToken string
 	var onboardingCSRFToken string
@@ -261,8 +289,9 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	response := map[string]any{
-		"application_reference": reference,
-		"status":                "pending_review",
+		"application_reference":       reference,
+		"status":                      "pending_review",
+		"email_verification_required": true,
 	}
 	if onboardingToken != "" {
 		app.setOnboardingSessionCookies(w, onboardingToken, onboardingCSRFToken, now.Add(onboardingSessionDuration))

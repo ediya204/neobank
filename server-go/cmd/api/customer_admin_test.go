@@ -241,6 +241,7 @@ func TestKYCApprovalAutomaticallyActivatesCustomerBeforeWalletProvisioning(t *te
 		"operations_status='pending'",
 		"password_hash IS NOT NULL",
 		"THEN 'active'",
+		"created_by<>'public_registration' OR email_verified_at IS NOT NULL",
 	} {
 		if !strings.Contains(approveCustomerKYCAutomationSQL, required) {
 			t.Fatalf("automatic KYC approval SQL must contain %q", required)
@@ -299,18 +300,23 @@ func TestSumsubApprovalGate(t *testing.T) {
 		level       string
 		environment string
 		configured  bool
+		syncStatus  string
+		stepsReady  bool
 		want        string
 	}{
 		{name: "legacy individual remains reviewable", account: "individual"},
 		{name: "business remains manual", account: "business", status: "provider_reviewing"},
-		{name: "ready", account: "individual", status: "ready_for_admin_review", level: "neobank_individual_v1", environment: "sandbox", configured: true},
-		{name: "steps incomplete", account: "individual", status: "provider_reviewing", level: "neobank_individual_v1", environment: "sandbox", configured: true, want: "sumsub_verification_not_ready"},
-		{name: "wrong level", account: "individual", status: "ready_for_admin_review", level: "other", environment: "sandbox", configured: true, want: "sumsub_configuration_mismatch"},
-		{name: "provider disabled", account: "individual", status: "ready_for_admin_review", level: "neobank_individual_v1", environment: "sandbox", want: "sumsub_configuration_mismatch"},
+		{name: "ready", account: "individual", status: "ready_for_admin_review", level: "neobank_individual_v1", environment: "sandbox", syncStatus: "completed", stepsReady: true, configured: true},
+		{name: "provider status incomplete", account: "individual", status: "provider_reviewing", level: "neobank_individual_v1", environment: "sandbox", syncStatus: "completed", stepsReady: true, configured: true, want: "sumsub_verification_not_ready"},
+		{name: "sync incomplete", account: "individual", status: "ready_for_admin_review", level: "neobank_individual_v1", environment: "sandbox", syncStatus: "pending", stepsReady: true, configured: true, want: "sumsub_verification_not_ready"},
+		{name: "steps incomplete", account: "individual", status: "ready_for_admin_review", level: "neobank_individual_v1", environment: "sandbox", syncStatus: "completed", configured: true, want: "sumsub_verification_not_ready"},
+		{name: "wrong level", account: "individual", status: "ready_for_admin_review", level: "other", environment: "sandbox", syncStatus: "completed", stepsReady: true, configured: true, want: "sumsub_configuration_mismatch"},
+		{name: "provider disabled", account: "individual", status: "ready_for_admin_review", level: "neobank_individual_v1", environment: "sandbox", syncStatus: "completed", stepsReady: true, want: "sumsub_configuration_mismatch"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got := sumsubApprovalBlockCode(test.account, test.status, test.level, test.environment,
+				test.syncStatus, test.stepsReady,
 				"neobank_individual_v1", "sandbox", test.configured)
 			if got != test.want {
 				t.Fatalf("block code = %q, want %q", got, test.want)

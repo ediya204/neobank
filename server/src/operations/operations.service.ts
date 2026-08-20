@@ -23,6 +23,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { requireActiveUser, requireOrganizationAccess } from '../common/tenant-access';
 import { PrismaService } from '../prisma/prisma.service';
+import { marketSourceTimestampsAreFresh } from '../rates/market-rate-freshness';
 import { isSupportedFiatCurrency, supportedCryptoNetwork } from '../supported-assets';
 import { WithdrawalFeesService } from '../withdrawal-fees/withdrawal-fees.service';
 
@@ -307,18 +308,11 @@ export class OperationsService {
             ) {
               throw new BadRequestException('live_market_quote_required');
             }
-            const fetchedAt = new Date(input.marketFetchedAt);
-            const updatedAt = new Date(input.marketUpdatedAt);
-            const now = Date.now();
-            if (
-              !Number.isFinite(fetchedAt.getTime()) ||
-              !Number.isFinite(updatedAt.getTime()) ||
-              fetchedAt.getTime() < now - 2 * 60 * 1000 ||
-              fetchedAt.getTime() > now + 30 * 1000 ||
-              updatedAt.getTime() > now + 30 * 1000
-            ) {
+            if (!marketSourceTimestampsAreFresh(input.marketFetchedAt, input.marketUpdatedAt)) {
               throw new ConflictException('live_market_quote_expired');
             }
+            const fetchedAt = new Date(input.marketFetchedAt);
+            const updatedAt = new Date(input.marketUpdatedAt);
             let marketRate: Prisma.Decimal;
             try {
               marketRate = new Prisma.Decimal(input.marketRate);

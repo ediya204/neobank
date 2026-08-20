@@ -28,6 +28,37 @@ const (
 
 var sumsubApplicantIDPattern = regexp.MustCompile(`^[0-9a-f]{24}$`)
 
+const claimAndQueueSumsubWebhookSQL = `WITH eligible_verification AS (
+  SELECT id FROM customer_kyc_verifications
+  WHERE id=? AND (applicant_id IS NULL OR applicant_id=?)
+), inserted_event AS (
+  INSERT INTO sumsub_webhook_events
+    (id, verification_id, event_type, payload_sha256, applicant_id, external_user_id,
+     sandbox_mode, occurred_at, received_at, processed_at)
+  SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?
+  FROM eligible_verification
+  ON CONFLICT (payload_sha256) DO NOTHING
+  RETURNING id
+), invalidated_verification AS (
+  UPDATE customer_kyc_verifications
+  SET applicant_id=COALESCE(applicant_id, ?),
+      status=CASE WHEN status='ready_for_admin_review' THEN 'provider_reviewing' ELSE status END,
+      last_event_at=?, updated_at=?, version=version+1
+  WHERE id=? AND (applicant_id IS NULL OR applicant_id=?)
+    AND EXISTS (SELECT 1 FROM inserted_event)
+  RETURNING id
+), queued_job AS (
+  INSERT INTO sumsub_sync_jobs
+    (id, verification_id, status, attempts, run_after, created_at, updated_at)
+  SELECT ?, ?, 'pending', 0, ?, ?, ?
+  FROM invalidated_verification
+  ON CONFLICT (verification_id) DO UPDATE
+  SET status='pending', attempts=0, run_after=excluded.run_after,
+      locked_at=NULL, last_error_code=NULL, updated_at=excluded.updated_at
+  RETURNING id
+)
+SELECT id FROM queued_job`
+
 type sumsubProvider interface {
 	LevelName() string
 	EnsureApplicant(context.Context, sumsubapi.ApplicantInput) (sumsubapi.Applicant, error)
@@ -461,41 +492,20 @@ func (app *application) sumsubWebhook(w http.ResponseWriter, r *http.Request) {
 	if occurredAt == "" {
 		occurredAt = payload.CreatedAt
 	}
-	providerStatus := webhookProviderStatus(payload)
-	rejectLabels := sumsubRejectLabelsJSON(payload.ReviewResult.RejectLabels)
-	statements := []d1.Statement{
-		d1.Statement{SQL: `INSERT OR IGNORE INTO sumsub_webhook_events
-		  (id, verification_id, event_type, payload_sha256, applicant_id, external_user_id,
-		   sandbox_mode, occurred_at, received_at, processed_at)
-		  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, Params: []any{
-			randomID("sumsub_event"), verificationID, safeWebhookText(payload.Type, 80), hex.EncodeToString(digest[:]),
-			payload.ApplicantID, payload.ExternalID, payload.SandboxMode, nullIfEmpty(safeWebhookText(occurredAt, 80)), nowText, nowText,
-		}},
-		d1.Statement{SQL: `UPDATE customer_kyc_verifications
-		  SET applicant_id=?, status=?, review_status=?, review_answer=?, review_reject_type=?,
-		      reject_labels_json=?, moderation_comment=?, client_comment=?, last_event_at=?, updated_at=?, version=version+1
-		  WHERE id=? AND (applicant_id IS NULL OR applicant_id=?)`, Params: []any{
-			payload.ApplicantID, providerStatus, nullIfEmpty(safeWebhookText(payload.ReviewStatus, 40)),
-			nullIfEmpty(safeWebhookText(payload.ReviewResult.ReviewAnswer, 16)),
-			nullIfEmpty(safeWebhookText(payload.ReviewResult.ReviewRejectType, 16)), rejectLabels,
-			nullIfEmpty(safeWebhookText(payload.ReviewResult.ModerationComment, 4000)),
-			nullIfEmpty(safeWebhookText(payload.ReviewResult.ClientComment, 4000)), nowText, nowText,
-			verificationID, payload.ApplicantID,
-		}},
-	}
-	statements = append(statements, sumsubWebhookStepStatements(verificationID, payload, nowText)...)
-	if providerStatus == "ready_for_admin_review" {
-		statements = append(statements, d1.Statement{SQL: `UPDATE sumsub_sync_jobs SET status='completed', locked_at=NULL,
-		  last_error_code=NULL, updated_at=? WHERE verification_id=?`, Params: []any{nowText, verificationID}})
-	} else {
-		statements = append(statements, sumsubSyncJobStatement(verificationID, nowText))
-	}
-	results, err := app.db.Batch(r.Context(), statements...)
-	if err != nil || len(results) != len(statements) {
-		if err == nil {
-			err = errors.New("unexpected Sumsub webhook database result")
-		}
+	claimed, err := app.db.Query(r.Context(), claimAndQueueSumsubWebhookSQL,
+		verificationID, payload.ApplicantID,
+		randomID("sumsub_event"), safeWebhookText(payload.Type, 80), hex.EncodeToString(digest[:]),
+		payload.ApplicantID, payload.ExternalID, payload.SandboxMode, nullIfEmpty(safeWebhookText(occurredAt, 80)), nowText, nowText,
+		payload.ApplicantID, nowText, nowText, verificationID, payload.ApplicantID,
+		randomID("sumsub_job"), verificationID, nowText, nowText, nowText)
+	if err != nil {
 		databaseError(app, w, err)
+		return
+	}
+	// A valid duplicate notification is deliberately a no-op. Only the first
+	// atomic claim invalidates readiness and queues an authoritative API sync.
+	if len(claimed) > 1 {
+		databaseError(app, w, errors.New("unexpected Sumsub webhook claim result"))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -518,43 +528,6 @@ func sumsubRejectLabelsJSON(labels []string) string {
 		return "[]"
 	}
 	return string(encoded)
-}
-
-func webhookProviderStatus(payload sumsubWebhookPayload) string {
-	if payload.ReviewStatus == "completed" && payload.ReviewResult.ReviewAnswer == "RED" {
-		if payload.ReviewResult.ReviewRejectType == "RETRY" {
-			return "resubmission_required"
-		}
-		return "provider_rejected"
-	}
-	if payload.ReviewStatus == "init" || payload.Type == "applicantCreated" {
-		return "awaiting_applicant"
-	}
-	if payload.Type == "applicantReviewed" && payload.ReviewStatus == "completed" &&
-		payload.ReviewResult.ReviewAnswer == "GREEN" {
-		return "ready_for_admin_review"
-	}
-	return "provider_reviewing"
-}
-
-func sumsubWebhookStepStatements(verificationID string, payload sumsubWebhookPayload, nowText string) []d1.Statement {
-	if webhookProviderStatus(payload) != "ready_for_admin_review" {
-		return nil
-	}
-	documentTypes := map[string]string{"IDENTITY": "PASSPORT", "SELFIE": "SELFIE"}
-	statements := make([]d1.Statement, 0, 3)
-	for _, stepType := range []string{"IDENTITY", "SELFIE", "PROOF_OF_RESIDENCE"} {
-		statements = append(statements, d1.Statement{SQL: `INSERT INTO customer_kyc_steps
-		  (verification_id, step_type, review_answer, review_reject_type, document_type, document_country,
-		   reject_labels_json, moderation_comment, client_comment, updated_at)
-		  VALUES (?, ?, 'GREEN', NULL, ?, NULL, '[]', NULL, NULL, ?)
-		  ON CONFLICT(verification_id, step_type) DO UPDATE SET review_answer='GREEN',
-		    review_reject_type=NULL, document_type=COALESCE(excluded.document_type, customer_kyc_steps.document_type),
-		    reject_labels_json='[]', moderation_comment=NULL, client_comment=NULL, updated_at=excluded.updated_at`, Params: []any{
-			verificationID, stepType, nullIfEmpty(documentTypes[stepType]), nowText,
-		}})
-	}
-	return statements
 }
 
 func sumsubSyncJobStatement(verificationID, nowText string) d1.Statement {

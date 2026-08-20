@@ -530,7 +530,8 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 	      cc.password_algorithm, cc.password_iterations, cc.password_memory_kib, cc.password_time_cost,
 	      cc.password_parallelism, cc.credential_version, cc.failed_attempts, cc.locked_until
 	    FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
-		    WHERE c.tenant_id=? AND c.email=? AND c.kyc_status='approved' AND c.operations_status='active'`, app.tenantID, email)
+		    WHERE c.tenant_id=? AND c.email=? AND c.kyc_status='approved' AND c.operations_status='active'
+	      AND (c.created_by<>'public_registration' OR c.email_verified_at IS NOT NULL)`, app.tenantID, email)
 	if err != nil {
 		databaseError(app, w, err)
 		return

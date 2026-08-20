@@ -177,6 +177,7 @@ type ApplicationSessionPayload = {
     role?: unknown;
     access_role?: unknown;
     permissions?: unknown;
+    totp_enabled?: unknown;
   };
 };
 
@@ -227,6 +228,13 @@ function requiredAdminCorePermission(pathname: string, method: string): string |
     return ADMIN_PERMISSIONS.reports;
   }
   return null;
+}
+
+function isDisabledAdminCustomerLifecycleMutation(pathname: string, method: string) {
+  return (
+    (method === 'POST' && pathname === '/api/core/customers') ||
+    (method === 'PATCH' && /^\/api\/core\/customers\/[^/]+\/(kyc|approve|reject)$/.test(pathname))
+  );
 }
 
 type LiveMarketQuote = {
@@ -432,13 +440,27 @@ const CUSTOMER_CORE_INTERNAL_FIELDS = new Set([
   'operator',
 ]);
 
-function redactCustomerCorePayload(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactCustomerCorePayload);
+function redactCustomerCorePayload(value: unknown, customerId: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => redactCustomerCorePayload(item, customerId));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .filter(([key]) => !CUSTOMER_CORE_INTERNAL_FIELDS.has(key))
-      .map(([key, item]) => [key, redactCustomerCorePayload(item)])
+      .map(([key, item]) => {
+        if (key === 'targetAccount' && item && typeof item === 'object') {
+          const account = item as Record<string, unknown>;
+          if (account.customerId !== customerId) {
+            return [
+              key,
+              {
+                kind: account.kind,
+                currency: account.currency,
+              },
+            ];
+          }
+        }
+        return [key, redactCustomerCorePayload(item, customerId)];
+      })
   );
 }
 
@@ -504,6 +526,9 @@ async function proxyCoreAPI(
     if (!coreUserId) {
       return json({ error: { code: 'admin_identity_incomplete' } }, 401);
     }
+    if (isDisabledAdminCustomerLifecycleMutation(incoming.pathname, request.method)) {
+      return json({ error: { code: 'customer_lifecycle_requires_go_kyc' } }, 403);
+    }
     const requiredPermission = requiredAdminCorePermission(incoming.pathname, request.method);
     const isSuperAdmin = permissions.includes(ADMIN_PERMISSIONS.users);
     if (
@@ -512,6 +537,14 @@ async function proxyCoreAPI(
     ) {
       return json({ error: { code: 'admin_permission_required' } }, 403);
     }
+  }
+  if (
+    role === 'customer' &&
+    request.method === 'POST' &&
+    /^\/api\/core\/operations\/[^/]+\/confirm$/.test(incoming.pathname) &&
+    session?.user?.totp_enabled !== true
+  ) {
+    return json({ error: { code: 'customer_totp_required' } }, 403);
   }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
     const expected = typeof session?.csrf_token === 'string' ? session.csrf_token : '';
@@ -876,7 +909,7 @@ async function proxyCoreAPI(
   if (role === 'customer' && response.ok) {
     const payload = await response.json().catch(() => null);
     if (payload === null) return json({ error: { code: 'invalid_core_response' } }, 502);
-    return json(redactCustomerCorePayload(payload), response.status);
+    return json(redactCustomerCorePayload(payload, userId), response.status);
   }
   return new Response(response.body, {
     status: response.status,

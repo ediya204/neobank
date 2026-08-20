@@ -65,23 +65,35 @@ func TestCustomerRegistrationPersistsPendingApplicationAndPasswordCredential(t *
 		{Meta: map[string]any{"changes": float64(1)}},
 		{Meta: map[string]any{"changes": float64(1)}},
 		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
 	}}
 	app := &application{
-		db: db, tenantID: "tenant_test",
-		customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef"),
-		logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+		db: db, tenantID: "tenant_test", emailNotifications: true,
+		customerPasswordPepper:      []byte("0123456789abcdef0123456789abcdef"),
+		customerPasswordResetSecret: []byte("abcdef0123456789abcdef0123456789"),
+		logger:                      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	response := httptest.NewRecorder()
 	app.registerCustomer(response, registrationRequest(validIndividualRegistration()))
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body=%q", response.Code, response.Body.String())
 	}
-	if len(db.statements) != 4 {
-		t.Fatalf("statements = %d; want 4", len(db.statements))
+	if len(db.statements) != 7 {
+		t.Fatalf("statements = %d; want 7", len(db.statements))
 	}
-	combined := strings.ToLower(db.statements[0].SQL + db.statements[1].SQL + db.statements[2].SQL + db.statements[3].SQL)
+	combined := ""
+	for _, statement := range db.statements {
+		combined += strings.ToLower(statement.SQL)
+	}
 	if !strings.Contains(combined, "customer_credentials") || strings.Contains(combined, "cregis_") {
 		t.Fatal("public registration must create only the pending password credential and no wallet data")
+	}
+	if !strings.Contains(combined, "customer_email_verification_requests") ||
+		!strings.Contains(combined, `"emailoutbox"`) ||
+		!strings.Contains(strings.Join(anyStrings(db.statements[5].Params), " "), "CUSTOMER_EMAIL_VERIFICATION") {
+		t.Fatal("public registration must queue email verification before activation")
 	}
 	credentialParams := db.statements[1].Params
 	if strings.Contains(strings.Join(anyStrings(credentialParams), " "), "Correct-Horse") {
@@ -89,6 +101,23 @@ func TestCustomerRegistrationPersistsPendingApplicationAndPasswordCredential(t *
 	}
 	if !strings.Contains(response.Body.String(), `"status":"pending_review"`) {
 		t.Fatalf("response did not preserve pending state: %q", response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"email_verification_required":true`) {
+		t.Fatalf("response did not disclose email verification gate: %q", response.Body.String())
+	}
+}
+
+func TestCustomerRegistrationFailsClosedWithoutEmailVerificationDelivery(t *testing.T) {
+	app := &application{
+		db: &registrationDatabase{}, tenantID: "tenant_test",
+		customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef"),
+		logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	response := httptest.NewRecorder()
+	app.registerCustomer(response, registrationRequest(validIndividualRegistration()))
+	if response.Code != http.StatusServiceUnavailable ||
+		!strings.Contains(response.Body.String(), "customer_email_verification_unavailable") {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
 	}
 }
 

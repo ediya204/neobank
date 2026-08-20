@@ -26,6 +26,7 @@ import {
 import { currentUserId } from '../common/current-user';
 import { requireActiveUser } from '../common/tenant-access';
 import { PrismaService } from '../prisma/prisma.service';
+import { marketSourceTimestampsAreFresh } from './market-rate-freshness';
 import { supportedFiatCurrencies } from '../supported-assets';
 
 class CreateMarketRateDto {
@@ -102,16 +103,7 @@ export class RatesController {
       ((dto.baseCurrency === Currency.USDT && fiat.has(dto.quoteCurrency)) ||
         (fiat.has(dto.baseCurrency) && dto.quoteCurrency === Currency.USDT));
     if (!isFx && !isOtc) throw new BadRequestException('unsupported_rate_pair');
-    const sourceFetchedAt = new Date(dto.sourceFetchedAt);
-    const sourceUpdatedAt = new Date(dto.sourceUpdatedAt);
-    const now = Date.now();
-    if (
-      !Number.isFinite(sourceFetchedAt.getTime()) ||
-      !Number.isFinite(sourceUpdatedAt.getTime()) ||
-      sourceFetchedAt.getTime() < now - 2 * 60 * 1000 ||
-      sourceFetchedAt.getTime() > now + 30 * 1000 ||
-      sourceUpdatedAt.getTime() > now + 30 * 1000
-    ) {
+    if (!marketSourceTimestampsAreFresh(dto.sourceFetchedAt, dto.sourceUpdatedAt)) {
       throw new BadRequestException('stale_market_rate_source');
     }
     return this.db.$transaction(async (tx) => {

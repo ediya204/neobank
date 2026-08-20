@@ -339,6 +339,21 @@ func TestAdminTOTPEncryptionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAdminSetupCompletionConsumesTokenAndUpdatesCredentialsAtomically(t *testing.T) {
+	for _, required := range []string{
+		"WITH consumed_token AS",
+		"SET used_at=?",
+		"FROM consumed_token token",
+		"credential_version=u.credential_version+1",
+		"FROM updated_user u",
+		"SELECT COUNT(*) FROM audited",
+	} {
+		if !strings.Contains(completeAdminSetupSQL, required) {
+			t.Fatalf("atomic setup completion SQL must contain %q", required)
+		}
+	}
+}
+
 func TestAdminLoginCreatesTOTPChallengeOnlyAfterPassword(t *testing.T) {
 	pepper := []byte("0123456789abcdef0123456789abcdef")
 	salt := []byte("0123456789abcdef")

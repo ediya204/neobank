@@ -40,11 +40,6 @@ class CreateBeneficiaryDto {
 }
 
 class UpdateBeneficiaryDto {
-  @IsOptional() @IsString() name?: string;
-  @IsOptional() @IsString() bankName?: string;
-  @IsOptional() @IsString() swiftBic?: string;
-  @IsOptional() @IsString() iban?: string;
-  @IsOptional() @IsString() bankAddress?: string;
   @IsOptional() @IsBoolean() active?: boolean;
 }
 
@@ -147,6 +142,9 @@ export class BeneficiariesController {
     if (!beneficiary || beneficiary.customer.organizationId !== user.organizationId) {
       throw new NotFoundException('beneficiary_not_found');
     }
-    return this.db.beneficiary.update({ where: { id }, data: dto });
+    if (dto.active === undefined) {
+      throw new BadRequestException('beneficiary_destination_immutable');
+    }
+    return this.db.beneficiary.update({ where: { id }, data: { active: dto.active } });
   }
 }

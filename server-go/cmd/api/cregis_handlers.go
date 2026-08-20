@@ -128,22 +128,6 @@ const (
 	reconcileWithdrawalSubmittedSQL = `UPDATE cregis_withdrawals
     SET status='submitted_to_cregis', cregis_cid=?, reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
     WHERE id=? AND tenant_id=? AND status='exception'`
-	reconcileWithdrawalTerminalSQL = `WITH terminal AS (
-	  UPDATE cregis_withdrawals
-	  SET status=?, reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
-	  WHERE id=? AND tenant_id=? AND status='exception'
-	    AND EXISTS (
-	      SELECT 1 FROM cregis_withdrawal_accounting a
-	      WHERE a.withdrawal_id=cregis_withdrawals.id
-	        AND a.tenant_id=cregis_withdrawals.tenant_id AND a.status='approved'
-	    )
-	  RETURNING id, tenant_id
-	)
-	UPDATE cregis_withdrawal_accounting a
-	SET status='pending_release', next_attempt_at=NOW(), locked_at=NULL, updated_at=NOW()
-	FROM terminal
-	WHERE a.withdrawal_id=terminal.id AND a.tenant_id=terminal.tenant_id AND a.status='approved'
-	RETURNING a.withdrawal_id`
 	failWithdrawalForReleaseSQL = `WITH failed AS (
 	  UPDATE cregis_withdrawals SET status='failed', updated_at=?
 	  WHERE id=? AND tenant_id=? AND status='executing'
@@ -542,30 +526,17 @@ func (app *application) reconcileCregisWithdrawal(w http.ResponseWriter, r *http
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	actor := edgeUser(r)
-	var statement d1.Statement
-	switch input.Resolution {
-	case "submitted_to_cregis":
-		if !safeIdentifier.MatchString(input.CregisCID) {
-			validationError(w)
-			return
-		}
-		statement = d1.Statement{SQL: reconcileWithdrawalSubmittedSQL, Params: []any{input.CregisCID, note, actor, now, now, id, app.tenantID}}
-	case "failed":
-		statement = d1.Statement{SQL: reconcileWithdrawalTerminalSQL, Params: []any{"failed", note, actor, now, now, id, app.tenantID}}
-	case "cancelled":
-		statement = d1.Statement{SQL: reconcileWithdrawalTerminalSQL, Params: []any{"cancelled", note, actor, now, now, id, app.tenantID}}
-	default:
+	if input.Resolution != "submitted_to_cregis" || !safeIdentifier.MatchString(input.CregisCID) {
 		validationError(w)
 		return
 	}
+	statement := d1.Statement{SQL: reconcileWithdrawalSubmittedSQL, Params: []any{input.CregisCID, note, actor, now, now, id, app.tenantID}}
 	result, err := app.db.Batch(r.Context(), statement)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
-	if len(result) != 1 ||
-		(input.Resolution == "submitted_to_cregis" && resultChanges(result) != 1) ||
-		(input.Resolution != "submitted_to_cregis" && len(result[0].Results) != 1) {
+	if len(result) != 1 || resultChanges(result) != 1 {
 		conflict(w, "withdrawal_not_reconcilable")
 		return
 	}

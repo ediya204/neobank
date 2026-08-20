@@ -31,6 +31,36 @@ const (
 	adminMaxAttempts         = 8
 )
 
+const completeAdminSetupSQL = `WITH consumed_token AS (
+  UPDATE admin_setup_tokens
+  SET used_at=?
+  WHERE token_hash=? AND used_at IS NULL AND expires_at>?
+  RETURNING user_id
+), updated_user AS (
+  UPDATE admin_users u
+  SET password_salt=?, password_hash=?, totp_secret_ciphertext=?,
+      totp_enabled=FALSE, totp_last_counter=-1, enrollment_token_hash=?, enrollment_expires_at=?,
+      credential_version=u.credential_version+1, failed_attempts=0, locked_until=NULL,
+      password_changed_at=?, updated_at=?
+  FROM consumed_token token
+  WHERE u.id=token.user_id AND u.status='active'
+  RETURNING u.id, u.email, u.credential_version
+), revoked_sessions AS (
+  UPDATE admin_sessions s
+  SET revoked_at=?
+  FROM updated_user u
+  WHERE s.user_id=u.id AND s.revoked_at IS NULL
+  RETURNING s.id
+), audited AS (
+  INSERT INTO admin_auth_audit_events
+    (id, user_id, event_type, actor, metadata_json, created_at)
+  SELECT ?, u.id, 'auth.password_enrolled', u.email, '{}', ?
+  FROM updated_user u
+  RETURNING id
+)
+SELECT u.id, u.credential_version, (SELECT COUNT(*) FROM audited) AS audit_count
+FROM updated_user u`
+
 type adminSession struct {
 	ID                string
 	UserID            string
@@ -160,18 +190,6 @@ func (app *application) completeAdminSetup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	now := time.Now().UTC()
-	rows, err := app.db.Query(r.Context(), `SELECT u.id, u.email, u.display_name, u.credential_version, t.id AS setup_id
-	  FROM admin_setup_tokens t JOIN admin_users u ON u.id=t.user_id
-	  WHERE t.token_hash=? AND t.used_at IS NULL AND t.expires_at>? AND u.status='active'`, tokenHash(input.SetupToken), databaseTimestamp(now))
-	if err != nil {
-		databaseError(app, w, err)
-		return
-	}
-	if len(rows) != 1 {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "setup_token_invalid"}})
-		return
-	}
-	userID := text(rows[0]["id"])
 	salt := randomBytes(16)
 	hash := app.deriveAdminPassword(input.Password, salt)
 	secret := randomTOTPSecret()
@@ -182,20 +200,17 @@ func (app *application) completeAdminSetup(w http.ResponseWriter, r *http.Reques
 	}
 	enrollmentToken := randomToken(32)
 	nowText := databaseTimestamp(now)
-	newVersion := integer(rows[0]["credential_version"]) + 1
-	results, err := app.db.Batch(r.Context(),
-		d1.Statement{SQL: `UPDATE admin_setup_tokens SET used_at=? WHERE id=? AND used_at IS NULL`, Params: []any{nowText, text(rows[0]["setup_id"])}},
-		d1.Statement{SQL: `UPDATE admin_users SET password_salt=?, password_hash=?, totp_secret_ciphertext=?,
-		  totp_enabled=FALSE, totp_last_counter=-1, enrollment_token_hash=?, enrollment_expires_at=?,
-		  credential_version=?, failed_attempts=0, locked_until=NULL, password_changed_at=?, updated_at=?
-		  WHERE id=? AND status='active'`, Params: []any{hex.EncodeToString(salt), hex.EncodeToString(hash), encrypted,
-			tokenHash(enrollmentToken), databaseTimestamp(now.Add(adminEnrollmentDuration)), newVersion, nowText, nowText, userID}},
-		d1.Statement{SQL: `UPDATE admin_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL`, Params: []any{nowText, userID}},
-		d1.Statement{SQL: `INSERT INTO admin_auth_audit_events
-		  (id, user_id, event_type, actor, metadata_json, created_at) VALUES (?, ?, 'auth.password_enrolled', ?, '{}', ?)`, Params: []any{randomID("audit"), userID, text(rows[0]["email"]), nowText}},
-	)
-	if err != nil || len(results) != 4 || resultChanges(results[:1]) != 1 || resultChanges(results[1:2]) != 1 {
-		conflict(w, "setup_state_changed")
+	rows, err := app.db.Query(r.Context(), completeAdminSetupSQL,
+		nowText, tokenHash(input.SetupToken), nowText,
+		hex.EncodeToString(salt), hex.EncodeToString(hash), encrypted, tokenHash(enrollmentToken),
+		databaseTimestamp(now.Add(adminEnrollmentDuration)), nowText, nowText,
+		nowText, randomID("audit"), nowText)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(rows) != 1 || integer(rows[0]["audit_count"]) != 1 {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "setup_token_invalid"}})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"next_step": "totp_setup_required", "enrollment_token": enrollmentToken})

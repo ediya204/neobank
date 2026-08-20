@@ -21,6 +21,7 @@ import (
 type customerLoginDatabase struct {
 	rows       []map[string]any
 	statements []d1.Statement
+	queries    []string
 }
 
 type sessionTouchDatabase struct {
@@ -46,7 +47,8 @@ func (db *sessionTouchDatabase) Batch(_ context.Context, statements ...d1.Statem
 	return results, nil
 }
 
-func (db *customerLoginDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+func (db *customerLoginDatabase) Query(_ context.Context, query string, _ ...any) ([]map[string]any, error) {
+	db.queries = append(db.queries, query)
 	return db.rows, nil
 }
 
@@ -258,6 +260,9 @@ func TestApprovedRegistrationCanLoginDirectlyWithPassword(t *testing.T) {
 	}
 	if len(response.Result().Cookies()) != 2 {
 		t.Fatalf("expected session and CSRF cookies, got %d", len(response.Result().Cookies()))
+	}
+	if len(db.queries) == 0 || !strings.Contains(db.queries[0], "created_by<>'public_registration' OR c.email_verified_at IS NOT NULL") {
+		t.Fatal("public registration login must require verified email")
 	}
 	combined := ""
 	for _, statement := range db.statements {

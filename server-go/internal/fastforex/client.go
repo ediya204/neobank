@@ -17,6 +17,11 @@ import (
 
 const productionBaseURL = "https://api.fastforex.io"
 
+const (
+	maximumSourceAge       = 5 * time.Minute
+	maximumSourceClockSkew = 30 * time.Second
+)
+
 var currencyCodePattern = regexp.MustCompile(`^[A-Z0-9]{3,6}$`)
 
 type Config struct {
@@ -144,6 +149,10 @@ func (client *Client) FetchOne(ctx context.Context, baseCurrency, quoteCurrency 
 	updatedAt, err := normalizeUpdatedAt(payload.Updated)
 	if err != nil {
 		return Quote{}, err
+	}
+	providerUpdatedAt, err := time.Parse(time.RFC3339, updatedAt)
+	if err != nil || providerUpdatedAt.Before(now.Add(-maximumSourceAge)) || providerUpdatedAt.After(now.Add(maximumSourceClockSkew)) {
+		return Quote{}, errors.New("FastForex response contains a stale updated time")
 	}
 	quote := Quote{
 		Provider: "fastforex", BaseCurrency: baseCurrency, QuoteCurrency: quoteCurrency,

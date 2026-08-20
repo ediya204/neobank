@@ -54,7 +54,8 @@ const (
 	        )) THEN 'active' ELSE status END,
 	    activated_by=?, activated_at=?, updated_at=?
     WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending'
-	  AND status IN ('pending_setup', 'active')`
+	  AND status IN ('pending_setup', 'active')
+	  AND (created_by<>'public_registration' OR email_verified_at IS NOT NULL)`
 	auditCustomerKYCReviewSQL = `INSERT INTO customer_auth_audit_events
     (id, customer_id, event_type, actor, metadata_json, created_at)
     SELECT ?, ?, 'customer.kyc_reviewed', ?, ?, ?
@@ -347,23 +348,25 @@ func walletProvisioningRetryMetadata(provisionErr *walletProvisionError) map[str
 	}
 }
 
-func sumsubApprovalBlockCode(accountType, verificationStatus, levelName, environment, expectedLevel, expectedEnvironment string, configured bool) string {
+func sumsubApprovalBlockCode(accountType, verificationStatus, levelName, environment, syncStatus string,
+	stepsReady bool, expectedLevel, expectedEnvironment string, configured bool) string {
 	if accountType != "individual" || verificationStatus == "" {
 		return ""
 	}
 	if !configured || levelName != expectedLevel || environment != expectedEnvironment {
 		return "sumsub_configuration_mismatch"
 	}
-	if verificationStatus != "ready_for_admin_review" {
+	if verificationStatus != "ready_for_admin_review" || syncStatus != "completed" || !stepsReady {
 		return "sumsub_verification_not_ready"
 	}
 	return ""
 }
 
 func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWriter, r *http.Request, id, actor, note, metadata, now string) {
-	stateSQL := `SELECT c.status, c.kyc_status, c.operations_status,
+	stateSQL := `SELECT c.status, c.kyc_status, c.operations_status, c.created_by, c.email_verified_at,
 	  ca.account_type, NULL::text AS sumsub_status, NULL::text AS sumsub_level_name,
-	  NULL::text AS sumsub_environment,
+	  NULL::text AS sumsub_environment, NULL::text AS sumsub_sync_status,
+	  FALSE AS sumsub_steps_ready,
 	  CASE WHEN EXISTS (SELECT 1 FROM customer_credentials cc WHERE cc.customer_id=c.id
 	    AND cc.password_salt IS NOT NULL AND cc.password_hash IS NOT NULL AND (
 	      (cc.password_algorithm='argon2id-v1' AND cc.password_memory_kib=? AND cc.password_time_cost=?
@@ -374,9 +377,18 @@ func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWrit
 	  LEFT JOIN customer_applications ca ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id
 	  WHERE c.id=? AND c.tenant_id=?`
 	if app.sumsubSchemaReady {
-		stateSQL = `SELECT c.status, c.kyc_status, c.operations_status,
+		stateSQL = `SELECT c.status, c.kyc_status, c.operations_status, c.created_by, c.email_verified_at,
 	    ca.account_type, v.status AS sumsub_status, v.level_name AS sumsub_level_name,
 	    v.environment AS sumsub_environment,
+	    (SELECT j.status FROM sumsub_sync_jobs j WHERE j.verification_id=v.id) AS sumsub_sync_status,
+	    CASE WHEN (SELECT COUNT(*) FROM customer_kyc_steps s WHERE s.verification_id=v.id)=3
+	      AND EXISTS (SELECT 1 FROM customer_kyc_steps s WHERE s.verification_id=v.id
+	        AND s.step_type='IDENTITY' AND s.review_answer='GREEN' AND s.document_type='PASSPORT')
+	      AND EXISTS (SELECT 1 FROM customer_kyc_steps s WHERE s.verification_id=v.id
+	        AND s.step_type='SELFIE' AND s.review_answer='GREEN')
+	      AND EXISTS (SELECT 1 FROM customer_kyc_steps s WHERE s.verification_id=v.id
+	        AND s.step_type='PROOF_OF_RESIDENCE' AND s.review_answer='GREEN')
+	    THEN TRUE ELSE FALSE END AS sumsub_steps_ready,
 	    CASE WHEN EXISTS (SELECT 1 FROM customer_credentials cc WHERE cc.customer_id=c.id
 	      AND cc.password_salt IS NOT NULL AND cc.password_hash IS NOT NULL AND (
 	        (cc.password_algorithm='argon2id-v1' AND cc.password_memory_kib=? AND cc.password_time_cost=?
@@ -404,9 +416,14 @@ func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWrit
 		expectedLevel = app.sumsub.LevelName()
 	}
 	if blockCode := sumsubApprovalBlockCode(text(state["account_type"]), text(state["sumsub_status"]),
-		text(state["sumsub_level_name"]), text(state["sumsub_environment"]), expectedLevel,
+		text(state["sumsub_level_name"]), text(state["sumsub_environment"]), text(state["sumsub_sync_status"]),
+		text(state["sumsub_steps_ready"]) == "true" || text(state["sumsub_steps_ready"]) == "1", expectedLevel,
 		app.sumsubEnvironment, app.sumsub != nil); blockCode != "" {
 		conflict(w, blockCode)
+		return
+	}
+	if text(state["created_by"]) == "public_registration" && text(state["email_verified_at"]) == "" {
+		conflict(w, "customer_email_verification_required")
 		return
 	}
 	kycStatus := text(state["kyc_status"])

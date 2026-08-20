@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -142,26 +145,40 @@ func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testin
 	}
 }
 
-func TestFailedReconciliationReleasesFrozenBalanceAndKeepsAudit(t *testing.T) {
+func TestExceptionReconciliationKeepsFundsFrozenUntilSignedFinalCallback(t *testing.T) {
 	for _, required := range []string{
-		"SET status=?",
+		"status='submitted_to_cregis'",
+		"cregis_cid=?",
 		"reconciliation_note=?",
 		"reconciled_by=?",
 		"reconciled_at=?",
 		"status='exception'",
-		"status='pending_release'",
-		"a.status='approved'",
 	} {
-		if !strings.Contains(reconcileWithdrawalTerminalSQL, required) {
-			t.Fatalf("failed reconciliation SQL must contain %q", required)
+		if !strings.Contains(reconcileWithdrawalSubmittedSQL, required) {
+			t.Fatalf("exception reconciliation SQL must contain %q", required)
 		}
 	}
-	if strings.Contains(reconcileWithdrawalTerminalSQL, `"availableBalance"`) ||
-		strings.Contains(reconcileWithdrawalTerminalSQL, `"frozenBalance"`) {
-		t.Fatal("reconciliation must queue Core release instead of editing balances directly")
+	for _, forbidden := range []string{"pending_release", "status='failed'", "status='cancelled'"} {
+		if strings.Contains(reconcileWithdrawalSubmittedSQL, forbidden) {
+			t.Fatalf("ambiguous exception reconciliation must not contain %q", forbidden)
+		}
 	}
 	if !strings.Contains(walletBalancesSQL, `core_wallet."frozenBalance"`) {
 		t.Fatalf("wallet balances must remain authoritative from Core: %s", walletBalancesSQL)
+	}
+}
+
+func TestExceptionReconciliationRejectsManualTerminalRelease(t *testing.T) {
+	for _, resolution := range []string{"failed", "cancelled"} {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/crypto/withdrawals/withdrawal_test/reconcile",
+			bytes.NewBufferString(`{"resolution":"`+resolution+`","note":"provider result is ambiguous"}`))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		app := &application{tenantID: "tenant_test"}
+		app.reconcileCregisWithdrawal(response, request, "withdrawal_test")
+		if response.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("resolution %q status=%d body=%q", resolution, response.Code, response.Body.String())
+		}
 	}
 }
 

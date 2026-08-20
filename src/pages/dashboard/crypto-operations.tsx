@@ -177,6 +177,7 @@ export default function CryptoOperationsAdmin() {
   const [reason, setReason] = useState('');
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileNote, setReconcileNote] = useState('');
+  const [reconcileCID, setReconcileCID] = useState('');
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -307,24 +308,26 @@ export default function CryptoOperationsAdmin() {
     }
   };
 
-  const reconcileFailedWithdrawal = async () => {
+  const reconcileSubmittedWithdrawal = async () => {
     if (!selected || selected.rawStatus !== 'exception' || performingAction) return;
     const note = reconcileNote.trim();
-    if (!note) return;
+    const cregisCID = reconcileCID.trim();
+    if (!note || !cregisCID) return;
     setPerformingAction('reconcile');
     setError('');
     setSuccess('');
     try {
       await neobankApi(`/crypto/withdrawals/${selected.id}/reconcile`, {
         method: 'POST',
-        body: JSON.stringify({ resolution: 'failed', note }),
+        body: JSON.stringify({ resolution: 'submitted_to_cregis', note, cregis_cid: cregisCID }),
         userId,
       });
       setReconcileOpen(false);
       setReconcileNote('');
+      setReconcileCID('');
       setSelected(null);
       await load();
-      setSuccess('异常指令已调单为失败，冻结余额已释放。');
+      setSuccess('异常指令已关联 Cregis CID；资金继续冻结，等待签名终态回调。');
     } catch (value) {
       setError(operationErrorMessage(value));
     } finally {
@@ -489,8 +492,8 @@ export default function CryptoOperationsAdmin() {
             {selected.rawStatus === 'exception' && (
               <Stack spacing={1.5}>
                 <Alert severity="warning">
-                  该指令仍为异常调单状态，资金继续冻结。请先在 Cregis 核对没有对应订单或
-                  CID；确认未提交后才能调单为失败并释放冻结，切勿重复提交。
+                  该指令仍为异常调单状态，资金继续冻结。请在 Cregis 查明对应 CID 后关联，
+                  并继续等待签名终态回调；切勿重复提交或人工释放资金。
                 </Alert>
                 <Button
                   color="warning"
@@ -498,7 +501,7 @@ export default function CryptoOperationsAdmin() {
                   disabled={Boolean(performingAction)}
                   onClick={() => setReconcileOpen(true)}
                 >
-                  确认 Cregis 无订单，释放冻结
+                  关联已确认的 Cregis CID
                 </Button>
               </Stack>
             )}
@@ -576,16 +579,24 @@ export default function CryptoOperationsAdmin() {
         <DialogTitle>异常出款调单</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            仅在 Cregis 客户端确认没有对应订单、CID 或待审批记录时使用。确认后该指令将变为失败，
-            {selected?.amount || '0'} USDT 冻结会按账本规则释放；该操作保留管理员与备注审计记录。
+            仅在 Cregis 客户端查明并确认对应 CID 后使用。关联后 {selected?.amount || '0'} USDT
+            仍保持冻结，只有签名终态回调才能完成或释放账本资金。
           </Alert>
           <TextField
             autoFocus
             fullWidth
+            label="Cregis CID"
+            value={reconcileCID}
+            onChange={(event) => setReconcileCID(event.target.value)}
+            inputProps={{ maxLength: 128 }}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
             multiline
             minRows={3}
             label="Cregis 核对结果与调单备注"
-            placeholder="例如：已在 Cregis 核对，无对应订单或 CID，确认释放冻结。"
+            placeholder="例如：已在 Cregis 后台核对订单状态并确认该 CID。"
             value={reconcileNote}
             onChange={(event) => setReconcileNote(event.target.value)}
             inputProps={{ maxLength: 1000 }}
@@ -598,10 +609,10 @@ export default function CryptoOperationsAdmin() {
           <Button
             variant="contained"
             color="warning"
-            disabled={!reconcileNote.trim() || Boolean(performingAction)}
-            onClick={() => reconcileFailedWithdrawal().catch(() => undefined)}
+            disabled={!reconcileNote.trim() || !reconcileCID.trim() || Boolean(performingAction)}
+            onClick={() => reconcileSubmittedWithdrawal().catch(() => undefined)}
           >
-            {performingAction === 'reconcile' ? '处理中…' : '确认失败并释放冻结'}
+            {performingAction === 'reconcile' ? '处理中…' : '关联 CID 并继续冻结'}
           </Button>
         </DialogActions>
       </Dialog>
