@@ -151,7 +151,7 @@ function renderDepositQrCode(wallet: CryptoWallet, qrCode: string | null) {
       <Box
         component="img"
         src={qrCode}
-        alt={`${wallet.network} USDT 收币二维码`}
+        alt={`${wallet.network} USDT 转入地址二维码`}
         sx={{ width: 170, height: 170, imageRendering: 'crisp-edges' }}
       />
     );
@@ -159,7 +159,7 @@ function renderDepositQrCode(wallet: CryptoWallet, qrCode: string | null) {
   if (qrCode === '') {
     return (
       <Typography variant="caption" color="text.secondary" align="center" sx={{ px: 2 }}>
-        二维码生成失败，请复制并逐字核对上方 TRC20 地址
+        暂时无法生成二维码，请复制并逐字核对上方 TRC20 地址。
       </Typography>
     );
   }
@@ -242,7 +242,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
         )
       );
     } catch (value) {
-      setError(value instanceof Error ? value.message : '数字钱包加载失败');
+      setError(value instanceof Error ? value.message : '暂时无法读取 USDT 账户，请稍后重试。');
     } finally {
       setLoading(false);
     }
@@ -252,9 +252,9 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
     load().catch(() => undefined);
   }, [load]);
 
-  let title = '数字钱包';
-  if (view === 'deposit') title = '收币';
-  if (view === 'withdraw') title = '付币';
+  let title = 'USDT 账户';
+  if (view === 'deposit') title = 'USDT 转入';
+  if (view === 'withdraw') title = 'USDT 转出';
   const hasActiveWallet = wallets.some(isWithdrawalReady);
 
   useEffect(() => {
@@ -274,16 +274,16 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
             <Box>
               <Stack direction="row" alignItems="center" spacing={1.25}>
                 {view !== 'overview' && (
-                  <IconButton onClick={() => navigate('/portal/home')} aria-label="返回数字钱包">
+                  <IconButton onClick={() => navigate('/portal/home')} aria-label="返回账户概览">
                     <Iconify icon="solar:alt-arrow-left-linear" />
                   </IconButton>
                 )}
                 <Box>
                   <Typography variant="h4">{title}</Typography>
                   <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                    {view === 'overview' && '通过 TRON（TRC20）网络管理 USDT。'}
-                    {view === 'deposit' && '使用 TRON（TRC20）地址接收 USDT。'}
-                    {view === 'withdraw' && '通过 TRON（TRC20）向外部地址发送 USDT。'}
+                    {view === 'overview' && '查看 TRON（TRC20）网络的余额及链上交易。'}
+                    {view === 'deposit' && '向本账户的 TRON（TRC20）地址转入 USDT。'}
+                    {view === 'withdraw' && '向已验证的 TRON（TRC20）地址转出 USDT。'}
                   </Typography>
                 </Box>
               </Stack>
@@ -294,7 +294,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
                 startIcon={<Iconify icon="solar:download-minimalistic-bold-duotone" />}
                 onClick={() => navigate('/portal/crypto-wallet/deposit')}
               >
-                收币
+                转入
               </Button>
               <Button
                 variant={view === 'withdraw' ? 'contained' : 'outlined'}
@@ -302,7 +302,7 @@ export default function CryptoWalletPage({ view = 'overview' }: { view?: CryptoW
                 disabled={loading || !hasActiveWallet}
                 onClick={() => navigate('/portal/crypto-wallet/withdraw')}
               >
-                付币
+                转出
               </Button>
             </Stack>
           </Stack>
@@ -367,7 +367,7 @@ function WalletOverview({
             <Box>
               <Stack direction="row" alignItems="center" spacing={1}>
                 <Iconify icon={USDT_ASSET_ICON} width={30} />
-                <Typography sx={{ opacity: 0.72 }}>USDT 总余额</Typography>
+                <Typography sx={{ opacity: 0.72 }}>USDT 账户总余额</Typography>
               </Stack>
               {loading ? (
                 <Skeleton width={260} height={70} />
@@ -377,7 +377,7 @@ function WalletOverview({
                 </Typography>
               )}
               <Typography variant="body2" sx={{ mt: 1, opacity: 0.62 }}>
-                冻结 {formatUsdt(frozen)} · TRON（TRC20）网络
+                冻结余额 {formatUsdt(frozen)} · TRON（TRC20）
               </Typography>
             </Box>
             <Stack direction="row" spacing={1.5} alignItems="center">
@@ -392,7 +392,7 @@ function WalletOverview({
                   '&:hover': { bgcolor: 'grey.200' },
                 }}
               >
-                收币
+                转入
               </Button>
               <Button
                 variant="outlined"
@@ -401,7 +401,7 @@ function WalletOverview({
                 onClick={() => navigate('/portal/crypto-wallet/withdraw')}
                 sx={{ color: 'common.white', borderColor: 'rgba(255,255,255,.38)' }}
               >
-                付币
+                转出
               </Button>
             </Stack>
           </Stack>
@@ -426,7 +426,7 @@ function WalletOverview({
       </Box>
 
       <TransferList
-        title="最近链上记录"
+        title="近期链上交易"
         rows={transfers.slice(0, 8)}
         loading={loading}
         onOpen={onOpenTransfer}
@@ -581,20 +581,19 @@ function DepositView({
                       color="text.secondary"
                       sx={{ mt: 1, display: 'block' }}
                     >
-                      最少充值 {wallet.minimumDeposit} USDT · {wallet.confirmationsRequired}{' '}
-                      次确认到账
+                      最低转入 {wallet.minimumDeposit} USDT · 达到 {wallet.confirmationsRequired}{' '}
+                      次网络确认后入账
                     </Typography>
                   ) : (
                     <Alert severity="warning" sx={{ mt: 1.5 }}>
-                      充值暂未开放。只有 Cregis 成功分配地址，并确认该地址属于当前 SSC
-                      项目后，系统才会显示收币地址和二维码。
+                      转入服务暂不可用。托管服务完成地址分配及账户归属验证后，系统才会显示转入地址和二维码。
                     </Alert>
                   )}
                 </Box>
               </Step>
               <Step>
                 <StepLabel>
-                  <Typography variant="subtitle2">获取收币地址</Typography>
+                  <Typography variant="subtitle2">获取转入地址</Typography>
                 </StepLabel>
                 <Box sx={{ ml: { xs: 0, sm: 4.5 }, mt: 1.5 }}>
                   {isDepositReady(wallet) && (
@@ -605,7 +604,7 @@ function DepositView({
                     >
                       <Box sx={{ flex: 1, width: 1 }}>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          充值地址
+                          转入地址
                         </Typography>
                         <TextField
                           fullWidth
@@ -622,13 +621,13 @@ function DepositView({
                           }}
                         />
                         <Alert severity="success" icon={false} sx={{ mt: 1.5 }}>
-                          仅支持 USDT 通过 {networkMeta[wallet.network].name}（
-                          {wallet.tokenStandard}）网络充值
+                          仅支持通过 {networkMeta[wallet.network].name}（{wallet.tokenStandard}）
+                          网络转入 USDT
                         </Alert>
                         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5 }}>
                           <Iconify icon="solar:shield-check-bold" color="success.main" />
                           <Typography variant="caption" color="text.secondary">
-                            Cregis 已确认该地址属于当前 SSC 项目；转账前请逐字核对网络与地址。
+                            托管服务已验证该地址属于本账户；转账前请逐字核对网络与地址。
                           </Typography>
                         </Stack>
                       </Box>
@@ -652,7 +651,7 @@ function DepositView({
                   {!isDepositReady(wallet) && loading && <Skeleton height={180} />}
                   {!isDepositReady(wallet) && !loading && (
                     <Alert severity="info" icon={<Iconify icon="solar:shield-warning-bold" />}>
-                      当前没有通过 Cregis 项目归属验证的充值地址。地址、复制按钮和二维码均已停用。
+                      当前暂无通过账户归属验证的转入地址。地址复制及二维码功能暂不可用。
                     </Alert>
                   )}
                 </Box>
@@ -664,20 +663,20 @@ function DepositView({
           <CardContent sx={{ p: 3 }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
               <Iconify icon="solar:info-circle-bold" color="info.main" />
-              <Typography variant="h6">收币须知</Typography>
+              <Typography variant="h6">转入须知</Typography>
             </Stack>
-            <Notice number="1" text="币种和网络必须与发送方完全一致，错误网络可能导致资产丢失。" />
-            <Notice number="2" text="不要向此地址发送 USDT 以外的资产。" />
-            <Notice number="3" text="达到网络确认数后，余额会自动更新。" />
             <Notice
-              number="4"
-              text="只有 Cregis 成功分配并验证属于当前 SSC 项目的地址，才会开放充值。"
+              number="1"
+              text="币种与网络必须和发送方设置完全一致，使用错误网络可能导致资产永久丢失。"
             />
+            <Notice number="2" text="不要向此地址发送 USDT 以外的资产。" />
+            <Notice number="3" text="达到所需网络确认数后，转入金额将自动计入账户。" />
+            <Notice number="4" text="只有完成托管分配及账户归属验证的地址，才可用于转入。" />
           </CardContent>
         </Card>
       </Box>
       <TransferList
-        title="近期收币"
+        title="近期转入"
         rows={visibleTransfers}
         loading={loading}
         onOpen={onOpenTransfer}
@@ -731,9 +730,9 @@ function WithdrawView({
   const net = Math.max(0, Number(amount || 0) - fee);
 
   const validate = () => {
-    if (!isWithdrawalReady(wallet)) return '当前没有状态正常的可付币钱包';
-    if (!selectedBeneficiary || !address) return '请选择已通过 OTP 验证的白名单地址';
-    if (!amount || Number(amount) <= fee) return '付币金额必须大于网络手续费';
+    if (!isWithdrawalReady(wallet)) return '当前没有可用于转出的 USDT 账户';
+    if (!selectedBeneficiary || !address) return '请选择已通过两步验证的白名单地址';
+    if (!amount || Number(amount) <= fee) return '转出数量必须大于网络手续费';
     if (Number(amount) > Number(wallet.availableBalance)) return '可用余额不足';
     return '';
   };
@@ -751,12 +750,12 @@ function WithdrawView({
 
   const submit = async () => {
     if (!isWithdrawalReady(wallet)) {
-      setError('当前没有状态正常的可付币钱包');
+      setError('当前没有可用于转出的 USDT 账户。');
       setConfirmOpen(false);
       return;
     }
     if (!selectedBeneficiary?.walletAddress) {
-      setError('请选择已通过 OTP 验证的白名单地址');
+      setError('请选择已通过两步验证的白名单地址。');
       setConfirmOpen(false);
       return;
     }
@@ -798,10 +797,10 @@ function WithdrawView({
       setConfirmOpen(false);
       setAmount('');
       setBeneficiaryId('');
-      setSuccess('付币申请已提交，平台管理员审批后进入人工链上执行。');
+      setSuccess('USDT 转出申请已提交。审核通过后将执行链上转账，您可在交易明细中查看进度。');
       await onCreated();
     } catch (value) {
-      setError(value instanceof Error ? value.message : '付币提交失败');
+      setError(value instanceof Error ? value.message : 'USDT 转出申请暂时无法提交，请稍后重试。');
       setConfirmOpen(false);
     } finally {
       setSubmitting(false);
@@ -829,7 +828,7 @@ function WithdrawView({
       return;
     }
     if (!/^\d{6}$/.test(otpCode)) {
-      setError('请输入验证器当前显示的 6 位 OTP');
+      setError('请输入验证器当前显示的 6 位动态码。');
       return;
     }
     setAddingAddress(true);
@@ -856,15 +855,16 @@ function WithdrawView({
       );
       await onCreated();
       setBeneficiaryId(created.id);
-      setSuccess(`白名单地址“${created.label}”已通过 OTP 验证并生效。`);
+      setSuccess(`白名单地址“${created.label}”已通过两步验证并生效。`);
       setAddressDialogOpen(false);
       setAddressLabel('');
       setNewAddress('');
       setOtpCode('');
     } catch (value) {
-      const message = value instanceof Error ? value.message : '白名单地址添加失败';
+      const message =
+        value instanceof Error ? value.message : '暂时无法添加白名单地址，请稍后重试。';
       if (message === 'invalid_totp_code') {
-        setError('OTP 无效、已过期或已使用，请输入当前验证码');
+        setError('动态码无效、已过期或已使用，请输入验证器当前显示的动态码。');
       } else if (message === 'totp_not_enrolled') {
         setError('当前账户尚未绑定验证器，无法添加白名单地址');
       } else if (message === 'withdrawal_address_already_exists') {
@@ -902,7 +902,8 @@ function WithdrawView({
                 )}
                 {!loading && !withdrawalWallets.length && (
                   <Alert severity="warning">
-                    付币暂不可用。只有状态为“正常”的钱包可以发起付币；创建中、异常、冻结或已关闭的钱包均已停用。
+                    USDT
+                    转出暂不可用。只有状态正常的账户可以提交申请；创建中、异常、冻结或已关闭的账户均不可转出。
                   </Alert>
                 )}
                 <Box>
@@ -975,7 +976,7 @@ function WithdrawView({
                     ))}
                   </Select>
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75 }}>
-                    付币只能发送至已通过 OTP 验证的 {networkMeta[network].standard} 地址。
+                    USDT 只能转出至已通过两步验证的 {networkMeta[network].standard} 白名单地址。
                   </Typography>
                 </FormControl>
                 <Button
@@ -1033,7 +1034,7 @@ function WithdrawView({
                   </CardContent>
                 </Card>
                 <Alert severity="warning">
-                  链上转账不可撤销。提交后将冻结发送金额，并由平台管理员审批。
+                  链上转账不可撤销。提交后将冻结转出金额，审核完成前不可再次使用。
                 </Alert>
                 <Button
                   type="submit"
@@ -1050,20 +1051,20 @@ function WithdrawView({
         <Card sx={{ alignSelf: 'start' }}>
           <CardContent sx={{ p: 3 }}>
             <Typography variant="h6" sx={{ mb: 2 }}>
-              安全提示
+              安全提醒
             </Typography>
-            <Notice number="1" text="确认收币地址支持所选网络。" />
+            <Notice number="1" text="请确认接收地址支持所选网络和资产。" />
             <Notice number="2" text="首次向新地址付款时，建议先发送小额测试。" />
-            <Notice number="3" text="平台不会通过邮件或聊天索取私钥或助记词。" />
+            <Notice number="3" text="本机构不会通过邮件、聊天或电话索取私钥、助记词或动态码。" />
             <Divider sx={{ my: 2 }} />
             <Stack direction="row" justifyContent="space-between">
               <Typography color="text.secondary">预计处理</Typography>
-              <Typography variant="subtitle2">审批后 5–20 分钟</Typography>
+              <Typography variant="subtitle2">审核通过后约 5–20 分钟</Typography>
             </Stack>
           </CardContent>
         </Card>
       </Box>
-      <TransferList title="近期付币" rows={transfers} loading={loading} onOpen={onOpenTransfer} />
+      <TransferList title="近期转出" rows={transfers} loading={loading} onOpen={onOpenTransfer} />
       <Dialog
         open={customerSession && addressDialogOpen}
         onClose={closeAddressDialog}
@@ -1076,7 +1077,7 @@ function WithdrawView({
             <Stack spacing={2.25} sx={{ pt: 0.5 }}>
               {totpEnabled ? (
                 <Alert severity="info" icon={<Iconify icon="solar:shield-keyhole-bold" />}>
-                  新地址必须使用当前账户验证器生成的 6 位 OTP 确认。地址生效后才能用于付币。
+                  新地址必须使用当前账户验证器生成的 6 位动态码确认，验证通过后才可用于转出。
                 </Alert>
               ) : (
                 <Alert
@@ -1091,7 +1092,7 @@ function WithdrawView({
                     </Button>
                   }
                 >
-                  当前账户尚未启用 2FA。请先在账户设置中绑定验证器，再添加白名单地址。
+                  当前账户尚未启用两步验证。请先在“安全与设置”中绑定验证器，再添加白名单地址。
                 </Alert>
               )}
               {error && <Alert severity="error">{error}</Alert>}
@@ -1117,7 +1118,7 @@ function WithdrawView({
               <TextField
                 required
                 disabled={!totpEnabled}
-                label="6 位 OTP"
+                label="6 位动态码"
                 value={otpCode}
                 onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="000000"
@@ -1130,7 +1131,7 @@ function WithdrawView({
                 }}
               />
               <Alert severity="warning">
-                链上转账不可撤销。系统不会通过邮件、聊天或电话索取你的 OTP。
+                链上转账不可撤销。本机构不会通过邮件、聊天或电话索取您的动态码。
               </Alert>
             </Stack>
           </DialogContent>
@@ -1155,10 +1156,10 @@ function WithdrawView({
         </Box>
       </Dialog>
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>确认付币信息</DialogTitle>
+        <DialogTitle>确认 USDT 转出</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            请最后确认网络和地址。链上执行后无法撤销。
+            请最后核对网络、地址及金额。链上交易执行后无法撤销。
           </Alert>
           <Stack divider={<Divider flexItem />}>
             <DetailRow
@@ -1169,7 +1170,7 @@ function WithdrawView({
             <DetailRow label="手续费" value={formatUsdt(fee)} />
             <DetailRow label="预计到账" value={formatUsdt(net)} />
             <DetailRow label="白名单名称" value={selectedBeneficiary?.name || '-'} />
-            <DetailRow label="收币地址" value={address} mono />
+            <DetailRow label="接收地址" value={address} mono />
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -1236,7 +1237,7 @@ function TransferList({
                 <TableCell>
                   <CryptoStatus status={row.status} rawStatus={rawCregisStatus(row)} />
                 </TableCell>
-                <TableCell>{row.direction === 'DEPOSIT' ? '收币' : '付币'}</TableCell>
+                <TableCell>{row.direction === 'DEPOSIT' ? '转入' : '转出'}</TableCell>
                 <TableCell>
                   <Stack direction="row" spacing={1} alignItems="center">
                     <Iconify icon={networkMeta[row.network].icon} width={20} />
@@ -1320,7 +1321,7 @@ function TransferDrawer({
               <Stack divider={<Divider flexItem />}>
                 <DetailRow
                   label="类型"
-                  value={transfer.direction === 'DEPOSIT' ? '收币' : '付币'}
+                  value={transfer.direction === 'DEPOSIT' ? '转入' : '转出'}
                 />
                 <DetailRow
                   label="网络"
@@ -1331,7 +1332,7 @@ function TransferDrawer({
                 <DetailRow label="链上金额" value={formatUsdt(transfer.amount)} />
                 <DetailRow label="手续费" value={formatUsdt(transfer.feeAmount)} />
                 <DetailRow
-                  label={transfer.direction === 'DEPOSIT' ? '打款方地址' : '源地址'}
+                  label={transfer.direction === 'DEPOSIT' ? '发送方地址' : '转出地址'}
                   value={transfer.fromAddress ? shorten(transfer.fromAddress, 10, 8) : '暂未获取'}
                   mono={Boolean(transfer.fromAddress)}
                 />
@@ -1350,11 +1351,11 @@ function TransferDrawer({
             </CardContent>
           </Card>
           {transfer.status === 'SUBMITTED' && (
-            <Alert severity="info">指令正在等待平台审批，审批前资金处于冻结状态。</Alert>
+            <Alert severity="info">转出申请正在等待审核，审核完成前相应金额保持冻结。</Alert>
           )}
           {rawCregisStatus(transfer) === 'exception' && (
             <Alert severity="warning">
-              指令正在异常调单，资金仍处于冻结状态。平台核对 Cregis 结果并完成调单后，余额才会更新。
+              该交易正在异常核查，相关金额仍处于冻结状态。核查完成并确认最终结果后，余额才会更新。
             </Alert>
           )}
           {transfer.rejectionReason && <Alert severity="error">{transfer.rejectionReason}</Alert>}
@@ -1374,7 +1375,7 @@ function CryptoStatus({
   if (rawStatus === 'exception') return <Label color="warning">异常调单</Label>;
   if (rawStatus === 'cancelled') return <Label color="default">已取消</Label>;
   const labels = {
-    SUBMITTED: '待审批',
+    SUBMITTED: '待审核',
     PROCESSING: '链上处理中',
     COMPLETED: '成功',
     REJECTED: '已拒绝',

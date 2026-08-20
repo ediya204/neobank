@@ -139,7 +139,7 @@ assert.match(router, /path: 'money\/otc'/);
 assert.match(router, /path: 'money\/payouts'/);
 assert.doesNotMatch(router, /客户主动换汇暂未开放/);
 assert.doesNotMatch(router, /submissionDisabledReason="当前版本的 OTC/);
-assert.match(router, /submissionDisabledReason="当前版本暂未开放客户法币转出申请/);
+assert.match(router, /submissionDisabledReason="银行转出服务当前暂未开放/);
 assert.match(router, /path: 'transactions', element: <CustomerActivity \/>/);
 assert.match(router, /<Navigate to="\/portal\/home" replace \/>/);
 assert.match(router, /<Navigate to="\/admin" replace \/>/);
@@ -288,7 +288,7 @@ assert.match(
 );
 assert.doesNotMatch(portalCustomerContext, /neobankApi<[\s\S]*?>\('\/customer\/profile'\)/);
 assert.match(portalCustomerContext, /\.slice\(0, 5\)/);
-for (const label of ['总览', '钱包', '转入转出', 'OTC', '交易记录']) {
+for (const label of ['账户概览', '账户与资产', '收付与兑换', 'OTC 兑换', '交易明细']) {
   assert.match(portalLayout, new RegExp(`\\['${label}',`));
 }
 assert.doesNotMatch(portalLayout, /\['VA 账户', '\/portal\/virtual-accounts'/);
@@ -396,7 +396,7 @@ assert.match(withdrawalAccountingMigration, /status = 'settled'/);
 assert.match(cregisHandlers, /withdrawal_accounting_not_enabled/);
 assert.match(cregisHandlers, /THEN 'pending_settlement'/);
 assert.match(coreReconciliation, /ledger\/reconciliation\/usdt/);
-assert.match(virtualAccountsPage, /选择银行并查看其支持币种/);
+assert.match(virtualAccountsPage, /本页仅显示当前可受理 VA 账户申请的银行及其支持币种/);
 assert.match(virtualAccountsPage, /supportedCurrencies/);
 
 console.log('Neobank full-admin-wallet profile checks passed.');

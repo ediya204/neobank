@@ -134,7 +134,7 @@ const fullAdminWalletRoutes = [
         element: (
           <CustomerActionPage
             action="payout"
-            submissionDisabledReason="当前版本暂未开放客户法币转出申请。"
+            submissionDisabledReason="银行转出服务当前暂未开放。"
           />
         ),
       },
@@ -143,7 +143,7 @@ const fullAdminWalletRoutes = [
         element: (
           <CustomerActionPage
             action="beneficiaries"
-            submissionDisabledReason="当前版本的收款人资料仅供查看，新增和修改暂未开放。"
+            submissionDisabledReason="收款人资料当前仅供查询，暂不支持新增或修改。"
           />
         ),
       },

@@ -37,7 +37,7 @@
     "search_prompt": "请输入搜索关键词"
   },
   "account": {
-    "partner_role": "合作方 Portal",
+    "partner_role": "合作伙伴工作台",
     "admin_role": "运营管理台",
     "back_home": "返回首页",
     "logout": "退出登录",
@@ -47,40 +47,40 @@
     "page_titles": {
       "admin_login": "管理后台安全登录",
       "admin_setup": "管理后台账户激活",
-      "portal_login": "合作方 Portal 安全登录",
-      "portal_setup": "合作方 Portal 账户激活",
+      "portal_login": "合作伙伴工作台安全登录",
+      "portal_setup": "合作伙伴账户激活",
       "customer_login": "客户网上银行登录",
-      "registration": "个人与企业开户注册"
+      "registration": "个人与企业账户申请"
     },
     "role_entries": {
       "admin": "运营管理后台",
-      "portal": "合作方 Portal",
+      "portal": "合作伙伴工作台",
       "customer": "网上银行"
     },
     "invalid_entry": {
       "page_title": "登录入口无效",
       "title": "此登录网址不可用",
-      "description": "管理后台与合作方 Portal 使用不同的登录网址，请仅使用为你的账户指定的准确网址。"
+      "description": "运营管理后台与合作伙伴工作台使用不同的登录入口。请使用与您的账户类型相符的入口。"
     },
     "layout": {
-      "eyebrow": "VA BaaS 安全工作区",
-      "title": "为敏感金融操作提供额外保护",
-      "subtitle": "账户密码与动态验证码共同保护管理后台和合作方 Portal，所有访问均按角色隔离。",
+      "eyebrow": "金融服务安全工作区",
+      "title": "多重验证保护每一次账户访问",
+      "subtitle": "账户密码与验证器动态码共同保护登录安全，不同账户角色使用相互隔离的访问权限。",
       "assurance_session": "会话由安全的 HttpOnly Cookie 保存",
       "assurance_totp": "使用验证器生成的一次性动态验证码",
       "assurance_audit": "登录与敏感操作均可审计",
       "partner": {
-        "eyebrow": "SSC数字银行合作方支付工作台",
-        "title": "统一管理账户、资金与付款",
-        "subtitle": "通过合作方 Portal 发起虚拟账户开户，查看法币与数字资产余额，并集中跟踪入账、转出、兑换及交易记录。",
+        "eyebrow": "SSC数字银行合作伙伴服务",
+        "title": "集中管理客户账户与资金服务",
+        "subtitle": "通过合作伙伴工作台管理虚拟账户申请、资金余额、收付款、兑换及交易明细。",
         "assurance_session": "账户与资金数据按合作方权限隔离",
         "assurance_totp": "动态验证码保护登录与敏感操作",
         "assurance_audit": "关键操作与资金记录全程留痕"
       },
       "customer": {
         "eyebrow": "SSC数字银行客户服务",
-        "title": "安全访问您的银行账户",
-        "subtitle": "登录后查看账户余额、交易记录与资金动态，并管理已开通的银行服务。",
+        "title": "安全访问您的网上银行",
+        "subtitle": "登录后可查看账户余额、交易明细与资金动态，并使用已开通的金融服务。",
         "assurance_session": "安全会话机制保护您的登录状态",
         "assurance_totp": "账户密码与动态验证码双重验证",
         "assurance_audit": "登录与账户操作保留安全审计记录"
@@ -122,36 +122,36 @@
     "sign_in": {
       "eyebrow": "账户登录",
       "title": "欢迎回来",
-      "subtitle": "使用管理员分配的账户登录。密码通过后，还需要验证器动态验证码。",
+      "subtitle": "请输入管理员分配的登录账户。密码验证后，还需输入验证器动态码。",
       "submit": "继续身份验证",
       "provisioned_only": "管理账户由管理员预先创建，不提供自主注册。",
       "new_customer": "首次使用 SSC数字银行？",
-      "open_account": "个人或企业开户注册",
-      "registration_helper": "提交申请后需完成人工 KYC / KYB 审核；审核通过后系统自动激活账户并创建 USDT-TRC20 钱包。",
+      "open_account": "申请个人或企业账户",
+      "registration_helper": "提交申请后需完成 KYC / KYB 合规审核；审核通过后，账户及获批服务才会启用。",
       "customer": {
         "eyebrow": "客户登录",
         "title": "登录网上银行",
-        "subtitle": "请输入开户注册时设置的邮箱和密码。KYC / KYB 通过并自动激活后即可登录。",
+        "subtitle": "请输入申请账户时设置的邮箱和密码。账户通过 KYC / KYB 审核并激活后即可登录。",
         "submit": "安全登录",
         "activated_only": "仅限已完成开户并激活网上银行的客户使用。如无法登录，请联系您的客户经理或银行支持团队。",
-        "new_customer": "还没有 SSC数字银行账户？",
+        "new_customer": "尚未开立 SSC数字银行账户？",
         "register": "申请开立账户",
-        "registration_helper": "可申请个人或企业账户。提交后需完成人工 KYC / KYB 审核，审核通过后系统自动开户并创建钱包。"
+        "registration_helper": "可申请个人或企业账户。账户将在 KYC / KYB 合规审核通过后开通。"
       }
     },
     "registration": {
-      "eyebrow": "安全开户注册",
+      "eyebrow": "安全账户申请",
       "progress": "第 {{current}} / {{total}} 步",
       "already_have_account": "已有账户？",
       "sign_in": "返回登录",
       "steps": {
         "account_type": "选择开户类型",
-        "details": "填写开户注册资料",
+        "details": "填写账户申请资料",
         "kyc": "准备身份验证",
         "review": "确认并提交申请"
       },
       "account_type": {
-        "description": "请选择与你的实际身份相符的类型。开户资料、验证范围和审核要求会根据选择调整。",
+        "description": "请选择与您的实际身份相符的账户类型。申请资料、验证范围和审核要求会根据选择调整。",
         "individual": {
           "title": "个人账户",
           "description": "适用于以个人名义持有和管理账户的申请人。"
@@ -162,7 +162,7 @@
         }
       },
       "details": {
-        "privacy": "本步骤仅收集开户预审所需资料。身份证件与人脸信息将在受保护的 KYC 页面完成。",
+        "privacy": "本步骤仅收集账户预审所需资料。身份证件与人脸信息将在受保护的身份验证页面提交。",
         "authorized_contact": "授权联系人",
         "beneficial_owner": "最终受益人",
         "contact": "联系方式",
@@ -196,7 +196,7 @@
         "us": "美国"
       },
       "kyc": {
-        "provider_handoff": "个人申请提交后，须通过 Sumsub 完成护照、本人活体人脸及住址证明三项核验；企业申请仍沿用现有人工 KYB。无论哪种类型，最终批准权均在合规后台。",
+        "provider_handoff": "个人申请提交后，须完成身份证件、本人活体人脸及住址证明核验；企业申请须完成人工 KYB。所有账户均以本机构合规审核的最终结论为准。",
         "item_label": "验证 {{number}}",
         "individual": {
           "document": "有效身份证或护照",
@@ -208,12 +208,12 @@
           "people": "董事、授权人及最终受益人身份",
           "ownership": "股权与控制结构说明"
         },
-        "security_title": "人工 KYC 与自动开户",
-        "security_description": "KYC 结论由后台人工记录；KYC 通过后系统自动激活账户，并幂等创建经 Cregis 归属验证的 USDT-TRC20 钱包。",
-        "consent": "我同意为开户注册、身份核验、反洗钱及制裁筛查目的处理所提交的资料。"
+        "security_title": "身份审核与账户开通",
+        "security_description": "身份验证服务的核验结果仅作为合规审核依据。合规审核通过后，账户及获批服务才会正式启用。",
+        "consent": "我同意为账户申请、身份核验、反洗钱及制裁筛查目的处理所提交的资料。"
       },
       "review": {
-        "pending_notice": "提交只会创建待审核申请。KYC / KYB 未通过前，账户、钱包和资金功能均不会启用。",
+        "pending_notice": "提交后将创建待审核申请。KYC / KYB 审核完成前，账户及资金服务不会启用。",
         "account_type": "开户类型",
         "applicant": "申请人 / 企业",
         "email": "联系邮箱",
@@ -237,8 +237,8 @@
       "actions": {
         "back": "上一步",
         "continue": "继续",
-        "start_sumsub": "提交申请并开始 Sumsub 验证",
-        "starting_sumsub": "正在安全启动 Sumsub…",
+        "start_sumsub": "提交申请并开始身份验证",
+        "starting_sumsub": "正在安全启动身份验证…",
         "submit": "提交开户申请",
         "submitting": "正在安全提交…"
       },
@@ -247,26 +247,26 @@
         "already_exists": "该邮箱已有待审核申请或账户，请联系客户服务核实进度。"
       },
       "sumsub": {
-        "required_notice": "请在下方完成 Sumsub 三项核验。服务商通过只代表申请具备进入合规人工审核的条件，不代表账户已经开通。",
-        "reviewing_notice": "Sumsub 已收到验证资料并正在处理。服务商完成核验后，结果会显示在本页上方；账户仍不会自动开通。",
-        "ready_notice": "护照、本人活体人脸及住址证明三项 Sumsub 核验已完成。申请现可进入合规人工审核；账户仍未开通。",
-        "rejected_notice": "Sumsub 核验未通过。请查看下方反馈；如允许补件，可在验证区继续提交。账户不会因此开通。",
+        "required_notice": "请在下方完成全部身份核验。核验完成仅代表申请可进入本机构合规审核，不代表账户已经开通。",
+        "reviewing_notice": "身份验证资料已提交并正在处理。核验结果完成后会显示在本页上方；账户不会自动开通。",
+        "ready_notice": "身份证件、本人活体人脸及住址证明核验已完成。申请现可进入本机构合规审核；账户仍未开通。",
+        "rejected_notice": "身份核验未通过。请查看下方反馈；如允许补件，可在验证区继续提交。账户不会因此开通。",
         "workspace_title": "完成身份验证",
-        "workspace_description": "无需离开 SSC 数字银行，在页面中央完成 Sumsub 护照、人脸和住址证明核验。",
-        "status_label": "Sumsub 验证状态",
-        "next_step": "在下方完成护照、本人活体人脸和住址证明三项核验。",
-        "ready_next_step": "Sumsub 核验已完成，无需重复提交；申请将进入合规人工审核。",
+        "workspace_description": "无需离开 SSC 数字银行，可在页面中央完成身份证件、本人活体人脸和住址证明核验。",
+        "status_label": "身份验证状态",
+        "next_step": "请完成身份证件、本人活体人脸和住址证明三项核验。",
+        "ready_next_step": "身份核验已完成，无需重复提交；申请将进入本机构合规审核。",
         "status": "验证状态：{{status}}",
         "refresh": "刷新状态",
         "retry": "重试",
-        "loading": "正在安全加载 Sumsub 身份验证…",
-        "unavailable": "身份验证服务暂时不可用。申请资料已保存，请稍后重试，无需重复提交开户注册。",
+        "loading": "正在安全加载身份验证服务…",
+        "unavailable": "身份验证服务暂时不可用。申请资料已保存，请稍后重试，无需重复提交账户申请。",
         "status_unavailable": "暂时无法刷新验证状态，请稍后重试。",
         "session_expired": "安全开户会话已过期，请联系客户服务继续该申请。",
         "statuses": {
           "initializing": "正在安全初始化",
           "awaiting_applicant": "待提交验证资料",
-          "provider_reviewing": "Sumsub 审核中",
+          "provider_reviewing": "身份验证服务审核中",
           "resubmission_required": "需要补充或重新提交资料",
           "provider_rejected": "服务商核验未通过",
           "ready_for_admin_review": "可进入合规人工审核",
@@ -275,8 +275,8 @@
       },
       "success": {
         "eyebrow": "待人工身份审核",
-        "title": "开户申请已收到",
-        "subtitle": "你的申请已进入资料预审。申请提交不代表开户完成；KYC / KYB 通过后系统会自动激活账户并创建钱包。",
+        "title": "账户申请已收到",
+        "subtitle": "您的申请已进入资料预审。提交申请不代表账户已经开通；请等待 KYC / KYB 合规审核结果。",
         "reference": "申请编号",
         "next_email": "妥善保存申请编号，并留意补件联络。",
         "next_kyc": "等待合规人员完成人工 KYC / KYB 审核。",
@@ -325,7 +325,7 @@
     },
     "verify": {
       "eyebrow": "第二步验证",
-      "title": "验证你的身份",
+      "title": "验证您的身份",
       "subtitle": "输入 {{email}} 验证器中当前显示的 6 位动态验证码。",
       "method_label": "选择验证方式",
       "authenticator": "验证器",
@@ -463,7 +463,7 @@
     "cloudflare_access_rotation_failed": "Cloudflare Access 凭证轮换失败。",
     "credential_rotation_state_changed": "云端凭证已变化，但本地审批状态冲突；请立即联系管理员处理。",
     "stale_integration_request": "该申请绑定的凭证已变化，请刷新并重新提交。",
-    "step_up_required": "请先完成当前账户的 TOTP 双重验证。",
+    "step_up_required": "请先完成当前账户的两步验证。",
     "invalid_totp_code": "验证码无效、已过期或已使用，请输入当前验证码。",
     "invalid_current_password": "当前密码不正确。",
     "password_unchanged": "新密码不能与当前密码相同。",

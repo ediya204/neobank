@@ -15,12 +15,12 @@ export default function PortalRoleEntryPage() {
   return (
     <>
       <Helmet>
-        <title>选择登录入口 | SSC Digital Bank</title>
+        <title>选择账户类型 | SSC Digital Bank</title>
       </Helmet>
       <Stack spacing={2.5}>
-        <Typography variant="h3">选择登录入口</Typography>
+        <Typography variant="h3">选择账户类型</Typography>
         <Typography color="text.secondary">
-          客户账户与合作方工作台使用不同的服务端会话，请选择与你的账户一致的入口。
+          网上银行与合作伙伴工作台采用独立的安全会话。请选择与您的账户类型相符的登录入口。
         </Typography>
         <Button
           component={RouterLink}
@@ -28,7 +28,7 @@ export default function PortalRoleEntryPage() {
           size="large"
           variant="contained"
         >
-          客户账户
+          进入网上银行
         </Button>
         <Button
           component={RouterLink}
@@ -36,7 +36,7 @@ export default function PortalRoleEntryPage() {
           size="large"
           variant="outlined"
         >
-          合作方工作台
+          进入合作伙伴工作台
         </Button>
       </Stack>
     </>

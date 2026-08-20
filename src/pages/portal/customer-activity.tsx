@@ -70,7 +70,7 @@ const tableHead = [
 const operationNames: Record<Operation['type'], string> = {
   DEPOSIT: '法币转入',
   PAYOUT: '法币转出',
-  ADJUSTMENT: '余额调整',
+  ADJUSTMENT: '账户调整',
   INTERNAL_TRANSFER: '账户划转',
   FX: 'USD / HKD 换汇',
   OTC: 'OTC 兑换',
@@ -194,16 +194,16 @@ export default function CustomerActivity() {
   return (
     <>
       <Helmet>
-        <title>交易记录 | {APP_DISPLAY_NAME}</title>
+        <title>交易明细 | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>
           <CustomBreadcrumbs
-            heading="交易记录"
-            links={[{ name: '总览', href: '/portal/home' }, { name: '交易记录' }]}
+            heading="交易明细"
+            links={[{ name: '账户概览', href: '/portal/home' }, { name: '交易明细' }]}
           />
           <Typography color="text.secondary" sx={{ mt: -2 }}>
-            在一个列表中追踪法币转入转出、USDT-TRON 和 OTC 兑换。点击任一记录查看详情。
+            集中查询银行转入转出、USDT 链上交易及兑换记录，并查看每笔交易的处理状态。
           </Typography>
           {error && <Alert severity="warning">{error}</Alert>}
           <Card>
@@ -216,7 +216,7 @@ export default function CustomerActivity() {
                 size="small"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索参考号、币种或类型"
+                placeholder="搜索交易参考号、币种或交易类型"
                 sx={{ flex: 1, minWidth: { md: 280 } }}
                 InputProps={{
                   startAdornment: (
@@ -238,7 +238,7 @@ export default function CustomerActivity() {
                   <MenuItem value="FIAT_OUT">法币转出</MenuItem>
                   <MenuItem value="CRYPTO_IN">USDT 转入</MenuItem>
                   <MenuItem value="CRYPTO_OUT">USDT 转出</MenuItem>
-                  <MenuItem value="EXCHANGE">换汇 / OTC</MenuItem>
+                  <MenuItem value="EXCHANGE">法币兑换 / OTC</MenuItem>
                 </Select>
               </FormControl>
               <FormControl size="small" sx={{ minWidth: 150 }}>
@@ -353,7 +353,7 @@ export default function CustomerActivity() {
 
             {!rows.length && (
               <Typography color="text.secondary" align="center" sx={{ py: 8 }}>
-                暂无符合条件的交易
+                暂无符合当前条件的交易记录
               </Typography>
             )}
           </Card>
@@ -390,13 +390,13 @@ function ActivityDetailDrawer({ row, onClose }: { row: ActivityRow | null; onClo
           >
             <Box sx={{ minWidth: 0 }}>
               <Typography id="activity-detail-title" variant="h5">
-                交易详情
+                交易明细
               </Typography>
               <Typography variant="body2" color="text.secondary" noWrap>
                 {row.reference}
               </Typography>
             </Box>
-            <IconButton aria-label="关闭交易详情" onClick={onClose}>
+            <IconButton aria-label="关闭交易明细" onClick={onClose}>
               <Iconify icon="solar:close-circle-linear" />
             </IconButton>
           </Stack>
@@ -423,7 +423,7 @@ function ActivityDetailDrawer({ row, onClose }: { row: ActivityRow | null; onClo
 
             {rejectionReason && (
               <Alert severity="error">
-                <Typography variant="subtitle2">未通过原因</Typography>
+                <Typography variant="subtitle2">未通过说明</Typography>
                 {rejectionReason}
               </Alert>
             )}
@@ -475,7 +475,7 @@ function activityDetailItems(row: ActivityRow): DetailItem[] {
       { label: '网络确认', value: `${transfer.confirmations} 次` },
       { label: '创建时间', value: formatActivityDate(transfer.createdAt) },
       { label: '提交时间', value: formatActivityDate(transfer.submittedAt) },
-      { label: '批准时间', value: formatActivityDate(transfer.approvedAt) },
+      { label: '审核通过时间', value: formatActivityDate(transfer.approvedAt) },
       { label: '完成时间', value: formatActivityDate(transfer.completedAt) },
     ];
   }
@@ -518,7 +518,7 @@ function activityDetailItems(row: ActivityRow): DetailItem[] {
     { label: '交易说明', value: operation.narrative },
     { label: '创建时间', value: formatActivityDate(operation.createdAt) },
     { label: '提交时间', value: formatActivityDate(operation.submittedAt) },
-    { label: '批准时间', value: formatActivityDate(operation.approvedAt) },
+    { label: '审核通过时间', value: formatActivityDate(operation.approvedAt) },
     { label: '执行时间', value: formatActivityDate(operation.executedAt) },
   ];
 }

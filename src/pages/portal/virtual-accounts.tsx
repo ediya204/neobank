@@ -60,7 +60,7 @@ export default function VirtualAccountsPage() {
         if (first?.supportedCurrencies[0]) setCurrency(first.supportedCurrencies[0]);
       }
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'VA 账户数据加载失败');
+      setError(value instanceof Error ? value.message : '暂时无法读取 VA 账户，请稍后重试。');
     } finally {
       setLoading(false);
     }
@@ -94,7 +94,7 @@ export default function VirtualAccountsPage() {
         method: 'POST',
         body: JSON.stringify({ channelId: selectedChannel.id, currency, purpose }),
       });
-      setSuccess('VA 申请已提交。银行账号会在后台完成审核与录入后显示。');
+      setSuccess('VA 账户申请已提交。审核完成并取得银行分配的账号后，账户资料会显示在本页。');
       setApplying(false);
       await load();
     } catch (value) {
@@ -122,10 +122,10 @@ export default function VirtualAccountsPage() {
                 Virtual accounts
               </Typography>
               <Typography variant="h3" sx={{ mt: 0.25 }}>
-                VA 账户
+                虚拟账户（VA）
               </Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                选择银行并查看其支持币种；提交后由运营录入银行实际分配的账号。
+                按银行与币种申请专属收款账户，并在本页跟踪审核进度。
               </Typography>
             </Box>
             <Button
@@ -133,7 +133,7 @@ export default function VirtualAccountsPage() {
               startIcon={<Iconify icon="solar:buildings-2-bold-duotone" />}
               onClick={() => setApplying((value) => !value)}
             >
-              {applying ? '收起申请' : '申请 VA'}
+              {applying ? '收起申请表' : '申请 VA 账户'}
             </Button>
           </Stack>
 
@@ -145,9 +145,9 @@ export default function VirtualAccountsPage() {
               <Box component="form" onSubmit={submit} sx={{ p: { xs: 2.5, md: 3.5 } }}>
                 <Stack spacing={2.5}>
                   <Box>
-                    <Typography variant="h6">选择开户银行</Typography>
+                    <Typography variant="h6">选择服务银行</Typography>
                     <Typography variant="body2" color="text.secondary">
-                      这里只显示后台已启用、资料完整的 VA 银行渠道。
+                      本页仅显示当前可受理 VA 账户申请的银行及其支持币种。
                     </Typography>
                   </Box>
                   <FormControl fullWidth required>
@@ -182,7 +182,7 @@ export default function VirtualAccountsPage() {
                           {selectedChannel.settlementBankName || selectedChannel.name}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                          {selectedChannel.bankAddress || '银行地址由运营维护'}
+                          {selectedChannel.bankAddress || '银行地址以最终开户资料为准'}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           SWIFT / BIC：{selectedChannel.swiftBic || '—'}
@@ -206,7 +206,9 @@ export default function VirtualAccountsPage() {
                       </Box>
                     </Box>
                   ) : (
-                    <Alert severity="info">当前没有可申请的 VA 银行，请联系运营人员。</Alert>
+                    <Alert severity="info">
+                      当前暂无可受理申请的银行。如需协助，请联系客户服务团队。
+                    </Alert>
                   )}
 
                   {selectedChannel && (
@@ -252,9 +254,9 @@ export default function VirtualAccountsPage() {
           )}
 
           <Box>
-            <Typography variant="h5">账户与申请记录</Typography>
+            <Typography variant="h5">VA 账户与申请记录</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              银行固定资料来自所选渠道；账号与 IBAN 由运营按银行回执录入。
+              账户名称、账号及 IBAN 以银行最终分配结果为准。
             </Typography>
           </Box>
 
@@ -288,10 +290,10 @@ export default function VirtualAccountsPage() {
             >
               <Iconify icon="solar:buildings-2-bold-duotone" width={36} color="primary.main" />
               <Typography variant="h6" sx={{ mt: 1.5 }}>
-                尚未申请 VA
+                暂无 VA 账户申请
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                选择银行后即可查看支持币种并提交申请。
+                申请后可在本页查看审核状态及已开通账户资料。
               </Typography>
             </Box>
           )}
@@ -353,12 +355,12 @@ function RequestRow({ request }: { request: VirtualAccountRequest }) {
         )}
         {!account && request.status === 'REJECTED' && (
           <Alert severity="error" variant="outlined">
-            {request.rejectionReason || '申请未通过，请联系运营人员。'}
+            {request.rejectionReason || '申请未通过。如需了解详情，请联系客户服务团队。'}
           </Alert>
         )}
         {!account && request.status !== 'REJECTED' && (
           <Typography variant="body2" color="text.secondary">
-            运营录入银行实际账号后会显示在这里。
+            审核完成并取得银行分配的账号后，账户资料会显示在这里。
           </Typography>
         )}
       </Box>
@@ -369,12 +371,12 @@ function RequestRow({ request }: { request: VirtualAccountRequest }) {
 function vaErrorMessage(value: unknown) {
   const message = value instanceof Error ? value.message : '';
   const messages: Record<string, string> = {
-    active_customer_required: '账户尚未激活，暂时不能申请 VA。',
+    active_customer_required: '账户尚未激活，暂时无法申请 VA 账户。',
     virtual_account_channel_not_found: '所选银行已停用或不存在，请刷新后重新选择。',
     virtual_account_channel_currency_unsupported: '所选银行不支持这个币种，请重新选择。',
     virtual_account_request_already_pending: '该银行和币种已有一笔审核中的申请。',
-    virtual_account_purpose_required: '请填写清晰的账户用途。',
-    customer_core_route_forbidden: '当前客户会话无权访问这项后台能力。',
+    virtual_account_purpose_required: '请说明该账户的主要用途。',
+    customer_core_route_forbidden: '当前账户没有申请 VA 账户的权限。',
   };
-  return messages[message] || message || 'VA 申请处理失败，请稍后重试。';
+  return messages[message] || message || '暂时无法处理 VA 账户申请，请稍后重试。';
 }

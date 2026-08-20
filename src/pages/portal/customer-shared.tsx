@@ -31,8 +31,8 @@ export function accountLabel(account: MoneyAccount) {
 const typeNames: Record<Operation['type'], string> = {
   DEPOSIT: '入账',
   PAYOUT: '付款',
-  ADJUSTMENT: '余额调整',
-  INTERNAL_TRANSFER: '内部转账',
+  ADJUSTMENT: '账户调整',
+  INTERNAL_TRANSFER: '账户间划转',
   FX: '换汇',
   OTC: 'OTC 兑换',
 };
@@ -70,7 +70,7 @@ export function OperationStatus({ status }: { status: Operation['status'] }) {
 export function AccountKindChip({ account }: { account: MoneyAccount }) {
   let label = SYSTEM_WALLET_PRODUCT_NAME;
   if (account.kind === 'VIRTUAL_ACCOUNT') label = 'VA 账户';
-  if (account.kind === 'CRYPTO_WALLET') label = '数字资产';
+  if (account.kind === 'CRYPTO_WALLET') label = '数字资产账户';
   return (
     <Chip
       size="small"

@@ -37,7 +37,7 @@
     "search_prompt": "Enter a search term"
   },
   "account": {
-    "partner_role": "Partner Portal",
+    "partner_role": "Partner Workspace",
     "admin_role": "Operations Console",
     "back_home": "Back to home",
     "logout": "Sign out",
@@ -47,40 +47,40 @@
     "page_titles": {
       "admin_login": "Secure admin sign-in",
       "admin_setup": "Activate admin account",
-      "portal_login": "Secure Partner Portal sign-in",
-      "portal_setup": "Activate Partner Portal account",
+      "portal_login": "Secure Partner Workspace sign-in",
+      "portal_setup": "Activate partner account",
       "customer_login": "Customer online banking sign-in",
       "registration": "Individual and business account application"
     },
     "role_entries": {
       "admin": "Operations Admin",
-      "portal": "Partner Portal",
+      "portal": "Partner Workspace",
       "customer": "Online Banking"
     },
     "invalid_entry": {
       "page_title": "Invalid sign-in link",
       "title": "This sign-in link isn’t valid",
-      "description": "Admin and Partner Portal accounts use different sign-in links. Open the link provided for your account."
+      "description": "Operations Admin and Partner Workspace accounts use separate sign-in pages. Use the page that matches your account type."
     },
     "layout": {
-      "eyebrow": "VA BaaS secure workspace",
-      "title": "Extra protection for sensitive financial operations",
-      "subtitle": "Your password and authenticator code protect the Admin and Partner workspaces, with strict role separation.",
+      "eyebrow": "Secure financial services workspace",
+      "title": "Layered verification for every account sign-in",
+      "subtitle": "Your password and authenticator code protect account access, with separate permissions for each account role.",
       "assurance_session": "Sessions use secure HttpOnly cookies",
       "assurance_totp": "Verification codes come from your authenticator",
       "assurance_audit": "Sign-ins and sensitive actions are auditable",
       "partner": {
-        "eyebrow": "SSC Digital Bank partner payments workspace",
-        "title": "Manage accounts, funds and payments in one place",
-        "subtitle": "Open virtual accounts, review fiat and digital-asset balances, and track deposits, payouts, conversions and transaction records through the Partner Portal.",
+        "eyebrow": "SSC Digital Bank partner services",
+        "title": "Manage customer accounts and financial services",
+        "subtitle": "Use the Partner Workspace to manage virtual-account applications, balances, payments, conversions, and transaction details.",
         "assurance_session": "Account and fund data are isolated by partner permissions",
         "assurance_totp": "Authenticator verification protects sign-ins and sensitive actions",
         "assurance_audit": "Key actions and fund records remain fully traceable"
       },
       "customer": {
         "eyebrow": "SSC Digital Bank customer banking",
-        "title": "Secure access to your bank accounts",
-        "subtitle": "Sign in to review balances, transactions and account activity, and manage the banking services available to you.",
+        "title": "Secure access to Online Banking",
+        "subtitle": "Sign in to review balances, transaction details, and account activity, and use your available financial services.",
         "assurance_session": "Secure session controls protect your signed-in access",
         "assurance_totp": "Your password and authenticator code provide two-step verification",
         "assurance_audit": "Sign-ins and account activity are recorded for security review"
@@ -122,21 +122,21 @@
     "sign_in": {
       "eyebrow": "Account sign in",
       "title": "Welcome back",
-      "subtitle": "Sign in with the account your administrator provided. After your password, you’ll enter a code from your authenticator.",
+      "subtitle": "Enter the sign-in account provided by your administrator. After password verification, enter the current code from your authenticator.",
       "submit": "Continue to verification",
       "provisioned_only": "Administrative accounts are provisioned by an administrator and cannot be self-registered.",
       "new_customer": "New to SSC Digital Bank?",
-      "open_account": "Open an individual or business account",
-      "registration_helper": "Manual KYC / KYB review is required after submission. Approval automatically activates the account and creates a USDT-TRC20 wallet.",
+      "open_account": "Apply for an individual or business account",
+      "registration_helper": "KYC / KYB compliance review is required after submission. The account and approved services are enabled only after approval.",
       "customer": {
         "eyebrow": "Customer sign-in",
         "title": "Sign in to Online Banking",
-        "subtitle": "Enter the email and password you chose when applying. Sign-in becomes available after KYC / KYB approval and automatic activation.",
+        "subtitle": "Enter the email and password you chose during your application. Sign-in becomes available after KYC / KYB approval and account activation.",
         "submit": "Secure sign in",
         "activated_only": "For customers who have completed account opening and activated Online Banking. If you cannot sign in, contact your relationship manager or bank support team.",
-        "new_customer": "New to SSC Digital Bank?",
+        "new_customer": "Not yet an SSC Digital Bank customer?",
         "register": "Apply for an account",
-        "registration_helper": "Apply for an individual or business account. Manual KYC / KYB approval automatically opens the account and creates its wallet."
+        "registration_helper": "Apply for an individual or business account. The account opens only after KYC / KYB compliance approval."
       }
     },
     "registration": {
@@ -146,12 +146,12 @@
       "sign_in": "Back to sign in",
       "steps": {
         "account_type": "Choose an account type",
-        "details": "Enter application details",
+        "details": "Enter account application details",
         "kyc": "Prepare identity verification",
         "review": "Review and submit"
       },
       "account_type": {
-        "description": "Choose the type that matches your legal status. Application details, verification scope, and review requirements adapt to your choice.",
+        "description": "Choose the account type that matches your legal status. Application details, verification scope, and review requirements adapt to your choice.",
         "individual": {
           "title": "Individual account",
           "description": "For applicants who will hold and manage an account in their own name."
@@ -162,7 +162,7 @@
         }
       },
       "details": {
-        "privacy": "This step only collects details needed for application pre-screening. Identity documents and facial verification are completed on a protected KYC page.",
+        "privacy": "This step only collects details needed for application pre-screening. Identity documents and facial verification are submitted through a protected verification page.",
         "authorized_contact": "Authorized contact",
         "beneficial_owner": "Beneficial owner",
         "contact": "Contact details",
@@ -196,7 +196,7 @@
         "us": "United States"
       },
       "kyc": {
-        "provider_handoff": "Individual applicants complete passport, facial liveness, and proof-of-address checks with Sumsub after submission. Business applications remain subject to the existing manual KYB process. In both cases, only Compliance can give final approval.",
+        "provider_handoff": "Individual applicants must complete identity-document, facial-liveness, and proof-of-address checks. Business applicants must complete manual KYB. The institution's Compliance team makes every final account decision.",
         "item_label": "Check {{number}}",
         "individual": {
           "document": "Valid identity card or passport",
@@ -208,12 +208,12 @@
           "people": "Directors, authorized persons, and beneficial owners",
           "ownership": "Ownership and control structure"
         },
-        "security_title": "Manual KYC and automatic activation",
-        "security_description": "Compliance records the KYC decision manually. Approval automatically activates the account and idempotently creates a Cregis-verified USDT-TRC20 wallet.",
-        "consent": "I consent to processing the submitted information for account opening, identity verification, anti-money-laundering, and sanctions screening."
+        "security_title": "Identity review and account opening",
+        "security_description": "Provider verification is evidence for Compliance review only. The account and approved services are enabled after final Compliance approval.",
+        "consent": "I consent to processing the submitted information for this account application, identity verification, anti-money-laundering, and sanctions screening."
       },
       "review": {
-        "pending_notice": "Submission only creates an application for review. Accounts, wallets, and fund functions remain disabled until KYC / KYB passes.",
+        "pending_notice": "Submission creates an application for review. The account and financial services remain unavailable until KYC / KYB approval.",
         "account_type": "Account type",
         "applicant": "Applicant / business",
         "email": "Contact email",
@@ -237,8 +237,8 @@
       "actions": {
         "back": "Back",
         "continue": "Continue",
-        "start_sumsub": "Submit and start Sumsub verification",
-        "starting_sumsub": "Starting Sumsub securely…",
+        "start_sumsub": "Submit and start identity verification",
+        "starting_sumsub": "Starting identity verification securely…",
         "submit": "Submit application",
         "submitting": "Submitting securely…"
       },
@@ -247,26 +247,26 @@
         "already_exists": "An application or account already exists for this email. Contact customer support to confirm its status."
       },
       "sumsub": {
-        "required_notice": "Complete all three Sumsub checks below. A successful provider result only makes the application eligible for Compliance review; it does not open the account.",
-        "reviewing_notice": "Sumsub has received your verification details and is processing them. The result will appear above when ready; your account will not open automatically.",
-        "ready_notice": "The passport, facial liveness, and proof-of-address checks are complete. The application is now eligible for Compliance review; the account is not yet open.",
-        "rejected_notice": "Sumsub did not pass the verification. Review the feedback below and resubmit in the verification area if allowed. The account will remain closed.",
+        "required_notice": "Complete every identity check below. Completion only makes the application eligible for the institution's Compliance review; it does not open the account.",
+        "reviewing_notice": "Your identity-verification details have been submitted and are being processed. The result will appear above when ready; your account will not open automatically.",
+        "ready_notice": "The identity-document, facial-liveness, and proof-of-address checks are complete. The application is now eligible for the institution's Compliance review; the account is not yet open.",
+        "rejected_notice": "Identity verification was not successful. Review the feedback below and resubmit in the verification area if allowed. The account will remain closed.",
         "workspace_title": "Complete identity verification",
-        "workspace_description": "Stay on SSC Digital Bank and complete the Sumsub passport, facial, and proof-of-address checks in the workspace below.",
-        "status_label": "Sumsub verification status",
-        "next_step": "Complete the passport, facial liveness, and proof-of-address checks below.",
-        "ready_next_step": "Sumsub verification is complete. Do not submit again; the application will proceed to Compliance review.",
+        "workspace_description": "Stay on SSC Digital Bank and complete the identity-document, facial, and proof-of-address checks in the workspace below.",
+        "status_label": "Identity verification status",
+        "next_step": "Complete the identity-document, facial-liveness, and proof-of-address checks below.",
+        "ready_next_step": "Identity verification is complete. Do not submit again; the application will proceed to the institution's Compliance review.",
         "status": "Verification status: {{status}}",
         "refresh": "Refresh status",
         "retry": "Try again",
-        "loading": "Loading secure Sumsub verification…",
+        "loading": "Loading secure identity verification…",
         "unavailable": "Identity verification is temporarily unavailable. Your application is saved; try again without submitting a new application.",
         "status_unavailable": "The verification status could not be refreshed. Try again shortly.",
         "session_expired": "The secure onboarding session has expired. Contact support to resume this application.",
         "statuses": {
           "initializing": "starting securely",
           "awaiting_applicant": "documents required",
-          "provider_reviewing": "under Sumsub review",
+          "provider_reviewing": "under identity-provider review",
           "resubmission_required": "additional documents required",
           "provider_rejected": "provider checks not passed",
           "ready_for_admin_review": "ready for Compliance review",
@@ -275,8 +275,8 @@
       },
       "success": {
         "eyebrow": "Manual identity review pending",
-        "title": "Application received",
-        "subtitle": "Your application is in pre-screening. Submission does not mean the account is open; KYC / KYB approval automatically activates it and creates its wallet.",
+        "title": "Account application received",
+        "subtitle": "Your application is in pre-screening. Submission does not mean the account is open; please wait for the KYC / KYB compliance decision.",
         "reference": "Application reference",
         "next_email": "Keep the application reference and watch for document follow-up.",
         "next_kyc": "Wait for Compliance to complete the manual KYC / KYB review.",

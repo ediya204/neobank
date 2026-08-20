@@ -70,19 +70,19 @@ const payoutMethods: Array<{
   {
     value: 'PLATFORM',
     title: '代付',
-    description: '平台银行通道代为执行付款',
+    description: '通过平台合作银行向收款人付款',
     icon: 'solar:buildings-2-bold-duotone',
   },
   {
     value: 'POBO',
     title: 'POBO',
-    description: '以客户名义向第三方付款',
+    description: '以客户名义向已登记收款人付款',
     icon: 'solar:user-check-bold-duotone',
   },
   {
     value: 'VA',
     title: 'VA 转出',
-    description: '从客户的 USD / HKD VA 账户付款',
+    description: '从客户名下的 USD / HKD VA 账户付款',
     icon: 'solar:wallet-money-bold-duotone',
   },
 ];
@@ -90,27 +90,27 @@ const payoutMethods: Array<{
 const copy: Record<CustomerAction, { title: string; description: string; icon: string }> = {
   transfer: {
     title: '账户内划转',
-    description: '在自己的同币种账户之间转移资金。',
+    description: '在本人名下的同币种账户之间划转资金。',
     icon: 'solar:transfer-horizontal-bold-duotone',
   },
   fx: {
-    title: 'USD / HKD 换汇',
-    description: '使用当前报价在 USD 与 HKD 余额之间兑换。',
+    title: '法币兑换',
+    description: '按当前报价在 USD 与 HKD 账户之间兑换。',
     icon: 'solar:refresh-square-bold-duotone',
   },
   otc: {
     title: 'OTC 兑换',
-    description: '使用法币买入或卖出账户内 USDT。',
+    description: '按实时报价使用法币买入 USDT，或卖出 USDT 接收法币。',
     icon: 'solar:hand-money-bold-duotone',
   },
   payout: {
-    title: '法币转出',
+    title: '银行转出',
     description: '向已登记的银行收款人提交 USD / HKD 付款申请。',
     icon: 'solar:upload-minimalistic-bold-duotone',
   },
   beneficiaries: {
-    title: '收款人',
-    description: '安全保存个人或企业第三方银行收款资料。',
+    title: '收款人管理',
+    description: '管理经核对的第三方银行账户及数字资产地址。',
     icon: 'solar:user-id-bold-duotone',
   },
 };
@@ -162,7 +162,7 @@ export default function CustomerActionPage({
       setRates(rows);
       setRatesError('');
     } catch (value) {
-      setRatesError(value instanceof Error ? value.message : '实时报价加载失败');
+      setRatesError(value instanceof Error ? value.message : '暂时无法获取实时报价，请稍后重试。');
     } finally {
       setRatesLoading(false);
     }
@@ -188,7 +188,9 @@ export default function CustomerActionPage({
   };
 
   useEffect(() => {
-    loadDetail().catch((value) => setError(value instanceof Error ? value.message : '加载失败'));
+    loadDetail().catch((value) =>
+      setError(value instanceof Error ? value.message : '暂时无法读取账户资料，请稍后重试。')
+    );
   }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -241,10 +243,10 @@ export default function CustomerActionPage({
   }, [accounts, action, otcDirection, payoutMethod, selectedBeneficiary]);
   let sourceFieldLabel = action === 'payout' ? '付款账户' : '从账户';
   if (action === 'otc') {
-    sourceFieldLabel = otcDirection === 'BUY_USDT' ? '付款账户' : '付款钱包';
+    sourceFieldLabel = otcDirection === 'BUY_USDT' ? '付款账户' : 'USDT 账户';
   }
   const targetFieldLabel =
-    action === 'otc' && otcDirection === 'BUY_USDT' ? '到账钱包' : '到账账户';
+    action === 'otc' && otcDirection === 'BUY_USDT' ? '到账 USDT 账户' : '到账账户';
   const payoutChannel =
     action === 'payout' && source
       ? channels.find(
@@ -286,20 +288,20 @@ export default function CustomerActionPage({
       : null;
   const quoteReady = Boolean(readyQuote);
   const quoteInvalid = quote?.status === 'unavailable' || quote?.status === 'stale';
-  let quoteHelperText = '选择付款和到账账户并输入金额后计算';
+  let quoteHelperText = '选择付款与收款账户并输入金额后获取报价';
   if (quote?.status === 'loading') quoteHelperText = '正在获取实时报价…';
   if (quote?.status === 'unavailable') {
     quoteHelperText = ratesError
       ? '实时报价加载失败，请稍后重试'
       : '当前币种组合暂无有效报价，请稍后重试';
   }
-  if (quote?.status === 'stale') quoteHelperText = '报价已过期，系统将自动刷新，请稍后重试';
+  if (quote?.status === 'stale') quoteHelperText = '报价已过期，正在重新获取实时报价';
   if (readyQuote) {
-    quoteHelperText = `按当前客户报价估算${
+    quoteHelperText = `按当前实时报价估算${
       readyQuote.rate.marketUpdatedAt
         ? ` · 行情时间 ${new Date(readyQuote.rate.marketUpdatedAt).toLocaleString('zh-CN')}`
         : ''
-    }；提交时将重新取价并锁定最终金额`;
+    }；确认前将重新取价并锁定最终成交金额`;
   }
 
   useEffect(() => {
@@ -354,7 +356,7 @@ export default function CustomerActionPage({
   const availableBalanceLabel = source ? money(source.availableBalance, source.currency) : '';
   let amountHelperText = '请先选择付款账户';
   if (action === 'otc' && otcDirection === 'SELL_USDT') {
-    amountHelperText = '请先选择付款钱包';
+    amountHelperText = '请先选择 USDT 账户';
   }
   if (source) amountHelperText = `可用余额 ${availableBalanceLabel}`;
   if (insufficientBalance) amountHelperText = `金额超过可用余额 ${availableBalanceLabel}`;
@@ -367,7 +369,7 @@ export default function CustomerActionPage({
       return;
     }
     if (conversionType && !quoteReady) {
-      setError('当前没有可提交的有效报价，请等待报价刷新后重试');
+      setError('当前报价已失效，请重新获取报价后再确认。');
       return;
     }
     setError('');
@@ -434,11 +436,11 @@ export default function CustomerActionPage({
         setPendingQuote(created);
         return;
       }
-      let successMessage = '指令已提交审批，完成后余额会自动更新。';
+      let successMessage = '申请已提交审核。处理完成后，账户余额将自动更新。';
       if (action === 'payout') {
-        successMessage = '付款已提交。平台管理员审批后将由银行或支付通道执行。';
+        successMessage = '付款申请已提交。审核通过后将由银行或支付通道执行。';
       } else if (action === 'fx' && created.rate && created.quoteAmount && created.quoteCurrency) {
-        successMessage = `指令已按提交时实时行情锁定：1 ${created.currency} = ${created.rate} ${
+        successMessage = `成交报价已锁定：1 ${created.currency} = ${created.rate} ${
           created.quoteCurrency
         }，预计到账 ${money(created.quoteAmount, created.quoteCurrency)}。`;
       }
@@ -447,7 +449,7 @@ export default function CustomerActionPage({
       setNote('');
       await Promise.all([loadDetail(), refresh(), loadRates()]);
     } catch (value) {
-      setError(value instanceof Error ? value.message : '提交失败');
+      setError(value instanceof Error ? value.message : '申请暂时无法提交，请稍后重试。');
     } finally {
       setSubmitting(false);
     }
@@ -466,7 +468,7 @@ export default function CustomerActionPage({
       setPendingQuote(null);
       setQuoteCountdownMs(0);
       setSuccess(
-        `兑换已执行：1 ${completed.currency} = ${completed.rate} ${
+        `兑换已完成：1 ${completed.currency} = ${completed.rate} ${
           completed.quoteCurrency
         }，到账 ${money(completed.quoteAmount || '0', completed.quoteCurrency || 'USDT')}。`
       );
@@ -474,7 +476,7 @@ export default function CustomerActionPage({
       setNote('');
       await Promise.all([loadDetail(), refresh(), loadRates()]);
     } catch (value) {
-      const message = value instanceof Error ? value.message : '确认执行失败';
+      const message = value instanceof Error ? value.message : '暂时无法完成兑换，请重新获取报价。';
       if (message.includes('quote_expired')) {
         setQuoteCountdownMs(0);
         setError('报价已失效，请重新获取报价。');
@@ -486,11 +488,11 @@ export default function CustomerActionPage({
     }
   };
 
-  let submissionInfoText = '提交后进入平台单人审批；审批完成前你可以在交易记录中查看进度。';
+  let submissionInfoText = '提交后将进入审核流程，您可在交易明细中随时查看处理进度。';
   if (submissionDisabledReason) {
-    submissionInfoText = '当前页面保留账户与报价展示，不会创建资金指令。';
+    submissionInfoText = '当前仅提供账户与报价查询，不会创建或执行资金交易。';
   } else if (action === 'otc') {
-    submissionInfoText = '先获取服务端成交报价；报价仅保留 5 秒，点击确认后立即执行，无需审批。';
+    submissionInfoText = '成交报价有效期为 5 秒。确认后将立即完成兑换并更新余额，交易不可撤销。';
   }
   let quoteConfirmButtonText = '报价已失效';
   if (submitting) quoteConfirmButtonText = '正在执行…';
@@ -525,7 +527,7 @@ export default function CustomerActionPage({
             {info.description}
           </Typography>
           {submissionDisabledReason && (
-            <Alert severity="info">{submissionDisabledReason} 历史记录可在“交易记录”中查询。</Alert>
+            <Alert severity="info">{submissionDisabledReason} 历史记录可在“交易明细”中查询。</Alert>
           )}
           {error && (
             <Alert
@@ -537,7 +539,7 @@ export default function CustomerActionPage({
                   onClick={() => {
                     setError('');
                     loadDetail().catch(() =>
-                      setError('账户资料暂时无法读取，请刷新账户或重新登录后重试。')
+                      setError('账户资料暂时无法读取，请刷新页面或重新登录后重试。')
                     );
                     loadRates().catch(() => undefined);
                   }}
@@ -558,10 +560,10 @@ export default function CustomerActionPage({
             <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
               <Stepper activeStep={0} sx={{ mb: 4, display: { xs: 'none', sm: 'flex' } }}>
                 <Step>
-                  <StepLabel>填写信息</StepLabel>
+                  <StepLabel>填写交易信息</StepLabel>
                 </Step>
                 <Step>
-                  <StepLabel>平台审批</StepLabel>
+                  <StepLabel>{action === 'otc' ? '确认成交' : '审核处理'}</StepLabel>
                 </Step>
                 <Step>
                   <StepLabel>完成</StepLabel>
@@ -759,8 +761,8 @@ export default function CustomerActionPage({
                       {!sourceOptions.length && (
                         <Alert severity="warning">
                           {otcDirection === 'BUY_USDT'
-                            ? '当前没有可用于买入 USDT 的活动法币账户。'
-                            : '当前没有可用于卖出的活动 USDT-TRC20 钱包。'}
+                            ? '当前没有可用于买入 USDT 的有效法币账户。'
+                            : '当前没有可用于卖出的有效 USDT-TRC20 账户。'}
                         </Alert>
                       )}
                     </>
@@ -798,8 +800,8 @@ export default function CustomerActionPage({
                   {action === 'otc' && source && !targets.length && (
                     <Alert severity="warning">
                       {otcDirection === 'BUY_USDT'
-                        ? '当前没有可接收资产的活动 USDT-TRC20 钱包。'
-                        : '当前没有可接收卖出款项的活动 USD / HKD 账户。'}
+                        ? '当前没有可接收资产的有效 USDT-TRC20 账户。'
+                        : '当前没有可接收卖出款项的有效 USD / HKD 账户。'}
                     </Alert>
                   )}
                   <TextField
@@ -906,7 +908,7 @@ export default function CustomerActionPage({
                           </Stack>
                           <Stack direction="row" justifyContent="space-between" gap={2}>
                             <Typography variant="body2" color="text.secondary">
-                              当前客户报价
+                              客户成交报价
                             </Typography>
                             <Typography variant="subtitle2">
                               1 {source.currency} ={' '}
@@ -923,8 +925,8 @@ export default function CustomerActionPage({
                             </Typography>
                           </Stack>
                           <Typography variant="caption" color="text.secondary">
-                            FastForex 实时中间价仅供参考；预计到账已包含报价费率。提交时服务端会再次
-                            取价，并把最终成交价和到账金额锁定到指令。
+                            市场中间价仅供参考，预计到账金额已包含报价费率。确认时系统会重新取价，
+                            并锁定最终成交价及到账金额。
                           </Typography>
                         </Stack>
                       </CardContent>
@@ -952,7 +954,7 @@ export default function CustomerActionPage({
                       Boolean(conversionType && !quoteReady)
                     }
                   >
-                    {submissionDisabledReason && '暂未开放提交'}
+                    {submissionDisabledReason && '当前不可提交'}
                     {submitting && '正在提交…'}
                     {!submissionDisabledReason &&
                       !submitting &&
@@ -1068,15 +1070,15 @@ function BeneficiaryPage({
   return (
     <>
       <Helmet>
-        <title>收款人 | SSC Digital Bank</title>
+        <title>收款人管理 | SSC Digital Bank</title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2}>
             <Box>
-              <Typography variant="h4">第三方收款人</Typography>
+              <Typography variant="h4">收款人管理</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                统一管理银行账户和数字货币地址，付款时直接选择并再次核对。
+                统一管理经核对的银行账户与数字资产地址，付款前请再次确认收款资料。
               </Typography>
             </Box>
             {!readOnlyReason && (
@@ -1098,7 +1100,7 @@ function BeneficiaryPage({
             >
               <Tab value="ALL" label={`全部 ${rows.length}`} />
               <Tab value="BANK" label={`银行账户 ${bankCount}`} />
-              <Tab value="CRYPTO" label={`数字货币 ${cryptoCount}`} />
+              <Tab value="CRYPTO" label={`数字资产 ${cryptoCount}`} />
             </Tabs>
             <Stack divider={<Divider flexItem />}>
               {visibleRows.map((row) => {
@@ -1140,7 +1142,7 @@ function BeneficiaryPage({
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                         <Typography variant="subtitle1">{row.name}</Typography>
                         <Label color={cryptoRecipient ? 'success' : 'info'}>
-                          {cryptoRecipient ? '数字货币' : '银行账户'}
+                          {cryptoRecipient ? '数字资产' : '银行账户'}
                         </Label>
                       </Stack>
                       <Typography variant="body2" color="text.secondary">
@@ -1156,7 +1158,7 @@ function BeneficiaryPage({
                       endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}
                       sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, flexShrink: 0 }}
                     >
-                      {cryptoRecipient ? '用于付币' : '用于付款'}
+                      {cryptoRecipient ? '用于转出' : '用于付款'}
                     </Button>
                   </Stack>
                 );
@@ -1173,16 +1175,16 @@ function BeneficiaryPage({
                     color="text.disabled"
                   />
                   <Typography variant="subtitle1" sx={{ mt: 1.5 }}>
-                    {filter === 'CRYPTO' ? '还没有数字货币收款人' : '还没有第三方收款人'}
+                    {filter === 'CRYPTO' ? '暂无数字资产收款人' : '暂无第三方收款人'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                     {filter === 'CRYPTO'
                       ? '添加经过核对的 USDT · TRON (TRC20) 地址。'
-                      : '添加银行账户或数字货币地址后，可在付款页面直接选择。'}
+                      : '添加银行账户或数字资产地址后，可在付款页面直接选择。'}
                   </Typography>
                   {!readOnlyReason && (
                     <Button onClick={onCreate} sx={{ mt: 1.5 }}>
-                      立即添加
+                      添加收款人
                     </Button>
                   )}
                 </Stack>

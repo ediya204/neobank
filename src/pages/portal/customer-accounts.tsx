@@ -49,11 +49,11 @@ import { AccountKindChip, accountLabel, money } from './customer-shared';
 type AccountTab = 'all' | 'wallet' | 'va' | 'crypto';
 
 function summaryFallbackMessage(fallback: ResolvedAssetSummary | null) {
-  if (!fallback) return '资产汇总加载失败，请稍后重试。';
+  if (!fallback) return '暂时无法读取资产汇总，请稍后重试。';
   if (fallback.lastKnownCurrencies.length) {
-    return '实时汇率暂未更新，当前按最后一次成功获取的汇率显示。';
+    return '实时汇率暂未更新，当前估值按最近一次有效汇率显示。';
   }
-  return '资产估值暂未更新；当前仅计入无需折算或已有有效汇率的资产。';
+  return '部分汇率暂不可用；当前总值仅计入无需折算或已有有效汇率的资产。';
 }
 
 export default function CustomerAccounts() {
@@ -89,7 +89,7 @@ export default function CustomerAccounts() {
           setLastKnownRateCurrencies(resolved.lastKnownCurrencies);
           setSummaryError(
             resolved.lastKnownCurrencies.length
-              ? '实时汇率暂未更新，当前按最后一次成功获取的汇率显示。'
+              ? '实时汇率暂未更新，当前估值按最近一次有效汇率显示。'
               : ''
           );
         }
@@ -133,13 +133,13 @@ export default function CustomerAccounts() {
   return (
     <>
       <Helmet>
-        <title>我的账户 | {APP_DISPLAY_NAME}</title>
+        <title>账户与资产 | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
           <CustomBreadcrumbs
             heading="资产与账户"
-            links={[{ name: '总览', href: '/portal/home' }, { name: '资产与账户' }]}
+            links={[{ name: '账户概览', href: '/portal/home' }, { name: '账户与资产' }]}
             action={
               <Button
                 variant="contained"
@@ -151,7 +151,7 @@ export default function CustomerAccounts() {
             }
           />
           <Typography color="text.secondary" sx={{ mt: -2 }}>
-            查看 USD、HKD 与 USDT-TRON 的可用、冻结和账面余额。
+            查看 USD、HKD 与 USDT 的账面余额、冻结金额及可用余额。
           </Typography>
           {error && (
             <Alert
@@ -162,7 +162,7 @@ export default function CustomerAccounts() {
                   size="small"
                   onClick={() => refresh().catch(() => undefined)}
                 >
-                  刷新账户
+                  刷新数据
                 </Button>
               }
             >
@@ -186,7 +186,7 @@ export default function CustomerAccounts() {
               <Tab value="all" label="全部" />
               <Tab value="wallet" label={SYSTEM_WALLET_PRODUCT_NAME} />
               <Tab value="va" label="VA 账户" />
-              <Tab value="crypto" label="数字钱包" />
+              <Tab value="crypto" label="数字资产账户" />
             </Tabs>
           </Card>
           <Card sx={{ overflow: 'hidden' }}>
@@ -217,7 +217,7 @@ export default function CustomerAccounts() {
               </Typography>
               <Box sx={{ textAlign: 'right' }}>
                 <Typography variant="caption" color="text.secondary" display="block">
-                  美金价值
+                  美元折算价值
                 </Typography>
                 <Typography variant="caption" color="text.disabled">
                   含冻结
@@ -240,7 +240,7 @@ export default function CustomerAccounts() {
           </Card>
           {!accounts.length && (
             <Card sx={{ py: 8, textAlign: 'center' }}>
-              <Typography color="text.secondary">暂无此类账户</Typography>
+              <Typography color="text.secondary">当前分类下暂无账户</Typography>
             </Card>
           )}
         </Stack>
@@ -371,7 +371,7 @@ function AssetOverview({
                 </Typography>
               )}
               <Typography variant="body2" sx={{ color: '#B9D7CE', mt: 1 }}>
-                多币种资产 USD 估值{valuationTime}
+                多币种资产美元折算价值{valuationTime}
               </Typography>
             </Box>
             <Box
@@ -386,7 +386,7 @@ function AssetOverview({
                 whiteSpace: 'nowrap',
               }}
             >
-              估算值
+              参考估值
             </Box>
           </Stack>
           <Box
@@ -424,7 +424,7 @@ function AssetOverview({
             <Box>
               <Typography variant="h6">资产分布</Typography>
               <Typography variant="caption" color="text.secondary">
-                按 USD 估值计算
+                按美元参考估值计算
               </Typography>
             </Box>
             <Typography variant="caption" color="text.secondary">
@@ -475,7 +475,7 @@ function AssetOverview({
                   .map((item) => <DistributionRow key={item.currency} item={item} />)}
               {!loading && !summary?.distribution.length && (
                 <Typography variant="body2" color="text.secondary">
-                  入账后将在这里展示资产分布。
+                  账户产生余额后，将在这里显示资产分布。
                 </Typography>
               )}
             </Stack>
@@ -533,7 +533,7 @@ function DistributionRow({ item }: { item: AssetDistributionItem }) {
       </Typography>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-          {item.reportingValue ? money(item.reportingValue, 'USD') : '暂无汇率'}
+          {item.reportingValue ? money(item.reportingValue, 'USD') : '暂不可估值'}
         </Typography>
       </Box>
       <Typography
@@ -576,7 +576,9 @@ function VaRequestDialog({
         setChannelId(first?.id || '');
         if (first?.supportedCurrencies[0]) setCurrency(first.supportedCurrencies[0]);
       })
-      .catch((value) => setError(value instanceof Error ? value.message : '银行渠道加载失败'));
+      .catch((value) =>
+        setError(value instanceof Error ? value.message : '暂时无法读取可选银行，请稍后重试。')
+      );
   }, [open]);
 
   const submit = async (event: React.FormEvent) => {
@@ -589,7 +591,7 @@ function VaRequestDialog({
       });
       onCreated();
     } catch (value) {
-      setError(value instanceof Error ? value.message : '申请提交失败');
+      setError(value instanceof Error ? value.message : 'VA 账户申请暂时无法提交，请稍后重试。');
     }
   };
   return (
@@ -625,7 +627,7 @@ function VaRequestDialog({
                 支持币种：{selectedChannel.supportedCurrencies.join(' / ')}
               </Alert>
             ) : (
-              <Alert severity="warning">当前没有已启用的 VA 银行渠道。</Alert>
+              <Alert severity="warning">当前暂无可受理 VA 账户申请的银行。</Alert>
             )}
             <FormControl fullWidth required disabled={!selectedChannel}>
               <InputLabel>币种</InputLabel>
@@ -650,7 +652,7 @@ function VaRequestDialog({
               minRows={2}
             />
             <Alert severity="info">
-              申请需要平台审批。批准后会在账户页显示独立账号、银行和 SWIFT 信息。
+              申请提交后将进入审核。账户开通后，本页会显示银行、账号及 SWIFT/BIC 信息。
             </Alert>
           </Stack>
         </DialogContent>
@@ -679,14 +681,14 @@ function AccountListRow({
   divider: boolean;
 }) {
   const crypto = account.kind === 'CRYPTO_WALLET';
-  let mobileValuationLabel = '美金价值暂无估值';
-  if (valuationLoading) mobileValuationLabel = '美金价值计算中…';
+  let mobileValuationLabel = '美元价值暂不可估值';
+  if (valuationLoading) mobileValuationLabel = '正在计算美元价值…';
   else if (usdValuation) {
-    mobileValuationLabel = `${money(usdValuation.value, 'USD')} 美金价值`;
+    mobileValuationLabel = `${money(usdValuation.value, 'USD')} 美元价值`;
   }
-  let valuationSourceLabel = '账面估算';
-  if (usdValuation?.source === 'last_known') valuationSourceLabel = '上次汇率估算';
-  else if (usdValuation?.source === 'market') valuationSourceLabel = '行情估算';
+  let valuationSourceLabel = '账面参考值';
+  if (usdValuation?.source === 'last_known') valuationSourceLabel = '按最近有效汇率';
+  else if (usdValuation?.source === 'market') valuationSourceLabel = '按当前市场汇率';
   return (
     <Box
       sx={{
@@ -751,7 +753,7 @@ function AccountListRow({
           onClick={crypto ? undefined : onOpen}
           sx={{ display: { xs: 'inline-flex', md: 'none' }, mt: 0.5, px: 0 }}
         >
-          {crypto ? '管理钱包' : '查看信息'}
+          {crypto ? '管理账户' : '查看账户资料'}
         </Button>
       </Box>
       <Typography
@@ -768,7 +770,7 @@ function AccountListRow({
         ) : (
           <>
             <Typography variant="subtitle2">
-              {usdValuation ? money(usdValuation.value, 'USD') : '暂无估值'}
+              {usdValuation ? money(usdValuation.value, 'USD') : '暂不可估值'}
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {valuationSourceLabel}
@@ -779,11 +781,11 @@ function AccountListRow({
       <Box sx={{ display: { xs: 'none', md: 'flex' }, justifyContent: 'flex-end' }}>
         {crypto ? (
           <Button size="small" href="/portal/crypto-wallet">
-            管理钱包
+            管理账户
           </Button>
         ) : (
           <Button size="small" onClick={onOpen}>
-            查看信息
+            查看账户资料
           </Button>
         )}
       </Box>
@@ -805,11 +807,11 @@ function AccountDialog({
       <DialogTitle>{isVa ? '使用专属 VA 收款' : `${account.currency} 入账信息`}</DialogTitle>
       <DialogContent>
         <Alert severity="info" sx={{ mb: 2 }}>
-          请确保汇款人名称与客户资料一致。银行到账后需平台审批，完成后余额自动更新。
+          请确保汇款人名称与客户资料一致。银行来账核验及清算完成后，可用余额将自动更新。
         </Alert>
         <Stack divider={<Divider flexItem />}>
           <Detail label="账户名称" value={account.name} />
-          <Detail label="银行" value={account.bankName || 'SSC数字银行合作银行'} />
+          <Detail label="开户银行" value={account.bankName || 'SSC数字银行服务银行'} />
           <Detail label="账户号码" value={account.accountNumber || '-'} mono />
           <Detail label="SWIFT / BIC" value={account.swiftBic || '-'} mono />
           <Detail label="币种" value={account.currency} />

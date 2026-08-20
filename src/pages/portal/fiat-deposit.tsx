@@ -38,20 +38,20 @@ const modes: Array<{
 }> = [
   {
     value: 'PLATFORM',
-    title: '平台账户收款',
-    description: '汇入 SSC 平台银行账户并填写专属附言',
+    title: '平台账户转入',
+    description: '汇入 SSC 平台银行账户，并准确填写专属汇款附言',
     icon: 'solar:buildings-2-bold-duotone',
   },
   {
     value: 'VA',
-    title: 'VA 收款',
-    description: '使用客户名下 USD / HKD VA 银行资料收款',
+    title: 'VA 账户收款',
+    description: '使用客户名下的 USD / HKD VA 银行账户收款',
     icon: 'solar:wallet-money-bold-duotone',
   },
   {
     value: 'OTC',
-    title: 'OTC 资金入账',
-    description: `卖出 USDT 后入${SYSTEM_WALLET_PRODUCT_NAME}或 VA 账户`,
+    title: 'OTC 兑换入账',
+    description: `卖出 USDT 后将法币转入${SYSTEM_WALLET_PRODUCT_NAME}或 VA 账户`,
     icon: 'solar:hand-money-bold-duotone',
   },
 ];
@@ -92,7 +92,9 @@ export default function FiatDepositPage() {
       `/funding-channels?organizationId=${customer.organizationId}&type=FIAT_INBOUND&active=true`
     )
       .then(setChannels)
-      .catch((value) => setError(value instanceof Error ? value.message : '入款信息加载失败'));
+      .catch((value) =>
+        setError(value instanceof Error ? value.message : '暂时无法读取银行转入资料，请稍后重试。')
+      );
   }, [customer]);
 
   useEffect(() => {
@@ -110,16 +112,16 @@ export default function FiatDepositPage() {
   return (
     <>
       <Helmet>
-        <title>法币转入 | {APP_DISPLAY_NAME}</title>
+        <title>银行转入 | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="md">
         <Stack spacing={3}>
           <CustomBreadcrumbs
-            heading="法币转入"
-            links={[{ name: '收付与兑换', href: '/portal/money/transfers' }, { name: '法币转入' }]}
+            heading="银行转入"
+            links={[{ name: '收付与兑换', href: '/portal/money/transfers' }, { name: '银行转入' }]}
           />
           <Typography color="text.secondary" sx={{ mt: -2 }}>
-            选择平台账户、VA 或 OTC 资金作为法币入账来源。
+            根据资金来源选择平台银行账户、VA 账户或 OTC 兑换入账。
           </Typography>
           {error && <Alert severity="error">{error}</Alert>}
 
@@ -164,8 +166,8 @@ export default function FiatDepositPage() {
 
           {mode === 'PLATFORM' && (
             <BankInstructionCard
-              title="平台账户入款信息"
-              description="从外部银行汇入 SSC 平台账户"
+              title="平台账户转入资料"
+              description="从外部银行账户汇入 SSC 平台账户"
               accounts={systemAccounts}
               account={account}
               accountId={accountId}
@@ -180,8 +182,8 @@ export default function FiatDepositPage() {
 
           {mode === 'VA' && (
             <BankInstructionCard
-              title="VA 收款信息"
-              description="汇款人使用下方客户专属 VA 银行资料"
+              title="VA 账户收款资料"
+              description="向下方客户专属 VA 银行账户汇款"
               accounts={vaAccounts}
               account={account}
               accountId={accountId}
@@ -196,10 +198,10 @@ export default function FiatDepositPage() {
               <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
                 <Stack spacing={2.5}>
                   <Box>
-                    <Typography variant="h6">卖出 USDT，法币入账</Typography>
+                    <Typography variant="h6">卖出 USDT 并接收法币</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                      OTC 成交后，USD / HKD 可进入{SYSTEM_WALLET_PRODUCT_NAME}或客户
-                      VA。该入账必须与 OTC 订单和报价版本关联。
+                      OTC 成交后，USD / HKD 将转入{SYSTEM_WALLET_PRODUCT_NAME}或客户 VA
+                      账户。每笔入账均关联对应的 OTC 订单和成交报价。
                     </Typography>
                   </Box>
                   <Box
@@ -234,7 +236,7 @@ export default function FiatDepositPage() {
                     />
                   </Box>
                   <Alert severity="info">
-                    OTC 提交后先冻结 USDT；管理员审批成交并完成记账后，法币才进入所选账户。
+                    OTC 申请提交后将先冻结相应 USDT。审核、成交及记账完成后，法币才会转入所选账户。
                   </Alert>
                 </Stack>
               </CardContent>
@@ -305,7 +307,7 @@ function BankInstructionCard({
                 <Stack spacing={2}>
                   <InstructionRow label="币种" value={account?.currency || '—'} />
                   <InstructionRow label="收款银行" value={bankName || '—'} />
-                  <InstructionRow label="收款账户" value={bankAccount || '—'} />
+                  <InstructionRow label="收款账号" value={bankAccount || '—'} />
                   <InstructionRow label="SWIFT / BIC" value={swiftBic || '—'} />
                   {platform && (
                     <InstructionRow label="专属转账附言" value={reference || '—'} highlight />
@@ -315,13 +317,15 @@ function BankInstructionCard({
             </Card>
           ) : (
             <Alert severity="warning">
-              {accounts.length ? '当前币种尚未配置完整银行资料。' : '当前客户尚未开通可用账户。'}
+              {accounts.length
+                ? '当前币种的银行收款资料尚未配置完整。'
+                : '当前客户尚未开通可用于收款的账户。'}
             </Alert>
           )}
           <Alert severity="info">
             {platform
-              ? '请务必填写专属附言。银行到账后先进入待清算，平台明确清算完成后才更新可用余额。'
-              : '请核对币种与 VA 账号。银行来账匹配成功后进入待清算，管理员审批后更新 VA 可用余额。'}
+              ? '汇款时请准确填写专属附言。银行来账将在核验及清算完成后计入可用余额。'
+              : '请核对币种、收款户名及 VA 账号。银行来账匹配并完成清算后，将计入 VA 可用余额。'}
           </Alert>
           <Button
             size="large"
@@ -330,7 +334,7 @@ function BankInstructionCard({
             onClick={onCopy}
             disabled={!ready}
           >
-            {copied ? '已复制入款信息' : '复制入款信息'}
+            {copied ? '银行转入资料已复制' : '复制银行转入资料'}
           </Button>
         </Stack>
       </CardContent>
@@ -410,7 +414,7 @@ function depositInstructionText(
   return [
     `币种: ${account.currency}`,
     `银行: ${platform ? channel?.settlementBankName || '—' : account.bankName || '—'}`,
-    `账户: ${platform ? channel?.settlementAccount || '—' : account.accountNumber || '—'}`,
+    `账号: ${platform ? channel?.settlementAccount || '—' : account.accountNumber || '—'}`,
     `SWIFT/BIC: ${platform ? channel?.swiftBic || '—' : account.swiftBic || '—'}`,
     ...(platform ? [`转账附言: ${reference}`] : []),
   ].join('\n');

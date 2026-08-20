@@ -162,7 +162,7 @@ export default function CustomerHome() {
   return (
     <>
       <Helmet>
-        <title>总览 | {APP_DISPLAY_NAME}</title>
+        <title>账户概览 | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={2.5}>
@@ -178,7 +178,7 @@ export default function CustomerHome() {
                   size="small"
                   onClick={() => refresh().catch(() => undefined)}
                 >
-                  刷新账户
+                  刷新数据
                 </Button>
               }
             >
@@ -202,17 +202,17 @@ export default function CustomerHome() {
               {assetSummaryRateCurrencies.length
                 ? `实时汇率暂未更新，${assetSummaryRateCurrencies.join(
                     '、'
-                  )} 正按最后一次成功汇率显示${
+                  )} 正按最近一次有效汇率显示${
                     cachedRatesAsOf ? `（截至 ${cachedRatesAsOf}）` : ''
                   }。`
-                : '实时估值暂未更新，当前仅显示无需折算或已有有效历史汇率的资产。'}
+                : '部分汇率暂不可用；当前仅显示无需折算或已有有效汇率的资产。'}
             </Alert>
           )}
 
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
             <Box>
               <Stack direction="row" alignItems="center" spacing={1}>
-                <Typography variant="h4">你好，{firstName || '欢迎回来'}</Typography>
+                <Typography variant="h4">您好，{firstName || '欢迎回来'}</Typography>
                 {customer && (
                   <Chip
                     size="small"
@@ -221,7 +221,7 @@ export default function CustomerHome() {
                 )}
               </Stack>
               <Typography color="text.secondary" sx={{ mt: 0.6 }}>
-                查看你的可用资金、近期流动和交易进度。
+                查看您的可用资金、近期资金变动和交易进度。
               </Typography>
             </Box>
             <Stack
@@ -376,7 +376,7 @@ export default function CustomerHome() {
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Box>
                       <Typography variant="overline" color="text.secondary">
-                        快捷操作
+                        常用服务
                       </Typography>
                       <Typography variant="h5">收付与兑换</Typography>
                     </Box>
@@ -476,7 +476,7 @@ export default function CustomerHome() {
                   <Typography variant="overline" color="text.secondary">
                     最近交易
                   </Typography>
-                  <Typography variant="h5">你的最新资金动态</Typography>
+                  <Typography variant="h5">最近资金变动</Typography>
                 </Box>
                 <Button onClick={() => navigate('/portal/transactions')}>查看全部</Button>
               </Stack>
@@ -491,7 +491,7 @@ export default function CustomerHome() {
               ))}
               {!recentOperations.length && !loading && (
                 <Typography color="text.secondary" align="center" sx={{ py: 6 }}>
-                  还没有交易记录
+                  暂无交易记录
                 </Typography>
               )}
               {loading && (

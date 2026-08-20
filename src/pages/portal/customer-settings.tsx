@@ -28,13 +28,13 @@ import Iconify from 'src/components/iconify';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 
 function enrollmentError(error: unknown) {
-  if (!(error instanceof AuthApiError)) return '无法完成验证器设置，请稍后重试。';
+  if (!(error instanceof AuthApiError)) return '暂时无法完成两步验证设置，请稍后重试。';
   if (error.code === 'invalid_current_password') return '当前密码不正确。';
   if (error.code === 'invalid_totp_code') return '动态码无效、已过期或已使用，请输入当前动态码。';
   if (error.code === 'invalid_enrollment_token') return '本次设置已过期，请重新开始绑定。';
   if (error.code === 'totp_already_enrolled') return '当前账户已经绑定验证器。';
   if (error.code === 'session_expired') return '登录会话已失效，请重新登录后再设置。';
-  return '无法完成验证器设置，请稍后重试。';
+  return '暂时无法完成两步验证设置，请稍后重试。';
 }
 
 export default function CustomerSettings() {
@@ -119,14 +119,14 @@ export default function CustomerSettings() {
   return (
     <>
       <Helmet>
-        <title>账户设置 | {APP_DISPLAY_NAME}</title>
+        <title>安全与设置 | {APP_DISPLAY_NAME}</title>
       </Helmet>
       <Container maxWidth="md">
         <Stack spacing={3}>
           <Box>
-            <Typography variant="h4">账户设置</Typography>
+            <Typography variant="h4">安全与设置</Typography>
             <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-              管理账户资料和登录安全。
+              查看账户资料并管理登录安全设置。
             </Typography>
           </Box>
 
@@ -172,7 +172,7 @@ export default function CustomerSettings() {
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-                    <Typography variant="h6">两步验证（2FA）</Typography>
+                    <Typography variant="h6">两步验证</Typography>
                     <Chip
                       size="small"
                       color={totpEnabled ? 'success' : 'warning'}
@@ -180,7 +180,7 @@ export default function CustomerSettings() {
                     />
                   </Stack>
                   <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                    使用 Google Authenticator、Microsoft Authenticator 或其他 TOTP 验证器生成 6
+                    使用 Google Authenticator、Microsoft Authenticator 或其他身份验证器生成 6
                     位动态码。
                   </Typography>
                 </Box>
@@ -196,7 +196,7 @@ export default function CustomerSettings() {
 
               {recoveryCodes.length > 0 && (
                 <Stack spacing={2.5}>
-                  <Alert severity="success">2FA 已启用，其他设备上的旧会话已退出。</Alert>
+                  <Alert severity="success">两步验证已启用，其他设备上的旧会话已安全退出。</Alert>
                   <Box>
                     <Typography variant="subtitle1">保存恢复码</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -233,14 +233,14 @@ export default function CustomerSettings() {
               )}
               {recoveryCodes.length === 0 && totpEnabled && (
                 <Alert severity="success" icon={<Iconify icon="solar:shield-check-bold" />}>
-                  当前账户已绑定验证器。添加付币白名单地址和修改密码时需要输入当前 6 位动态码。
+                  当前账户已绑定验证器。新增转出白名单地址或修改密码时，需要输入当前 6 位动态码。
                 </Alert>
               )}
               {recoveryCodes.length === 0 && !totpEnabled && enrollment && (
                 <Box component="form" onSubmit={verifyEnrollment}>
                   <Stack spacing={2.5}>
                     <Alert severity="warning">
-                      请先把下方账户加入验证器，再输入动态码确认。在确认完成前，2FA 尚未生效。
+                      请先将下方账户添加至身份验证器，再输入动态码确认。完成确认前，两步验证尚未生效。
                     </Alert>
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems="center">
                       <Box
@@ -260,7 +260,7 @@ export default function CustomerSettings() {
                           <Box
                             component="img"
                             src={qrCode}
-                            alt="2FA 验证器绑定二维码"
+                            alt="两步验证绑定二维码"
                             sx={{ width: 220 }}
                           />
                         ) : (
@@ -316,7 +316,7 @@ export default function CustomerSettings() {
                         loading={verifying}
                         disabled={!/^\d{6}$/.test(otpCode)}
                       >
-                        验证并启用 2FA
+                        验证并启用两步验证
                       </LoadingButton>
                     </Stack>
                   </Stack>
@@ -326,7 +326,7 @@ export default function CustomerSettings() {
                 <Box component="form" onSubmit={startEnrollment}>
                   <Stack spacing={2.5}>
                     <Alert severity="info">
-                      启用后，登录、添加付币白名单地址和修改密码都会受动态码保护。
+                      启用后，登录、新增转出白名单地址和修改密码均受动态码保护。
                     </Alert>
                     <TextField
                       required
@@ -345,7 +345,7 @@ export default function CustomerSettings() {
                       disabled={!currentPassword}
                       sx={{ alignSelf: { sm: 'flex-start' } }}
                     >
-                      开始设置 2FA
+                      设置两步验证
                     </LoadingButton>
                   </Stack>
                 </Box>

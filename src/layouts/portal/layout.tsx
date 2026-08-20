@@ -28,19 +28,19 @@ import {
 } from 'src/features/finance/portal-customer-context';
 
 const navItems = [
-  ['总览', '/portal/home', 'solar:home-2-bold-duotone'],
-  ['资产', '/portal/money/accounts', 'solar:wallet-money-bold-duotone'],
-  ['收付', '/portal/money/transfers', 'solar:transfer-horizontal-bold-duotone'],
-  ['交易记录', '/portal/transactions', 'solar:history-bold-duotone'],
-  ['收款人', '/portal/money/beneficiaries', 'solar:user-id-bold-duotone'],
+  ['业务概览', '/portal/home', 'solar:home-2-bold-duotone'],
+  ['客户账户', '/portal/money/accounts', 'solar:wallet-money-bold-duotone'],
+  ['资金服务', '/portal/money/transfers', 'solar:transfer-horizontal-bold-duotone'],
+  ['交易明细', '/portal/transactions', 'solar:history-bold-duotone'],
+  ['收款人管理', '/portal/money/beneficiaries', 'solar:user-id-bold-duotone'],
 ] as const;
 
 const customerNavItems = [
-  ['总览', '/portal/home', 'solar:home-2-bold-duotone'],
-  ['钱包', '/portal/money/accounts', 'solar:wallet-money-bold-duotone'],
-  ['转入转出', '/portal/money/transfers', 'solar:transfer-horizontal-bold-duotone'],
-  ['OTC', '/portal/money/otc', 'solar:hand-money-bold-duotone'],
-  ['交易记录', '/portal/transactions', 'solar:history-bold-duotone'],
+  ['账户概览', '/portal/home', 'solar:home-2-bold-duotone'],
+  ['账户与资产', '/portal/money/accounts', 'solar:wallet-money-bold-duotone'],
+  ['收付与兑换', '/portal/money/transfers', 'solar:transfer-horizontal-bold-duotone'],
+  ['OTC 兑换', '/portal/money/otc', 'solar:hand-money-bold-duotone'],
+  ['交易明细', '/portal/transactions', 'solar:history-bold-duotone'],
 ] as const;
 
 const customerMobileNavPaths = new Set([
@@ -162,7 +162,10 @@ function PortalFrame() {
                   ))}
               </Select>
             )}
-            <IconButton onClick={(event) => setAnchor(event.currentTarget)} aria-label="账户菜单">
+            <IconButton
+              onClick={(event) => setAnchor(event.currentTarget)}
+              aria-label="打开账户菜单"
+            >
               <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', typography: 'body2' }}>
                 {customer?.displayName.slice(0, 1) || 'M'}
               </Avatar>
@@ -183,7 +186,7 @@ function PortalFrame() {
                   }}
                 >
                   <Iconify icon="solar:settings-bold-duotone" sx={{ mr: 1.5 }} />
-                  账户设置
+                  安全与设置
                 </MenuItem>
               )}
               {user?.role === 'customer' ? (
@@ -204,7 +207,7 @@ function PortalFrame() {
                   }}
                 >
                   <Iconify icon="solar:shield-user-linear" sx={{ mr: 1.5 }} />
-                  返回运营后台
+                  进入运营管理后台
                 </MenuItem>
               )}
             </Menu>
@@ -218,7 +221,7 @@ function PortalFrame() {
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Box>
                 <Typography variant="caption" color="text.secondary">
-                  当前账户
+                  当前客户
                 </Typography>
                 <Typography variant="subtitle2">{customer.displayName}</Typography>
               </Box>
