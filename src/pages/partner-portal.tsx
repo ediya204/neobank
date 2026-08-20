@@ -143,7 +143,7 @@ const VIEW_COPY: Record<string, { title: string; description: string }> = {
     description: '仅显示已完成开户的客户；其他客户请前往客户总览查看。',
   },
   'fiat-wallet': {
-    title: '法币钱包',
+    title: 'SSC钱包',
     description: '查看人工入账、自动兑换和历史记录。',
   },
   'crypto-wallet': {
@@ -2301,7 +2301,7 @@ function PortalDashboard({
             <Iconify icon={USD_ASSET_ICON} width={48} />
           </Stack>
           <Button sx={{ mt: 2 }} onClick={() => onNavigate('/portal/fiat-wallet')}>
-            {portalText('查看法币钱包')}
+            {portalText('查看SSC钱包')}
           </Button>
         </Card>
         <Card sx={{ p: { xs: 2, sm: 3 } }}>
@@ -4680,7 +4680,7 @@ function CustomerDetails({
           onClick={() => onOpenFiatWallet(item.application_id)}
           sx={{ minHeight: 44 }}
         >
-          {portalText('法币钱包')}
+          {portalText('SSC钱包')}
         </Button>
         <Button
           variant="outlined"
@@ -4696,7 +4696,7 @@ function CustomerDetails({
       </Stack>
       {item.status !== 'active' && (
         <Alert severity="info">
-          {portalText('可进入法币钱包或数字钱包查看只读余额与历史记录。')}
+          {portalText('可进入SSC钱包或数字钱包查看只读余额与历史记录。')}
         </Alert>
       )}
 
@@ -6012,7 +6012,7 @@ function BalanceCustomerDetails({
           {portalText('返回余额总览')}
         </Button>
         <Button onClick={() => onFiatWallet(item.application_id)} sx={{ minHeight: 44 }}>
-          {portalText('法币钱包')}
+          {portalText('SSC钱包')}
         </Button>
         <Button onClick={() => onCryptoWallet(item.application_id)} sx={{ minHeight: 44 }}>
           {portalText('数字钱包')}

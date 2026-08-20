@@ -99,7 +99,7 @@
     "balance": "余额"
   },
   "wallets": {
-    "fiat": "法币钱包",
+    "fiat": "SSC钱包",
     "crypto": "数字钱包"
   },
   "fields": {

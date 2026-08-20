@@ -33,9 +33,9 @@ services:
       - key: FASTFOREX_API_KEY
         sync: false
       - key: SUMSUB_ENABLED
-        value: "false"
+        value: 'false'
       - key: SUMSUB_ACTIVATION_APPROVED
-        value: "false"
+        value: 'false'
       - key: SUMSUB_BASE_URL
         value: https://api.sumsub.com
       - key: SUMSUB_MODE
@@ -66,6 +66,8 @@ services:
         sync: false
       - key: TENANT_ID
         value: neobank
+      - key: WITHDRAWAL_ACCOUNTING_ENABLED
+        value: 'false'
   - type: web
     name: neobank-core
     runtime: node
@@ -84,7 +86,7 @@ services:
       - key: CORE_EDGE_SHARED_SECRET
         sync: false
       - key: CORE_EDGE_AUTH_REQUIRED
-        value: "true"
+        value: 'true'
       - key: CORE_ADMIN_USER_ID
         value: usr_neobank_admin
       - key: CORE_ORGANIZATION_ID
@@ -94,7 +96,7 @@ services:
       - key: WEB_ORIGIN
         value: https://portal.sscdigitalbank.com
       - key: EMAIL_NOTIFICATIONS_ENABLED
-        value: "false"
+        value: 'false'
   - type: worker
     name: neobank-email-worker
     runtime: node
@@ -111,9 +113,9 @@ services:
           name: neobank-postgres
           property: connectionString
       - key: EMAIL_NOTIFICATIONS_ENABLED
-        value: "false"
+        value: 'false'
       - key: EMAIL_WORKER_POLL_INTERVAL_MS
-        value: "5000"
+        value: '5000'
       - key: PORTAL_BASE_URL
         value: https://portal.sscdigitalbank.com
       - key: ZOHO_ACCOUNTS_BASE_URL
@@ -130,6 +132,31 @@ services:
         sync: false
       - key: ZOHO_MAIL_FROM_ADDRESS
         sync: false
+  - type: worker
+    name: neobank-financial-accounting-worker
+    runtime: node
+    rootDir: server
+    region: singapore
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run prisma:generate && npm run build
+    startCommand: npm run start:financial-accounting-worker
+    autoDeployTrigger: off
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: neobank-postgres
+          property: connectionString
+      - key: CORE_ADMIN_USER_ID
+        value: usr_neobank_admin
+      - key: CORE_ORGANIZATION_ID
+        value: org_neobank
+      - key: NEOBANK_SOURCE_TENANT_ID
+        value: neobank
+      - key: DEPOSIT_ACCOUNTING_POLL_INTERVAL_MS
+        value: '3000'
+      - key: WITHDRAWAL_ACCOUNTING_POLL_INTERVAL_MS
+        value: '3000'
 
 databases:
   - name: neobank-postgres

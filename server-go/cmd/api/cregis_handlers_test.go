@@ -131,9 +131,10 @@ func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testin
 		"c.kyc_status='approved'",
 		"c.operations_status='active'",
 		"c.status='active'",
-		"SUM(d.amount_minor)",
+		`"CryptoWallet"`,
+		`"availableBalance"`,
 		"SUM(x.amount_minor)",
-		"status NOT IN ('rejected', 'failed', 'cancelled')",
+		"a.status IN ('pending_reservation','reserving')",
 	} {
 		if !strings.Contains(reserveWithdrawalSQL, required) {
 			t.Fatalf("atomic reservation SQL must contain %q", required)
@@ -143,21 +144,24 @@ func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testin
 
 func TestFailedReconciliationReleasesFrozenBalanceAndKeepsAudit(t *testing.T) {
 	for _, required := range []string{
-		"status='failed'",
+		"SET status=?",
 		"reconciliation_note=?",
 		"reconciled_by=?",
 		"reconciled_at=?",
 		"status='exception'",
+		"status='pending_release'",
+		"a.status='approved'",
 	} {
-		if !strings.Contains(reconcileWithdrawalFailedSQL, required) {
+		if !strings.Contains(reconcileWithdrawalTerminalSQL, required) {
 			t.Fatalf("failed reconciliation SQL must contain %q", required)
 		}
 	}
-	if !strings.Contains(walletBalancesSQL, "status NOT IN ('rejected', 'failed', 'cancelled')") {
-		t.Fatalf("failed withdrawals must be released from the available balance reservation: %s", walletBalancesSQL)
+	if strings.Contains(reconcileWithdrawalTerminalSQL, `"availableBalance"`) ||
+		strings.Contains(reconcileWithdrawalTerminalSQL, `"frozenBalance"`) {
+		t.Fatal("reconciliation must queue Core release instead of editing balances directly")
 	}
-	if !strings.Contains(walletBalancesSQL, "'submitted_to_cregis', 'exception'") {
-		t.Fatalf("exception withdrawals must remain frozen before reconciliation: %s", walletBalancesSQL)
+	if !strings.Contains(walletBalancesSQL, `core_wallet."frozenBalance"`) {
+		t.Fatalf("wallet balances must remain authoritative from Core: %s", walletBalancesSQL)
 	}
 }
 

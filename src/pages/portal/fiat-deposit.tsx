@@ -21,7 +21,12 @@ import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
 import { APP_DISPLAY_NAME } from 'src/config-global';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
-import { coreApi, FundingChannel, MoneyAccount } from 'src/features/finance/core-api';
+import {
+  coreApi,
+  FundingChannel,
+  MoneyAccount,
+  SYSTEM_WALLET_PRODUCT_NAME,
+} from 'src/features/finance/core-api';
 
 type DepositMode = 'PLATFORM' | 'VA' | 'OTC';
 
@@ -46,7 +51,7 @@ const modes: Array<{
   {
     value: 'OTC',
     title: 'OTC 资金入账',
-    description: '卖出 USDT 后入系统现金账户或 VA 账户',
+    description: `卖出 USDT 后入${SYSTEM_WALLET_PRODUCT_NAME}或 VA 账户`,
     icon: 'solar:hand-money-bold-duotone',
   },
 ];
@@ -193,8 +198,8 @@ export default function FiatDepositPage() {
                   <Box>
                     <Typography variant="h6">卖出 USDT，法币入账</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                      OTC 成交后，USD / HKD 可进入系统现金账户或客户 VA。该入账必须与 OTC
-                      订单和报价版本关联。
+                      OTC 成交后，USD / HKD 可进入{SYSTEM_WALLET_PRODUCT_NAME}或客户
+                      VA。该入账必须与 OTC 订单和报价版本关联。
                     </Typography>
                   </Box>
                   <Box
@@ -205,7 +210,7 @@ export default function FiatDepositPage() {
                     }}
                   >
                     <OtcDestination
-                      title="入系统现金账户"
+                      title={`入${SYSTEM_WALLET_PRODUCT_NAME}`}
                       description={`可选 ${
                         systemAccounts.map((row) => row.currency).join(' / ') || 'USD / HKD'
                       }`}
@@ -289,7 +294,7 @@ function BankInstructionCard({
             >
               {accounts.map((row) => (
                 <MenuItem key={row.id} value={row.id}>
-                  {row.currency} · {platform ? '系统现金账户' : row.name}
+                  {row.currency} · {platform ? SYSTEM_WALLET_PRODUCT_NAME : row.name}
                 </MenuItem>
               ))}
             </Select>

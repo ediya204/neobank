@@ -38,6 +38,11 @@ const [
   coreApi,
   accountsService,
   coreReconciliation,
+  depositAccountingWorker,
+  withdrawalAccountingWorker,
+  depositAccountingMigration,
+  withdrawalAccountingMigration,
+  cregisHandlers,
 ] = await Promise.all([
   read('package.json'),
   read('wrangler.neobank.jsonc'),
@@ -72,6 +77,11 @@ const [
   read('src/features/finance/core-api.ts'),
   read('server/src/accounts/accounts.service.ts'),
   read('src/pages/dashboard/core-reconciliation.tsx'),
+  read('server/src/deposit-accounting/deposit-accounting.worker.ts'),
+  read('server/src/deposit-accounting/withdrawal-accounting.worker.ts'),
+  read('migrations-postgres/0010_cregis_deposit_accounting.sql'),
+  read('migrations-postgres/0011_cregis_withdrawal_accounting.sql'),
+  read('server-go/cmd/api/cregis_handlers.go'),
 ]);
 
 const packageJson = JSON.parse(packageSource);
@@ -168,7 +178,8 @@ assert.match(kycReviewPage, /reviewChecks\.every/);
 assert.match(kycReviewPage, /note\.trim\(\)\.length >= 10/);
 assert.match(customerManagementPage, /row\.kyc_status === 'approved'/);
 assert.match(customerManagementPage, /customer\.kycStatus === 'APPROVED'/);
-assert.match(customerDetailPage, /title="系统钱包"/);
+assert.match(coreApi, /SYSTEM_WALLET_PRODUCT_NAME = 'SSC钱包'/);
+assert.match(customerDetailPage, /title=\{SYSTEM_WALLET_PRODUCT_NAME\}/);
 assert.match(customerDetailPage, /title="VA 钱包"/);
 assert.match(customerDetailPage, /title="数字货币钱包"/);
 assert.match(customerDetailPage, /账面资产/);
@@ -269,8 +280,11 @@ assert.match(renderConfig, /key: DATABASE_BACKEND\s+value: postgres/);
 assert.match(renderConfig, /name: neobank-core/);
 assert.match(renderConfig, /rootDir: server/);
 assert.match(renderConfig, /key: CORE_EDGE_SHARED_SECRET\s+sync: false/);
-assert.match(renderConfig, /key: CORE_EDGE_AUTH_REQUIRED\s+value: "true"/);
+assert.match(renderConfig, /key: CORE_EDGE_AUTH_REQUIRED\s+value: ['"]true['"]/);
 assert.match(renderConfig, /key: NEOBANK_SOURCE_TENANT_ID\s+value: neobank/);
+assert.match(renderConfig, /name: neobank-financial-accounting-worker/);
+assert.match(renderConfig, /startCommand: npm run start:financial-accounting-worker/);
+assert.match(renderConfig, /key: WITHDRAWAL_ACCOUNTING_ENABLED\s+value: ['"]false['"]/);
 assert.doesNotMatch(renderConfig, /D1_GATEWAY_/);
 assert.match(goMain, /databaseBackend != "postgres"/);
 assert.doesNotMatch(goMain, /case "d1"/);
@@ -287,6 +301,25 @@ assert.match(coreEdgeAuth, /request\.headers\['x-user-id'\] = options\.adminUser
 assert.match(coreEdgeAuth, /x-authenticated-customer-id/);
 assert.match(customerSync, /FROM customers c/);
 assert.match(customerSync, /db\.customer\.upsert/);
+assert.match(depositAccountingWorker, /TransactionIsolationLevel\.Serializable/);
+assert.match(depositAccountingWorker, /status='posted'/);
+assert.match(depositAccountingWorker, /core_deposit_duplicate/);
+assert.match(depositAccountingMigration, /do not backfill existing deposits/i);
+assert.match(
+  depositAccountingMigration,
+  /status IN \('held', 'pending', 'processing', 'posted', 'exception'\)/
+);
+assert.match(cregisHandlers, /INSERT OR IGNORE INTO cregis_deposit_accounting/);
+assert.match(cregisHandlers, /a\.status='posted'/);
+assert.match(withdrawalAccountingWorker, /TransactionIsolationLevel\.Serializable/);
+assert.match(withdrawalAccountingWorker, /status='reserved'/);
+assert.match(withdrawalAccountingWorker, /status='settled'/);
+assert.match(withdrawalAccountingWorker, /core_withdrawal_duplicate/);
+assert.match(withdrawalAccountingMigration, /do not enqueue historical withdrawals/i);
+assert.match(withdrawalAccountingMigration, /status = 'settled'/);
+assert.match(cregisHandlers, /withdrawal_accounting_not_enabled/);
+assert.match(cregisHandlers, /THEN 'pending_settlement'/);
+assert.match(coreReconciliation, /ledger\/reconciliation\/usdt/);
 assert.match(virtualAccountsPage, /选择银行并查看其支持币种/);
 assert.match(virtualAccountsPage, /supportedCurrencies/);
 

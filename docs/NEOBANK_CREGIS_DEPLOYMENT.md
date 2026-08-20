@@ -151,7 +151,7 @@ credential-version checks.
 `CREGIS_RELAY_URL` affects only the Cregis client. Do not configure a global
 `HTTP_PROXY` or `HTTPS_PROXY`.
 The relay accepts only the Cregis address-create, address-ownership,
-address-legality, transaction-query, and payout
+address-legality, transaction-query, and sub-address-withdrawal
 paths, authenticates the complete request body, rejects replayed nonces, and
 pins its upstream to the configured Cregis test gateway.
 
@@ -216,6 +216,16 @@ Cregis callbacks are verified using the Cregis signature protocol and must
 return the literal response `success` only after the notification is accepted.
 Keep retry notifications enabled in Cregis.
 
+For a completed deposit, "accepted" means that the verified custody row and its
+`cregis_deposit_accounting` intent committed in the same PostgreSQL transaction.
+It does not yet mean that customer funds are available. The dedicated
+`neobank-financial-accounting-worker` posts the Core Operation, CryptoTransfer,
+balanced JournalEntry, and USDT materialized balances atomically. Customer and
+Admin history report `processing` until that Core transaction changes the intent
+to `posted`; wallet balances count only posted intents. Follow
+[`CREGIS_DEPOSIT_ACCOUNTING.md`](./CREGIS_DEPOSIT_ACCOUNTING.md) for migration,
+reconciliation, and acceptance gates.
+
 ## Deposit-address exposure gate
 
 A Cregis address-create response is not sufficient on its own. The Go service
@@ -228,7 +238,14 @@ code stay hidden.
 
 ## Withdrawal state machine
 
-`submitted -> approved -> executing -> submitted_to_cregis -> completed`
+```text
+submitted + pending_reservation
+  -> Core reserved
+  -> approved + Core PROCESSING
+  -> executing
+  -> submitted_to_cregis
+  -> completed + Core settled
+```
 
 The exception paths are `rejected`, `failed`, `exception`, and `cancelled`.
 Submission is not settlement. Submission, approval, and execution remain
@@ -246,6 +263,14 @@ internal accounting attribution and must never be submitted as the payout source
 A retry with the same idempotency key returns the original
 snapshot. Follow `docs/WITHDRAWAL_FEE_RUNBOOK.md` for configuration, migration,
 and acceptance gates.
+
+`WITHDRAWAL_ACCOUNTING_ENABLED` is `false` by default. Approval requires a completed
+Core reservation, execution requires the Core approval hand-off, and a signed Cregis
+callback changes only the custody result plus a durable `pending_settlement` or
+`pending_release` request. The financial worker then atomically consumes or releases
+both Core balances and updates the linked records. See
+[`CREGIS_WITHDRAWAL_ACCOUNTING.md`](./CREGIS_WITHDRAWAL_ACCOUNTING.md) for release,
+historical reconciliation, and acceptance gates.
 
 ## Customer withdrawal-address whitelist
 

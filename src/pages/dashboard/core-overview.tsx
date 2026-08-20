@@ -34,6 +34,7 @@ import {
   demoOrganizationId,
   JournalEntry,
   Operation,
+  SYSTEM_WALLET_PRODUCT_NAME,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
 import {
@@ -53,7 +54,7 @@ const ASSET_COLORS: Record<OverviewAsset, string> = {
 };
 
 const PRODUCT_LABELS: Record<OverviewAccountKind, string> = {
-  SYSTEM_WALLET: '系统钱包',
+  SYSTEM_WALLET: SYSTEM_WALLET_PRODUCT_NAME,
   VIRTUAL_ACCOUNT: 'VA 钱包',
   CRYPTO_WALLET: '数字货币钱包',
 };

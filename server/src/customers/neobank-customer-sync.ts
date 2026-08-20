@@ -55,9 +55,12 @@ function coreKycStatus(value: string): KycStatus {
 
 export async function syncNeobankCustomers(
   db: PrismaClient,
-  input: { adminUserId: string; organizationId: string; tenantId: string }
+  input: { adminUserId: string; organizationId: string; tenantId: string; customerId?: string }
 ) {
-  const customers = await db.$queryRaw<NeobankCustomer[]>`
+  const customerFilter = input.customerId
+    ? Prisma.sql`AND c.id = ${input.customerId}`
+    : Prisma.empty;
+  const customers = await db.$queryRaw<NeobankCustomer[]>(Prisma.sql`
     SELECT
       c.id AS customer_id,
       c.email,
@@ -87,8 +90,9 @@ export async function syncNeobankCustomers(
     LEFT JOIN customer_applications a
       ON a.customer_id = c.id AND a.tenant_id = c.tenant_id
     WHERE c.tenant_id = ${input.tenantId}
+      ${customerFilter}
     ORDER BY c.created_at ASC
-  `;
+  `);
 
   for (const row of customers) {
     const type: CustomerType = row.account_type === 'business' ? 'BUSINESS' : 'INDIVIDUAL';

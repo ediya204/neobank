@@ -99,7 +99,7 @@
     "balance": "Balance"
   },
   "wallets": {
-    "fiat": "Fiat wallet",
+    "fiat": "SSC Wallet",
     "crypto": "Crypto wallet"
   },
   "fields": {

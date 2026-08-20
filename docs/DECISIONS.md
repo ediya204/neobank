@@ -11,9 +11,39 @@ that the assumption no longer applies.
   authorized administrator perform a controlled USDT sweep.
 - Admin data entry is not settlement. Preserve pending, cleared, exception, and
   reconciliation states and their audit trail.
-- Customer-initiated fiat withdrawal, USDT deposit, manual OTC, and customer
-  withdrawal are outside the current V1 write flow. Historical records remain
-  readable; do not destroy old data merely because new creation is disabled.
+- A customer cannot manually declare or complete a USDT deposit. A signed Cregis
+  callback, followed by an exact Cregis trade lookup, is the external settlement
+  evidence that starts the system-owned deposit workflow. Manual OTC remains
+  outside the current V1 write flow. Historical records remain readable; do not
+  destroy old data merely because new creation is disabled.
+- Cregis custody facts and customer money have different authority. The Go service
+  verifies and durably stores the external deposit plus an accounting intent in one
+  PostgreSQL transaction. A dedicated Core worker then atomically creates the
+  completed Operation, CryptoTransfer, balanced JournalEntry, and both USDT
+  materialized balances. Only the Core journal is the final accounting authority.
+  Until that transaction commits, both customer and Admin histories show the
+  deposit as processing and the amount is unavailable.
+- Cregis callback delivery is at least once; the financial result is exactly once.
+  Tenant + Cregis CID, completed transaction hash, Core operation reference, and
+  customer idempotency key are independently unique. Duplicate delivery may retry
+  transport but cannot create a second journal or balance credit. An invariant
+  conflict enters exception instead of guessing or overwriting a wallet binding.
+- PostgreSQL migration `0010_cregis_deposit_accounting` never backfills historical
+  deposits. Historical reconciliation is a two-step held-then-release workflow for
+  one exact deposit and requires a backup checksum, isolated restore-test evidence,
+  named approval, and reason. Applying a migration or deploying a worker must not
+  move historical customer money.
+- New Cregis withdrawals use the same Core authority boundary. The customer request
+  creates a custody row plus accounting intent; a Core serializable transaction must
+  freeze the matching Account and CryptoWallet before Admin approval or Cregis
+  execution is possible. A signed final callback queues either Core settlement or
+  release. Only the Core transaction may consume frozen funds, post principal and fee
+  journals, or expose a final customer balance.
+- `WITHDRAWAL_ACCOUNTING_ENABLED` is fail-closed and PostgreSQL migration
+  `0011_cregis_withdrawal_accounting` never enqueues historical withdrawals. Manual
+  OTC creation is server-disabled until every USD/HKD/USDT conversion is represented
+  by one Core state machine and journal; hiding the customer UI is not a sufficient
+  control.
 - Automatic conversion records remain visible and auditable even when customers
   cannot create OTC orders.
 - A submitted sweep with a transaction hash must not be treated like an unsubmitted

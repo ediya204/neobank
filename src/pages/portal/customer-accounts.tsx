@@ -36,6 +36,7 @@ import {
   demoOrganizationId,
   FundingChannel,
   MoneyAccount,
+  SYSTEM_WALLET_PRODUCT_NAME,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
 import { AccountKindChip, accountLabel, money } from './customer-shared';
@@ -131,7 +132,7 @@ export default function CustomerAccounts() {
               sx={{ px: 2 }}
             >
               <Tab value="all" label="全部" />
-              <Tab value="wallet" label="多货币法币账户" />
+              <Tab value="wallet" label={SYSTEM_WALLET_PRODUCT_NAME} />
               <Tab value="va" label="VA 账户" />
               <Tab value="crypto" label="数字钱包" />
             </Tabs>

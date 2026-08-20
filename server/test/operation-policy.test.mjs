@@ -39,6 +39,33 @@ function databaseForDeposit(target, transaction) {
   };
 }
 
+test('manual OTC creation and approval stay closed until USDT uses one ledger', async () => {
+  const service = new OperationsService({
+    $transaction: async (operation) =>
+      operation({
+        operation: {
+          findUnique: async () => ({
+            id: 'legacy_otc',
+            type: 'OTC',
+            status: 'SUBMITTED',
+            metadata: null,
+          }),
+        },
+      }),
+  });
+  await assert.rejects(
+    service.create(
+      { customerId: customer.id, type: 'OTC', currency: 'USD', amount: '1' },
+      maker.id
+    ),
+    /usdt_otc_disabled_until_single_ledger/
+  );
+  await assert.rejects(
+    service.approve('legacy_otc', maker.id),
+    /usdt_otc_disabled_until_single_ledger/
+  );
+});
+
 test('fiat deposit rejects a target account with a different currency', async () => {
   const target = {
     id: 'target_test',

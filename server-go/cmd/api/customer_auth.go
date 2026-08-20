@@ -1046,17 +1046,36 @@ func (app *application) listCustomerHistory(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "session_expired"}})
 		return
 	}
-	withdrawals, err := app.db.Query(r.Context(), `SELECT id, customer_id, wallet_id, 'withdrawal' AS direction, currency, amount_text AS amount,
-    fee_amount_text AS fee_amount, net_amount_text AS net_amount,
-    status, to_address AS address, txid, cregis_cid, created_at
-    FROM cregis_withdrawals WHERE tenant_id=? AND customer_id=? ORDER BY created_at DESC LIMIT 200`, app.tenantID, session.CustomerID)
+	withdrawals, err := app.db.Query(r.Context(), `SELECT x.id, x.customer_id, x.wallet_id, 'withdrawal' AS direction, x.currency, x.amount_text AS amount,
+    x.fee_amount_text AS fee_amount, x.net_amount_text AS net_amount,
+	CASE
+	  WHEN a.withdrawal_id IS NULL THEN 'exception'
+	  WHEN a.status='settled' THEN 'completed'
+	  WHEN a.status='released' THEN x.status
+	  WHEN a.status='exception' THEN 'exception'
+	  ELSE 'processing'
+	END AS status,
+	x.status AS custody_status, COALESCE(a.status, 'not_accounted') AS accounting_status,
+	x.to_address AS address, x.txid, x.cregis_cid, x.created_at
+	FROM cregis_withdrawals x
+	LEFT JOIN cregis_withdrawal_accounting a ON a.withdrawal_id=x.id AND a.tenant_id=x.tenant_id
+	WHERE x.tenant_id=? AND x.customer_id=? ORDER BY x.created_at DESC LIMIT 200`, app.tenantID, session.CustomerID)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
 	deposits, err := app.db.Query(r.Context(), `SELECT d.id, w.customer_id, d.wallet_id, 'deposit' AS direction, d.currency, d.amount_text AS amount,
-		d.status, d.address, d.from_address, d.txid, d.cregis_cid, d.received_at AS created_at
+		CASE
+		  WHEN d.status='failed' THEN 'failed'
+		  WHEN a.deposit_id IS NULL THEN 'exception'
+		  WHEN a.status='posted' THEN 'completed'
+		  WHEN a.status='exception' THEN 'exception'
+		  ELSE 'processing'
+		END AS status,
+		d.status AS custody_status, COALESCE(a.status, 'not_posted') AS accounting_status,
+		d.address, d.from_address, d.txid, d.cregis_cid, d.received_at AS created_at
     FROM cregis_deposits d JOIN cregis_wallets w ON w.id=d.wallet_id
+	LEFT JOIN cregis_deposit_accounting a ON a.deposit_id=d.id AND a.tenant_id=d.tenant_id
     WHERE d.tenant_id=? AND w.customer_id=? AND w.status='active' AND w.custody_provider='cregis'
       AND w.ownership_verified_at IS NOT NULL ORDER BY d.received_at DESC LIMIT 200`, app.tenantID, session.CustomerID)
 	if err != nil {
@@ -1068,7 +1087,6 @@ func (app *application) listCustomerHistory(w http.ResponseWriter, r *http.Reque
 
 func (app *application) customerWalletBalances(r *http.Request, walletID, customerID string) (string, string, error) {
 	rows, err := app.db.Query(r.Context(), walletBalancesSQL,
-		app.tenantID, walletID, app.tenantID, walletID, customerID,
 		app.tenantID, walletID, customerID)
 	if err != nil || len(rows) != 1 {
 		if err == nil {

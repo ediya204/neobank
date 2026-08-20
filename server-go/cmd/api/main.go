@@ -43,6 +43,7 @@ type application struct {
 	marketData             marketDataClient
 	sumsub                 sumsubProvider
 	sumsubSchemaReady      bool
+	withdrawalAccounting   bool
 	sumsubEnvironment      string
 	sumsubWebhookSecret    []byte
 	logger                 *slog.Logger
@@ -161,6 +162,19 @@ func main() {
 		os.Exit(1)
 	}
 	sumsubSchemaReady := len(sumsubMigrationRows) == 1
+	withdrawalSchemaContext, cancelWithdrawalSchemaCheck := context.WithTimeout(context.Background(), 3*time.Second)
+	withdrawalAccountingRows, withdrawalSchemaErr := db.Query(withdrawalSchemaContext,
+		`SELECT version FROM neobank_schema_migrations WHERE version='0011_cregis_withdrawal_accounting'`)
+	cancelWithdrawalSchemaCheck()
+	if withdrawalSchemaErr != nil {
+		logger.Error("could not read withdrawal accounting migration state", "error", withdrawalSchemaErr)
+		os.Exit(1)
+	}
+	withdrawalAccounting := strings.EqualFold(os.Getenv("WITHDRAWAL_ACCOUNTING_ENABLED"), "true")
+	if withdrawalAccounting && len(withdrawalAccountingRows) != 1 {
+		logger.Error("invalid withdrawal accounting configuration", "error", "PostgreSQL migration 0011_cregis_withdrawal_accounting is required")
+		os.Exit(1)
+	}
 	sumsubEnvironment := strings.ToLower(strings.TrimSpace(envOr("SUMSUB_MODE", "sandbox")))
 	if sumsubEnvironment != "sandbox" && sumsubEnvironment != "production" {
 		logger.Error("invalid Sumsub configuration", "error", "SUMSUB_MODE must be sandbox or production")
@@ -192,8 +206,9 @@ func main() {
 		publicURL: publicURL, portalURL: portalURL, tenantID: envOr("TENANT_ID", "neobank"),
 		coreOrganizationID: envOr("CORE_ORGANIZATION_ID", "org_neobank"),
 		databaseBackend:    databaseBackend, marketData: marketData, sumsub: sumsubProviderOrNil(sumsubClient),
-		sumsubSchemaReady: sumsubSchemaReady,
-		sumsubEnvironment: sumsubEnvironment, sumsubWebhookSecret: sumsubWebhookSecret, logger: logger,
+		sumsubSchemaReady:    sumsubSchemaReady,
+		withdrawalAccounting: withdrawalAccounting,
+		sumsubEnvironment:    sumsubEnvironment, sumsubWebhookSecret: sumsubWebhookSecret, logger: logger,
 	}
 
 	mux := http.NewServeMux()

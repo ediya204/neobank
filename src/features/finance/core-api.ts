@@ -41,9 +41,10 @@ export type MoneyAccount = {
 
 export const supportedFiatCurrencies: Currency[] = ['USD', 'HKD'];
 export const supportedCryptoNetwork: CryptoNetwork = 'TRON';
+export const SYSTEM_WALLET_PRODUCT_NAME = 'SSC钱包';
 
 export function accountProductName(account: MoneyAccount) {
-  if (account.kind === 'SYSTEM_WALLET') return '系统法币账户（多货币）';
+  if (account.kind === 'SYSTEM_WALLET') return SYSTEM_WALLET_PRODUCT_NAME;
   if (account.kind === 'VIRTUAL_ACCOUNT') return 'VA 账户';
   if (account.kind === 'CRYPTO_WALLET') return '数字钱包';
   return account.name;

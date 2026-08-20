@@ -15,6 +15,8 @@ func TestReviewedMigrationFilename(t *testing.T) {
 		"0007_admin_rbac.sql",
 		"0008_sumsub_individual_kyc.sql",
 		"0009_deposit_source_address.sql",
+		"0010_cregis_deposit_accounting.sql",
+		"0011_cregis_withdrawal_accounting.sql",
 	} {
 		if !migrationFilename.MatchString(name) {
 			t.Fatalf("reviewed migration filename rejected: %s", name)
@@ -41,6 +43,59 @@ func TestDepositSourceAddressMigrationRecordsVersion(t *testing.T) {
 		if !strings.Contains(sql, required) {
 			t.Fatalf("deposit source-address migration must contain %q", required)
 		}
+	}
+}
+
+func TestDepositAccountingMigrationDoesNotBackfillMoney(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "migrations-postgres", "0010_cregis_deposit_accounting.sql")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(content)
+	for _, required := range []string{
+		"CREATE TABLE IF NOT EXISTS cregis_deposit_accounting",
+		"status IN ('held', 'pending', 'processing', 'posted', 'exception')",
+		"FOREIGN KEY (tenant_id, deposit_id)",
+		"FOREIGN KEY (tenant_id, customer_id)",
+		`FOREIGN KEY (core_operation_id) REFERENCES "Operation"(id)`,
+		"backup_sha256 ~ '^[0-9a-f]{64}$'",
+		"uq_cregis_deposits_tenant_completed_txid",
+		"VALUES ('0010_cregis_deposit_accounting')",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("deposit accounting migration must contain %q", required)
+		}
+	}
+	if strings.Contains(sql, "INSERT INTO cregis_deposit_accounting") {
+		t.Fatal("schema migration must not enqueue historical deposits")
+	}
+}
+
+func TestWithdrawalAccountingMigrationDoesNotReserveHistoricalMoney(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "migrations-postgres", "0011_cregis_withdrawal_accounting.sql")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(content)
+	for _, required := range []string{
+		"CREATE TABLE IF NOT EXISTS cregis_withdrawal_accounting",
+		"'pending_reservation', 'reserving', 'reserved'",
+		"'pending_settlement', 'settling', 'settled'",
+		"FOREIGN KEY (tenant_id, withdrawal_id)",
+		`FOREIGN KEY (core_operation_id) REFERENCES "Operation"(id)`,
+		`FOREIGN KEY (core_transfer_id) REFERENCES "CryptoTransfer"(id)`,
+		"backup_sha256 ~ '^[0-9a-f]{64}$'",
+		"uq_cregis_withdrawals_tenant_completed_txid",
+		"VALUES ('0011_cregis_withdrawal_accounting')",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("withdrawal accounting migration must contain %q", required)
+		}
+	}
+	if strings.Contains(sql, "INSERT INTO cregis_withdrawal_accounting") {
+		t.Fatal("schema migration must not enqueue historical withdrawals")
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 var (
 	positiveDecimal = regexp.MustCompile(`^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$`)
 	safeIdentifier  = regexp.MustCompile(`^[A-Za-z0-9_.:@-]{1,128}$`)
+	tronTxID        = regexp.MustCompile(`^[A-Fa-f0-9]{64}$`)
 )
 
 type walletProvisionError struct {
@@ -42,17 +43,47 @@ const (
 	usdtTRC20Currency = usdtTRC20ChainID + "@" + usdtTRC20TokenID
 	cregisPayoutPath  = "/api/v2/payout"
 
-	approveWithdrawalSQL = `UPDATE cregis_withdrawals
-    SET status='approved', checker_id=?, approved_at=?, updated_at=?
-    WHERE id=? AND tenant_id=? AND status='submitted'`
-	rejectWithdrawalSQL = `UPDATE cregis_withdrawals
-    SET status='rejected', checker_id=?, rejection_reason=?, updated_at=?
-    WHERE id=? AND tenant_id=? AND status='submitted'`
+	approveWithdrawalSQL = `WITH accounting AS (
+	    SELECT withdrawal_id FROM cregis_withdrawal_accounting
+	    WHERE withdrawal_id=? AND tenant_id=? AND status='reserved'
+	    FOR UPDATE
+	  ), approved AS (
+	    UPDATE cregis_withdrawals SET status='approved', checker_id=?, approved_at=?, updated_at=?
+	    WHERE id=? AND tenant_id=? AND status='submitted'
+	      AND EXISTS (SELECT 1 FROM accounting)
+	    RETURNING id
+	  )
+	  UPDATE cregis_withdrawal_accounting a
+	  SET status='pending_approval', next_attempt_at=NOW(), updated_at=NOW()
+	  FROM approved WHERE a.withdrawal_id=approved.id AND a.status='reserved'
+	  RETURNING a.withdrawal_id`
+	rejectWithdrawalSQL = `WITH accounting AS (
+	    SELECT withdrawal_id, core_operation_id FROM cregis_withdrawal_accounting
+	    WHERE withdrawal_id=? AND tenant_id=?
+	      AND status IN ('pending_reservation','reserving','reserved')
+	    FOR UPDATE
+	  ), rejected AS (
+	    UPDATE cregis_withdrawals SET status='rejected', checker_id=?, rejection_reason=?, updated_at=?
+	    WHERE id=? AND tenant_id=? AND status='submitted'
+	      AND EXISTS (SELECT 1 FROM accounting)
+	    RETURNING id
+	  )
+	  UPDATE cregis_withdrawal_accounting a
+	  SET status=CASE WHEN a.core_operation_id IS NULL THEN 'released' ELSE 'pending_release' END,
+	      released_at=CASE WHEN a.core_operation_id IS NULL THEN NOW() ELSE NULL END,
+	      next_attempt_at=NOW(), locked_at=NULL, updated_at=NOW()
+	  FROM rejected WHERE a.withdrawal_id=rejected.id
+	  RETURNING a.withdrawal_id`
 	startWithdrawalExecutionSQL = `UPDATE cregis_withdrawals SET status='executing', operator_id=?, updated_at=?
-      WHERE id=? AND tenant_id=? AND status='approved' AND checker_id IS NOT NULL`
+	      WHERE id=? AND tenant_id=? AND status='approved' AND checker_id IS NOT NULL
+	        AND EXISTS (SELECT 1 FROM cregis_withdrawal_accounting a
+	          WHERE a.withdrawal_id=cregis_withdrawals.id AND a.tenant_id=cregis_withdrawals.tenant_id
+	            AND a.status='approved')`
 	persistWithdrawalSubmissionSQL = `UPDATE cregis_withdrawals
     SET status='submitted_to_cregis', cregis_cid=?, submitted_at=?, updated_at=?
-    WHERE id=? AND status='executing'`
+	      WHERE id=? AND status='executing'
+	        AND EXISTS (SELECT 1 FROM cregis_withdrawal_accounting a
+	          WHERE a.withdrawal_id=cregis_withdrawals.id AND a.status='approved')`
 	activateVerifiedWalletSQL = `UPDATE cregis_wallets
       SET address=?, custody_provider='cregis', ownership_verified_at=?, status='active', updated_at=?
       WHERE id=? AND tenant_id=? AND status='creating'`
@@ -72,29 +103,62 @@ const (
     WHERE w.id=? AND w.tenant_id=? AND w.customer_id=? AND w.chain_id=? AND w.token_id=? AND w.currency=?
       AND w.status='active' AND w.custody_provider='cregis' AND w.ownership_verified_at IS NOT NULL
       AND c.status='active' AND c.kyc_status='approved' AND c.operations_status='active'
-      AND ? <= COALESCE((SELECT SUM(d.amount_minor) FROM cregis_deposits d
-        WHERE d.tenant_id=w.tenant_id AND d.wallet_id=w.id AND d.status='completed'), 0)
-        - COALESCE((SELECT SUM(x.amount_minor) FROM cregis_withdrawals x
-          WHERE x.tenant_id=w.tenant_id AND x.wallet_id=w.id AND x.customer_id=c.id
-            AND x.status NOT IN ('rejected', 'failed', 'cancelled')), 0)`
+	      AND ? <= COALESCE((
+	        SELECT CAST(FLOOR(core_wallet."availableBalance" * 1000000) AS BIGINT)
+	        FROM "CryptoWallet" core_wallet
+	        WHERE core_wallet."customerId"=c.id AND core_wallet.asset='USDT'
+	          AND core_wallet.network='TRON' AND core_wallet.status='ACTIVE'
+	      ), 0) - COALESCE((
+	        SELECT SUM(x.amount_minor) FROM cregis_withdrawals x
+	        JOIN cregis_withdrawal_accounting a ON a.withdrawal_id=x.id AND a.tenant_id=x.tenant_id
+	        WHERE x.tenant_id=w.tenant_id AND x.wallet_id=w.id AND x.customer_id=c.id
+	          AND a.status IN ('pending_reservation','reserving')
+	      ), 0)`
 	walletBalancesSQL = `SELECT
-    CAST(COALESCE((SELECT SUM(d.amount_minor) FROM cregis_deposits d
-      WHERE d.tenant_id=? AND d.wallet_id=? AND d.status='completed'), 0)
-      - COALESCE((SELECT SUM(x.amount_minor) FROM cregis_withdrawals x
-        WHERE x.tenant_id=? AND x.wallet_id=? AND x.customer_id=?
-          AND x.status NOT IN ('rejected', 'failed', 'cancelled')), 0) AS TEXT) AS available_minor,
-    CAST(COALESCE((SELECT SUM(x.amount_minor) FROM cregis_withdrawals x
-      WHERE x.tenant_id=? AND x.wallet_id=? AND x.customer_id=?
-        AND x.status IN ('submitted', 'approved', 'executing', 'submitted_to_cregis', 'exception')), 0) AS TEXT) AS frozen_minor`
+	    CAST(COALESCE(FLOOR(core_wallet."availableBalance" * 1000000), 0) AS TEXT) AS available_minor,
+	    CAST(COALESCE(FLOOR(core_wallet."frozenBalance" * 1000000), 0) AS TEXT) AS frozen_minor
+	  FROM cregis_wallets wallet
+	  LEFT JOIN "CryptoWallet" core_wallet
+	    ON core_wallet."customerId"=wallet.customer_id
+	    AND core_wallet.asset='USDT' AND core_wallet.network='TRON'
+	    AND core_wallet.status='ACTIVE' AND core_wallet."walletAddress"=wallet.address
+	  WHERE wallet.tenant_id=? AND wallet.id=? AND wallet.customer_id=?
+	    AND wallet.status='active' AND wallet.custody_provider='cregis'
+	    AND wallet.ownership_verified_at IS NOT NULL`
 	reconcileWithdrawalSubmittedSQL = `UPDATE cregis_withdrawals
     SET status='submitted_to_cregis', cregis_cid=?, reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
     WHERE id=? AND tenant_id=? AND status='exception'`
-	reconcileWithdrawalFailedSQL = `UPDATE cregis_withdrawals
-    SET status='failed', reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
-    WHERE id=? AND tenant_id=? AND status='exception'`
-	reconcileWithdrawalCancelledSQL = `UPDATE cregis_withdrawals
-    SET status='cancelled', reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
-    WHERE id=? AND tenant_id=? AND status='exception'`
+	reconcileWithdrawalTerminalSQL = `WITH terminal AS (
+	  UPDATE cregis_withdrawals
+	  SET status=?, reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
+	  WHERE id=? AND tenant_id=? AND status='exception'
+	    AND EXISTS (
+	      SELECT 1 FROM cregis_withdrawal_accounting a
+	      WHERE a.withdrawal_id=cregis_withdrawals.id
+	        AND a.tenant_id=cregis_withdrawals.tenant_id AND a.status='approved'
+	    )
+	  RETURNING id, tenant_id
+	)
+	UPDATE cregis_withdrawal_accounting a
+	SET status='pending_release', next_attempt_at=NOW(), locked_at=NULL, updated_at=NOW()
+	FROM terminal
+	WHERE a.withdrawal_id=terminal.id AND a.tenant_id=terminal.tenant_id AND a.status='approved'
+	RETURNING a.withdrawal_id`
+	failWithdrawalForReleaseSQL = `WITH failed AS (
+	  UPDATE cregis_withdrawals SET status='failed', updated_at=?
+	  WHERE id=? AND tenant_id=? AND status='executing'
+	    AND EXISTS (
+	      SELECT 1 FROM cregis_withdrawal_accounting a
+	      WHERE a.withdrawal_id=cregis_withdrawals.id
+	        AND a.tenant_id=cregis_withdrawals.tenant_id AND a.status='approved'
+	    )
+	  RETURNING id, tenant_id
+	)
+	UPDATE cregis_withdrawal_accounting a
+	SET status='pending_release', next_attempt_at=NOW(), locked_at=NULL, updated_at=NOW()
+	FROM failed
+	WHERE a.withdrawal_id=failed.id AND a.tenant_id=failed.tenant_id AND a.status='approved'
+	RETURNING a.withdrawal_id`
 )
 
 func (app *application) routeCregis(w http.ResponseWriter, r *http.Request) bool {
@@ -308,6 +372,10 @@ func (app *application) listCregisWallets(w http.ResponseWriter, r *http.Request
 }
 
 func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Request) {
+	if !app.withdrawalAccounting {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"code": "withdrawal_accounting_not_enabled"}})
+		return
+	}
 	var input struct {
 		CustomerID          string `json:"customer_id"`
 		WalletID            string `json:"wallet_id"`
@@ -334,10 +402,13 @@ func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Re
 		validationError(w)
 		return
 	}
-	existingRows, err := app.db.Query(r.Context(), `SELECT id, status, third_party_id, wallet_id,
+	existingRows, err := app.db.Query(r.Context(), `SELECT x.id, x.status, x.third_party_id, x.wallet_id,
     amount_text, fee_amount_text, net_amount_text, fee_rule_id,
-    CAST(fee_rule_version AS TEXT) AS fee_rule_version, to_address, withdrawal_address_id, created_at
-    FROM cregis_withdrawals WHERE tenant_id=? AND customer_id=? AND idempotency_key=?`,
+	CAST(fee_rule_version AS TEXT) AS fee_rule_version, to_address, withdrawal_address_id, x.created_at,
+	COALESCE(a.status, 'missing') AS accounting_status, a.core_operation_id
+	FROM cregis_withdrawals x
+	LEFT JOIN cregis_withdrawal_accounting a ON a.withdrawal_id=x.id AND a.tenant_id=x.tenant_id
+	WHERE x.tenant_id=? AND x.customer_id=? AND x.idempotency_key=?`,
 		app.tenantID, input.CustomerID, input.Idempotency)
 	if err != nil {
 		databaseError(app, w, err)
@@ -345,6 +416,10 @@ func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Re
 	}
 	if len(existingRows) == 1 {
 		existing := existingRows[0]
+		if text(existing["accounting_status"]) == "missing" {
+			conflict(w, "withdrawal_accounting_missing")
+			return
+		}
 		if text(existing["wallet_id"]) != input.WalletID || text(existing["amount_text"]) != input.Amount ||
 			text(existing["withdrawal_address_id"]) != input.WithdrawalAddressID {
 			conflict(w, "idempotency_payload_mismatch")
@@ -411,24 +486,35 @@ func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Re
 		feeAmountText, feeRule.AmountMinor, netAmountText, netAmountMinor, feeRule.ID, feeRule.Version,
 		nullIfEmpty(input.Memo), nullIfEmpty(input.Remark), edgeUser(r), now, now, input.WithdrawalAddressID,
 		input.WalletID, app.tenantID, input.CustomerID, usdtTRC20ChainID, usdtTRC20TokenID, usdtTRC20Currency, amountMinor}},
+		d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_withdrawal_accounting
+		(withdrawal_id, tenant_id, customer_id, status, enqueue_source, enqueued_by,
+		 attempt_count, next_attempt_at, created_at, updated_at)
+		SELECT id, tenant_id, customer_id, 'pending_reservation', 'customer_request',
+		 'customer_request', 0, ?, ?, ?
+		FROM cregis_withdrawals
+		WHERE id=? AND tenant_id=? AND customer_id=? AND idempotency_key=?`,
+			Params: []any{now, now, now, id, app.tenantID, input.CustomerID, input.Idempotency}},
 		d1.Statement{SQL: `SELECT id, status, third_party_id, wallet_id, amount_text, fee_amount_text,
       net_amount_text, fee_rule_id, CAST(fee_rule_version AS TEXT) AS fee_rule_version,
-      to_address, withdrawal_address_id, created_at FROM cregis_withdrawals
-      WHERE tenant_id=? AND customer_id=? AND idempotency_key=?`, Params: []any{app.tenantID, input.CustomerID, input.Idempotency}},
+	  to_address, withdrawal_address_id, created_at,
+	  (SELECT status FROM cregis_withdrawal_accounting a
+	   WHERE a.withdrawal_id=cregis_withdrawals.id AND a.tenant_id=cregis_withdrawals.tenant_id) AS accounting_status
+	  FROM cregis_withdrawals
+	  WHERE tenant_id=? AND customer_id=? AND idempotency_key=?`, Params: []any{app.tenantID, input.CustomerID, input.Idempotency}},
 	)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
-	if len(results) != 2 {
+	if len(results) != 3 {
 		databaseError(app, w, fmt.Errorf("withdrawal reservation result invalid"))
 		return
 	}
-	if len(results[1].Results) != 1 {
+	if len(results[2].Results) != 1 || text(results[2].Results[0]["accounting_status"]) == "" {
 		conflict(w, "withdrawal_address_unavailable_or_insufficient_balance")
 		return
 	}
-	reserved := results[1].Results[0]
+	reserved := results[2].Results[0]
 	if text(reserved["wallet_id"]) != input.WalletID || text(reserved["amount_text"]) != input.Amount || text(reserved["withdrawal_address_id"]) != input.WithdrawalAddressID {
 		conflict(w, "idempotency_payload_mismatch")
 		return
@@ -437,7 +523,7 @@ func (app *application) createCregisWithdrawal(w http.ResponseWriter, r *http.Re
 	if resultChanges(results[:1]) == 0 {
 		statusCode = http.StatusOK
 	}
-	writeJSON(w, statusCode, results[1].Results[0])
+	writeJSON(w, statusCode, results[2].Results[0])
 }
 
 func (app *application) reconcileCregisWithdrawal(w http.ResponseWriter, r *http.Request, id string) {
@@ -465,9 +551,9 @@ func (app *application) reconcileCregisWithdrawal(w http.ResponseWriter, r *http
 		}
 		statement = d1.Statement{SQL: reconcileWithdrawalSubmittedSQL, Params: []any{input.CregisCID, note, actor, now, now, id, app.tenantID}}
 	case "failed":
-		statement = d1.Statement{SQL: reconcileWithdrawalFailedSQL, Params: []any{note, actor, now, now, id, app.tenantID}}
+		statement = d1.Statement{SQL: reconcileWithdrawalTerminalSQL, Params: []any{"failed", note, actor, now, now, id, app.tenantID}}
 	case "cancelled":
-		statement = d1.Statement{SQL: reconcileWithdrawalCancelledSQL, Params: []any{note, actor, now, now, id, app.tenantID}}
+		statement = d1.Statement{SQL: reconcileWithdrawalTerminalSQL, Params: []any{"cancelled", note, actor, now, now, id, app.tenantID}}
 	default:
 		validationError(w)
 		return
@@ -477,7 +563,9 @@ func (app *application) reconcileCregisWithdrawal(w http.ResponseWriter, r *http
 		databaseError(app, w, err)
 		return
 	}
-	if resultChanges(result) != 1 {
+	if len(result) != 1 ||
+		(input.Resolution == "submitted_to_cregis" && resultChanges(result) != 1) ||
+		(input.Resolution != "submitted_to_cregis" && len(result[0].Results) != 1) {
 		conflict(w, "withdrawal_not_reconcilable")
 		return
 	}
@@ -490,12 +578,13 @@ func (app *application) approveCregisWithdrawal(w http.ResponseWriter, r *http.R
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	result, err := app.db.Batch(r.Context(), d1.Statement{SQL: approveWithdrawalSQL, Params: []any{edgeUser(r), now, now, id, app.tenantID}})
+	rows, err := app.db.Query(r.Context(), approveWithdrawalSQL,
+		id, app.tenantID, edgeUser(r), now, now, id, app.tenantID)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
-	if resultChanges(result) != 1 {
+	if len(rows) != 1 {
 		conflict(w, "withdrawal_not_approvable")
 		return
 	}
@@ -514,12 +603,13 @@ func (app *application) rejectCregisWithdrawal(w http.ResponseWriter, r *http.Re
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	result, err := app.db.Batch(r.Context(), d1.Statement{SQL: rejectWithdrawalSQL, Params: []any{edgeUser(r), input.Reason, now, id, app.tenantID}})
+	rows, err := app.db.Query(r.Context(), rejectWithdrawalSQL,
+		id, app.tenantID, edgeUser(r), input.Reason, now, id, app.tenantID)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
-	if resultChanges(result) != 1 {
+	if len(rows) != 1 {
 		conflict(w, "withdrawal_not_rejectable")
 		return
 	}
@@ -559,13 +649,25 @@ func (app *application) executeCregisWithdrawal(w http.ResponseWriter, r *http.R
 		Result bool `json:"result"`
 	}{}
 	if legalErr != nil || legalResponse == nil || json.Unmarshal(legalResponse.Data, &legal) != nil || !legal.Result {
-		_, _ = app.db.Query(r.Context(), `UPDATE cregis_withdrawals SET status='failed', updated_at=? WHERE id=? AND status='executing'`, now, id)
+		if !app.markWithdrawalFailedForRelease(r.Context(), id, now) {
+			http.Error(w, "retry", http.StatusServiceUnavailable)
+			return
+		}
 		app.logger.Warn("Cregis payout address rejected", "withdrawal_id", id, "code", responseCode(legalResponse), "error", legalErr)
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "invalid_payout_address"}})
 		return
 	}
 	response, callErr := app.cregis.Call(ctx, cregisPayoutPath, cregisDefaultWalletPayout(row, app.publicURL))
 	if callErr != nil {
+		if responseCode(response) == "E0008" {
+			if !app.markWithdrawalFailedForRelease(r.Context(), id, now) {
+				http.Error(w, "retry", http.StatusServiceUnavailable)
+				return
+			}
+			app.logger.Warn("Cregis payout address rejected", "withdrawal_id", id, "code", responseCode(response))
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "invalid_payout_address"}})
+			return
+		}
 		_, _ = app.db.Query(r.Context(), `UPDATE cregis_withdrawals SET status='exception', updated_at=? WHERE id=? AND status='executing'`, now, id)
 		app.logger.Error("Cregis payout submission failed", "withdrawal_id", id, "code", responseCode(response), "error", callErr)
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "cregis_payout_failed"}})
@@ -619,31 +721,60 @@ func cregisDefaultWalletPayout(row map[string]any, publicURL string) map[string]
 	}
 }
 
+func (app *application) markWithdrawalFailedForRelease(ctx context.Context, id, now string) bool {
+	rows, err := app.db.Query(ctx, failWithdrawalForReleaseSQL, now, id, app.tenantID)
+	if err != nil || len(rows) != 1 {
+		app.logger.Error("queue Cregis withdrawal release failed", "withdrawal_id", id, "error", err)
+		return false
+	}
+	return true
+}
+
 func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request) {
 	customerID := r.URL.Query().Get("customer_id")
 	if customerID != "" && !safeIdentifier.MatchString(customerID) {
 		validationError(w)
 		return
 	}
-	filter := "tenant_id=?"
+	filter := "x.tenant_id=?"
 	params := []any{app.tenantID}
 	if customerID != "" {
-		filter += " AND customer_id=?"
+		filter += " AND x.customer_id=?"
 		params = append(params, customerID)
 	}
-	withdrawals, err := app.db.Query(r.Context(), `SELECT id, customer_id, 'withdrawal' AS direction, currency, amount_text AS amount,
-    fee_amount_text AS fee_amount, net_amount_text AS net_amount,
-    CAST(fee_rule_version AS TEXT) AS fee_rule_version,
-    status, to_address AS address, txid, cregis_cid, maker_id, checker_id, operator_id,
-    approved_at, submitted_at, completed_at, created_at
-    FROM cregis_withdrawals WHERE `+filter+` ORDER BY created_at DESC LIMIT 200`, params...)
+	withdrawals, err := app.db.Query(r.Context(), `SELECT x.id, x.customer_id, 'withdrawal' AS direction, x.currency, x.amount_text AS amount,
+    x.fee_amount_text AS fee_amount, x.net_amount_text AS net_amount,
+    CAST(x.fee_rule_version AS TEXT) AS fee_rule_version,
+	CASE
+	  WHEN a.withdrawal_id IS NULL THEN 'exception'
+	  WHEN a.status='settled' THEN 'completed'
+	  WHEN a.status='released' THEN x.status
+	  WHEN a.status='exception' THEN 'exception'
+	  ELSE 'processing'
+	END AS status,
+	x.status AS custody_status, COALESCE(a.status, 'not_accounted') AS accounting_status,
+	a.core_operation_id, a.core_transfer_id,
+	x.to_address AS address, x.txid, x.cregis_cid, x.maker_id, x.checker_id, x.operator_id,
+	x.approved_at, x.submitted_at, x.completed_at, x.created_at
+	FROM cregis_withdrawals x
+	LEFT JOIN cregis_withdrawal_accounting a ON a.withdrawal_id=x.id AND a.tenant_id=x.tenant_id
+	WHERE `+filter+` ORDER BY x.created_at DESC LIMIT 200`, params...)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
 	depositSQL := `SELECT d.id, w.customer_id, 'deposit' AS direction, d.currency, d.amount_text AS amount,
-		d.status, d.address, d.from_address, d.txid, d.cregis_cid, d.received_at AS created_at
+		CASE
+		  WHEN d.status='failed' THEN 'failed'
+		  WHEN a.deposit_id IS NULL THEN 'exception'
+		  WHEN a.status='posted' THEN 'completed'
+		  WHEN a.status='exception' THEN 'exception'
+		  ELSE 'processing'
+		END AS status,
+		d.status AS custody_status, COALESCE(a.status, 'not_posted') AS accounting_status,
+		d.address, d.from_address, d.txid, d.cregis_cid, d.received_at AS created_at
     FROM cregis_deposits d JOIN cregis_wallets w ON w.id=d.wallet_id
+	LEFT JOIN cregis_deposit_accounting a ON a.deposit_id=d.id AND a.tenant_id=d.tenant_id
     WHERE d.tenant_id=? AND w.status='active' AND w.custody_provider='cregis'
       AND w.ownership_verified_at IS NOT NULL`
 	depositParams := []any{app.tenantID}
@@ -731,13 +862,21 @@ func (app *application) cregisDepositCallback(w http.ResponseWriter, r *http.Req
 			usdtTRC20ChainID, usdtTRC20TokenID, usdtTRC20Currency, address,
 			nullIfEmpty(fromAddress), amountText, amountMinor, finalStatus, nullIfEmpty(txid), nullIfEmpty(text(payload["block_height"])),
 			nullIfEmpty(text(payload["block_time"])), now, hash}},
+		d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_deposit_accounting
+		(deposit_id, tenant_id, customer_id, status, enqueue_source, enqueued_by,
+		 attempt_count, next_attempt_at, created_at, updated_at)
+		SELECT d.id, d.tenant_id, w.customer_id, 'pending', 'callback', 'cregis_callback', 0, ?, ?, ?
+		FROM cregis_deposits d
+		JOIN cregis_wallets w ON w.id=d.wallet_id AND w.tenant_id=d.tenant_id
+		WHERE d.tenant_id=? AND d.cregis_cid=? AND d.status='completed' AND d.txid IS NOT NULL`,
+			Params: []any{now, now, now, app.tenantID, cregisCID}},
 	)
 	if err != nil {
 		app.logger.Error("store Cregis deposit callback failed", "error", err)
 		http.Error(w, "retry", http.StatusServiceUnavailable)
 		return
 	}
-	if len(results) != 2 {
+	if len(results) != 3 {
 		app.logger.Error("store Cregis deposit callback returned invalid result count")
 		http.Error(w, "retry", http.StatusServiceUnavailable)
 		return
@@ -788,6 +927,19 @@ func (app *application) cregisDepositCallback(w http.ResponseWriter, r *http.Req
 			}
 		}
 	}
+	if finalStatus == "completed" {
+		accountingRows, accountingErr := app.db.Query(r.Context(), `SELECT a.status
+		FROM cregis_deposit_accounting a
+		JOIN cregis_deposits d ON d.id=a.deposit_id AND d.tenant_id=a.tenant_id
+		WHERE a.tenant_id=? AND d.cregis_cid=? AND a.customer_id=(
+		  SELECT customer_id FROM cregis_wallets WHERE id=d.wallet_id AND tenant_id=d.tenant_id
+		)`, app.tenantID, cregisCID)
+		if accountingErr != nil || len(accountingRows) != 1 {
+			app.logger.Error("verify Cregis deposit accounting intent failed", "cid", cregisCID, "error", accountingErr)
+			http.Error(w, "retry", http.StatusServiceUnavailable)
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("success"))
 }
@@ -808,8 +960,9 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 	}
 	cregisCID := text(payload["cid"])
 	thirdPartyID := text(payload["third_party_id"])
+	txid := text(payload["txid"])
 	if cregisCID == "" || thirdPartyID == "" || text(payload["chain_id"]) != usdtTRC20ChainID ||
-		text(payload["token_id"]) != usdtTRC20TokenID {
+		text(payload["token_id"]) != usdtTRC20TokenID || (target == "completed" && !tronTxID.MatchString(txid)) {
 		http.Error(w, "invalid callback", http.StatusUnprocessableEntity)
 		return
 	}
@@ -821,27 +974,55 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_callback_events
       (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'payout', ?, ?, ?, ?)`, Params: []any{randomID("callback"), cregisCID, status, sha256Hex(raw), now}},
-		d1.Statement{SQL: `UPDATE cregis_withdrawals SET status='submitted_to_cregis', cregis_cid=?, submitted_at=COALESCE(submitted_at, ?), updated_at=?
-      WHERE tenant_id=? AND third_party_id=? AND status IN ('executing', 'exception')`, Params: []any{cregisCID, now, now, app.tenantID, thirdPartyID}},
-		d1.Statement{SQL: `UPDATE cregis_withdrawals SET status=?, cregis_cid=?, txid=?, block_height=?, block_time=?, completed_at=?, updated_at=?
-      WHERE tenant_id=? AND third_party_id=? AND status='submitted_to_cregis'`, Params: []any{target, cregisCID,
-			nullIfEmpty(text(payload["txid"])), nullIfEmpty(text(payload["block_height"])), nullIfEmpty(text(payload["block_time"])),
-			completedAt, now, app.tenantID, thirdPartyID}},
+		d1.Statement{SQL: `WITH normalized AS (
+		UPDATE cregis_withdrawals
+		SET status='submitted_to_cregis', cregis_cid=?, submitted_at=COALESCE(submitted_at, ?), updated_at=?
+		WHERE tenant_id=? AND third_party_id=? AND status IN ('executing', 'exception')
+		RETURNING id
+	), terminal AS (
+		UPDATE cregis_withdrawals
+		SET status=?, cregis_cid=?, txid=?, block_height=?, block_time=?, completed_at=?, updated_at=?
+		WHERE tenant_id=? AND third_party_id=? AND status='submitted_to_cregis'
+		  AND EXISTS (
+		    SELECT 1 FROM cregis_withdrawal_accounting a
+		    WHERE a.withdrawal_id=cregis_withdrawals.id
+		      AND a.tenant_id=cregis_withdrawals.tenant_id AND a.status='approved'
+		  )
+		RETURNING id, tenant_id
+	)
+	UPDATE cregis_withdrawal_accounting a
+	SET status=CASE WHEN ?='completed' THEN 'pending_settlement' ELSE 'pending_release' END,
+	    next_attempt_at=NOW(), locked_at=NULL, updated_at=NOW()
+	FROM terminal
+	WHERE a.withdrawal_id=terminal.id AND a.tenant_id=terminal.tenant_id AND a.status='approved'
+	RETURNING a.withdrawal_id`, Params: []any{
+			cregisCID, now, now, app.tenantID, thirdPartyID,
+			target, cregisCID, nullIfEmpty(txid), nullIfEmpty(text(payload["block_height"])), nullIfEmpty(text(payload["block_time"])),
+			completedAt, now, app.tenantID, thirdPartyID, target,
+		}},
 	)
 	if err != nil {
 		app.logger.Error("store Cregis payout callback failed", "error", err)
 		http.Error(w, "retry", http.StatusServiceUnavailable)
 		return
 	}
-	if len(results) != 3 || resultChanges(results[2:3]) != 1 {
-		rows, lookupErr := app.db.Query(r.Context(), `SELECT status, cregis_cid FROM cregis_withdrawals
-      WHERE tenant_id=? AND third_party_id=?`, app.tenantID, thirdPartyID)
+	if len(results) != 2 || len(results[1].Results) != 1 {
+		rows, lookupErr := app.db.Query(r.Context(), `SELECT x.status, x.cregis_cid, COALESCE(a.status, 'missing') AS accounting_status
+		FROM cregis_withdrawals x
+		LEFT JOIN cregis_withdrawal_accounting a ON a.withdrawal_id=x.id AND a.tenant_id=x.tenant_id
+		WHERE x.tenant_id=? AND x.third_party_id=?`, app.tenantID, thirdPartyID)
 		if lookupErr != nil {
 			app.logger.Error("verify Cregis payout callback state failed", "error", lookupErr)
 			http.Error(w, "retry", http.StatusServiceUnavailable)
 			return
 		}
-		if len(rows) == 1 && text(rows[0]["status"]) == target && text(rows[0]["cregis_cid"]) == cregisCID {
+		accountingStatus := ""
+		if len(rows) == 1 {
+			accountingStatus = text(rows[0]["accounting_status"])
+		}
+		settlementQueued := target == "completed" && (accountingStatus == "pending_settlement" || accountingStatus == "settling" || accountingStatus == "settled")
+		releaseQueued := target != "completed" && (accountingStatus == "pending_release" || accountingStatus == "releasing" || accountingStatus == "released")
+		if len(rows) == 1 && text(rows[0]["status"]) == target && text(rows[0]["cregis_cid"]) == cregisCID && (settlementQueued || releaseQueued) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			_, _ = w.Write([]byte("success"))
 			return

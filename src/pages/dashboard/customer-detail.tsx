@@ -45,6 +45,7 @@ import {
   neobankApi,
   Operation,
   supportedFiatCurrencies,
+  SYSTEM_WALLET_PRODUCT_NAME,
   VirtualAccountRequest,
   WithdrawalFeeRule,
 } from 'src/features/finance/core-api';
@@ -1817,7 +1818,7 @@ function FiatAccountAsset({ account }: { account: MoneyAccount }) {
               {account.name}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {account.currency} · {isVa ? '专属收款账户' : '系统余额账户'}
+              {account.currency} · {isVa ? '专属收款账户' : SYSTEM_WALLET_PRODUCT_NAME}
             </Typography>
           </Box>
         </Stack>
@@ -1841,7 +1842,7 @@ function FiatAccountAsset({ account }: { account: MoneyAccount }) {
         {isVa && <AccountFact label="开户银行" value={account.bankName || '银行资料待同步'} />}
         {isVa && <AccountFact label="银行国家/地区" value={account.bankCountry || '-'} />}
         <AccountFact
-          label={isVa ? '收款账号' : '系统账户编号'}
+          label={isVa ? '收款账号' : `${SYSTEM_WALLET_PRODUCT_NAME}编号`}
           value={account.accountNumber || '账户编号待分配'}
           wide={!isVa}
         />
@@ -1949,8 +1950,8 @@ function AccountAssetOverview({
       <CustomerAssetSnapshot snapshots={customerSnapshots} />
       <Stack data-testid="account-asset-rows" divider={<Divider flexItem />}>
         <AssetColumn
-          title="系统钱包"
-          description="平台账本中的标准法币余额账户"
+          title={SYSTEM_WALLET_PRODUCT_NAME}
+          description="平台账本中的 USD / HKD 法币余额"
           icon={ACTION_ICONS.accounts}
           count={systemAccounts.length}
           snapshots={systemSnapshots}
@@ -1960,8 +1961,8 @@ function AccountAssetOverview({
           ) : (
             <AssetEmptyState
               icon="solar:wallet-money-linear"
-              title="系统钱包尚未同步"
-              detail="KYC 开户完成后应自动分配 USD 与 HKD 标准账户。"
+              title={`${SYSTEM_WALLET_PRODUCT_NAME}尚未同步`}
+              detail={`KYC 开户完成后应自动分配 USD 与 HKD ${SYSTEM_WALLET_PRODUCT_NAME}。`}
             />
           )}
         </AssetColumn>

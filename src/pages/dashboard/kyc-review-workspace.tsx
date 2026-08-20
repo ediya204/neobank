@@ -35,7 +35,12 @@ import {
   NeobankSumsubVerification,
   syncNeobankSumsubVerification,
 } from 'src/features/customers/neobank-customer';
-import { coreApi, Customer, neobankApi } from 'src/features/finance/core-api';
+import {
+  coreApi,
+  Customer,
+  neobankApi,
+  SYSTEM_WALLET_PRODUCT_NAME,
+} from 'src/features/finance/core-api';
 import { paths } from 'src/routes/paths';
 
 type ReviewDecision = 'approve' | 'reject';
@@ -237,7 +242,7 @@ export default function KycReviewWorkspace() {
         if (decision === 'approve') {
           setSuccess(
             result.wallet
-              ? 'KYC 审核已通过；客户已自动开户，标准法币账户将在 Core 同步时自动分配。'
+              ? `KYC 审核已通过；客户已自动开户，${SYSTEM_WALLET_PRODUCT_NAME}将在 Core 同步时自动分配。`
               : 'KYC 审核已通过并自动开户；数字钱包创建失败，系统已标记为待重试。'
           );
         } else {

@@ -49,7 +49,6 @@ func (db *callbackDatabase) Batch(context.Context, ...d1.Statement) ([]d1.Result
 	return []d1.Result{
 		{Meta: map[string]any{"changes": float64(1)}},
 		{Meta: map[string]any{"changes": float64(0)}},
-		{Meta: map[string]any{"changes": float64(0)}},
 	}, nil
 }
 
@@ -85,6 +84,7 @@ func TestPayoutCallbackDoesNotAcknowledgeUnknownOrConflictingState(t *testing.T)
 		"chain_id":       usdtTRC20ChainID,
 		"token_id":       usdtTRC20TokenID,
 		"status":         6,
+		"txid":           strings.Repeat("a", 64),
 		"timestamp":      int64(1_800_000_000_000),
 		"nonce":          "abc123",
 	}
@@ -100,8 +100,8 @@ func TestPayoutCallbackDoesNotAcknowledgeUnknownOrConflictingState(t *testing.T)
 		wantStatus int
 	}{
 		{name: "unknown payout", wantStatus: http.StatusUnprocessableEntity},
-		{name: "conflicting payout", rows: []map[string]any{{"status": "exception", "cregis_cid": ""}}, wantStatus: http.StatusConflict},
-		{name: "exact idempotent callback", rows: []map[string]any{{"status": "completed", "cregis_cid": "1463535767997999"}}, wantStatus: http.StatusOK},
+		{name: "conflicting payout", rows: []map[string]any{{"status": "exception", "cregis_cid": "", "accounting_status": "approved"}}, wantStatus: http.StatusConflict},
+		{name: "exact idempotent callback", rows: []map[string]any{{"status": "completed", "cregis_cid": "1463535767997999", "accounting_status": "settled"}}, wantStatus: http.StatusOK},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			app := &application{
@@ -158,6 +158,7 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 		"wallet_id": "wallet_deposit", "chain_id": usdtTRC20ChainID, "token_id": usdtTRC20TokenID,
 		"currency": usdtTRC20Currency, "address": payload["address"], "amount_text": "1.25",
 		"amount_minor": "1250000", "status": "completed", "txid": payload["txid"],
+		"from_address": "TXsmKpEuW7qWnXzJLGP9eDLvWPR2GRn1FS",
 		"block_height": payload["block_height"], "block_time": payload["block_time"],
 		"raw_sha256": sha256Hex(body),
 	}
@@ -174,15 +175,17 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 	}
 
 	for _, test := range []struct {
-		name         string
-		batchChanges float64
-		existing     []map[string]any
-		tradeErr     error
-		invalidTrade bool
-		queryErrorAt int
-		wantStatus   int
+		name          string
+		batchChanges  float64
+		existing      []map[string]any
+		tradeErr      error
+		invalidTrade  bool
+		missingIntent bool
+		queryErrorAt  int
+		wantStatus    int
 	}{
 		{name: "new deposit", batchChanges: 1, queryErrorAt: -1, wantStatus: http.StatusOK},
+		{name: "new deposit without accounting intent", batchChanges: 1, missingIntent: true, queryErrorAt: -1, wantStatus: http.StatusServiceUnavailable},
 		{name: "exact duplicate", existing: []map[string]any{exact}, queryErrorAt: -1, wantStatus: http.StatusOK},
 		{name: "unknown duplicate", queryErrorAt: -1, wantStatus: http.StatusUnprocessableEntity},
 		{name: "conflicting duplicate", existing: []map[string]any{conflicting}, queryErrorAt: -1, wantStatus: http.StatusConflict},
@@ -195,12 +198,20 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 			if test.invalidTrade {
 				tradeResult.ToAddress = "TMismatchedDepositAddress11111111111"
 			}
+			queries := [][]map[string]any{wallet}
+			if test.batchChanges == 0 && test.tradeErr == nil && !test.invalidTrade {
+				queries = append(queries, test.existing)
+			}
+			if test.wantStatus == http.StatusOK && !test.missingIntent {
+				queries = append(queries, []map[string]any{{"status": "pending"}})
+			}
 			db := &depositCallbackDatabase{
 				batchResults: []d1.Result{
 					{Meta: map[string]any{"changes": float64(1)}},
 					{Meta: map[string]any{"changes": test.batchChanges}},
+					{Meta: map[string]any{"changes": test.batchChanges}},
 				},
-				queries:      [][]map[string]any{wallet, test.existing},
+				queries:      queries,
 				queryErrorAt: test.queryErrorAt,
 			}
 			app := &application{
@@ -217,13 +228,27 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 				t.Fatal("invalid deposit callback must never be acknowledged as success")
 			}
 			if test.name == "new deposit" {
-				if len(db.batches) != 1 || len(db.batches[0]) != 2 || len(db.batches[0][1].Params) != 17 {
+				if len(db.batches) != 1 || len(db.batches[0]) != 3 || len(db.batches[0][1].Params) != 17 {
 					t.Fatalf("unexpected deposit insert batch: %#v", db.batches)
 				}
 				if source := db.batches[0][1].Params[8]; source != trade.FromAddress {
 					t.Fatalf("stored source address = %v; want %s", source, trade.FromAddress)
 				}
+				if !strings.Contains(db.batches[0][2].SQL, "cregis_deposit_accounting") {
+					t.Fatal("completed deposit must persist a durable accounting intent")
+				}
 			}
 		})
+	}
+}
+
+func TestCustomerWalletFundsUseOnlyCoreMaterializedBalances(t *testing.T) {
+	for name, sql := range map[string]string{"balance": walletBalancesSQL, "reservation": reserveWithdrawalSQL} {
+		if !strings.Contains(sql, `"CryptoWallet"`) || !strings.Contains(sql, `"availableBalance"`) {
+			t.Fatalf("%s SQL must read the Core wallet balance", name)
+		}
+		if strings.Contains(sql, "SUM(d.amount_minor)") {
+			t.Fatalf("%s SQL must not infer money from custody deposits", name)
+		}
 	}
 }

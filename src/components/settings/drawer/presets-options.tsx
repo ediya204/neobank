@@ -3,7 +3,7 @@ import { alpha } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 // theme
-import { primaryPresets } from 'src/theme/options/presets';
+import { normalizePrimaryPreset, primaryPresets } from 'src/theme/options/presets';
 
 // ----------------------------------------------------------------------
 
@@ -21,7 +21,7 @@ export default function PresetsOptions({ value, onChange }: PresetsOptionsProps)
   return (
     <Box columnGap={2} rowGap={1.5} display="grid" gridTemplateColumns="repeat(3, 1fr)">
       {options.map((option) => {
-        const selected = value === option.name || (value === 'blue' && option.name === 'default');
+        const selected = normalizePrimaryPreset(value) === option.name;
 
         return (
           <ButtonBase

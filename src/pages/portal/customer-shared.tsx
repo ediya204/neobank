@@ -5,6 +5,7 @@ import {
   Currency,
   MoneyAccount,
   Operation,
+  SYSTEM_WALLET_PRODUCT_NAME,
 } from 'src/features/finance/core-api';
 
 export const currencySymbols: Record<Currency, string> = {
@@ -67,7 +68,7 @@ export function OperationStatus({ status }: { status: Operation['status'] }) {
 }
 
 export function AccountKindChip({ account }: { account: MoneyAccount }) {
-  let label = '多货币法币';
+  let label = SYSTEM_WALLET_PRODUCT_NAME;
   if (account.kind === 'VIRTUAL_ACCOUNT') label = 'VA 账户';
   if (account.kind === 'CRYPTO_WALLET') label = '数字资产';
   return (

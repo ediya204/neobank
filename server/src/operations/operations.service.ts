@@ -130,6 +130,9 @@ export class OperationsService {
     if (input.type === 'INTERNAL_TRANSFER') {
       throw new BadRequestException('internal_transfer_not_supported');
     }
+    if (['OTC'].includes(input.type)) {
+      throw new ConflictException('usdt_otc_disabled_until_single_ledger');
+    }
     if (input.currency !== 'USDT' && !isSupportedFiatCurrency(input.currency)) {
       throw new BadRequestException('unsupported_currency');
     }
@@ -375,6 +378,9 @@ export class OperationsService {
         });
         if (!operation) throw new NotFoundException('operation_not_found');
         this.requireNonCryptoWorkflow(operation);
+        if (['OTC'].includes(operation.type)) {
+          throw new ConflictException('usdt_otc_disabled_until_single_ledger');
+        }
         if (operation.status !== 'SUBMITTED')
           throw new ConflictException('operation_not_pending_approval');
         const checker = await this.requireRole(tx, checkerId, ['ADMIN']);

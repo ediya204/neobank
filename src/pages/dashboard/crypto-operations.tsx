@@ -53,7 +53,7 @@ type CregisHistoryRow = {
   created_at: string;
 };
 
-type AdminCryptoTransfer = CryptoTransfer & { rawStatus?: string };
+type AdminCryptoTransfer = CryptoTransfer & { rawStatus?: string; customerName?: string };
 
 type AdminCustomer = {
   id: string;
@@ -200,9 +200,16 @@ export default function CryptoOperationsAdmin() {
             })
           )
         );
+        const customerNames = new Map(
+          localCustomers.map((customer) => [customer.id, customer.displayName])
+        );
         setRows(
           batches
             .flat()
+            .map((row) => ({
+              ...row,
+              customerName: customerNames.get(row.customerId),
+            }))
             .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
         );
         setCustomers([]);
@@ -213,9 +220,15 @@ export default function CryptoOperationsAdmin() {
         neobankApi<{ withdrawals: CregisHistoryRow[] }>('/crypto/history', { userId }),
         neobankApi<{ data: AdminCustomer[] }>('/admin/customers', { userId }),
       ]);
+      const customerNames = new Map(
+        customerPayload.data.map((customer) => [customer.id, customer.display_name])
+      );
       setRows(
         history.withdrawals
-          .map(mapCregisWithdrawal)
+          .map((row) => ({
+            ...mapCregisWithdrawal(row),
+            customerName: customerNames.get(row.customer_id),
+          }))
           .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
       );
       setCustomers(customerPayload.data);
@@ -408,7 +421,9 @@ export default function CryptoOperationsAdmin() {
                       sx={{ cursor: 'pointer' }}
                     >
                       <TableCell>{row.reference}</TableCell>
-                      <TableCell>{row.customerId}</TableCell>
+                      <TableCell title={row.customerId}>
+                        {row.customerName || row.customerId}
+                      </TableCell>
                       <TableCell>
                         {row.network} · {row.wallet.tokenStandard}
                       </TableCell>

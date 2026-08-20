@@ -204,6 +204,29 @@ type LiveMarketQuote = {
   referenceOnly: true;
 };
 
+type CustomerWalletSummaryRow = {
+  id?: unknown;
+  status?: unknown;
+  available_balance?: unknown;
+  frozen_balance?: unknown;
+};
+
+async function fetchCustomerWalletSummary(request: Request, env: Env) {
+  const walletURL = new URL('/api/v1/customer/wallets', request.url);
+  const walletHeaders = new Headers({ accept: 'application/json' });
+  const cookie = request.headers.get('cookie');
+  if (cookie) walletHeaders.set('cookie', cookie);
+  const response = await proxyAPI(
+    new Request(walletURL, { method: 'GET', headers: walletHeaders }),
+    env,
+    'application-session-edge'
+  );
+  if (!response.ok) throw new Error(`customer_wallets_unavailable:${response.status}`);
+  const payload = (await response.json()) as { data?: unknown };
+  if (!Array.isArray(payload.data)) throw new Error('invalid_customer_wallet_response');
+  return payload.data as CustomerWalletSummaryRow[];
+}
+
 async function constantTimeTextEqual(left: string, right: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const [leftHash, rightHash] = await Promise.all([
@@ -595,9 +618,50 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
       marketUpdatedAt?: string;
       [key: string]: unknown;
     };
+    let sourceDistribution = summary.distribution;
+    if (role === 'customer') {
+      let walletRows: CustomerWalletSummaryRow[];
+      try {
+        walletRows = await fetchCustomerWalletSummary(request, env);
+      } catch {
+        return json({ error: { code: 'customer_wallet_summary_unavailable' } }, 502);
+      }
+      const activeWallets = walletRows.filter((wallet) => wallet.status === 'active');
+      const walletBalances = activeWallets.map((wallet) => ({
+        available: Number(wallet.available_balance),
+        frozen: Number(wallet.frozen_balance),
+      }));
+      if (
+        walletBalances.some(
+          (wallet) =>
+            !Number.isFinite(wallet.available) ||
+            wallet.available < 0 ||
+            !Number.isFinite(wallet.frozen) ||
+            wallet.frozen < 0
+        )
+      ) {
+        return json({ error: { code: 'invalid_customer_wallet_balance' } }, 502);
+      }
+      sourceDistribution = sourceDistribution.filter((item) => item.currency !== 'USDT');
+      if (activeWallets.length) {
+        const available = walletBalances.reduce((sum, wallet) => sum + wallet.available, 0);
+        const frozen = walletBalances.reduce((sum, wallet) => sum + wallet.frozen, 0);
+        sourceDistribution.push({
+          currency: 'USDT',
+          availableBalance: available.toFixed(8),
+          frozenBalance: frozen.toFixed(8),
+          totalBalance: (available + frozen).toFixed(8),
+          reportingRate: null,
+          reportingValue: null,
+          shareBps: 0,
+          accountCount: activeWallets.length,
+          sources: ['digital_wallet'],
+        });
+      }
+    }
     const quoteCache = new Map<string, Promise<LiveMarketQuote>>();
     const valued: ValuedSummaryItem[] = await Promise.all(
-      summary.distribution.map(async (item) => {
+      sourceDistribution.map(async (item) => {
         if (
           typeof item.currency !== 'string' ||
           typeof item.availableBalance !== 'string' ||
@@ -669,6 +733,14 @@ async function proxyCoreAPI(request: Request, env: Env): Promise<Response> {
       totalAvailable: totalAvailable.toFixed(8),
       totalFrozen: totalFrozen.toFixed(8),
       totalBalance: totalBalance.toFixed(8),
+      accountCount: valued.reduce(
+        (total, item) =>
+          total +
+          (typeof item.accountCount === 'number' && Number.isFinite(item.accountCount)
+            ? item.accountCount
+            : 0),
+        0
+      ),
       distribution: valued.map(
         ({
           liveAvailableValue: _available,

@@ -58,6 +58,7 @@ import {
   OperationType,
   RateVersion,
   supportedFiatCurrencies,
+  SYSTEM_WALLET_PRODUCT_NAME,
   WithdrawalFeeRule,
 } from 'src/features/finance/core-api';
 
@@ -81,7 +82,7 @@ const sectionCopy: Record<
 > = {
   accounts: {
     title: '客户账户',
-    description: '查看客户的 VA 账户、系统多货币法币账户和数字钱包状态。',
+    description: `查看客户的 VA 账户、${SYSTEM_WALLET_PRODUCT_NAME}和数字钱包状态。`,
   },
   channels: { title: '资金通道', description: '查看法币入账、VA 银行、POBO 和平台代付通道。' },
   beneficiaries: {
@@ -218,8 +219,8 @@ function payoutAccountKindAllowed(
 
 function payoutAccountScopeLabel(payoutMethod: OperationForm['payoutMethod']) {
   if (payoutMethod === 'VA') return 'VA 钱包';
-  if (payoutMethod === 'POBO') return '系统钱包或 VA 钱包';
-  return '系统钱包';
+  if (payoutMethod === 'POBO') return `${SYSTEM_WALLET_PRODUCT_NAME}或 VA 钱包`;
+  return SYSTEM_WALLET_PRODUCT_NAME;
 }
 
 const channelTypeCopy: Record<
@@ -243,12 +244,12 @@ const channelTypeCopy: Record<
   },
   POBO_PAYOUT: {
     label: 'POBO 出款',
-    description: '从系统钱包扣款，由外部通道以客户名义执行付款。',
+    description: `从${SYSTEM_WALLET_PRODUCT_NAME}扣款，由外部通道以客户名义执行付款。`,
     icon: ACTION_ICONS.fundsOut,
   },
   PLATFORM_PAYOUT: {
     label: '平台代付',
-    description: '从系统钱包扣款，以平台母账户作为银行付款人。',
+    description: `从${SYSTEM_WALLET_PRODUCT_NAME}扣款，以平台母账户作为银行付款人。`,
     icon: ACTION_ICONS.internalTransfer,
   },
 };
@@ -2450,9 +2451,8 @@ function AccountEmptyState({
     title = 'KYC 审核尚未完成';
     description = '客户通过 KYC 审核前不会开通账户或钱包。请在客户管理中查看审核进度。';
   } else if (customer?.kycStatus === 'APPROVED') {
-    title = '标准法币账户正在自动同步';
-    description =
-      '开户成功后系统会自动分配 USD/HKD 标准法币账户，不需要人工开户。请刷新状态；持续未显示时按同步异常处理。';
+    title = `${SYSTEM_WALLET_PRODUCT_NAME}正在自动同步`;
+    description = `开户成功后系统会自动分配 USD/HKD ${SYSTEM_WALLET_PRODUCT_NAME}，不需要人工开户。请刷新状态；持续未显示时按同步异常处理。`;
   }
 
   return (
@@ -3038,7 +3038,7 @@ function OperationDialog({
   }
   const dialogNotice =
     type === 'DEPOSIT'
-      ? '法币账户只有 VA 账户和系统多货币法币账户；提交后进入待审批，确认到账后记入对应币种余额。'
+      ? `法币账户只有 VA 账户和${SYSTEM_WALLET_PRODUCT_NAME}；提交后进入待审批，确认到账后记入对应币种余额。`
       : '提交后将冻结相关余额并进入待审批；授权管理员可直接完成审批。';
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
@@ -3382,7 +3382,7 @@ function AccountSelect({
         {accounts.map((account) => (
           <MenuItem key={account.id} value={account.id}>
             {showAccountKind
-              ? `${account.kind === 'VIRTUAL_ACCOUNT' ? 'VA 钱包' : '系统钱包'} · ${
+              ? `${account.kind === 'VIRTUAL_ACCOUNT' ? 'VA 钱包' : SYSTEM_WALLET_PRODUCT_NAME} · ${
                   account.currency
                 }`
               : accountBalanceLabel(account)}

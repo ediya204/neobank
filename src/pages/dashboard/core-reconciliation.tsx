@@ -96,11 +96,25 @@ function operationTime(operation: Operation) {
   return operation.executedAt || operation.submittedAt || operation.createdAt;
 }
 
+type UsdtReconciliation = {
+  checkedAt: string;
+  issueCount: number;
+  truncated: boolean;
+  issues: Array<{
+    id: string;
+    direction: 'deposit' | 'withdrawal' | 'core';
+    custody_status: string;
+    accounting_status: string;
+    reason: string;
+  }>;
+};
+
 export default function CoreReconciliationPage() {
   const [date, setDate] = useState(hongKongToday);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [journals, setJournals] = useState<JournalEntry[]>([]);
+  const [usdtReconciliation, setUsdtReconciliation] = useState<UsdtReconciliation | null>(null);
   const [status, setStatus] = useState<'all' | Operation['status']>('all');
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -111,7 +125,7 @@ export default function CoreReconciliationPage() {
     setLoading(true);
     setError('');
     try {
-      const [customerRows, operationRows, journalRows] = await Promise.all([
+      const [customerRows, operationRows, journalRows, usdtRows] = await Promise.all([
         coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`, {
           userId: 'usr_admin',
         }),
@@ -121,10 +135,15 @@ export default function CoreReconciliationPage() {
         coreApi<JournalEntry[]>(`/ledger?organizationId=${demoOrganizationId}`, {
           userId: 'usr_admin',
         }),
+        coreApi<UsdtReconciliation>(
+          `/ledger/reconciliation/usdt?organizationId=${demoOrganizationId}`,
+          { userId: 'usr_admin' }
+        ),
       ]);
       setCustomers(customerRows);
       setOperations(operationRows);
       setJournals(journalRows);
+      setUsdtReconciliation(usdtRows);
       setSnapshotAt(new Date());
     } catch (value) {
       setError(value instanceof Error ? value.message : '无法读取对账数据');
@@ -146,7 +165,13 @@ export default function CoreReconciliationPage() {
   );
   const visibleMovements = filteredMovements.slice(page * 25, page * 25 + 25);
   const checksPass =
-    snapshot.unbalancedJournalCount === 0 && snapshot.completedWithoutJournal.length === 0;
+    snapshot.unbalancedJournalCount === 0 &&
+    snapshot.completedWithoutJournal.length === 0 &&
+    usdtReconciliation?.issueCount === 0;
+  const consistencyIssueCount =
+    snapshot.unbalancedJournalCount +
+    snapshot.completedWithoutJournal.length +
+    (usdtReconciliation?.issueCount || 0);
 
   useEffect(() => setPage(0), [date, status]);
 
@@ -210,8 +235,12 @@ export default function CoreReconciliationPage() {
           {!loading && !error && (
             <Alert severity={checksPass ? 'success' : 'error'}>
               {checksPass
-                ? `账本一致性检查通过：${snapshot.journalCount} 张凭证借贷平衡，已完成业务均有账本凭证。`
-                : `发现 ${snapshot.unbalancedJournalCount} 张借贷不平衡凭证、${snapshot.completedWithoutJournal.length} 笔已完成但缺少凭证的业务，请立即核对。`}
+                ? `账本及 Cregis 托管一致性检查通过：${snapshot.journalCount} 张凭证借贷平衡，已完成业务均有账本凭证。`
+                : `发现 ${snapshot.unbalancedJournalCount} 张借贷不平衡凭证、${
+                    snapshot.completedWithoutJournal.length
+                  } 笔已完成但缺少凭证的业务、${
+                    usdtReconciliation?.issueCount || 0
+                  } 笔 Cregis 与 Core 状态不一致，请立即核对。`}
             </Alert>
           )}
 
@@ -245,8 +274,8 @@ export default function CoreReconciliationPage() {
             />
             <MetricCard
               title="一致性异常"
-              value={`${snapshot.unbalancedJournalCount + snapshot.completedWithoutJournal.length}`}
-              helper="借贷差额或缺失凭证"
+              value={`${consistencyIssueCount}`}
+              helper="账本、托管或 Core 状态不一致"
               icon="solar:shield-warning-bold-duotone"
               tone={checksPass ? 'success' : 'error'}
             />

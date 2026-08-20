@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -8,9 +8,11 @@ import {
   ButtonBase,
   Card,
   CardContent,
+  CircularProgress,
   Container,
   Divider,
   FormControl,
+  InputAdornment,
   InputLabel,
   MenuItem,
   Select,
@@ -39,6 +41,10 @@ import {
   WithdrawalFeeRule,
   supportedFiatCurrencies,
 } from 'src/features/finance/core-api';
+import {
+  formatConversionAmount,
+  resolveConversionQuote,
+} from 'src/features/finance/conversion-quote';
 import {
   mergeLiveCustomerWallets,
   OtcDirection,
@@ -117,6 +123,8 @@ export default function CustomerActionPage({
   const [detail, setDetail] = useState<Customer | null>(null);
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [rates, setRates] = useState<RateVersion[]>([]);
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const [ratesError, setRatesError] = useState('');
   const [withdrawalFees, setWithdrawalFees] = useState<WithdrawalFeeRule[]>([]);
   const [sourceId, setSourceId] = useState('');
   const [targetId, setTargetId] = useState('');
@@ -131,17 +139,36 @@ export default function CustomerActionPage({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  let conversionType: RateVersion['type'] | null = null;
+  if (action === 'fx') conversionType = 'FX';
+  if (action === 'otc') conversionType = 'OTC';
+
+  const loadRates = useCallback(async () => {
+    if (!conversionType) {
+      setRates([]);
+      setRatesError('');
+      setRatesLoading(false);
+      return;
+    }
+    setRatesLoading(true);
+    try {
+      const rows = await coreApi<RateVersion[]>(`/rates?type=${conversionType}`);
+      setRates(rows);
+      setRatesError('');
+    } catch (value) {
+      setRatesError(value instanceof Error ? value.message : '实时报价加载失败');
+    } finally {
+      setRatesLoading(false);
+    }
+  }, [conversionType]);
 
   const loadDetail = async () => {
     if (!customer) return;
-    const [customerDetail, channelRows, rateRows, feeRows] = await Promise.all([
+    const [customerDetail, channelRows, feeRows] = await Promise.all([
       coreApi<Customer>(`/customers/${customer.id}`),
       submissionDisabledReason
         ? Promise.resolve([] as FundingChannel[])
         : coreApi<FundingChannel[]>(`/funding-channels?organizationId=${customer.organizationId}`),
-      action === 'fx' || action === 'otc'
-        ? coreApi<RateVersion[]>(`/rates?type=${action === 'fx' ? 'FX' : 'OTC'}`)
-        : Promise.resolve([] as RateVersion[]),
       submissionDisabledReason
         ? Promise.resolve([] as WithdrawalFeeRule[])
         : coreApi<WithdrawalFeeRule[]>(
@@ -150,13 +177,19 @@ export default function CustomerActionPage({
     ]);
     setDetail(customerDetail);
     setChannels(channelRows);
-    setRates(rateRows);
     setWithdrawalFees(feeRows);
   };
 
   useEffect(() => {
     loadDetail().catch((value) => setError(value instanceof Error ? value.message : '加载失败'));
   }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!conversionType) return undefined;
+    loadRates().catch(() => undefined);
+    const intervalId = window.setInterval(() => loadRates().catch(() => undefined), 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [conversionType, loadRates]);
 
   const accounts = useMemo(() => {
     const mergedAccounts = mergeLiveCustomerWallets(
@@ -225,21 +258,42 @@ export default function CustomerActionPage({
           row.active
       )
     : undefined;
-  const quote = useMemo(() => {
-    if (!source || !amount || Number(amount) <= 0) return null;
-    const target = accounts.find((row) => row.id === targetId);
-    if (!target || (action !== 'fx' && action !== 'otc')) return null;
-    const rate = rates.find(
-      (row) =>
-        row.active &&
-        row.type === (action === 'fx' ? 'FX' : 'OTC') &&
-        row.baseCurrency === source.currency &&
-        row.quoteCurrency === target.currency
-    );
-    if (!rate || !rate.marketRate || !rate.customerRate || rate.marketUnavailable) return null;
-    const received = Number(amount) * Number(rate.customerRate);
-    return { rate, target, received };
-  }, [accounts, action, amount, rates, source, targetId]);
+  const target = accounts.find((row) => row.id === targetId);
+  const quote = useMemo(
+    () =>
+      conversionType
+        ? resolveConversionQuote({
+            type: conversionType,
+            source,
+            target,
+            amount,
+            rates,
+            loading: ratesLoading,
+          })
+        : null,
+    [amount, conversionType, rates, ratesLoading, source, target]
+  );
+  const readyQuote =
+    quote?.status === 'ready' && quote.rate && quote.received !== undefined
+      ? { rate: quote.rate, received: quote.received }
+      : null;
+  const quoteReady = Boolean(readyQuote);
+  const quoteInvalid = quote?.status === 'unavailable' || quote?.status === 'stale';
+  let quoteHelperText = '选择付款和到账账户并输入金额后计算';
+  if (quote?.status === 'loading') quoteHelperText = '正在获取实时报价…';
+  if (quote?.status === 'unavailable') {
+    quoteHelperText = ratesError
+      ? '实时报价加载失败，请稍后重试'
+      : '当前币种组合暂无有效报价，请稍后重试';
+  }
+  if (quote?.status === 'stale') quoteHelperText = '报价已过期，系统将自动刷新，请稍后重试';
+  if (readyQuote) {
+    quoteHelperText = `按当前客户报价估算${
+      readyQuote.rate.marketUpdatedAt
+        ? ` · 行情时间 ${new Date(readyQuote.rate.marketUpdatedAt).toLocaleString('zh-CN')}`
+        : ''
+    }；提交时将重新取价并锁定最终金额`;
+  }
 
   useEffect(() => {
     setTargetId('');
@@ -293,6 +347,10 @@ export default function CustomerActionPage({
     if (!customer) return;
     if (submissionDisabledReason) {
       setError(submissionDisabledReason);
+      return;
+    }
+    if (conversionType && !quoteReady) {
+      setError('当前没有可提交的有效报价，请等待报价刷新后重试');
       return;
     }
     setError('');
@@ -366,7 +424,7 @@ export default function CustomerActionPage({
       setSuccess(successMessage);
       setAmount('');
       setNote('');
-      await Promise.all([loadDetail(), refresh()]);
+      await Promise.all([loadDetail(), refresh(), loadRates()]);
     } catch (value) {
       setError(value instanceof Error ? value.message : '提交失败');
     } finally {
@@ -671,6 +729,36 @@ export default function CustomerActionPage({
                     inputProps={{ min: 0.01, step: source?.currency === 'USDT' ? 0.000001 : 0.01 }}
                     helperText={amountHelperText}
                   />
+                  {conversionType && (
+                    <TextField
+                      fullWidth
+                      label={target ? `预计到账（${target.currency}）` : '预计到账'}
+                      value={
+                        readyQuote && target
+                          ? formatConversionAmount(readyQuote.received, target.currency)
+                          : ''
+                      }
+                      placeholder="选择账户并输入金额后显示"
+                      error={quoteInvalid}
+                      helperText={quoteHelperText}
+                      FormHelperTextProps={{ 'aria-live': 'polite' }}
+                      InputProps={{
+                        readOnly: true,
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            {ratesLoading && <CircularProgress size={16} sx={{ mr: 1 }} />}
+                            {target?.currency || '—'}
+                          </InputAdornment>
+                        ),
+                      }}
+                      inputProps={{ 'aria-label': '预计到账目标资产金额' }}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          bgcolor: 'background.neutral',
+                        },
+                      }}
+                    />
+                  )}
                   {action === 'payout' && source && (
                     <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
                       <CardContent sx={{ p: 2.5 }}>
@@ -711,57 +799,51 @@ export default function CustomerActionPage({
                       </CardContent>
                     </Card>
                   )}
-                  {(action === 'fx' || action === 'otc') && source && targetId && amount && (
+                  {conversionType && source && target && amount && readyQuote && (
                     <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
                       <CardContent sx={{ p: 2.5 }}>
-                        {quote ? (
-                          <Stack spacing={1.25}>
-                            <Stack direction="row" justifyContent="space-between" gap={2}>
-                              <Typography variant="body2" color="text.secondary">
-                                卖出金额
-                              </Typography>
-                              <Typography variant="subtitle2">
-                                {money(amount, source.currency)}
-                              </Typography>
-                            </Stack>
-                            <Stack direction="row" justifyContent="space-between" gap={2}>
-                              <Typography variant="body2" color="text.secondary">
-                                当前汇率
-                              </Typography>
-                              <Typography variant="subtitle2">
-                                1 {source.currency} ={' '}
-                                {Number(quote.rate.marketRate).toLocaleString()}{' '}
-                                {quote.target.currency}
-                              </Typography>
-                            </Stack>
-                            <Stack direction="row" justifyContent="space-between" gap={2}>
-                              <Typography variant="body2" color="text.secondary">
-                                报价费率
-                              </Typography>
-                              <Typography variant="subtitle2">
-                                {(quote.rate.feeBps / 100).toFixed(2)}%
-                              </Typography>
-                            </Stack>
-                            <Typography variant="caption" color="text.secondary">
-                              FastForex 实时中间价
-                              {quote.rate.marketUpdatedAt
-                                ? ` · 行情时间 ${new Date(
-                                    quote.rate.marketUpdatedAt
-                                  ).toLocaleString('zh-CN')}`
-                                : ''}
-                              。提交时服务端会再次取价，并把最终含费率成交价锁定到指令。
+                        <Stack spacing={1.25}>
+                          <Stack direction="row" justifyContent="space-between" gap={2}>
+                            <Typography variant="body2" color="text.secondary">
+                              卖出金额
                             </Typography>
-                            <Divider />
-                            <Stack direction="row" justifyContent="space-between" gap={2}>
-                              <Typography variant="subtitle2">预计到账</Typography>
-                              <Typography variant="h6" color="primary.main">
-                                {money(quote.received, quote.target.currency)}
-                              </Typography>
-                            </Stack>
+                            <Typography variant="subtitle2">
+                              {money(amount, source.currency)}
+                            </Typography>
                           </Stack>
-                        ) : (
-                          <Alert severity="warning">当前币种组合暂无有效报价。</Alert>
-                        )}
+                          <Stack direction="row" justifyContent="space-between" gap={2}>
+                            <Typography variant="body2" color="text.secondary">
+                              参考中间价
+                            </Typography>
+                            <Typography variant="subtitle2">
+                              1 {source.currency} ={' '}
+                              {Number(readyQuote.rate.marketRate).toLocaleString()}{' '}
+                              {target.currency}
+                            </Typography>
+                          </Stack>
+                          <Stack direction="row" justifyContent="space-between" gap={2}>
+                            <Typography variant="body2" color="text.secondary">
+                              当前客户报价
+                            </Typography>
+                            <Typography variant="subtitle2">
+                              1 {source.currency} ={' '}
+                              {Number(readyQuote.rate.customerRate).toLocaleString()}{' '}
+                              {target.currency}
+                            </Typography>
+                          </Stack>
+                          <Stack direction="row" justifyContent="space-between" gap={2}>
+                            <Typography variant="body2" color="text.secondary">
+                              报价费率
+                            </Typography>
+                            <Typography variant="subtitle2">
+                              {(readyQuote.rate.feeBps / 100).toFixed(2)}%
+                            </Typography>
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            FastForex 实时中间价仅供参考；预计到账已包含报价费率。提交时服务端会再次
+                            取价，并把最终成交价和到账金额锁定到指令。
+                          </Typography>
+                        </Stack>
                       </CardContent>
                     </Card>
                   )}
@@ -787,7 +869,8 @@ export default function CustomerActionPage({
                       !sourceId ||
                       !amount ||
                       (action !== 'payout' && !targetId) ||
-                      insufficientBalance
+                      insufficientBalance ||
+                      Boolean(conversionType && !quoteReady)
                     }
                   >
                     {submissionDisabledReason && '暂未开放提交'}

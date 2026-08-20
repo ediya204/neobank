@@ -6,8 +6,7 @@ import { palette as themePalette } from 'src/theme/palette';
 // ----------------------------------------------------------------------
 
 export function presets(presetsColor: string) {
-  // `blue` is kept as a compatibility alias for previously saved settings.
-  const normalizedColor = presetsColor === 'blue' ? 'default' : presetsColor;
+  const normalizedColor = normalizePrimaryPreset(presetsColor);
   const primary = primaryPresets.find((i) => i.name === normalizedColor);
 
   const theme = {
@@ -22,6 +21,11 @@ export function presets(presetsColor: string) {
   return theme;
 }
 
+export function normalizePrimaryPreset(presetsColor: string) {
+  // The former orange option now matches the system default; keep saved settings compatible.
+  return presetsColor === 'orange' ? 'default' : presetsColor;
+}
+
 // ----------------------------------------------------------------------
 
 const palette = themePalette('light');
@@ -31,6 +35,16 @@ export const primaryPresets = [
   {
     name: 'default',
     ...palette.primary,
+  },
+  // BLUE
+  {
+    name: 'blue',
+    lighter: '#D1E9FC',
+    light: '#76B0F1',
+    main: '#2065D1',
+    dark: '#103996',
+    darker: '#061B64',
+    contrastText: '#FFFFFF',
   },
   // CYAN
   {
@@ -51,16 +65,6 @@ export const primaryPresets = [
     dark: '#431A9E',
     darker: '#200A69',
     contrastText: '#FFFFFF',
-  },
-  // ORANGE
-  {
-    name: 'orange',
-    lighter: '#FEF4D4',
-    light: '#FED680',
-    main: '#fda92d',
-    dark: '#B66816',
-    darker: '#793908',
-    contrastText: palette.grey[800],
   },
   // RED
   {

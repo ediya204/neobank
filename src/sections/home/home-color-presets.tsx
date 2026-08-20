@@ -6,7 +6,7 @@ import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import CardActionArea from '@mui/material/CardActionArea';
 // components
-import { primaryPresets } from 'src/theme/options/presets';
+import { normalizePrimaryPreset, primaryPresets } from 'src/theme/options/presets';
 // components
 import Image from 'src/components/image';
 import Iconify from 'src/components/iconify';
@@ -17,6 +17,9 @@ import { MotionViewport, varFade } from 'src/components/animate';
 
 export default function HomeColorPresets() {
   const settings = useSettingsContext();
+
+  const selectedPreset = normalizePrimaryPreset(settings.themeColorPresets);
+  const presetAssetName = selectedPreset === 'default' ? 'orange' : selectedPreset;
 
   const options = primaryPresets.map((color) => ({
     name: color.name,
@@ -52,7 +55,7 @@ export default function HomeColorPresets() {
           <Image
             disabledEffect
             alt="screen"
-            src={`/assets/images/home/presets/screen_${settings.themeColorPresets}.webp`}
+            src={`/assets/images/home/presets/screen_${presetAssetName}.webp`}
           />
         </m.div>
       </Box>
@@ -63,7 +66,7 @@ export default function HomeColorPresets() {
             <Image
               disabledEffect
               alt="sidebar"
-              src={`/assets/images/home/presets/block_${settings.themeColorPresets}.webp`}
+              src={`/assets/images/home/presets/block_${presetAssetName}.webp`}
             />
           </m.div>
         </m.div>
@@ -75,7 +78,7 @@ export default function HomeColorPresets() {
             <Image
               disabledEffect
               alt="chart"
-              src={`/assets/images/home/presets/chart_${settings.themeColorPresets}.webp`}
+              src={`/assets/images/home/presets/chart_${presetAssetName}.webp`}
             />
           </m.div>
         </m.div>
@@ -87,7 +90,7 @@ export default function HomeColorPresets() {
             <Image
               disabledEffect
               alt="sidebar"
-              src={`/assets/images/home/presets/sidebar_${settings.themeColorPresets}.webp`}
+              src={`/assets/images/home/presets/sidebar_${presetAssetName}.webp`}
             />
           </m.div>
         </m.div>
@@ -111,7 +114,7 @@ export default function HomeColorPresets() {
         {options.map((color, index) => {
           const { name, value } = color;
 
-          const selected = settings.themeColorPresets === name;
+          const selected = selectedPreset === name;
 
           return (
             <CardActionArea

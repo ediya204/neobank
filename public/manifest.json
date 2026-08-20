@@ -3,7 +3,7 @@
   "short_name": "SSC Bank",
   "display": "standalone",
   "start_url": "/",
-  "theme_color": "#2065D1",
+  "theme_color": "#FDA92D",
   "background_color": "#ffffff",
   "icons": [
     {

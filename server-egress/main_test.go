@@ -44,7 +44,7 @@ func TestRelayAuthenticationRejectsTamperedBody(t *testing.T) {
 	tampered := []byte(`{"amount":"2"}`)
 	timestampMillis := "1786579200000"
 	nonce := "unique-nonce-123456789"
-	request := httptest.NewRequest(http.MethodPost, "/api/v2/payout", strings.NewReader(string(tampered)))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sub_address_withdrawal", strings.NewReader(string(tampered)))
 	request.Header.Set("X-Neobank-Relay-Timestamp", timestampMillis)
 	request.Header.Set("X-Neobank-Relay-Nonce", nonce)
 	request.Header.Set("X-Neobank-Relay-Signature", hex.EncodeToString(relaySignature(secret, timestampMillis, nonce, request.Method, request.URL.Path, original)))

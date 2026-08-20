@@ -36,6 +36,7 @@ import {
   Customer,
   demoOrganizationId,
   MoneyAccount,
+  SYSTEM_WALLET_PRODUCT_NAME,
 } from 'src/features/finance/core-api';
 import { paths } from 'src/routes/paths';
 
@@ -283,7 +284,7 @@ export default function CustomerManagementPage() {
                     <TableCell>客户</TableCell>
                     <TableCell>联系方式</TableCell>
                     <TableCell>KYC 完成</TableCell>
-                    <TableCell>标准法币账户</TableCell>
+                    <TableCell>{SYSTEM_WALLET_PRODUCT_NAME}</TableCell>
                     <TableCell>数字钱包</TableCell>
                     <TableCell>可用余额</TableCell>
                     <TableCell align="right">操作</TableCell>
