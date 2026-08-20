@@ -57,6 +57,48 @@
 
 final result: passed
 
+---
+
+# Client home overview design QA — 2026-08-20
+
+**Visual target and implementation evidence**
+
+- Selected visual target: `/Users/edi/.codex/visualizations/2026/08/20/01a01e66-c715-7812-a03b-87e490f8ea72/neobook-client-home-demo/implementation-desktop-clean-overview.png`
+- Real Portal desktop capture: `/tmp/neobook-client-home-real-desktop-final.png`
+- Real Portal mobile capture: `/tmp/neobook-client-home-real-mobile-final.png`
+- Side-by-side comparison: `/tmp/neobook-client-home-real-comparison.png`
+- Route: `http://localhost:3003/portal/home`
+- State: local PostgreSQL-backed Northstar business customer; real account balances and visible operations loaded.
+
+**Full-view comparison**
+
+- The real Portal preserves the approved Demo hierarchy: greeting, three native-currency balance cards,
+  a single simultaneous USD/HKD/USDT trend, 7/30/90-day controls, four shortcut cards, transaction
+  attention states, and recent activity.
+- The intentionally deleted per-currency inflow/outflow/net-change summary strip remains absent.
+- Production data replaces Demo data. The local curve is correspondingly flatter because the visible
+  completed operations have smaller changes; no synthetic financial history was introduced to imitate
+  the Demo shape.
+- Existing SSC Portal header, responsive bottom navigation, theme typography, real asset icons, route
+  structure, and semantic status components are preserved.
+
+**Interaction and responsive checks**
+
+- 7/30/90-day controls update the shared three-currency series; `90天` reports the pressed state.
+- USD, HKD, and USDT remain visible together without a currency switcher.
+- Balance and shortcut cards navigate through existing Portal routes.
+- Desktop 1440 x 1024 and mobile 390 x 844 views have no document-level horizontal overflow.
+- Browser console error count is zero after authenticated local data loading.
+
+**Findings**
+
+- No actionable P0, P1, or P2 design or interaction findings remain.
+- [P3] The curve is reconstructed from the currently visible completed operations and is labelled as an
+  estimate. A future server-side historical-balance endpoint would provide an authoritative long-range
+  series without changing this information architecture.
+
+final result: passed
+
 ## Admin navigation normalization — 2026-08-19
 
 **Source visual truth**
