@@ -170,16 +170,17 @@ export default function CustomerActionPage({
 
   const loadDetail = async () => {
     if (!customer) return;
+    const loadPayoutConfiguration = action === 'payout' && !submissionDisabledReason;
     const [customerDetail, channelRows, feeRows] = await Promise.all([
       coreApi<Customer>(`/customers/${customer.id}`),
-      submissionDisabledReason
-        ? Promise.resolve([] as FundingChannel[])
-        : coreApi<FundingChannel[]>(`/funding-channels?organizationId=${customer.organizationId}`),
-      submissionDisabledReason
-        ? Promise.resolve([] as WithdrawalFeeRule[])
-        : coreApi<WithdrawalFeeRule[]>(
+      loadPayoutConfiguration
+        ? coreApi<FundingChannel[]>(`/funding-channels?organizationId=${customer.organizationId}`)
+        : Promise.resolve([] as FundingChannel[]),
+      loadPayoutConfiguration
+        ? coreApi<WithdrawalFeeRule[]>(
             `/withdrawal-fees?organizationId=${customer.organizationId}&active=true`
-          ),
+          )
+        : Promise.resolve([] as WithdrawalFeeRule[]),
     ]);
     setDetail(customerDetail);
     setChannels(channelRows);
