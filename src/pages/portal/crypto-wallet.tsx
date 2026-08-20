@@ -106,11 +106,15 @@ function normalizeCustomerTransferStatus(status: string): CryptoTransfer['status
   if (status === 'completed') return 'COMPLETED';
   if (status === 'submitted') return 'SUBMITTED';
   if (status === 'rejected') return 'REJECTED';
-  if (['failed', 'exception', 'cancelled'].includes(status)) return 'FAILED';
+  if (status === 'exception') return 'PROCESSING';
+  if (['failed', 'cancelled'].includes(status)) return 'FAILED';
   return 'PROCESSING';
 }
 
-function toCustomerTransfer(row: CustomerHistoryRow, wallet: CryptoWallet): CryptoTransfer {
+function toCustomerTransfer(
+  row: CustomerHistoryRow,
+  wallet: CryptoWallet
+): CryptoTransfer & { rawStatus?: string } {
   const status = normalizeCustomerTransferStatus(row.status);
   const deposit = row.direction === 'deposit';
   return {
@@ -122,6 +126,7 @@ function toCustomerTransfer(row: CustomerHistoryRow, wallet: CryptoWallet): Cryp
     network: 'TRON',
     direction: deposit ? 'DEPOSIT' : 'WITHDRAWAL',
     status,
+    rawStatus: row.status,
     amount: row.amount,
     feeAmount: deposit ? '0' : row.fee_amount || '0',
     netAmount: deposit ? row.amount : row.net_amount || row.amount,
@@ -134,6 +139,10 @@ function toCustomerTransfer(row: CustomerHistoryRow, wallet: CryptoWallet): Cryp
     createdAt: row.created_at,
     wallet,
   };
+}
+
+function rawCregisStatus(transfer: CryptoTransfer) {
+  return (transfer as CryptoTransfer & { rawStatus?: string }).rawStatus;
 }
 
 function renderDepositQrCode(wallet: CryptoWallet, qrCode: string | null) {
@@ -1225,7 +1234,7 @@ function TransferList({
                   </Typography>
                 </TableCell>
                 <TableCell>
-                  <CryptoStatus status={row.status} />
+                  <CryptoStatus status={row.status} rawStatus={rawCregisStatus(row)} />
                 </TableCell>
                 <TableCell>{row.direction === 'DEPOSIT' ? '收币' : '付币'}</TableCell>
                 <TableCell>
@@ -1304,7 +1313,7 @@ function TransferDrawer({
               <Iconify icon={networkMeta[transfer.network].icon} width={34} />
             </Box>
             <Typography variant="h4">{formatUsdt(transfer.netAmount)}</Typography>
-            <CryptoStatus status={transfer.status} />
+            <CryptoStatus status={transfer.status} rawStatus={rawCregisStatus(transfer)} />
           </Stack>
           <Card variant="outlined">
             <CardContent>
@@ -1343,6 +1352,11 @@ function TransferDrawer({
           {transfer.status === 'SUBMITTED' && (
             <Alert severity="info">指令正在等待平台审批，审批前资金处于冻结状态。</Alert>
           )}
+          {rawCregisStatus(transfer) === 'exception' && (
+            <Alert severity="warning">
+              指令正在异常调单，资金仍处于冻结状态。平台核对 Cregis 结果并完成调单后，余额才会更新。
+            </Alert>
+          )}
           {transfer.rejectionReason && <Alert severity="error">{transfer.rejectionReason}</Alert>}
         </Stack>
       )}
@@ -1350,7 +1364,15 @@ function TransferDrawer({
   );
 }
 
-function CryptoStatus({ status }: { status: CryptoTransfer['status'] }) {
+function CryptoStatus({
+  status,
+  rawStatus,
+}: {
+  status: CryptoTransfer['status'];
+  rawStatus?: string;
+}) {
+  if (rawStatus === 'exception') return <Label color="warning">异常调单</Label>;
+  if (rawStatus === 'cancelled') return <Label color="default">已取消</Label>;
   const labels = {
     SUBMITTED: '待审批',
     PROCESSING: '链上处理中',

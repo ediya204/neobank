@@ -141,6 +141,26 @@ func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testin
 	}
 }
 
+func TestFailedReconciliationReleasesFrozenBalanceAndKeepsAudit(t *testing.T) {
+	for _, required := range []string{
+		"status='failed'",
+		"reconciliation_note=?",
+		"reconciled_by=?",
+		"reconciled_at=?",
+		"status='exception'",
+	} {
+		if !strings.Contains(reconcileWithdrawalFailedSQL, required) {
+			t.Fatalf("failed reconciliation SQL must contain %q", required)
+		}
+	}
+	if !strings.Contains(walletBalancesSQL, "status NOT IN ('rejected', 'failed', 'cancelled')") {
+		t.Fatalf("failed withdrawals must be released from the available balance reservation: %s", walletBalancesSQL)
+	}
+	if !strings.Contains(walletBalancesSQL, "'submitted_to_cregis', 'exception'") {
+		t.Fatalf("exception withdrawals must remain frozen before reconciliation: %s", walletBalancesSQL)
+	}
+}
+
 func TestUSDTFeeCanBeZeroButWithdrawalCannot(t *testing.T) {
 	if amount, ok := parseUSDTMicroUnitsAllowZero("0"); !ok || amount != 0 {
 		t.Fatalf("zero fee must be accepted exactly, got %d, %v", amount, ok)
