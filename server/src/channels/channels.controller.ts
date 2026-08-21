@@ -224,21 +224,6 @@ export class ChannelsController {
       throw new BadRequestException('funding_channel_name_required');
     }
     const willBeActive = dto.active ?? channel.active;
-    if (channel.type === ChannelType.FIAT_INBOUND && willBeActive) {
-      const bankName =
-        dto.settlementBankName !== undefined
-          ? this.optionalText(dto.settlementBankName)
-          : channel.settlementBankName;
-      const account =
-        dto.settlementAccount !== undefined
-          ? this.optionalText(dto.settlementAccount)
-          : channel.settlementAccount;
-      const swiftBic =
-        dto.swiftBic !== undefined ? this.optionalText(dto.swiftBic) : channel.swiftBic;
-      if (!bankName || !account || !swiftBic) {
-        throw new BadRequestException('inbound_channel_bank_details_required');
-      }
-    }
     if (channel.type === ChannelType.VIRTUAL_ACCOUNT && willBeActive) {
       const bankName =
         dto.settlementBankName !== undefined

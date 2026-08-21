@@ -44,30 +44,28 @@ test('new funding channels are normalized and remain inactive until explicitly e
   assert.equal(createData.swiftBic, 'EXAMPLE1');
 });
 
-test('an active inbound channel cannot lose required bank instructions', async () => {
-  let writes = 0;
-  const controller = new ChannelsController({
-    user: { findUnique: async () => admin },
-    fundingChannel: {
-      findUnique: async () => ({
-        organizationId: 'org_test',
-        type: 'FIAT_INBOUND',
-        active: true,
-        settlementBankName: 'Example Bank',
-        settlementAccount: '123-456',
-        swiftBic: 'EXAMPLE1',
-      }),
-      update: async () => {
-        writes += 1;
+test('non-VA channels can be activated without bank or settlement details', async () => {
+  for (const type of ['FIAT_INBOUND', 'POBO_PAYOUT', 'PLATFORM_PAYOUT']) {
+    let updateData;
+    const controller = new ChannelsController({
+      user: { findUnique: async () => admin },
+      fundingChannel: {
+        findUnique: async () => ({
+          organizationId: 'org_test',
+          type,
+          active: false,
+        }),
+        update: async ({ data }) => {
+          updateData = data;
+          return { id: `channel_${type}`, type, ...data };
+        },
       },
-    },
-  });
+    });
 
-  await assert.rejects(
-    controller.update('channel_test', { settlementAccount: '' }, request),
-    /inbound_channel_bank_details_required/
-  );
-  assert.equal(writes, 0);
+    const result = await controller.update(`channel_${type}`, { active: true }, request);
+    assert.equal(result.active, true);
+    assert.deepEqual(updateData, { active: true });
+  }
 });
 
 test('non-admin users cannot create funding channels', async () => {

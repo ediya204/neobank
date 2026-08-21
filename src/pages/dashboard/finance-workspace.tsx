@@ -168,11 +168,9 @@ type ChannelForm = {
   supportedCurrencies: Currency[];
   active: boolean;
   settlementBankName: string;
-  settlementAccount: string;
   swiftBic: string;
   bankCountry: string;
   bankAddress: string;
-  branchName: string;
 };
 
 const initialForm: OperationForm = {
@@ -201,11 +199,9 @@ const initialChannelForm: ChannelForm = {
   supportedCurrencies: ['USD', 'HKD'],
   active: false,
   settlementBankName: '',
-  settlementAccount: '',
   swiftBic: '',
   bankCountry: '',
   bankAddress: '',
-  branchName: '',
 };
 
 function payoutAccountKindAllowed(
@@ -660,11 +656,9 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
             supportedCurrencies: channel.supportedCurrencies,
             active: channel.active,
             settlementBankName: channel.settlementBankName || '',
-            settlementAccount: channel.settlementAccount || '',
             swiftBic: channel.swiftBic || '',
             bankCountry: channel.bankCountry || '',
             bankAddress: channel.bankAddress || '',
-            branchName: channel.branchName || '',
           }
         : initialChannelForm
     );
@@ -686,16 +680,6 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     }
     if (!channelForm.supportedCurrencies.length) {
       setChannelFormError('请至少选择一种支持币种。');
-      return;
-    }
-    if (
-      channelForm.type === 'FIAT_INBOUND' &&
-      channelForm.active &&
-      (!channelForm.settlementBankName.trim() ||
-        !channelForm.settlementAccount.trim() ||
-        !channelForm.swiftBic.trim())
-    ) {
-      setChannelFormError('启用法币入账通道前，请完整填写银行名称、收款账号和 SWIFT / BIC。');
       return;
     }
     if (
@@ -724,14 +708,12 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         name,
         supportedCurrencies: channelForm.supportedCurrencies,
         ...(editingChannel ? { active: channelForm.active } : {}),
-        settlementBankName: channelForm.settlementBankName.trim(),
-        swiftBic: channelForm.swiftBic.trim().toUpperCase(),
-        bankCountry: channelForm.bankCountry.trim().toUpperCase(),
-        bankAddress: channelForm.bankAddress.trim(),
-        ...(!isVirtualAccountChannel
+        ...(isVirtualAccountChannel
           ? {
-              settlementAccount: channelForm.settlementAccount.trim(),
-              branchName: channelForm.branchName.trim(),
+              settlementBankName: channelForm.settlementBankName.trim(),
+              swiftBic: channelForm.swiftBic.trim().toUpperCase(),
+              bankCountry: channelForm.bankCountry.trim().toUpperCase(),
+              bankAddress: channelForm.bankAddress.trim(),
             }
           : {}),
       };
@@ -748,7 +730,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       if (!editingChannel && channelForm.type === 'VIRTUAL_ACCOUNT') {
         successMessage = 'VA 银行通道已创建并保持停用；核对银行固定资料后可编辑启用。';
       } else if (!editingChannel) {
-        successMessage = '资金通道已创建并保持停用；核对结算资料后可编辑启用。';
+        successMessage = '资金通道已创建并保持停用；确认通道与支持币种后可编辑启用。';
       }
       setSuccess(successMessage);
       await load();
@@ -1917,28 +1899,29 @@ function ChannelWorkspace({
                     ))}
                   </Stack>
                 </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    {channel.type === 'VIRTUAL_ACCOUNT' ? '银行资料' : '结算资料'}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5 }}>
-                    {channel.settlementBankName || '未配置银行'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {(channel.type === 'VIRTUAL_ACCOUNT'
-                      ? [channel.swiftBic, channel.bankCountry]
-                      : [
-                          channel.settlementAccount,
-                          channel.swiftBic,
-                          channel.branchName,
-                          channel.bankCountry,
-                        ]
-                    )
-                      .filter(Boolean)
-                      .join(' · ') ||
-                      (channel.type === 'VIRTUAL_ACCOUNT' ? '未配置银行资料' : '未配置结算资料')}
-                  </Typography>
-                </Box>
+                {channel.type !== 'VIRTUAL_ACCOUNT' ? (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">
+                      配置要求
+                    </Typography>
+                    <Typography variant="body2" sx={{ mt: 0.5 }}>
+                      无需银行与结算资料
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">
+                      银行资料
+                    </Typography>
+                    <Typography variant="body2" sx={{ mt: 0.5 }}>
+                      {channel.settlementBankName || '未配置银行'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {[channel.swiftBic, channel.bankCountry].filter(Boolean).join(' · ') ||
+                        '未配置银行资料'}
+                    </Typography>
+                  </Box>
+                )}
                 <Button
                   variant="outlined"
                   startIcon={<Iconify icon={ACTION_ICONS.edit} />}
@@ -2137,7 +2120,6 @@ function ChannelEditorDrawer({
 }) {
   const set = <K extends keyof ChannelForm>(key: K, value: ChannelForm[K]) =>
     onChange({ ...form, [key]: value });
-  const activeInbound = form.active && form.type === 'FIAT_INBOUND';
   const activeVa = form.active && form.type === 'VIRTUAL_ACCOUNT';
   const isVa = form.type === 'VIRTUAL_ACCOUNT';
   let submitLabel = channel ? '保存配置' : '创建停用通道';
@@ -2224,64 +2206,55 @@ function ChannelEditorDrawer({
             </Select>
           </FormControl>
 
-          <Divider>
-            <Typography variant="caption" color="text.secondary">
-              {isVa ? '银行资料' : '银行与结算资料'}
-            </Typography>
-          </Divider>
-          {isVa && (
+          {!isVa ? (
             <Alert severity="info">
-              此处只配置银行通道固定资料。账户名称、账号和 IBAN 会在每位客户的 VA
-              开通审批中按银行实际分配结果单独录入。
+              {channelTypeCopy[form.type].label}通道无需配置银行名称、结算账号、SWIFT /
+              BIC、国家、分行或银行地址。
             </Alert>
-          )}
-          <TextField
-            label="银行名称"
-            required={activeInbound || activeVa}
-            value={form.settlementBankName}
-            onChange={(event) => set('settlementBankName', event.target.value)}
-          />
-          {!isVa && (
-            <TextField
-              label="收款 / 结算账号"
-              required={activeInbound}
-              value={form.settlementAccount}
-              onChange={(event) => set('settlementAccount', event.target.value)}
-            />
-          )}
-          <TextField
-            label="SWIFT / BIC"
-            required={activeInbound || activeVa}
-            value={form.swiftBic}
-            onChange={(event) => set('swiftBic', event.target.value.toUpperCase())}
-          />
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              fullWidth
-              label="银行国家 / 地区代码"
-              required={activeVa}
-              value={form.bankCountry}
-              inputProps={{ maxLength: 2 }}
-              helperText="ISO 两位代码，例如 HK、SG"
-              onChange={(event) => set('bankCountry', event.target.value.toUpperCase())}
-            />
-            {!isVa && (
+          ) : (
+            <>
+              <Divider>
+                <Typography variant="caption" color="text.secondary">
+                  银行资料
+                </Typography>
+              </Divider>
+              <Alert severity="info">
+                此处只配置银行通道固定资料。账户名称、账号和 IBAN 会在每位客户的 VA
+                开通审批中按银行实际分配结果单独录入。
+              </Alert>
               <TextField
-                fullWidth
-                label="分行名称"
-                value={form.branchName}
-                onChange={(event) => set('branchName', event.target.value)}
+                label="银行名称"
+                required={activeVa}
+                value={form.settlementBankName}
+                onChange={(event) => set('settlementBankName', event.target.value)}
               />
-            )}
-          </Stack>
-          <TextField
-            multiline
-            minRows={2}
-            label="银行地址"
-            required={activeVa}
-            value={form.bankAddress}
-            onChange={(event) => set('bankAddress', event.target.value)}
-          />
+              <TextField
+                label="SWIFT / BIC"
+                required={activeVa}
+                value={form.swiftBic}
+                onChange={(event) => set('swiftBic', event.target.value.toUpperCase())}
+              />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  fullWidth
+                  label="银行国家 / 地区代码"
+                  required={activeVa}
+                  value={form.bankCountry}
+                  inputProps={{ maxLength: 2 }}
+                  helperText="ISO 两位代码，例如 HK、SG"
+                  onChange={(event) => set('bankCountry', event.target.value.toUpperCase())}
+                />
+              </Stack>
+              <TextField
+                multiline
+                minRows={2}
+                label="银行地址"
+                required={activeVa}
+                value={form.bankAddress}
+                onChange={(event) => set('bankAddress', event.target.value)}
+              />
+            </>
+          )}
 
           {channel && (
             <FormControlLabel
@@ -2313,8 +2286,6 @@ function channelErrorMessage(value: unknown) {
   const message = value instanceof Error ? value.message : '';
   const messages: Record<string, string> = {
     funding_channel_code_exists: '这个通道代码已经存在，请使用新的唯一代码。',
-    inbound_channel_bank_details_required:
-      '启用法币入账通道前，请完整填写银行名称、收款账号和 SWIFT / BIC。',
     virtual_account_channel_bank_details_required:
       '启用 VA 开户通道前，请完整填写银行名称、国家、地址和 SWIFT / BIC。',
     virtual_account_channel_customer_details_not_allowed:

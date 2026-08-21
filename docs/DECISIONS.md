@@ -55,6 +55,9 @@ that the assumption no longer applies.
   even when no active organization default exists. Missing defaults remain an explicit
   blocking state with a management link; the UI never invents a zero fee. An isolated
   customer override may be configured for that scope and becomes the effective rule.
+- `FIAT_INBOUND`、`POBO_PAYOUT` 与 `PLATFORM_PAYOUT` 通道只配置通道标识、名称、
+  支持币种和启停状态，不录入银行名称、结算账号、SWIFT/BIC、国家、分行或银行地址。
+  `VIRTUAL_ACCOUNT` 仍必须保存开户银行的固定资料，并继续遵守独立 VA 开户审批边界。
 - Fiat payout amounts represent the beneficiary principal and the fee is added to
   the account reservation. Cregis customer input represents the total wallet debit;
   only the stored net amount is submitted on-chain. Stale fee confirmation requires
