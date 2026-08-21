@@ -447,3 +447,29 @@ All JSON errors use:
 
 `429` responses include `Retry-After`. No authentication endpoint returns a
 secret in an error response.
+
+## Customer security center (P0-P2)
+
+Authenticated customer routes now include:
+
+- `GET /api/auth/customer/security/summary`
+- `POST /api/auth/customer/security/sessions/:id/revoke`
+- `POST /api/auth/customer/security/sessions/revoke-others`
+- `POST /api/auth/customer/security/recovery-codes/regenerate`
+- `POST /api/auth/customer/security/totp/replace/start`
+- `POST /api/auth/customer/security/totp/replace/verify`
+- `POST /api/auth/customer/security/email-change/request`
+- `POST /api/auth/customer/security/email-change/apply`
+- `POST /api/auth/customer/security/withdrawal-lock/{enable,request-unlock,confirm-unlock}`
+- `POST /api/auth/customer/security/data-export`
+- `POST /api/auth/customer/security/account-closure/{request,cancel}`
+- `POST /api/auth/customer/passkey/register/{options,verify}`
+- `POST /api/auth/customer/passkey/login/{options,verify}`
+- `POST /api/auth/customer/passkey/:id/remove`
+
+`POST /api/auth/customer/email-change/verify` consumes the purpose-bound token
+from the new address without requiring an existing session. Applying the verified
+address still requires a signed-in password and TOTP step-up after the 24-hour
+cooling period. Password recovery remains a separate email-link flow and does not
+require TOTP. See `docs/CUSTOMER_SECURITY_CENTER_RUNBOOK.md` for state, privacy,
+migration, and acceptance boundaries.

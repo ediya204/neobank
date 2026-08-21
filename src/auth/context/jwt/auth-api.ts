@@ -13,6 +13,13 @@ import {
 } from 'src/auth/types';
 import { isSessionPermission } from 'src/auth/permissions';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
+import {
+  browserSupportsWebAuthn,
+  startAuthentication,
+  startRegistration,
+  type PublicKeyCredentialCreationOptionsJSON,
+  type PublicKeyCredentialRequestOptionsJSON,
+} from '@simplewebauthn/browser';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -416,6 +423,269 @@ export async function completeCustomerEmailVerification(verificationToken: strin
     method: 'POST',
     body: JSON.stringify({ verification_token: verificationToken }),
   });
+}
+
+export type CustomerSecuritySession = {
+  id: string;
+  device_label: string;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  idle_expires_at: string;
+  current: boolean;
+};
+
+export type CustomerSecurityPasskey = {
+  id: string;
+  display_name: string;
+  created_at: string;
+  last_used_at?: string | null;
+};
+
+export type CustomerSecurityEvent = {
+  event_type: string;
+  created_at: string;
+};
+
+export type CustomerSecuritySummary = {
+  email_verified: boolean;
+  email_verified_at?: string | null;
+  password_changed_at?: string | null;
+  totp_enabled: boolean;
+  recovery_codes_remaining: number;
+  passkeys: CustomerSecurityPasskey[];
+  sessions: CustomerSecuritySession[];
+  events: CustomerSecurityEvent[];
+  withdrawal_lock: {
+    enabled: boolean;
+    locked_at?: string | null;
+    unlock_requested_at?: string | null;
+    unlock_available_at?: string | null;
+  };
+  pending_email_change?: {
+    id: string;
+    new_email: string;
+    expires_at: string;
+    verified_at?: string | null;
+    apply_after?: string | null;
+    created_at: string;
+  } | null;
+  pending_closure?: {
+    id: string;
+    status: string;
+    customer_reason: string;
+    requested_at: string;
+  } | null;
+};
+
+function securityHeaders(csrfToken: string | null) {
+  return { ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) };
+}
+
+export async function getCustomerSecuritySummary(): Promise<CustomerSecuritySummary> {
+  const payload = await authRequest('/api/auth/customer/security/summary');
+  return unwrapPayload(payload) as unknown as CustomerSecuritySummary;
+}
+
+export async function revokeCustomerSession(sessionId: string, csrfToken: string | null) {
+  await authRequest(`/api/auth/customer/security/sessions/${encodeURIComponent(sessionId)}/revoke`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+export async function revokeOtherCustomerSessions(csrfToken: string | null) {
+  await authRequest('/api/auth/customer/security/sessions/revoke-others', {
+    method: 'POST',
+    body: JSON.stringify({}),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+type SecurityStepUpInput = {
+  currentPassword: string;
+  totpCode: string;
+};
+
+function securityStepUpBody(input: SecurityStepUpInput) {
+  return { current_password: input.currentPassword, totp_code: input.totpCode };
+}
+
+export async function regenerateCustomerRecoveryCodes(
+  input: SecurityStepUpInput,
+  csrfToken: string | null
+) {
+  const payload = await authRequest('/api/auth/customer/security/recovery-codes/regenerate', {
+    method: 'POST',
+    body: JSON.stringify(securityStepUpBody(input)),
+    headers: securityHeaders(csrfToken),
+  });
+  return normalizeRecoveryCodes(unwrapPayload(payload));
+}
+
+export async function beginCustomerTotpReplacement(
+  input: SecurityStepUpInput,
+  csrfToken: string | null
+): Promise<CustomerTotpEnrollmentResult> {
+  const payload = await authRequest('/api/auth/customer/security/totp/replace/start', {
+    method: 'POST',
+    body: JSON.stringify(securityStepUpBody(input)),
+    headers: securityHeaders(csrfToken),
+  });
+  const setup = normalizeTotpSetup(payload);
+  if (!setup) throw new AuthApiError(502, 'invalid_auth_response', 'TOTP setup data is missing');
+  const data = unwrapPayload(payload);
+  return { ...setup, expiresAt: readString(data, ['expires_at', 'expiresAt']) };
+}
+
+export async function verifyCustomerTotpReplacement(
+  enrollmentToken: string,
+  code: string,
+  csrfToken: string | null
+) {
+  const payload = await authRequest('/api/auth/customer/security/totp/replace/verify', {
+    method: 'POST',
+    body: JSON.stringify({ enrollment_token: enrollmentToken, code }),
+    headers: securityHeaders(csrfToken),
+  });
+  const data = unwrapPayload(payload);
+  return {
+    recoveryCodes: normalizeRecoveryCodes(data),
+    otherSessionsRevoked:
+      readBoolean(data, ['other_sessions_revoked', 'otherSessionsRevoked']) === true,
+  };
+}
+
+export async function requestCustomerEmailChange(
+  input: SecurityStepUpInput & { newEmail: string },
+  csrfToken: string | null
+) {
+  await authRequest('/api/auth/customer/security/email-change/request', {
+    method: 'POST',
+    body: JSON.stringify({ ...securityStepUpBody(input), new_email: input.newEmail }),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+export async function verifyCustomerEmailChange(emailChangeToken: string) {
+  return authRequest('/api/auth/customer/email-change/verify', {
+    method: 'POST',
+    body: JSON.stringify({ email_change_token: emailChangeToken }),
+  });
+}
+
+export async function applyCustomerEmailChange(
+  input: SecurityStepUpInput,
+  csrfToken: string | null
+) {
+  await authRequest('/api/auth/customer/security/email-change/apply', {
+    method: 'POST',
+    body: JSON.stringify(securityStepUpBody(input)),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+export async function changeCustomerWithdrawalLock(
+  action: 'enable' | 'request-unlock' | 'confirm-unlock',
+  input: SecurityStepUpInput,
+  csrfToken: string | null
+) {
+  await authRequest(`/api/auth/customer/security/withdrawal-lock/${action}`, {
+    method: 'POST',
+    body: JSON.stringify(securityStepUpBody(input)),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+export async function exportCustomerData(
+  input: SecurityStepUpInput,
+  csrfToken: string | null
+) {
+  return authRequest('/api/auth/customer/security/data-export', {
+    method: 'POST',
+    body: JSON.stringify(securityStepUpBody(input)),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+export async function requestCustomerAccountClosure(
+  input: SecurityStepUpInput & { reason: string },
+  csrfToken: string | null
+) {
+  await authRequest('/api/auth/customer/security/account-closure/request', {
+    method: 'POST',
+    body: JSON.stringify({ ...securityStepUpBody(input), reason: input.reason }),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+export async function cancelCustomerAccountClosure(csrfToken: string | null) {
+  await authRequest('/api/auth/customer/security/account-closure/cancel', {
+    method: 'POST',
+    body: JSON.stringify({}),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+export function customerPasskeysSupported() {
+  return browserSupportsWebAuthn();
+}
+
+export async function registerCustomerPasskey(
+  input: SecurityStepUpInput & { displayName: string },
+  csrfToken: string | null
+) {
+  const beginPayload = await authRequest('/api/auth/customer/passkey/register/options', {
+    method: 'POST',
+    body: JSON.stringify({ ...securityStepUpBody(input), display_name: input.displayName }),
+    headers: securityHeaders(csrfToken),
+  });
+  const begin = unwrapPayload(beginPayload);
+  const challengeId = readString(begin, ['challenge_id']);
+  if (!challengeId || !isRecord(begin.options)) {
+    throw new AuthApiError(502, 'invalid_auth_response', 'Passkey options are missing');
+  }
+  const credential = await startRegistration({
+    optionsJSON: begin.options as unknown as PublicKeyCredentialCreationOptionsJSON,
+  });
+  await authRequest('/api/auth/customer/passkey/register/verify', {
+    method: 'POST',
+    body: JSON.stringify({ challenge_id: challengeId, credential }),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+export async function removeCustomerPasskey(
+  passkeyId: string,
+  input: SecurityStepUpInput,
+  csrfToken: string | null
+) {
+  await authRequest(`/api/auth/customer/passkey/${encodeURIComponent(passkeyId)}/remove`, {
+    method: 'POST',
+    body: JSON.stringify(securityStepUpBody(input)),
+    headers: securityHeaders(csrfToken),
+  });
+}
+
+export async function loginCustomerWithPasskey(): Promise<AuthFlowResult> {
+  const beginPayload = await authRequest('/api/auth/customer/passkey/login/options', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  const begin = unwrapPayload(beginPayload);
+  const challengeId = readString(begin, ['challenge_id']);
+  if (!challengeId || !isRecord(begin.options)) {
+    throw new AuthApiError(502, 'invalid_auth_response', 'Passkey options are missing');
+  }
+  const credential = await startAuthentication({
+    optionsJSON: begin.options as unknown as PublicKeyCredentialRequestOptionsJSON,
+  });
+  const payload = await authRequest('/api/auth/customer/passkey/login/verify', {
+    method: 'POST',
+    body: JSON.stringify({ challenge_id: challengeId, credential }),
+  });
+  return normalizeAuthFlow(payload);
 }
 
 export async function beginCustomerTotpEnrollment(

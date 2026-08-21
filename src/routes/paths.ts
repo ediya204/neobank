@@ -19,6 +19,7 @@ export const paths = {
       forgotPassword: '/customer/forgot-password',
       resetPassword: '/customer/reset-password',
       verifyEmail: '/customer/verify-email',
+      confirmEmailChange: '/customer/confirm-email-change',
     },
     portal: {
       login: '/portal/login',

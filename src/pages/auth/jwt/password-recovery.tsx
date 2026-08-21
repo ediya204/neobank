@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { JwtPasswordRecoveryView } from 'src/sections/auth/jwt';
 import { APP_DISPLAY_NAME } from 'src/config-global';
 
-export type PasswordRecoveryMode = 'forgot' | 'reset' | 'verify';
+export type PasswordRecoveryMode = 'forgot' | 'reset' | 'verify' | 'emailChange';
 
 type Props = {
   mode: PasswordRecoveryMode;

@@ -95,6 +95,10 @@
       }
     },
     "secure_verification": "安全验证",
+    "passkey": {
+      "or": "或",
+      "sign_in": "使用通行密钥登录"
+    },
     "fields": {
       "email": "登录邮箱",
       "customer_email": "账户邮箱",
@@ -384,8 +388,18 @@
         "complete": "邮箱验证成功。现在可以重新申请密码重置链接。",
         "continue": "继续找回密码",
         "invalid": "此邮箱验证链接无效、已过期或已被使用。请重新发起找回密码。",
-        "request_again": "重新发起找回密码"
-      }
+      "request_again": "重新发起找回密码"
+    },
+    "emailChange": {
+      "page_title": "验证新登录邮箱",
+      "eyebrow": "邮箱安全变更",
+      "title": "验证新的登录邮箱",
+      "subtitle": "我们正在确认此邮箱属于您。验证后仍有 24 小时安全等待期，旧邮箱在变更生效前仍可登录。",
+      "complete": "新邮箱验证成功。请在 24 小时安全等待期结束后，返回安全中心确认生效。",
+      "continue": "返回安全中心",
+      "invalid": "此邮箱变更链接无效、已过期或已被使用。请登录后重新申请。",
+      "request_again": "返回登录"
+    }
     },
     "errors": {
       "invalid_credentials": "邮箱或密码不正确。",

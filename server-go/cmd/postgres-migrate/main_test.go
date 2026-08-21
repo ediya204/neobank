@@ -18,6 +18,7 @@ func TestReviewedMigrationFilename(t *testing.T) {
 		"0010_cregis_deposit_accounting.sql",
 		"0011_cregis_withdrawal_accounting.sql",
 		"0012_customer_password_recovery.sql",
+		"0013_customer_security_center.sql",
 	} {
 		if !migrationFilename.MatchString(name) {
 			t.Fatalf("reviewed migration filename rejected: %s", name)
@@ -26,6 +27,36 @@ func TestReviewedMigrationFilename(t *testing.T) {
 	for _, name := range []string{"migration.sql", "0005_bad-name.sql", "0005_valid.sql.bak"} {
 		if migrationFilename.MatchString(name) {
 			t.Fatalf("unsafe migration filename accepted: %s", name)
+		}
+	}
+}
+
+func TestCustomerSecurityCenterMigrationStoresNoRawAuthenticationSecrets(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "migrations-postgres", "0013_customer_security_center.sql")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(content)
+	for _, required := range []string{
+		"ADD COLUMN IF NOT EXISTS withdrawals_locked BOOLEAN NOT NULL DEFAULT FALSE",
+		"ADD COLUMN IF NOT EXISTS webauthn_user_handle TEXT",
+		"CREATE TABLE IF NOT EXISTS customer_passkeys",
+		"credential_ciphertext TEXT NOT NULL",
+		"CREATE TABLE IF NOT EXISTS customer_webauthn_challenges",
+		"CREATE TABLE IF NOT EXISTS customer_email_change_requests",
+		"CREATE TABLE IF NOT EXISTS customer_account_closure_requests",
+		"CUSTOMER_EMAIL_CHANGE_VERIFICATION",
+		"CUSTOMER_SECURITY_ALERT",
+		"VALUES ('0013_customer_security_center')",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("customer security migration must contain %q", required)
+		}
+	}
+	for _, forbidden := range []string{"raw_ip", "session_token", "totp_secret", "recovery_code TEXT"} {
+		if strings.Contains(strings.ToLower(sql), strings.ToLower(forbidden)) {
+			t.Fatalf("customer security migration must not store %q", forbidden)
 		}
 	}
 }

@@ -19,6 +19,7 @@ import {
   completeCustomerPasswordReset,
   inspectCustomerPasswordReset,
   requestCustomerPasswordReset,
+  verifyCustomerEmailChange,
 } from 'src/auth/context/jwt/auth-api';
 import { useBoolean } from 'src/hooks/use-boolean';
 import { paths } from 'src/routes/paths';
@@ -126,12 +127,15 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
           if (active) setResetState('invalid');
         });
     } else {
-      const token = consumeFragmentToken('verification_token');
+      const token = consumeFragmentToken(mode === 'emailChange' ? 'email_change_token' : 'verification_token');
       if (!token) {
         setVerifyState('invalid');
         return undefined;
       }
-      completeCustomerEmailVerification(token)
+      const verification = mode === 'emailChange'
+        ? verifyCustomerEmailChange(token)
+        : completeCustomerEmailVerification(token);
+      verification
         .then(() => {
           if (active) setVerifyState('complete');
         })
@@ -241,15 +245,16 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
         </Stack>
       </FormProvider>
     );
-  } else if (mode === 'verify') {
+  } else if (mode === 'verify' || mode === 'emailChange') {
+    const verifyKey = mode === 'emailChange' ? 'emailChange' : 'verify';
     if (verifyState === 'checking') {
       content = <Stack spacing={1.5}><Skeleton height={56} /><Skeleton width="70%" /></Stack>;
     } else if (verifyState === 'complete') {
       content = (
         <Stack spacing={2.5}>
-          <Alert severity="success">{t('auth.password_recovery.verify.complete')}</Alert>
-          <Button component={RouterLink} href={paths.auth.customer.forgotPassword} variant="contained" color="inherit">
-            {t('auth.password_recovery.verify.continue')}
+          <Alert severity="success">{t(`auth.password_recovery.${verifyKey}.complete`)}</Alert>
+          <Button component={RouterLink} href={mode === 'emailChange' ? '/portal/settings' : paths.auth.customer.forgotPassword} variant="contained" color="inherit">
+            {t(`auth.password_recovery.${verifyKey}.continue`)}
           </Button>
           {backToLogin}
         </Stack>
@@ -257,9 +262,9 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
     } else {
       content = (
         <Stack spacing={2.5}>
-          <Alert severity="error">{t('auth.password_recovery.verify.invalid')}</Alert>
-          <Button component={RouterLink} href={paths.auth.customer.forgotPassword} variant="outlined" color="inherit">
-            {t('auth.password_recovery.verify.request_again')}
+          <Alert severity="error">{t(`auth.password_recovery.${verifyKey}.invalid`)}</Alert>
+          <Button component={RouterLink} href={mode === 'emailChange' ? paths.auth.customer.login : paths.auth.customer.forgotPassword} variant="outlined" color="inherit">
+            {t(`auth.password_recovery.${verifyKey}.request_again`)}
           </Button>
           {backToLogin}
         </Stack>

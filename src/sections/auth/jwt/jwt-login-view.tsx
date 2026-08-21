@@ -18,7 +18,11 @@ import Stack from '@mui/material/Stack';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
-import { AuthApiError } from 'src/auth/context/jwt/auth-api';
+import {
+  AuthApiError,
+  customerPasskeysSupported,
+  loginCustomerWithPasskey,
+} from 'src/auth/context/jwt/auth-api';
 import { useAuthContext } from 'src/auth/hooks';
 import { getRoleLogin, safeReturnTo } from 'src/auth/role-access';
 import { AuthFlowResult, AuthRole, AuthSessionUser, TotpSetupData } from 'src/auth/types';
@@ -108,6 +112,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   const [verificationMethod, setVerificationMethod] = useState<'totp' | 'recovery'>('totp');
   const [errorMessage, setErrorMessage] = useState('');
   const [preparingTotp, setPreparingTotp] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
 
   useEffect(() => {
     if (!fragmentSetupToken) return;
@@ -372,6 +377,19 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
       setErrorMessage(describeError(error));
     }
   });
+
+  const handlePasskeyLogin = async () => {
+    setErrorMessage('');
+    setPasskeyLoading(true);
+    try {
+      const result = await loginCustomerWithPasskey();
+      await finishAuthentication(result);
+    } catch (error) {
+      setErrorMessage(describeError(error));
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
 
   const handleCredentialsSubmit = (event: FormEvent<HTMLFormElement>) => {
     const values = loginMethods.getValues();
@@ -700,6 +718,22 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
         >
           {localPortalBypass ? t('auth.local_dev.submit') : t(`${signInCopyScope}.submit`)}
         </LoadingButton>
+        {expectedRole === 'customer' && customerPasskeysSupported() && (
+          <>
+            <Divider>{t('auth.passkey.or')}</Divider>
+            <LoadingButton
+              fullWidth
+              size="large"
+              variant="outlined"
+              color="inherit"
+              loading={passkeyLoading}
+              onClick={handlePasskeyLogin}
+              startIcon={<Iconify icon="solar:key-square-bold-duotone" />}
+            >
+              {t('auth.passkey.sign_in')}
+            </LoadingButton>
+          </>
+        )}
         {credentialsFooter}
       </Stack>
     </FormProvider>

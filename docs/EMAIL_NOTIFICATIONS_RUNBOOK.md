@@ -112,3 +112,18 @@ that should not enqueue messages.
 
 Do not deploy, migrate, create a paid worker, or send a real email merely because
 the local implementation and tests pass.
+
+## Customer security notifications
+
+Migration `0013_customer_security_center.sql` adds the email-change verification
+and allowlisted security-alert templates. Security alerts cover password changes,
+TOTP replacement, recovery-code regeneration, passkey changes, email changes,
+withdrawal lock/unlock, and account-closure requests. The database payload stores
+only a display name, an allowlisted event key, or a random request ID; it never
+stores the derived fragment token or mutable email prose.
+
+The Go service and email worker must use the same
+`CUSTOMER_PASSWORD_RESET_SECRET`. Compare secret fingerprints or platform secret
+metadata without printing the secret. A controlled production email test is a
+separate action and must verify the selected outbox row reaches `SENT`; service
+health alone is not delivery evidence.

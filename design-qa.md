@@ -59,6 +59,52 @@ final result: passed
 
 ---
 
+# Customer Security Center P0-P2 — 2026-08-21
+
+**Visual truth and evidence**
+
+- Source visual truth: `/var/folders/1v/wprpp7c56hg5_qzt15k1t2240000gn/T/codex-clipboard-62c60e58-33cd-4536-b4cc-55d1a1c68e47.png`
+- Desktop implementation: `/tmp/neobook-security-p2-release.ETM50o/design-qa-security-desktop.png`
+- Mobile implementation: `/tmp/neobook-security-p2-release.ETM50o/design-qa-security-mobile.png`
+- Combined desktop comparison: `/tmp/neobook-security-p2-release.ETM50o/design-qa-security-comparison.png`
+- Route/state: local Portal shell with a temporary render-only customer security harness; the harness was removed immediately after capture.
+- Desktop viewport: 1022 x 745 CSS pixels, matching the supplied reference.
+- Mobile viewport: 390 x 844 CSS pixels; `scrollWidth` 375 and `innerWidth` 390, with no document-level horizontal overflow.
+
+**Full-view comparison**
+
+- The implementation preserves the reference's pale neutral background, white thin-bordered cards,
+  typography hierarchy, customer-profile detail rows, semantic security colors, restrained radii, and
+  generous vertical spacing while retaining the real SSC Portal header and bottom navigation.
+- P0-P2 functionality is organized as one progressive security center: overview, profile/email,
+  password, TOTP/recovery, passkeys, sessions, withdrawal lock, activity, and privacy/account actions.
+- The local render harness has no authenticated Go customer session, so the expected retry alert and
+  empty security summary appear in the screenshot. That alert is absent after an authenticated summary
+  response; no mock customer security data or real credential was inserted for visual matching.
+
+**Interaction and responsive checks**
+
+- Desktop and mobile card layouts render without a development overlay after refactoring nested state
+  branches; the four status tiles collapse to a readable two-column mobile grid.
+- Security actions remain disabled when TOTP or a customer session is unavailable. No password, TOTP,
+  passkey, email, withdrawal-lock, account-closure, or export mutation was submitted from the visual harness.
+- The forgot-password route continues to use an email security link without requiring TOTP; signed-in
+  password and other sensitive security mutations keep password plus TOTP step-up.
+- Backend/unit acceptance covers purpose-bound encrypted WebAuthn state, hashed session metadata,
+  credential-version conflicts, allowlisted security emails, and PostgreSQL-only state changes.
+
+**Findings**
+
+- Initial pass: a nested TOTP rendering expression triggered the development lint overlay (P1). The
+  state branches were extracted into explicit controls; the final DOM and screenshots contain no overlay.
+- Final combined comparison: no actionable P0, P1, or P2 visual or responsive differences remain.
+- Residual production acceptance boundary: WebAuthn and step-up interactions require the customer's live
+  authenticator and cannot be truthfully accepted from an unauthenticated deployment smoke test.
+
+final result: passed
+
+---
+
 # Client home overview design QA — 2026-08-20
 
 **Visual target and implementation evidence**

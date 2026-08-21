@@ -103,6 +103,16 @@ export const customerAuthRoutes = [
       </Suspense>
     ),
   },
+  {
+    path: 'customer/confirm-email-change',
+    element: (
+      <Suspense fallback={<SplashScreen />}>
+        <AuthClassicLayout workspaceRole="customer">
+          <PasswordRecoveryPage mode="emailChange" />
+        </AuthClassicLayout>
+      </Suspense>
+    ),
+  },
 ];
 
 const partnerAuthRoutes = [

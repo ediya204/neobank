@@ -65,19 +65,23 @@ async function enforceAuthRateLimit(
   if (
     pathname === '/api/auth/customer/password-reset/inspect' ||
     pathname === '/api/auth/customer/password-reset/complete' ||
-    pathname === '/api/auth/customer/email-verification/complete'
+    pathname === '/api/auth/customer/email-verification/complete' ||
+    pathname === '/api/auth/customer/email-change/verify'
   ) {
     let recoveryRequestId = '';
     try {
       const payload = JSON.parse(new TextDecoder().decode(body)) as {
         reset_token?: unknown;
         verification_token?: unknown;
+        email_change_token?: unknown;
       };
       const token =
         typeof payload.reset_token === 'string'
           ? payload.reset_token
           : typeof payload.verification_token === 'string'
           ? payload.verification_token
+          : typeof payload.email_change_token === 'string'
+          ? payload.email_change_token
           : '';
       recoveryRequestId = token.split('.', 1)[0];
     } catch {
@@ -91,6 +95,23 @@ async function enforceAuthRateLimit(
     }
   }
   return null;
+}
+
+function summarizeDevice(userAgent: string): string {
+  const ua = userAgent.toLowerCase();
+  let browser = '浏览器';
+  if (ua.includes('edg/')) browser = 'Microsoft Edge';
+  else if (ua.includes('firefox/')) browser = 'Firefox';
+  else if (ua.includes('chrome/') || ua.includes('crios/')) browser = 'Chrome';
+  else if (ua.includes('safari/')) browser = 'Safari';
+
+  let platform = '设备';
+  if (ua.includes('iphone') || ua.includes('ipad')) platform = 'iOS';
+  else if (ua.includes('android')) platform = 'Android';
+  else if (ua.includes('mac os x') || ua.includes('macintosh')) platform = 'macOS';
+  else if (ua.includes('windows')) platform = 'Windows';
+  else if (ua.includes('linux')) platform = 'Linux';
+  return `${browser} · ${platform}`;
 }
 
 async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<Response> {
@@ -135,6 +156,7 @@ async function proxyAPI(request: Request, env: Env, edgeUser: string): Promise<R
   const userAgent = request.headers.get('user-agent')?.trim() || 'unknown-user-agent';
   headers.set('x-neobank-source-ip-sha256', await rateLimitKey(sourceIP));
   headers.set('x-neobank-user-agent-sha256', await rateLimitKey(userAgent));
+  headers.set('x-neobank-device-label', summarizeDevice(userAgent));
   if (incoming.pathname === '/api/webhooks/sumsub') {
     const payloadDigest = request.headers.get('x-payload-digest');
     const payloadDigestAlgorithm = request.headers.get('x-payload-digest-alg');

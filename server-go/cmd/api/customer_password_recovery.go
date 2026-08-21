@@ -20,7 +20,7 @@ const (
 	customerRecoveryMinimumDelay  = 250 * time.Millisecond
 )
 
-var recoveryRequestIDPattern = regexp.MustCompile(`^(password_reset|email_verify)_[a-f0-9]{32}$`)
+var recoveryRequestIDPattern = regexp.MustCompile(`^(password_reset|email_verify|email_change)_[a-f0-9]{32}$`)
 
 func (app *application) requestCustomerPasswordReset(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()

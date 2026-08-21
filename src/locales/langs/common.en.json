@@ -95,6 +95,10 @@
       }
     },
     "secure_verification": "Secure verification",
+    "passkey": {
+      "or": "or",
+      "sign_in": "Sign in with a passkey"
+    },
     "fields": {
       "email": "Sign-in email",
       "customer_email": "Account email",
@@ -384,8 +388,18 @@
         "complete": "Email verified. You can now request a password reset link again.",
         "continue": "Continue password recovery",
         "invalid": "This email-verification link is invalid, expired, or already used. Start password recovery again.",
-        "request_again": "Start password recovery again"
-      }
+      "request_again": "Start password recovery again"
+    },
+    "emailChange": {
+      "page_title": "Verify new sign-in email",
+      "eyebrow": "Secure email change",
+      "title": "Verify your new sign-in email",
+      "subtitle": "We are confirming that this email belongs to you. A 24-hour security hold follows verification, and the old email remains valid until the change is applied.",
+      "complete": "New email verified. Return to Security Center after the 24-hour security hold to apply the change.",
+      "continue": "Return to Security Center",
+      "invalid": "This email-change link is invalid, expired, or already used. Sign in and request another change.",
+      "request_again": "Return to sign in"
+    }
     },
     "errors": {
       "invalid_credentials": "The email or password is incorrect.",

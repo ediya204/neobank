@@ -150,6 +150,12 @@ that the assumption no longer applies.
   back up, checksum, restore-test, approve, execute, and verify.
 - GitHub push, Cloudflare web deployment, Render deployment, and PostgreSQL
   migration are separate operations.
+- Customer security P0-P2 uses PostgreSQL-backed password/TOTP step-up for every
+  signed-in sensitive mutation. Email password recovery remains usable without
+  TOTP so a lost authenticator does not make recovery impossible. Passkey login
+  requires WebAuthn user verification. Email changes and withdrawal unlocks each
+  have a 24-hour cooling period. Account closure is a cancellable manual-review
+  request and never initiates settlement, withdrawal, or external transfer.
 
 ## Documentation
 

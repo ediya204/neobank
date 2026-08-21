@@ -129,3 +129,36 @@ test('password reset template derives a fragment token without storing it in the
     /reset_token/
   );
 });
+
+test('email change verification derives a purpose-bound fragment token', () => {
+  const rendered = renderEmailTemplate(
+    EmailTemplateKey.CUSTOMER_EMAIL_CHANGE_VERIFICATION,
+    {
+      displayName: 'Test Customer',
+      emailChangeRequestId: 'email_change_0123456789abcdef0123456789abcdef',
+    },
+    'https://portal.example.com',
+    'test-password-reset-secret-at-least-32-bytes'
+  );
+  assert.match(
+    rendered.html,
+    /\/customer\/confirm-email-change#email_change_token=email_change_0123456789abcdef0123456789abcdef\./
+  );
+});
+
+test('security alerts accept allowlisted events and reject arbitrary copy', () => {
+  const rendered = renderEmailTemplate(
+    EmailTemplateKey.CUSTOMER_SECURITY_ALERT,
+    { displayName: 'Test Customer', securityEvent: 'totp_replaced' },
+    'https://portal.example.com'
+  );
+  assert.match(rendered.subject, /Authenticator replaced/);
+  assert.throws(
+    () => renderEmailTemplate(
+      EmailTemplateKey.CUSTOMER_SECURITY_ALERT,
+      { displayName: 'Test Customer', securityEvent: '<script>unsafe</script>' },
+      'https://portal.example.com'
+    ),
+    /invalid_email_template_security_event/
+  );
+});

@@ -46,26 +46,30 @@ const (
 	customerSessionCookie            = "__Host-neobank_customer"
 	customerCSRFCookie               = "__Host-neobank_csrf"
 	recoveryCustomerSessionSQL       = `INSERT INTO customer_sessions
-	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
-	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at,
+	     created_at, last_seen_at, source_ip_hash, user_agent_hash, device_label)
+	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 	    WHERE EXISTS (SELECT 1 FROM customer_recovery_codes WHERE id=? AND customer_id=? AND used_at=?)
 	      AND EXISTS (SELECT 1 FROM customer_login_challenges WHERE id=? AND customer_id=? AND consumed_at=?)
 	      AND EXISTS (SELECT 1 FROM customer_credentials WHERE customer_id=? AND credential_version=?)`
 	totpCustomerSessionSQL = `INSERT INTO customer_sessions
-	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
-	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at,
+	     created_at, last_seen_at, source_ip_hash, user_agent_hash, device_label)
+	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 	    WHERE EXISTS (SELECT 1 FROM customer_login_challenges WHERE id=? AND customer_id=? AND consumed_at=?)
 	      AND EXISTS (SELECT 1 FROM customer_credentials
 	        WHERE customer_id=? AND credential_version=? AND totp_last_counter=?)`
 	enrollmentCustomerSessionSQL = `INSERT INTO customer_sessions
-	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
-	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at,
+	     created_at, last_seen_at, source_ip_hash, user_agent_hash, device_label)
+	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 	    WHERE EXISTS (SELECT 1 FROM customer_credentials
 	      WHERE customer_id=? AND credential_version=? AND enrollment_token_hash IS NULL
 	        AND updated_at=? AND totp_last_counter=?)`
 	passwordCustomerSessionSQL = `INSERT INTO customer_sessions
-	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
-	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at,
+	     created_at, last_seen_at, source_ip_hash, user_agent_hash, device_label)
+	    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 	    WHERE EXISTS (SELECT 1 FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
 	      WHERE c.id=? AND c.tenant_id=? AND c.status='active' AND c.kyc_status='approved'
 	        AND c.operations_status='active' AND cc.credential_version=?
@@ -93,6 +97,7 @@ type customerTOTPEnrollment struct {
 	Secret            string `json:"secret"`
 	CredentialVersion int64  `json:"credential_version"`
 	ExpiresAt         int64  `json:"expires_at"`
+	Replace           bool   `json:"replace,omitempty"`
 }
 
 func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request) bool {
@@ -131,6 +136,46 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 		app.completeCustomerPasswordReset(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/email-verification/complete":
 		app.completeCustomerEmailVerification(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/email-change/verify":
+		app.completeCustomerEmailChangeVerification(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/customer/security/summary":
+		app.customerSecuritySummary(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/sessions/revoke-others":
+		app.revokeOtherCustomerSessions(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/auth/customer/security/sessions/") && strings.HasSuffix(r.URL.Path, "/revoke"):
+		app.revokeCustomerSecuritySession(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/auth/customer/security/sessions/"), "/revoke"))
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/recovery-codes/regenerate":
+		app.regenerateCustomerRecoveryCodes(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/totp/replace/start":
+		app.startCustomerTOTPReplacement(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/totp/replace/verify":
+		app.verifyCustomerTOTPReplacement(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/email-change/request":
+		app.requestCustomerEmailChange(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/email-change/apply":
+		app.applyCustomerEmailChange(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/withdrawal-lock/enable":
+		app.changeCustomerWithdrawalLock(w, r, "enable")
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/withdrawal-lock/request-unlock":
+		app.changeCustomerWithdrawalLock(w, r, "request-unlock")
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/withdrawal-lock/confirm-unlock":
+		app.changeCustomerWithdrawalLock(w, r, "confirm-unlock")
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/data-export":
+		app.exportCustomerData(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/account-closure/request":
+		app.requestCustomerAccountClosure(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/security/account-closure/cancel":
+		app.cancelCustomerAccountClosure(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/passkey/register/options":
+		app.beginCustomerPasskeyRegistration(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/passkey/register/verify":
+		app.finishCustomerPasskeyRegistration(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/passkey/login/options":
+		app.beginCustomerPasskeyLogin(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/passkey/login/verify":
+		app.finishCustomerPasskeyLogin(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/auth/customer/passkey/") && strings.HasSuffix(r.URL.Path, "/remove"):
+		app.removeCustomerPasskey(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/auth/customer/passkey/"), "/remove"))
 	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/customer/me":
 		app.customerSessionInfo(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/logout":
@@ -615,7 +660,7 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 		}})
 	}
 	if text(rows[0]["totp_secret_ciphertext"]) == "" {
-		sessionID, sessionToken, csrfToken, sessionStatement := newCustomerSession(customerID, credentialVersion, now)
+		sessionID, sessionToken, csrfToken, sessionStatement := newCustomerSession(r, customerID, credentialVersion, now)
 		sessionStatement.SQL = passwordCustomerSessionSQL
 		sessionStatement.Params = append(sessionStatement.Params, customerID, app.tenantID, credentialVersion)
 		statements = append(statements,
@@ -768,7 +813,7 @@ func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Reques
 	}
 	customerID := text(rows[0]["id"])
 	credentialVersion := integer(rows[0]["credential_version"])
-	sessionID, sessionToken, csrfToken, sessionStatement := newCustomerSession(customerID, credentialVersion, now)
+	sessionID, sessionToken, csrfToken, sessionStatement := newCustomerSession(r, customerID, credentialVersion, now)
 	statements := []d1.Statement{}
 	recoveryCodes := []string{}
 	if enrollment {
@@ -961,7 +1006,7 @@ func (app *application) changeCustomerPassword(w http.ResponseWriter, r *http.Re
 	if nextIdleExpiry.After(session.ExpiresAt) {
 		nextIdleExpiry = session.ExpiresAt
 	}
-	results, err := app.db.Batch(r.Context(),
+	statements := []d1.Statement{
 		d1.Statement{SQL: `UPDATE customer_credentials
 	  SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=0,
 	      password_memory_kib=?, password_time_cost=?, password_parallelism=?,
@@ -993,13 +1038,21 @@ func (app *application) changeCustomerPassword(w http.ResponseWriter, r *http.Re
 			randomID("audit"), session.CustomerID, session.CustomerID, nowText,
 			session.ID, session.CustomerID, newCredentialVersion,
 		}},
-	)
+	}
+	if app.emailNotifications {
+		alertPayload, _ := json.Marshal(map[string]string{"displayName": session.DisplayName, "securityEvent": "password_changed"})
+		statements = append(statements, app.customerEmailOutboxStatement(
+			randomID("security_alert"), session.CustomerID, "CUSTOMER_SECURITY_ALERT", session.Email, string(alertPayload),
+		))
+	}
+	results, err := app.db.Batch(r.Context(), statements...)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
-	if len(results) != 5 || resultChanges(results[:1]) != 1 ||
-		resultChanges(results[2:3]) != 1 || resultChanges(results[4:5]) != 1 {
+	if len(results) != len(statements) || resultChanges(results[:1]) != 1 ||
+		resultChanges(results[2:3]) != 1 || resultChanges(results[4:5]) != 1 ||
+		(app.emailNotifications && resultChanges(results[5:6]) != 1) {
 		conflict(w, "password_change_conflict")
 		return
 	}
@@ -1125,6 +1178,16 @@ func (app *application) createCustomerWithdrawal(w http.ResponseWriter, r *http.
 	session, _, err := app.requireCustomerMutation(r)
 	if err != nil {
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]string{"code": "csrf_or_session_invalid"}})
+		return
+	}
+	lockRows, err := app.db.Query(r.Context(), `SELECT withdrawals_locked
+	  FROM customers WHERE id=? AND tenant_id=?`, session.CustomerID, app.tenantID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(lockRows) != 1 || strings.EqualFold(text(lockRows[0]["withdrawals_locked"]), "true") {
+		writeJSON(w, http.StatusLocked, map[string]any{"error": map[string]string{"code": "withdrawals_locked"}})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 128*1024+1))
@@ -1450,16 +1513,26 @@ func verifyTOTPCode(secret, code string, now time.Time, minimumCounter int64) (i
 	return 0, false
 }
 
-func newCustomerSession(customerID string, credentialVersion int64, now time.Time) (string, string, string, d1.Statement) {
+func newCustomerSession(r *http.Request, customerID string, credentialVersion int64, now time.Time) (string, string, string, d1.Statement) {
 	sessionID := randomID("session")
 	sessionToken := randomToken(32)
 	csrfToken := randomToken(32)
+	sourceIPHash := validSHA256Hex(r.Header.Get("X-Neobank-Source-IP-SHA256"))
+	userAgentHash := validSHA256Hex(r.Header.Get("X-Neobank-User-Agent-SHA256"))
+	deviceLabel := strings.TrimSpace(r.Header.Get("X-Neobank-Device-Label"))
+	if len(deviceLabel) > 80 {
+		deviceLabel = deviceLabel[:80]
+	}
+	if deviceLabel == "" {
+		deviceLabel = "已登录设备"
+	}
 	return sessionID, sessionToken, csrfToken, d1.Statement{SQL: `INSERT INTO customer_sessions
-	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at, created_at, last_seen_at)
-	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, Params: []any{
+	    (id, customer_id, token_hash, csrf_hash, credential_version, expires_at, idle_expires_at,
+	     created_at, last_seen_at, source_ip_hash, user_agent_hash, device_label)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, Params: []any{
 		sessionID, customerID, tokenHash(sessionToken), tokenHash(csrfToken), credentialVersion,
 		databaseTimestamp(now.Add(customerSessionDuration)), databaseTimestamp(now.Add(customerSessionIdleDuration)),
-		databaseTimestamp(now), databaseTimestamp(now),
+		databaseTimestamp(now), databaseTimestamp(now), sourceIPHash, userAgentHash, deviceLabel,
 	}}
 }
 

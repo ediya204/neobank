@@ -105,6 +105,11 @@ The source includes:
   and its legacy route resolves to 404 pending a PostgreSQL implementation.
 - Responsive Portal layouts and en-US/zh-CN copy across desktop, tablet, mobile,
   and short landscape viewports.
+- Customer Security Center P0-P2: password/TOTP/recovery management, passkeys,
+  device/session controls, verified email change, withdrawal lock with delayed
+  unlock, customer-visible security activity, safe data export, and manual-review
+  account closure. Production requires PostgreSQL migration `0013` before the Go,
+  Core/email, and Worker code that reads the new schema.
 - Local transaction-history and Webhook demo fixtures used by the travel setup.
 
 Partner roles cannot perform settlement, ledger posting, withdrawal, manual OTC,
