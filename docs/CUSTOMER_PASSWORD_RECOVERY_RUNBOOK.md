@@ -8,9 +8,9 @@ Customer Online Banking supports self-service recovery through a verified email
 address. The implementation uses Render PostgreSQL, the Go customer-auth service,
 the existing PostgreSQL `EmailOutbox`, and the Render Zoho email worker.
 
-This source change is local and undeployed until migration `0012_customer_password_recovery`
-is reviewed and applied, both Render services are configured, and live acceptance is
-explicitly approved. A code deployment, PostgreSQL migration, environment change,
+Production readiness requires migration `0012_customer_password_recovery` to be
+reviewed and applied, both Render services to be configured, and live acceptance to
+be explicitly approved. A code deployment, PostgreSQL migration, environment change,
 email-worker release, and real email send are separate operations.
 
 ## Customer flow
@@ -24,8 +24,9 @@ email-worker release, and real email send are separate operations.
    verification, the customer requests recovery again.
 4. A verified account receives a 30-minute, one-time
    `/customer/reset-password#reset_token=...` link.
-5. Accounts with TOTP enabled must also provide a current TOTP code or one unused
-   recovery code. Password-only accounts use the verified email link.
+5. The valid one-time reset link sent to the verified account email is sufficient
+   to set a new password. The reset form does not request TOTP or a recovery code,
+   including for accounts that already have TOTP enabled.
 6. A successful reset creates a new salted Argon2id password hash, increments
    `credential_version`, clears password lockout state, revokes every customer
    session, consumes outstanding login challenges, consumes/cancels reset requests,
@@ -76,7 +77,7 @@ fragment, expires after 30 minutes, and must not be pasted into tickets or logs.
 | Operation                | Endpoint                                              | Success                                                |
 | ------------------------ | ----------------------------------------------------- | ------------------------------------------------------ |
 | Request recovery         | `POST /api/auth/customer/password-reset/request`      | `202 {"accepted":true}`                                |
-| Inspect reset link       | `POST /api/auth/customer/password-reset/inspect`      | `200` with `totp_required` and `expires_at`            |
+| Inspect reset link       | `POST /api/auth/customer/password-reset/inspect`      | `200` with `totp_required=false` and `expires_at`      |
 | Complete reset           | `POST /api/auth/customer/password-reset/complete`     | `200` with `sessions_revoked=true`                     |
 | Verify email             | `POST /api/auth/customer/email-verification/complete` | `200` with `email_verified=true`                       |
 | Reissue incomplete setup | `POST /api/v1/admin/customers/{id}/setup-link`        | `201` with one-time `setup_url` and `setup_expires_at` |
@@ -123,7 +124,8 @@ local tests pass.
 - The email outbox stores only request IDs, never raw recovery tokens.
 - Reset and verification links expire after 30 minutes and are single-use.
 - A stale credential version, changed email, cancelled request, or ninth attempt fails.
-- TOTP and recovery-code paths both work; replaying either fails.
+- A TOTP-enrolled account can reset with only the valid email reset link and a new
+  password; its TOTP binding and unused recovery codes remain unchanged.
 - The old password and every old session fail after reset; the new password works only
   through a fresh login.
 - No reset path changes KYC, account activation, balances, wallet bindings, or any

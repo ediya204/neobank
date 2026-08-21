@@ -12,8 +12,6 @@ import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import {
   AuthApiError,
@@ -37,10 +35,6 @@ type Props = {
 type ResetState = 'checking' | 'ready' | 'invalid' | 'complete';
 type VerifyState = 'checking' | 'invalid' | 'complete';
 
-function digitsOnly(value: string) {
-  return value.replace(/\D/g, '').slice(0, 6);
-}
-
 function consumeFragmentToken(parameter: string) {
   const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const token = fragment.get(parameter) || '';
@@ -58,8 +52,6 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
   const [resetState, setResetState] = useState<ResetState>('checking');
   const [verifyState, setVerifyState] = useState<VerifyState>('checking');
   const [resetToken, setResetToken] = useState('');
-  const [totpRequired, setTotpRequired] = useState(false);
-  const [verificationMethod, setVerificationMethod] = useState<'totp' | 'recovery'>('totp');
   const [errorMessage, setErrorMessage] = useState('');
 
   const forgotSchema = useMemo(
@@ -87,18 +79,8 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
         confirmPassword: Yup.string()
           .required(t('auth.validation.confirm_password_required'))
           .oneOf([Yup.ref('password')], t('auth.validation.passwords_mismatch')),
-        totpCode:
-          totpRequired && verificationMethod === 'totp'
-            ? Yup.string()
-                .matches(/^\d{6}$/, t('auth.validation.totp_six_digits'))
-                .required(t('auth.validation.totp_required'))
-            : Yup.string(),
-        recoveryCode:
-          totpRequired && verificationMethod === 'recovery'
-            ? Yup.string().trim().required(t('auth.validation.recovery_required'))
-            : Yup.string(),
       }),
-    [t, totpRequired, verificationMethod]
+    [t]
   );
   const forgotMethods = useForm({
     resolver: yupResolver(forgotSchema),
@@ -106,7 +88,7 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
   });
   const resetMethods = useForm({
     resolver: yupResolver(resetSchema),
-    defaultValues: { password: '', confirmPassword: '', totpCode: '', recoveryCode: '' },
+    defaultValues: { password: '', confirmPassword: '' },
   });
 
   const describeError = useCallback(
@@ -115,8 +97,6 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
         if (error.status === 429) return t('auth.errors.rate_limited');
         if (error.status >= 500 || error.status === 0) return t('auth.errors.network_error');
         if (error.code === 'password_unchanged') return t('auth.errors.password_unchanged');
-        if (error.code === 'invalid_totp_code') return t('auth.errors.invalid_totp');
-        if (error.code === 'invalid_recovery_code') return t('auth.errors.invalid_recovery_code');
         if (error.code === 'password_reset_state_changed') {
           return t('auth.password_recovery.reset.state_changed');
         }
@@ -140,7 +120,6 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
       inspectCustomerPasswordReset(token)
         .then((result) => {
           if (!active || !result.valid) return;
-          setTotpRequired(result.totpRequired);
           setResetState('ready');
         })
         .catch(() => {
@@ -182,20 +161,12 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
       await completeCustomerPasswordReset({
         resetToken,
         newPassword: values.password,
-        ...(totpRequired && verificationMethod === 'totp'
-          ? { totpCode: digitsOnly(values.totpCode || '') }
-          : {}),
-        ...(totpRequired && verificationMethod === 'recovery'
-          ? { recoveryCode: (values.recoveryCode || '').trim() }
-          : {}),
       });
       resetMethods.reset();
       setResetToken('');
       setResetState('complete');
     } catch (error) {
       setErrorMessage(describeError(error));
-      resetMethods.setValue('totpCode', '');
-      resetMethods.setValue('recoveryCode', '');
     }
   });
 
@@ -344,35 +315,6 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
             autoComplete="new-password"
             inputProps={{ maxLength: 128 }}
           />
-          {totpRequired && (
-            <>
-              <ToggleButtonGroup
-                exclusive
-                fullWidth
-                value={verificationMethod}
-                onChange={(_, value) => value && setVerificationMethod(value)}
-                size="small"
-              >
-                <ToggleButton value="totp">{t('auth.password_recovery.reset.use_totp')}</ToggleButton>
-                <ToggleButton value="recovery">{t('auth.password_recovery.reset.use_recovery')}</ToggleButton>
-              </ToggleButtonGroup>
-              {verificationMethod === 'totp' ? (
-                <RHFTextField
-                  name="totpCode"
-                  label={t('auth.password_recovery.reset.totp_label')}
-                  autoComplete="one-time-code"
-                  inputProps={{ inputMode: 'numeric', maxLength: 6 }}
-                />
-              ) : (
-                <RHFTextField
-                  name="recoveryCode"
-                  label={t('auth.fields.recovery_code')}
-                  autoComplete="off"
-                  inputProps={{ maxLength: 128 }}
-                />
-              )}
-            </>
-          )}
           <LoadingButton
             fullWidth
             color="inherit"

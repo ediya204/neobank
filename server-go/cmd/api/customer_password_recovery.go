@@ -168,15 +168,17 @@ func (app *application) inspectCustomerPasswordReset(w http.ResponseWriter, r *h
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"valid":         true,
-		"totp_required": text(rows[0]["totp_secret_ciphertext"]) != "",
+		"totp_required": false,
 		"expires_at":    text(rows[0]["expires_at"]),
 	})
 }
 
 func (app *application) completeCustomerPasswordReset(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		ResetToken   string `json:"reset_token"`
-		NewPassword  string `json:"new_password"`
+		ResetToken  string `json:"reset_token"`
+		NewPassword string `json:"new_password"`
+		// Accepted for compatibility with clients deployed before password recovery
+		// became email-link only. These fields are intentionally not verified or used.
 		TOTPCode     string `json:"totp_code"`
 		RecoveryCode string `json:"recovery_code"`
 	}
@@ -199,48 +201,12 @@ func (app *application) completeCustomerPasswordReset(w http.ResponseWriter, r *
 		return
 	}
 	row := rows[0]
-	totpEnabled := text(row["totp_secret_ciphertext"]) != ""
-	if totpEnabled && ((input.TOTPCode == "") == (input.RecoveryCode == "")) ||
-		!totpEnabled && (input.TOTPCode != "" || input.RecoveryCode != "") {
-		validationError(w)
-		return
-	}
 	now := time.Now().UTC()
 	nowText := databaseTimestamp(now)
 	customerID := text(row["customer_id"])
 	credentialVersion := integer(row["credential_version"])
 	newCredentialVersion := credentialVersion + 1
-	totpCounter := integer(row["totp_last_counter"])
-	recoveryID := ""
 	method := "email"
-	if totpEnabled && input.TOTPCode != "" {
-		secret, decryptErr := app.decryptCustomerTOTP(text(row["totp_secret_ciphertext"]))
-		if decryptErr != nil {
-			databaseError(app, w, decryptErr)
-			return
-		}
-		var valid bool
-		totpCounter, valid = verifyTOTPCode(secret, input.TOTPCode, now, integer(row["totp_last_counter"]))
-		if !valid {
-			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_totp_code"}})
-			return
-		}
-		method = "email_totp"
-	}
-	if totpEnabled && input.RecoveryCode != "" {
-		recoveryRows, recoveryErr := app.db.Query(r.Context(), `SELECT id FROM customer_recovery_codes
-		  WHERE customer_id=? AND code_hash=? AND used_at IS NULL`, customerID, app.recoveryCodeHash(input.RecoveryCode))
-		if recoveryErr != nil {
-			databaseError(app, w, recoveryErr)
-			return
-		}
-		if len(recoveryRows) != 1 {
-			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_recovery_code"}})
-			return
-		}
-		recoveryID = text(recoveryRows[0]["id"])
-		method = "email_recovery_code"
-	}
 	validExisting, _ := app.verifyCustomerPassword(input.NewPassword, row)
 	if validExisting {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]string{"code": "password_unchanged"}})
@@ -253,26 +219,8 @@ func (app *application) completeCustomerPasswordReset(w http.ResponseWriter, r *
 		  WHERE id=? AND customer_id=? AND credential_version=? AND consumed_at IS NULL
 		    AND cancelled_at IS NULL AND expires_at>? AND attempts BETWEEN 1 AND 8`
 	consumeParams := []any{nowText, requestID, customerID, credentialVersion, nowText}
-	if totpEnabled && input.TOTPCode != "" {
-		consumeSQL += ` AND EXISTS (SELECT 1 FROM customer_credentials
-		  WHERE customer_id=? AND credential_version=? AND totp_last_counter<?)`
-		consumeParams = append(consumeParams, customerID, credentialVersion, totpCounter)
-	}
-	if recoveryID != "" {
-		consumeSQL += ` AND EXISTS (SELECT 1 FROM customer_recovery_codes
-		  WHERE id=? AND customer_id=? AND used_at IS NULL)`
-		consumeParams = append(consumeParams, recoveryID, customerID)
-	}
 	statements := []d1.Statement{
 		{SQL: consumeSQL, Params: consumeParams},
-	}
-	if recoveryID != "" {
-		statements = append(statements, d1.Statement{SQL: `UPDATE customer_recovery_codes SET used_at=?
-		  WHERE id=? AND customer_id=? AND used_at IS NULL
-		    AND EXISTS (SELECT 1 FROM customer_password_reset_requests
-		      WHERE id=? AND customer_id=? AND consumed_at=?)`, Params: []any{
-			nowText, recoveryID, customerID, requestID, customerID, nowText,
-		}})
 	}
 	credentialSQL := `UPDATE customer_credentials
 	  SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=0,
@@ -285,21 +233,6 @@ func (app *application) completeCustomerPasswordReset(w http.ResponseWriter, r *
 		hex.EncodeToString(salt), hex.EncodeToString(passwordHash), customerPasswordAlgorithm,
 		customerArgonMemoryKiB, customerArgonTimeCost, customerArgonParallelism, nowText,
 		newCredentialVersion, nowText, customerID, credentialVersion, requestID, customerID, nowText,
-	}
-	if totpEnabled && input.TOTPCode != "" {
-		credentialSQL = strings.Replace(credentialSQL, "credential_version=?, failed_attempts", "credential_version=?, totp_last_counter=?, failed_attempts", 1)
-		credentialSQL += ` AND totp_last_counter<?`
-		credentialParams = []any{
-			hex.EncodeToString(salt), hex.EncodeToString(passwordHash), customerPasswordAlgorithm,
-			customerArgonMemoryKiB, customerArgonTimeCost, customerArgonParallelism, nowText,
-			newCredentialVersion, totpCounter, nowText, customerID, credentialVersion,
-			requestID, customerID, nowText, totpCounter,
-		}
-	}
-	if recoveryID != "" {
-		credentialSQL += ` AND EXISTS (SELECT 1 FROM customer_recovery_codes
-		  WHERE id=? AND customer_id=? AND used_at=?)`
-		credentialParams = append(credentialParams, recoveryID, customerID, nowText)
 	}
 	credentialStatementIndex := len(statements)
 	statements = append(statements,
@@ -336,8 +269,7 @@ func (app *application) completeCustomerPasswordReset(w http.ResponseWriter, r *
 	auditIndex := credentialStatementIndex + 4
 	if len(results) != len(statements) || resultChanges(results[:1]) != 1 ||
 		resultChanges(results[credentialStatementIndex:credentialStatementIndex+1]) != 1 ||
-		resultChanges(results[auditIndex:auditIndex+1]) != 1 ||
-		(recoveryID != "" && resultChanges(results[1:2]) != 1) {
+		resultChanges(results[auditIndex:auditIndex+1]) != 1 {
 		conflict(w, "password_reset_state_changed")
 		return
 	}
@@ -417,7 +349,7 @@ func (app *application) loadActivePasswordReset(r *http.Request, requestID strin
 	query := `SELECT pr.customer_id, pr.email_snapshot, pr.expires_at, c.email, c.display_name,
 	    cc.password_salt, cc.password_hash, cc.password_algorithm, cc.password_iterations,
 	    cc.password_memory_kib, cc.password_time_cost, cc.password_parallelism,
-	    cc.totp_secret_ciphertext, cc.totp_last_counter, cc.credential_version
+	    cc.credential_version
 	  FROM customer_password_reset_requests pr
 	  JOIN customers c ON c.id=pr.customer_id
 	  JOIN customer_credentials cc ON cc.customer_id=c.id

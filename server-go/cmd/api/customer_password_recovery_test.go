@@ -151,56 +151,24 @@ func TestPasswordResetCompletionReplacesHashAndRevokesSessionsWithoutPlaintext(t
 	}
 }
 
-func TestPasswordResetDoesNotRevealPasswordEqualityBeforeTOTP(t *testing.T) {
-	oldPassword := "Old-Customer-Password-7!"
-	app, db, token, _, invalidTOTP := newTOTPPasswordRecoveryTestApp(t, oldPassword)
-
-	for _, password := range []string{oldPassword, "Different-Customer-Password-8!"} {
-		request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/password-reset/complete",
-			bytes.NewBufferString(`{"reset_token":"`+token+`","new_password":"`+password+`","totp_code":"`+invalidTOTP+`"}`))
-		response := httptest.NewRecorder()
-		app.completeCustomerPasswordReset(response, request)
-		if response.Code != http.StatusUnauthorized ||
-			!strings.Contains(response.Body.String(), `"code":"invalid_totp_code"`) ||
-			strings.Contains(response.Body.String(), `"code":"password_unchanged"`) {
-			t.Fatalf("password=%q status=%d body=%q", password, response.Code, response.Body.String())
-		}
-	}
-	if len(db.statements) != 4 {
-		t.Fatalf("each failed TOTP attempt must only increment the reset attempt counter; got %d statements", len(db.statements))
+func TestPasswordResetInspectionNeverRequiresTOTP(t *testing.T) {
+	app, _, token := newEnrolledTOTPPasswordRecoveryTestApp(t, "Old-Customer-Password-7!")
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/password-reset/inspect",
+		bytes.NewBufferString(`{"reset_token":"`+token+`"}`))
+	response := httptest.NewRecorder()
+	app.inspectCustomerPasswordReset(response, request)
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), `"totp_required":false`) {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
 	}
 }
 
-func TestPasswordResetDoesNotRevealPasswordEqualityBeforeRecoveryCode(t *testing.T) {
+func TestPasswordResetWithTOTPEnrollmentRequiresOnlyEmailLink(t *testing.T) {
 	oldPassword := "Old-Customer-Password-7!"
-	app, _, token, _, _ := newTOTPPasswordRecoveryTestApp(t, oldPassword)
-	db := app.db.(*passwordRecoveryDatabase)
-	db.query = func(sql string, _ ...any) ([]map[string]any, error) {
-		if strings.Contains(sql, "customer_recovery_codes") {
-			return nil, nil
-		}
-		return db.rows, nil
-	}
-
-	for _, password := range []string{oldPassword, "Different-Customer-Password-8!"} {
-		request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/password-reset/complete",
-			bytes.NewBufferString(`{"reset_token":"`+token+`","new_password":"`+password+`","recovery_code":"invalid-code"}`))
-		response := httptest.NewRecorder()
-		app.completeCustomerPasswordReset(response, request)
-		if response.Code != http.StatusUnauthorized ||
-			!strings.Contains(response.Body.String(), `"code":"invalid_recovery_code"`) ||
-			strings.Contains(response.Body.String(), `"code":"password_unchanged"`) {
-			t.Fatalf("password=%q status=%d body=%q", password, response.Code, response.Body.String())
-		}
-	}
-}
-
-func TestPasswordResetPreservesPostTOTPPasswordRulesAndSuccess(t *testing.T) {
-	oldPassword := "Old-Customer-Password-7!"
-	app, _, token, validTOTP, _ := newTOTPPasswordRecoveryTestApp(t, oldPassword)
+	app, db, token := newEnrolledTOTPPasswordRecoveryTestApp(t, oldPassword)
 
 	unchangedRequest := httptest.NewRequest(http.MethodPost, "/api/auth/customer/password-reset/complete",
-		bytes.NewBufferString(`{"reset_token":"`+token+`","new_password":"`+oldPassword+`","totp_code":"`+validTOTP+`"}`))
+		bytes.NewBufferString(`{"reset_token":"`+token+`","new_password":"`+oldPassword+`"}`))
 	unchangedResponse := httptest.NewRecorder()
 	app.completeCustomerPasswordReset(unchangedResponse, unchangedRequest)
 	if unchangedResponse.Code != http.StatusUnprocessableEntity ||
@@ -210,35 +178,44 @@ func TestPasswordResetPreservesPostTOTPPasswordRulesAndSuccess(t *testing.T) {
 
 	newPassword := "New-Customer-Password-8!"
 	successRequest := httptest.NewRequest(http.MethodPost, "/api/auth/customer/password-reset/complete",
-		bytes.NewBufferString(`{"reset_token":"`+token+`","new_password":"`+newPassword+`","totp_code":"`+validTOTP+`"}`))
+		bytes.NewBufferString(`{"reset_token":"`+token+`","new_password":"`+newPassword+`"}`))
 	successResponse := httptest.NewRecorder()
 	app.completeCustomerPasswordReset(successResponse, successRequest)
 	if successResponse.Code != http.StatusOK || !strings.Contains(successResponse.Body.String(), `"sessions_revoked":true`) {
 		t.Fatalf("status=%d body=%q", successResponse.Code, successResponse.Body.String())
 	}
+	for _, statement := range db.statements {
+		if strings.Contains(statement.SQL, "totp_secret_ciphertext") ||
+			strings.Contains(statement.SQL, "totp_last_counter") ||
+			strings.Contains(statement.SQL, "customer_recovery_codes") {
+			t.Fatalf("password reset must preserve TOTP and recovery codes: %s", statement.SQL)
+		}
+	}
 }
 
-func newTOTPPasswordRecoveryTestApp(t *testing.T, oldPassword string) (*application, *passwordRecoveryDatabase, string, string, string) {
+func TestPasswordResetAcceptsLegacyVerificationFieldsWithoutUsingThem(t *testing.T) {
+	app, _, token := newEnrolledTOTPPasswordRecoveryTestApp(t, "Old-Customer-Password-7!")
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/password-reset/complete",
+		bytes.NewBufferString(`{"reset_token":"`+token+`","new_password":"New-Customer-Password-8!","totp_code":"000000","recovery_code":"legacy-code"}`))
+	response := httptest.NewRecorder()
+	app.completeCustomerPasswordReset(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"sessions_revoked":true`) {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func newEnrolledTOTPPasswordRecoveryTestApp(t *testing.T, oldPassword string) (*application, *passwordRecoveryDatabase, string) {
 	t.Helper()
 	pepper := []byte("0123456789abcdef0123456789abcdef")
 	resetSecret := []byte("abcdef0123456789abcdef0123456789")
-	totpKey := []byte("fedcba9876543210fedcba9876543210")
 	salt := []byte("0123456789abcdef")
 	app := &application{
 		customerPasswordPepper:      pepper,
 		customerPasswordResetSecret: resetSecret,
-		customerTOTPKey:             totpKey,
 		tenantID:                    "neobank",
 		portalURL:                   "http://localhost:3000",
 	}
-	totpSecret := "JBSWY3DPEHPK3PXP"
-	encryptedTOTP, err := app.encryptCustomerTOTP(totpSecret)
-	if err != nil {
-		t.Fatal(err)
-	}
 	now := time.Now().UTC()
-	validTOTP := totpCodeForTest(t, totpSecret, now)
-	invalidTOTP := differentInvalidTOTP(t, totpSecret, now)
 	oldHash := app.deriveCustomerArgon2id(oldPassword, salt)
 	db := &passwordRecoveryDatabase{rows: []map[string]any{{
 		"customer_id": "customer_1", "email": "customer@example.test", "display_name": "Customer",
@@ -246,21 +223,9 @@ func newTOTPPasswordRecoveryTestApp(t *testing.T, oldPassword string) (*applicat
 		"password_hash": hex.EncodeToString(oldHash), "password_algorithm": customerPasswordAlgorithm,
 		"password_iterations": int64(0), "password_memory_kib": int64(customerArgonMemoryKiB),
 		"password_time_cost": int64(customerArgonTimeCost), "password_parallelism": int64(customerArgonParallelism),
-		"totp_secret_ciphertext": encryptedTOTP, "totp_last_counter": int64(-1), "credential_version": int64(4),
+		"totp_secret_ciphertext": "existing-encrypted-secret", "totp_last_counter": int64(42), "credential_version": int64(4),
 	}}}
 	app.db = db
 	requestID := "password_reset_0123456789abcdef0123456789abcdef"
-	return app, db, app.deriveCustomerRecoveryToken("password-reset-v1", requestID), validTOTP, invalidTOTP
-}
-
-func differentInvalidTOTP(t *testing.T, secret string, now time.Time) string {
-	t.Helper()
-	for candidate := 0; candidate < 1_000_000; candidate++ {
-		code := fmt.Sprintf("%06d", candidate)
-		if _, accepted := verifyTOTPCode(secret, code, now, -1); !accepted {
-			return code
-		}
-	}
-	t.Fatal("could not generate an invalid TOTP code")
-	return ""
+	return app, db, app.deriveCustomerRecoveryToken("password-reset-v1", requestID)
 }
