@@ -32,6 +32,15 @@ type CreateWithdrawalInput = {
   expectedFeeRuleVersion?: string;
 };
 
+type VerifiedCregisWalletSource = {
+  address: string;
+  ownership_verified_at: string;
+};
+
+const CREGIS_TRON_CHAIN_ID = '195';
+// Public TRON USDT contract address, not a credential.
+const CREGIS_USDT_TRC20_TOKEN_ID = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'; // gitleaks:allow
+
 @Injectable()
 export class CryptoWalletsService {
   constructor(
@@ -50,23 +59,34 @@ export class CryptoWalletsService {
       channelCode: 'CREGIS',
       network: supportedCryptoNetwork,
     });
-    const wallets = await this.db.cryptoWallet.findMany({
-      where: {
-        customerId,
-        asset: supportedCryptoAsset,
-        network: supportedCryptoNetwork,
-        status: 'ACTIVE',
-      },
-      orderBy: { network: 'asc' },
-    });
+    const [wallets, verifiedSource] = await Promise.all([
+      this.db.cryptoWallet.findMany({
+        where: {
+          customerId,
+          asset: supportedCryptoAsset,
+          network: supportedCryptoNetwork,
+          status: 'ACTIVE',
+        },
+        orderBy: { network: 'asc' },
+      }),
+      this.verifiedCregisWalletSource(customerId),
+    ]);
+    if (
+      verifiedSource &&
+      wallets.some(
+        (wallet) => wallet.walletAddress && wallet.walletAddress !== verifiedSource.address
+      )
+    ) {
+      throw new ConflictException('core_crypto_wallet_binding_conflict');
+    }
     return wallets.map((wallet) => ({
       ...wallet,
       withdrawalFee: resolvedFee.amount,
       withdrawalFeeRuleVersion: resolvedFee.snapshot.version,
-      walletAddress: '',
-      custodyProvider: null,
-      ownershipVerifiedAt: null,
-      depositEnabled: false,
+      walletAddress: verifiedSource?.address || '',
+      custodyProvider: verifiedSource ? ('CREGIS' as const) : null,
+      ownershipVerifiedAt: verifiedSource?.ownership_verified_at || null,
+      depositEnabled: Boolean(verifiedSource),
     }));
   }
 
@@ -517,6 +537,34 @@ export class CryptoWalletsService {
       throw new ForbiddenException('cross_tenant_crypto_customer');
     }
     return customer;
+  }
+
+  private async verifiedCregisWalletSource(customerId: string) {
+    const tenantId = process.env.NEOBANK_SOURCE_TENANT_ID?.trim();
+    if (!tenantId) return null;
+    const rows = await this.db.$queryRaw<VerifiedCregisWalletSource[]>(Prisma.sql`
+      SELECT w.address, w.ownership_verified_at
+      FROM cregis_wallets w
+      WHERE w.tenant_id = ${tenantId}
+        AND w.customer_id = ${customerId}
+        AND w.chain_id = ${CREGIS_TRON_CHAIN_ID}
+        AND w.token_id = ${CREGIS_USDT_TRC20_TOKEN_ID}
+        AND w.status = 'active'
+        AND w.custody_provider = 'cregis'
+        AND w.ownership_verified_at IS NOT NULL
+        AND w.address IS NOT NULL
+        AND w.address <> ''
+      ORDER BY w.created_at ASC
+    `);
+    if (rows.length > 1) {
+      throw new ConflictException('core_crypto_wallet_source_conflict');
+    }
+    const source = rows[0];
+    if (!source) return null;
+    if (!isValidTronAddress(source.address)) {
+      throw new ConflictException('core_crypto_wallet_source_address_invalid');
+    }
+    return source;
   }
 
   private reference(prefix: string) {

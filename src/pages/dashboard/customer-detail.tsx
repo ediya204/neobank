@@ -648,6 +648,14 @@ export default function CustomerDetailPage() {
           idempotency_key: `auto-kyc-${id}`,
         }),
       });
+      await coreApi<Customer>(`/customers/${id}`, { userId });
+      const syncedWallets = await coreApi<CryptoWallet[]>(
+        `/crypto-wallets?customerId=${encodeURIComponent(id)}`,
+        { userId }
+      );
+      if (!syncedWallets.some((wallet) => wallet.depositEnabled && wallet.walletAddress)) {
+        throw new Error('Cregis 归属验证已完成，但 Core 地址同步尚未完成，请稍后重试。');
+      }
       await load();
       setSuccess('Cregis 钱包归属验证已完成，链上地址已同步到 Core。');
     } catch (caught) {
