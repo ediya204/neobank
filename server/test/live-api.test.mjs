@@ -144,6 +144,16 @@ test('tenant-scoped endpoints reject missing users and cross-organization querie
   }
 });
 
+test('USDT reconciliation reports incomplete coverage instead of failing when custody tables are absent', async () => {
+  const { response, body } = await request(
+    `/ledger/reconciliation/usdt?organizationId=${organizationId}`
+  );
+  assert.equal(response.status, 200);
+  assert.equal(body.checksComplete, false);
+  assert.deepEqual(body.unavailableChecks, ['cregis_custody_accounting']);
+  assert.ok(Array.isArray(body.issues));
+});
+
 test('withdrawal fee rules are tenant-scoped and expose versioned channel dimensions', async () => {
   const fees = await request(`/withdrawal-fees?organizationId=${organizationId}`);
   assert.equal(fees.response.status, 200);

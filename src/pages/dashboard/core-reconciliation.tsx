@@ -100,6 +100,8 @@ type UsdtReconciliation = {
   checkedAt: string;
   issueCount: number;
   truncated: boolean;
+  checksComplete?: boolean;
+  unavailableChecks?: string[];
   issues: Array<{
     id: string;
     direction: 'deposit' | 'withdrawal' | 'core';
@@ -107,8 +109,33 @@ type UsdtReconciliation = {
     accounting_status: string;
     core_operation_id: string | null;
     reason: string;
+    resolution_code?: ResolutionCode;
+    resolution_priority?: ResolutionPriority;
+    financial_effect?: FinancialEffect;
+    manual_reconciliation_eligible?: boolean;
   }>;
 };
+
+type ResolutionCode =
+  | 'deposit_manual_reconciliation'
+  | 'withdrawal_release_reconciliation'
+  | 'await_custody_finality'
+  | 'withdrawal_terminal_evidence_review'
+  | 'withdrawal_settlement_review'
+  | 'withdrawal_pre_execution_block'
+  | 'callback_conflict_review'
+  | 'manual_reconciliation_in_progress'
+  | 'accounting_exception_review'
+  | 'worker_queue_review'
+  | 'core_integrity_review'
+  | 'state_mismatch_review';
+
+type ResolutionPriority = 'critical' | 'high' | 'monitor';
+type FinancialEffect =
+  | 'credit_after_approval'
+  | 'release_after_approval'
+  | 'none_until_verified'
+  | 'separately_approved_correction';
 
 const ISSUE_DIRECTION_LABELS: Record<UsdtReconciliation['issues'][number]['direction'], string> = {
   deposit: 'Cregis 入账',
@@ -127,6 +154,52 @@ const ISSUE_REASON_LABELS: Record<string, string> = {
   core_crypto_account_missing: '数字钱包缺少对应的 Core 资金账户',
   core_crypto_account_duplicated: '数字钱包存在重复的 Core 资金账户',
   core_crypto_materialized_balance_mismatch: '数字钱包与 Core 资金账户余额不一致',
+};
+
+const RESOLUTION_LABELS: Record<ResolutionCode, string> = {
+  deposit_manual_reconciliation:
+    '先执行单笔只读预览。完成 PostgreSQL 全量备份、校验和、隔离恢复及审批后，分两次执行 hold / release，由财务 Worker 入账。',
+  withdrawal_release_reconciliation:
+    '最终拒绝/失败证据已存在。先预览核验 Core 匹配，再完成备份、恢复及审批，分两次执行 hold / release。',
+  await_custody_finality:
+    '保持阻断，不释放、不补扣、不重提。等待签名最终回调，并核对 Cregis 与链上结果。',
+  withdrawal_terminal_evidence_review:
+    '业务状态看似终止，但最终回调证据缺失或不明确；先补齐托管证据，当前禁止释放资金。',
+  withdrawal_settlement_review:
+    '托管可能已完成，禁止走释放流程。核对交易哈希、链上结果及既有 Core 记录后，另行审批补偿账务。',
+  withdrawal_pre_execution_block:
+    '尚未形成安全的 Core 预留交接；阻止继续执行或提交 Cregis，先核对客户请求与 Core 状态。',
+  callback_conflict_review:
+    '检测到互相冲突的最终回调证据；冻结自动处置，升级人工核证 Cregis 原始记录和链上结果。',
+  manual_reconciliation_in_progress:
+    '项目已处于 hold；复核客户、钱包、金额、地址、交易证据及 Core 唯一性后，才能单独批准 release。',
+  accounting_exception_review:
+    '读取 last_error_code 并核验失败的不变量；修复原因后再走受控重试，禁止直接改状态或余额。',
+  worker_queue_review:
+    '检查财务 Worker、队列锁、重试次数与 last_error_code；确认不是正常处理中后再升级。',
+  core_integrity_review:
+    '停止相关资金操作，核对复式凭证、Operation、账户与钱包镜像；如需更正，只能另行批准补偿记账。',
+  state_mismatch_review:
+    '阻止后续状态推进，逐项核对托管、记账意图、Core 业务与回调证据后再决定恢复路径。',
+};
+
+const PRIORITY_LABELS: Record<ResolutionPriority, string> = {
+  critical: '紧急',
+  high: '高',
+  monitor: '观察',
+};
+
+const PRIORITY_COLORS: Record<ResolutionPriority, 'error' | 'warning' | 'info'> = {
+  critical: 'error',
+  high: 'warning',
+  monitor: 'info',
+};
+
+const FINANCIAL_EFFECT_LABELS: Record<FinancialEffect, string> = {
+  credit_after_approval: '审批后才可入账',
+  release_after_approval: '审批后才可释放/关闭',
+  none_until_verified: '核实前不动账',
+  separately_approved_correction: '仅限单独批准的补偿记账',
 };
 
 export default function CoreReconciliationPage() {
@@ -185,9 +258,11 @@ export default function CoreReconciliationPage() {
   );
   const visibleMovements = filteredMovements.slice(page * 25, page * 25 + 25);
   const ledgerChecksPass = snapshot.unbalancedJournalCount === 0;
+  const custodyChecksComplete = usdtReconciliation?.checksComplete !== false;
   const checksPass =
     ledgerChecksPass &&
     snapshot.completedWithoutJournal.length === 0 &&
+    custodyChecksComplete &&
     usdtReconciliation?.issueCount === 0;
   const consistencyIssueCount =
     snapshot.unbalancedJournalCount +
@@ -210,6 +285,9 @@ export default function CoreReconciliationPage() {
           )
           .join('；'),
         coreOperationId: '—',
+        resolutionCode: 'core_integrity_review' as ResolutionCode,
+        resolutionPriority: 'critical' as ResolutionPriority,
+        financialEffect: 'separately_approved_correction' as FinancialEffect,
       })),
       ...snapshot.completedWithoutJournal.map((operation) => ({
         key: `operation-${operation.id}`,
@@ -219,19 +297,49 @@ export default function CoreReconciliationPage() {
         accountingStatus: '缺少账本凭证',
         reason: '业务已完成，但未找到对应的复式账本凭证',
         coreOperationId: operation.id,
+        resolutionCode: 'core_integrity_review' as ResolutionCode,
+        resolutionPriority: 'critical' as ResolutionPriority,
+        financialEffect: 'separately_approved_correction' as FinancialEffect,
       })),
-      ...(usdtReconciliation?.issues || []).map((issue) => ({
-        key: `usdt-${issue.direction}-${issue.id}-${issue.reason}`,
-        category: ISSUE_DIRECTION_LABELS[issue.direction],
-        item: issue.id,
-        businessStatus: issue.custody_status,
-        accountingStatus: issue.accounting_status,
-        reason: ISSUE_REASON_LABELS[issue.reason] || issue.reason,
-        coreOperationId: issue.core_operation_id || '—',
-      })),
+      ...(usdtReconciliation?.issues || []).map((issue) => {
+        const resolutionCode = issue.resolution_code || 'state_mismatch_review';
+        return {
+          key: `usdt-${issue.direction}-${issue.id}-${issue.reason}`,
+          category: ISSUE_DIRECTION_LABELS[issue.direction],
+          item: issue.id,
+          businessStatus: issue.custody_status,
+          accountingStatus: issue.accounting_status,
+          reason: ISSUE_REASON_LABELS[issue.reason] || issue.reason,
+          coreOperationId: issue.core_operation_id || '—',
+          resolutionCode,
+          resolutionPriority: issue.resolution_priority || ('high' as ResolutionPriority),
+          financialEffect: issue.financial_effect || ('none_until_verified' as FinancialEffect),
+        };
+      }),
     ],
     [snapshot.completedWithoutJournal, snapshot.unbalancedJournals, usdtReconciliation]
   );
+
+  let reconciliationAlertSeverity: 'success' | 'error' | 'warning' = 'success';
+  let reconciliationAlertMessage = `账本及 Cregis 托管一致性检查通过：${snapshot.journalCount} 张凭证借贷平衡，已完成业务均有账本凭证。`;
+  let consistencyStatusColor: 'success' | 'error' | 'warning' = 'success';
+  let consistencyStatusLabel = '未发现异常';
+  if (!custodyChecksComplete) {
+    reconciliationAlertSeverity = 'warning';
+    reconciliationAlertMessage =
+      'Cregis 托管对账表尚不可用，本次检查不完整；当前结果不能视为一致性通过。';
+    consistencyStatusColor = 'warning';
+    consistencyStatusLabel = '检查不完整';
+  } else if (!checksPass) {
+    reconciliationAlertSeverity = 'error';
+    reconciliationAlertMessage = `发现 ${snapshot.unbalancedJournalCount} 张借贷不平衡凭证、${
+      snapshot.completedWithoutJournal.length
+    } 笔已完成但缺少凭证的业务、${
+      usdtReconciliation?.issueCount || 0
+    } 笔 Cregis 与 Core 状态不一致，请立即核对。`;
+    consistencyStatusColor = 'error';
+    consistencyStatusLabel = `${consistencyIssueCount} 项待核对`;
+  }
 
   useEffect(() => setPage(0), [date, status]);
 
@@ -293,15 +401,7 @@ export default function CoreReconciliationPage() {
             </Alert>
           )}
           {!loading && !error && (
-            <Alert severity={checksPass ? 'success' : 'error'}>
-              {checksPass
-                ? `账本及 Cregis 托管一致性检查通过：${snapshot.journalCount} 张凭证借贷平衡，已完成业务均有账本凭证。`
-                : `发现 ${snapshot.unbalancedJournalCount} 张借贷不平衡凭证、${
-                    snapshot.completedWithoutJournal.length
-                  } 笔已完成但缺少凭证的业务、${
-                    usdtReconciliation?.issueCount || 0
-                  } 笔 Cregis 与 Core 状态不一致，请立即核对。`}
-            </Alert>
+            <Alert severity={reconciliationAlertSeverity}>{reconciliationAlertMessage}</Alert>
           )}
 
           <Box
@@ -335,7 +435,9 @@ export default function CoreReconciliationPage() {
             <MetricCard
               title="一致性异常"
               value={`${consistencyIssueCount}`}
-              helper="账本、托管或 Core 状态不一致"
+              helper={
+                custodyChecksComplete ? '账本、托管或 Core 状态不一致' : 'Cregis 托管检查不完整'
+              }
               icon="solar:shield-warning-bold-duotone"
               tone={checksPass ? 'success' : 'error'}
               action={
@@ -361,13 +463,23 @@ export default function CoreReconciliationPage() {
                   分别核对复式账本、已完成业务凭证，以及 Cregis 托管与 Core 账务状态。
                 </Typography>
               </Box>
-              <Label color={consistencyIssueCount ? 'error' : 'success'}>
-                {consistencyIssueCount ? `${consistencyIssueCount} 项待核对` : '未发现异常'}
-              </Label>
+              <Label color={consistencyStatusColor}>{consistencyStatusLabel}</Label>
             </Stack>
             {usdtReconciliation?.truncated && (
               <Alert severity="warning" sx={{ mx: 3, mb: 2 }}>
                 异常结果已达到接口上限，当前列表可能不完整，请先处理已显示项目后刷新。
+              </Alert>
+            )}
+            {!!consistencyIssueCount && (
+              <Alert severity="info" sx={{ mx: 3, mb: 2 }}>
+                本页只做只读分诊，不直接改状态或余额。人工对账仍须逐笔完成 PostgreSQL
+                全量备份、SHA-256 校验、隔离恢复验证、具名审批及 hold / release 双阶段操作。
+              </Alert>
+            )}
+            {!custodyChecksComplete && (
+              <Alert severity="warning" sx={{ mx: 3, mb: 2 }}>
+                PostgreSQL 中缺少完整的 Cregis
+                托管与记账表，本页无法核对托管侧异常。请先核实施工/部署状态；不要将空列表解释为无异常。
               </Alert>
             )}
             <TableContainer>
@@ -380,6 +492,7 @@ export default function CoreReconciliationPage() {
                     <TableCell>记账状态</TableCell>
                     <TableCell>异常原因</TableCell>
                     <TableCell>Core 业务 ID</TableCell>
+                    <TableCell>处置建议</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -397,10 +510,25 @@ export default function CoreReconciliationPage() {
                       <TableCell sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
                         {issue.coreOperationId}
                       </TableCell>
+                      <TableCell sx={{ minWidth: 360 }}>
+                        <Stack spacing={0.75} alignItems="flex-start">
+                          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                            <Label color={PRIORITY_COLORS[issue.resolutionPriority]}>
+                              {PRIORITY_LABELS[issue.resolutionPriority]}
+                            </Label>
+                            <Label color="default">
+                              {FINANCIAL_EFFECT_LABELS[issue.financialEffect]}
+                            </Label>
+                          </Stack>
+                          <Typography variant="body2">
+                            {RESOLUTION_LABELS[issue.resolutionCode]}
+                          </Typography>
+                        </Stack>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {!consistencyIssues.length && (
-                    <EmptyRow colSpan={6} text="当前未发现一致性异常" />
+                    <EmptyRow colSpan={7} text="当前未发现一致性异常" />
                   )}
                 </TableBody>
               </Table>

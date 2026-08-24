@@ -36,15 +36,16 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import AssetIcon from 'src/components/asset-icon';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import BeneficiaryDialog from 'src/features/finance/beneficiary-dialog';
+import { completedAccountCustomers } from 'src/features/finance/account-customer-list';
 import { digitalWalletPresentation } from 'src/features/finance/digital-wallet-status';
 import { ACTION_ICONS, UI_ICONS } from 'src/theme/iconography';
 import {
   accountBalanceLabel,
-  accountProductName,
   Beneficiary,
   coreApi,
   Currency,
@@ -318,8 +319,10 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
     setLoading(true);
     setError('');
     try {
+      const customerParams = new URLSearchParams({ organizationId: demoOrganizationId });
+      if (section === 'accounts') customerParams.set('status', 'ACTIVE');
       const [customerRows, channelRows, feeRows] = await Promise.all([
-        coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`, { userId }),
+        coreApi<Customer[]>(`/customers?${customerParams.toString()}`, { userId }),
         coreApi<FundingChannel[]>(`/funding-channels?organizationId=${demoOrganizationId}`, {
           userId,
         }),
@@ -327,10 +330,14 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
           userId,
         }),
       ]);
-      setCustomers(customerRows);
+      const visibleCustomerRows =
+        section === 'accounts' ? completedAccountCustomers(customerRows) : customerRows;
+      setCustomers(visibleCustomerRows);
       setChannels(channelRows);
       setWithdrawalFees(feeRows);
-      if (!selectedCustomerId && customerRows[0]) setSelectedCustomerId(customerRows[0].id);
+      if (!selectedCustomerId && visibleCustomerRows[0]) {
+        setSelectedCustomerId(visibleCustomerRows[0].id);
+      }
       const params = new URLSearchParams({ organizationId: demoOrganizationId });
       if (copy.type) params.set('type', copy.type);
       if (status !== 'all') params.set('status', status);
@@ -897,7 +904,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       <AccountWorkspace
         customers={customers}
         selectedCustomer={selectedCustomer}
-        selectedCustomerId={selectedCustomer?.id || ''}
+        requestedCustomerId={requestedCustomerId}
         onCustomerChange={setSelectedCustomerId}
         accounts={displayAccounts}
         cryptoWallets={cryptoWallets}
@@ -2341,7 +2348,7 @@ function channelErrorMessage(value: unknown) {
 function AccountWorkspace({
   customers,
   selectedCustomer,
-  selectedCustomerId,
+  requestedCustomerId,
   onCustomerChange,
   accounts,
   cryptoWallets,
@@ -2356,7 +2363,7 @@ function AccountWorkspace({
 }: {
   customers: Customer[];
   selectedCustomer?: Customer;
-  selectedCustomerId: string;
+  requestedCustomerId: string;
   onCustomerChange: (id: string) => void;
   accounts: MoneyAccount[];
   cryptoWallets: CryptoWallet[];
@@ -2369,293 +2376,320 @@ function AccountWorkspace({
   onRefresh: () => void;
   onRefreshMarket: () => Promise<void>;
 }) {
-  const [selectedFiatKind, setSelectedFiatKind] = useState<
-    'VIRTUAL_ACCOUNT' | 'SYSTEM_WALLET' | null
-  >(null);
-  const fiatAccountGroups = (['VIRTUAL_ACCOUNT', 'SYSTEM_WALLET'] as const)
-    .map((kind) => ({ kind, balances: accounts.filter((account) => account.kind === kind) }))
-    .filter((group) => group.balances.length > 0);
-  const digitalWallets = accounts.filter((account) => account.kind === 'CRYPTO_WALLET');
-  const selectedFiatBalances =
-    fiatAccountGroups.find((group) => group.kind === selectedFiatKind)?.balances || [];
+  const [query, setQuery] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const visibleCustomers = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return customers;
+    return customers.filter((customer) =>
+      [customer.displayName, customer.legalName, customer.email, customer.id].some((value) =>
+        String(value || '')
+          .toLowerCase()
+          .includes(keyword)
+      )
+    );
+  }, [customers, query]);
+
+  useEffect(() => {
+    if (!requestedCustomerId) return;
+    if (!customers.some((customer) => customer.id === requestedCustomerId)) return;
+    onCustomerChange(requestedCustomerId);
+    setDetailsOpen(true);
+  }, [customers, onCustomerChange, requestedCustomerId]);
+
+  const openCustomer = (customerId: string) => {
+    onCustomerChange(customerId);
+    setDetailsOpen(true);
+  };
 
   return (
     <Stack spacing={2}>
-      <Card sx={{ p: 2.5 }}>
-        <FormControl fullWidth>
-          <InputLabel>客户</InputLabel>
-          <Select
-            value={selectedCustomerId}
-            label="客户"
-            onChange={(event) => onCustomerChange(event.target.value)}
-          >
-            {customers.map((customer) => (
-              <MenuItem key={customer.id} value={customer.id}>
-                {customer.displayName}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Card>
-      {loading && (
-        <Box
-          aria-label="正在读取客户账户与钱包"
-          aria-live="polite"
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
-            gap: 2,
-          }}
+      <Card variant="outlined" sx={{ boxShadow: 'none', overflow: 'hidden' }}>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          alignItems={{ md: 'center' }}
+          justifyContent="space-between"
+          gap={2}
+          sx={{ p: 2.25, borderBottom: '1px solid', borderColor: 'divider' }}
         >
-          {[0, 1, 2].map((item) => (
-            <Skeleton key={item} variant="rounded" height={208} />
-          ))}
-        </Box>
-      )}
-      {!loading && accounts.length === 0 && (
-        <AccountEmptyState customer={selectedCustomer} onRefresh={onRefresh} />
-      )}
-      {!loading && accounts.length > 0 && (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
-            gap: 2,
-          }}
-        >
-          {fiatAccountGroups.map((group) => (
-            <FiatAccountProductCard
-              key={group.kind}
-              balances={group.balances}
-              marketQuotes={marketQuotes}
-              marketLoading={marketLoading}
-              marketError={marketError}
-              onOpen={() => setSelectedFiatKind(group.kind)}
+          <Box>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <Typography variant="subtitle1">已开户客户</Typography>
+              <Label color="success">{customers.length}</Label>
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>
+              仅列出客户状态为 ACTIVE 且 KYC 已通过的账户。
+            </Typography>
+          </Box>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
+            <TextField
+              size="small"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索客户名称、邮箱或编号"
+              inputProps={{ 'aria-label': '搜索已开户客户' }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Iconify icon="solar:magnifier-linear" width={18} />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ minWidth: { sm: 300 } }}
             />
-          ))}
-          {digitalWallets.map((account) => (
-            <DigitalWalletCard
-              key={account.id}
-              account={account}
-              wallet={cryptoWallets.find(
-                (item) =>
-                  item.customerId === account.customerId &&
-                  item.asset === account.currency &&
-                  item.network === (account.network || 'TRON')
+            <Button
+              color="inherit"
+              variant="outlined"
+              startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
+              disabled={loading}
+              onClick={onRefresh}
+            >
+              刷新
+            </Button>
+          </Stack>
+        </Stack>
+
+        <TableContainer>
+          <Table sx={{ minWidth: 1120, tableLayout: 'fixed' }} aria-label="已开户客户账户列表">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ width: 230 }}>客户</TableCell>
+                <TableCell sx={{ width: 245 }}>{SYSTEM_WALLET_PRODUCT_NAME}</TableCell>
+                <TableCell sx={{ width: 205 }}>VA 账户</TableCell>
+                <TableCell sx={{ width: 225 }}>数字钱包</TableCell>
+                <TableCell sx={{ width: 120 }}>开户状态</TableCell>
+                <TableCell align="right" sx={{ width: 110 }}>
+                  操作
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading &&
+                [0, 1, 2].map((item) => (
+                  <TableRow key={item} aria-label="正在读取客户账户与钱包">
+                    <TableCell colSpan={6}>
+                      <Skeleton height={52} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              {!loading &&
+                visibleCustomers.map((customer) => {
+                  const systemWallets = customer.accounts.filter(
+                    (account) => account.kind === 'SYSTEM_WALLET'
+                  );
+                  const virtualAccounts = customer.accounts.filter(
+                    (account) => account.kind === 'VIRTUAL_ACCOUNT'
+                  );
+                  const digitalWallets = customer.accounts.filter(
+                    (account) => account.kind === 'CRYPTO_WALLET'
+                  );
+                  return (
+                    <TableRow key={customer.id} hover>
+                      <TableCell>
+                        <Typography variant="subtitle2" noWrap title={customer.displayName}>
+                          {customer.displayName}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {customer.type === 'BUSINESS' ? '企业' : '个人'} · {customer.countryCode}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.disabled"
+                          noWrap
+                          title={customer.email}
+                          sx={{ display: 'block' }}
+                        >
+                          {customer.email}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <CompactAccountBalances accounts={systemWallets} emptyText="账户同步中" />
+                      </TableCell>
+                      <TableCell>
+                        <CompactAccountBalances
+                          accounts={virtualAccounts}
+                          emptyText="尚未开通 VA"
+                          showAccountCount
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <CompactAccountBalances accounts={digitalWallets} emptyText="钱包同步中" />
+                      </TableCell>
+                      <TableCell>
+                        <Label color="success">已开户</Label>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button
+                          size="small"
+                          endIcon={<Iconify icon="solar:alt-arrow-right-linear" width={16} />}
+                          onClick={() => openCustomer(customer.id)}
+                        >
+                          查看
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              {!loading && visibleCustomers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <Stack
+                      alignItems="center"
+                      spacing={1}
+                      role="status"
+                      sx={{ py: 7, textAlign: 'center' }}
+                    >
+                      <Iconify icon="solar:users-group-rounded-linear" width={34} />
+                      <Typography variant="subtitle1">
+                        {query ? '没有符合搜索条件的客户' : '暂无已开户客户'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {query
+                          ? '请尝试客户名称、邮箱或客户编号。'
+                          : '客户完成 KYC 并激活账户后会显示在这里。'}
+                      </Typography>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
               )}
-              loading={cryptoWalletsLoading}
-              error={Boolean(cryptoWalletsError)}
-            />
-          ))}
-        </Box>
-      )}
-      <FiatAccountDetailDrawer
-        balances={selectedFiatBalances}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
+
+      <AccountCustomerDrawer
+        open={detailsOpen}
+        customer={selectedCustomer}
+        accounts={accounts}
+        cryptoWallets={cryptoWallets}
+        cryptoWalletsLoading={cryptoWalletsLoading}
+        cryptoWalletsError={cryptoWalletsError}
         marketQuotes={marketQuotes}
         marketLoading={marketLoading}
         marketError={marketError}
+        onRefresh={onRefresh}
         onRefreshMarket={onRefreshMarket}
-        onClose={() => setSelectedFiatKind(null)}
+        onClose={() => setDetailsOpen(false)}
       />
     </Stack>
   );
 }
 
-function AccountEmptyState({
-  customer,
-  onRefresh,
+function CompactAccountBalances({
+  accounts,
+  emptyText,
+  showAccountCount = false,
 }: {
-  customer?: Customer;
-  onRefresh: () => void;
+  accounts: MoneyAccount[];
+  emptyText: string;
+  showAccountCount?: boolean;
 }) {
-  let title = '暂无客户账户';
-  let description = '当前还没有客户。客户完成 KYC 审核后，相关账户与钱包会显示在这里。';
-
-  if (customer?.kycStatus === 'REJECTED') {
-    title = 'KYC 已拒绝，未开通账户';
-    description =
-      '该客户未通过合规审核，因此系统没有为其创建 VA 账户、法币账户或数字钱包。如需复核，请先在客户管理中按审核流程处理 KYC。';
-  } else if (customer?.kycStatus === 'PENDING') {
-    title = 'KYC 审核尚未完成';
-    description = '客户通过 KYC 审核前不会开通账户或钱包。请在客户管理中查看审核进度。';
-  } else if (customer?.kycStatus === 'APPROVED') {
-    title = `${SYSTEM_WALLET_PRODUCT_NAME}正在自动同步`;
-    description = `开户成功后系统会自动分配 USD/HKD ${SYSTEM_WALLET_PRODUCT_NAME}，不需要人工开户。请刷新状态；持续未显示时按同步异常处理。`;
+  if (!accounts.length) {
+    return (
+      <Typography variant="body2" color="text.disabled">
+        {emptyText}
+      </Typography>
+    );
   }
-
+  const grouped = accounts.reduce((result, account) => {
+    result.set(account.currency, [...(result.get(account.currency) || []), account]);
+    return result;
+  }, new Map<Currency, MoneyAccount[]>());
   return (
-    <Card variant="outlined">
-      <Stack
-        alignItems="center"
-        spacing={2}
-        role="status"
-        aria-live="polite"
-        sx={{ px: 3, py: { xs: 6, md: 9 }, textAlign: 'center' }}
-      >
-        <Box
-          sx={{
-            width: 56,
-            height: 56,
-            borderRadius: '50%',
-            bgcolor: 'background.neutral',
-            color: 'text.secondary',
-            display: 'grid',
-            placeItems: 'center',
-          }}
-        >
-          <Iconify icon="solar:wallet-2-bold-duotone" width={30} />
-        </Box>
-        <Box sx={{ maxWidth: 620 }}>
-          <Typography variant="h6">{title}</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-            {description}
-          </Typography>
-        </Box>
-        {customer && (
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-            flexWrap="wrap"
-            justifyContent="center"
-          >
-            <Chip size="small" variant="outlined" label={`KYC · ${customer.kycStatus}`} />
-            <Chip size="small" variant="outlined" label={`客户状态 · ${customer.status}`} />
-          </Stack>
-        )}
-        <Button
-          variant="outlined"
-          startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
-          onClick={onRefresh}
-        >
-          刷新账户状态
-        </Button>
-      </Stack>
-    </Card>
-  );
-}
-
-function FiatAccountProductCard({
-  balances,
-  marketQuotes,
-  marketLoading,
-  marketError,
-  onOpen,
-}: {
-  balances: MoneyAccount[];
-  marketQuotes: MarketQuote[];
-  marketLoading: boolean;
-  marketError: string;
-  onOpen: () => void;
-}) {
-  const product = balances[0];
-  const balanceCurrencies = balances.map((account) => account.currency).join(' / ');
-  const allActive = balances.every((account) => account.status === 'ACTIVE');
-  const valuation = fiatUsdValuation(balances, marketQuotes);
-  return (
-    <Card sx={{ height: '100%' }}>
-      <Box
-        component="button"
-        type="button"
-        onClick={onOpen}
-        aria-label={`查看${accountProductName(product)}折算详情`}
-        sx={{
-          width: 1,
-          height: 1,
-          p: 0,
-          border: 0,
-          bgcolor: 'transparent',
-          color: 'inherit',
-          textAlign: 'left',
-          cursor: 'pointer',
-          transition: (theme) =>
-            theme.transitions.create(['background-color', 'transform'], {
-              duration: theme.transitions.duration.shortest,
-            }),
-          '&:hover': { bgcolor: 'action.hover' },
-          '&:active': { transform: 'translateY(1px)' },
-          '&:focus-visible': {
-            outline: '2px solid',
-            outlineColor: 'primary.main',
-            outlineOffset: -2,
-          },
-        }}
-      >
-        <CardContent sx={{ height: 1 }}>
-          <Stack direction="row" justifyContent="space-between" gap={2}>
-            <Box>
-              <Typography variant="subtitle1">{accountProductName(product)}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {balanceCurrencies} · USD 折算余额
+    <Stack spacing={0.75}>
+      {Array.from(grouped.entries()).map(([currency, rows]) => {
+        const available = rows.reduce(
+          (total, account) => total + Number(account.availableBalance),
+          0
+        );
+        const frozen = rows.reduce((total, account) => total + Number(account.frozenBalance), 0);
+        return (
+          <Stack key={currency} direction="row" alignItems="center" spacing={1}>
+            <AssetIcon
+              asset={currency}
+              network={currency === 'USDT' ? 'TRON' : undefined}
+              size={19}
+            />
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" fontWeight={700} noWrap>
+                {formatMoney(String(available), currency)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {showAccountCount && `${rows.length} 个账户 · `}冻结{' '}
+                {formatMoney(String(frozen), currency)}
               </Typography>
             </Box>
-            <Label color={allActive ? 'success' : 'default'}>
-              {allActive ? 'ACTIVE' : '部分可用'}
-            </Label>
           </Stack>
-          <Box sx={{ mt: 2.5, mb: 2 }}>
-            {marketLoading ? (
-              <Skeleton width="72%" height={46} />
-            ) : (
-              <Typography variant="h4">
-                {valuation.complete ? formatUsdValue(valuation.availableUsd) : '暂不可用'}
-              </Typography>
-            )}
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {valuation.complete
-                ? `冻结折算：${formatUsdValue(valuation.frozenUsd)}`
-                : marketError || `缺少 ${valuation.missingCurrencies.join(' / ')} 对 USD 参考行情`}
-            </Typography>
-          </Box>
-          <Divider />
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            sx={{ pt: 1.5 }}
-          >
-            <Typography variant="body2" color="text.secondary">
-              查看币种、汇率与折算明细
-            </Typography>
-            <Iconify icon="solar:alt-arrow-right-linear" width={18} />
-          </Stack>
-        </CardContent>
-      </Box>
-    </Card>
+        );
+      })}
+    </Stack>
   );
 }
 
-function FiatAccountDetailDrawer({
-  balances,
+function AccountCustomerDrawer({
+  open,
+  customer,
+  accounts,
+  cryptoWallets,
+  cryptoWalletsLoading,
+  cryptoWalletsError,
   marketQuotes,
   marketLoading,
   marketError,
+  onRefresh,
   onRefreshMarket,
   onClose,
 }: {
-  balances: MoneyAccount[];
+  open: boolean;
+  customer?: Customer;
+  accounts: MoneyAccount[];
+  cryptoWallets: CryptoWallet[];
+  cryptoWalletsLoading: boolean;
+  cryptoWalletsError: string;
   marketQuotes: MarketQuote[];
   marketLoading: boolean;
   marketError: string;
+  onRefresh: () => void;
   onRefreshMarket: () => Promise<void>;
   onClose: () => void;
 }) {
-  if (!balances.length) return null;
-  const product = balances[0];
-  const valuation = fiatUsdValuation(balances, marketQuotes);
+  const fiatAccounts = accounts.filter((account) => account.kind !== 'CRYPTO_WALLET');
+  const valuation = fiatUsdValuation(fiatAccounts, marketQuotes);
+  const groups = [
+    {
+      kind: 'SYSTEM_WALLET' as const,
+      title: SYSTEM_WALLET_PRODUCT_NAME,
+      description: 'USD / HKD 系统法币账户',
+    },
+    {
+      kind: 'VIRTUAL_ACCOUNT' as const,
+      title: 'VA 账户',
+      description: '银行分配的独立虚拟账户',
+    },
+    {
+      kind: 'CRYPTO_WALLET' as const,
+      title: '数字钱包',
+      description: 'USDT · TRON (TRC20)',
+    },
+  ];
   return (
     <Drawer
       anchor="right"
-      open
+      open={open}
       onClose={onClose}
-      PaperProps={{ sx: { width: { xs: 1, sm: 540 }, p: { xs: 2.5, sm: 3 } } }}
+      PaperProps={{ sx: { width: { xs: 1, sm: 680 }, p: { xs: 2.5, sm: 3 } } }}
     >
-      <Stack spacing={3}>
+      <Stack spacing={2.5}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
           <Box>
-            <Typography variant="h5">{accountProductName(product)}</Typography>
+            <Typography variant="overline" color="primary.main" fontWeight={800}>
+              CUSTOMER ACCOUNT
+            </Typography>
+            <Typography variant="h5">{customer?.displayName || '客户账户'}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              原币余额与 FastForex USD 参考折算
+              {customer
+                ? `${customer.type === 'BUSINESS' ? '企业' : '个人'} · ${customer.email}`
+                : '账户明细'}
             </Typography>
           </Box>
           <Button color="inherit" onClick={onClose} sx={{ minWidth: 44 }} aria-label="关闭账户详情">
@@ -2663,18 +2697,11 @@ function FiatAccountDetailDrawer({
           </Button>
         </Stack>
 
-        <Box
-          sx={{
-            py: 2.5,
-            borderTop: '1px solid',
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-          }}
-        >
+        <Box sx={{ py: 2.25, borderY: '1px solid', borderColor: 'divider' }}>
           <Typography variant="overline" color="text.secondary">
-            可用余额 · USD 折算
+            法币可用余额 · USD 参考折算
           </Typography>
-          {marketLoading ? (
+          {marketLoading || !customer ? (
             <Skeleton width="72%" height={58} />
           ) : (
             <Typography variant="h3" sx={{ mt: 0.5 }}>
@@ -2688,7 +2715,7 @@ function FiatAccountDetailDrawer({
           </Typography>
         </Box>
 
-        {!valuation.complete && marketError && (
+        {!marketLoading && fiatAccounts.length > 0 && !valuation.complete && (
           <Alert
             severity="warning"
             action={
@@ -2702,62 +2729,128 @@ function FiatAccountDetailDrawer({
               </Button>
             }
           >
-            {marketError}
+            {marketError || `缺少 ${valuation.missingCurrencies.join(' / ')} 对 USD 参考行情`}
           </Alert>
         )}
 
-        <Stack divider={<Divider flexItem />}>
-          {valuation.lines.map((line) => (
-            <Box key={line.currency} sx={{ py: 2 }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
-                <Box>
-                  <Typography variant="subtitle1">{line.currency}</Typography>
+        <Stack spacing={2.25}>
+          {groups.map((group) => {
+            const groupAccounts = accounts.filter((account) => account.kind === group.kind);
+            return (
+              <Box key={group.kind}>
+                <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
+                  <Box>
+                    <Typography variant="subtitle1">{group.title}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {group.description}
+                    </Typography>
+                  </Box>
                   <Typography variant="caption" color="text.secondary">
-                    {line.rate === null
-                      ? '参考汇率暂不可用'
-                      : `1 ${line.currency} = ${formatRate(line.rate)} USD`}
+                    {groupAccounts.length} 个账户
                   </Typography>
+                </Stack>
+                <Box sx={{ mt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                  {groupAccounts.map((account) => {
+                    const wallet = cryptoWallets.find(
+                      (item) =>
+                        item.customerId === account.customerId &&
+                        item.asset === account.currency &&
+                        item.network === (account.network || 'TRON')
+                    );
+                    const walletPresentation =
+                      account.kind === 'CRYPTO_WALLET'
+                        ? digitalWalletPresentation(account, wallet, {
+                            loading: cryptoWalletsLoading,
+                            error: Boolean(cryptoWalletsError),
+                          })
+                        : null;
+                    return (
+                      <Stack
+                        key={account.id}
+                        direction="row"
+                        alignItems="center"
+                        justifyContent="space-between"
+                        gap={2}
+                        sx={{ py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}
+                      >
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          spacing={1.25}
+                          sx={{ minWidth: 0 }}
+                        >
+                          <AssetIcon
+                            asset={account.currency}
+                            network={account.network || undefined}
+                            size={28}
+                          />
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="body2" fontWeight={700} noWrap>
+                              {account.currency}
+                              {account.network ? ` · ${account.network}` : ''}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              noWrap
+                              title={account.accountNumber || account.name}
+                              sx={{ display: 'block', maxWidth: 300 }}
+                            >
+                              {account.accountNumber || account.name}
+                            </Typography>
+                            {walletPresentation && (
+                              <Typography variant="caption" color="text.disabled">
+                                {walletPresentation.description}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Stack>
+                        <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+                          <Typography variant="body2" fontWeight={750}>
+                            {formatMoney(account.availableBalance, account.currency)}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            冻结 {formatMoney(account.frozenBalance, account.currency)}
+                          </Typography>
+                          <Box sx={{ mt: 0.5 }}>
+                            <Label
+                              color={
+                                walletPresentation?.color ||
+                                (account.status === 'ACTIVE' ? 'success' : 'default')
+                              }
+                            >
+                              {walletPresentation?.label ||
+                                (account.status === 'ACTIVE' ? '可用' : account.status)}
+                            </Label>
+                          </Box>
+                        </Box>
+                      </Stack>
+                    );
+                  })}
+                  {!groupAccounts.length && (
+                    <Typography variant="body2" color="text.disabled" sx={{ py: 1.75 }}>
+                      {group.kind === 'VIRTUAL_ACCOUNT' ? '尚未开通 VA 账户' : '账户同步中'}
+                    </Typography>
+                  )}
                 </Box>
-                <Box sx={{ textAlign: 'right' }}>
-                  <Typography variant="h6">
-                    {formatMoney(String(line.available), line.currency)}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {line.availableUsd === null
-                      ? 'USD 折算暂不可用'
-                      : `约 ${formatUsdValue(line.availableUsd)}`}
-                  </Typography>
-                </Box>
-              </Stack>
-              <Stack
-                direction={{ xs: 'column', sm: 'row' }}
-                justifyContent="space-between"
-                gap={0.5}
-                sx={{ mt: 1 }}
-              >
-                <Typography variant="caption" color="text.secondary">
-                  冻结：{formatMoney(String(line.frozen), line.currency)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {fiatBalanceDescription(line.accounts[0])}
-                </Typography>
-              </Stack>
-              {line.updatedAt && (
-                <Typography
-                  variant="caption"
-                  color="text.disabled"
-                  sx={{ display: 'block', mt: 0.75 }}
-                >
-                  行情时间：{new Date(line.updatedAt).toLocaleString('zh-CN')}
-                </Typography>
-              )}
-            </Box>
-          ))}
+              </Box>
+            );
+          })}
         </Stack>
 
-        <Alert severity="info">
-          USD 折算使用 FastForex 中间参考价，仅用于账户概览；不会改变账本、结算价或历史成交快照。
-        </Alert>
+        {cryptoWalletsError && <Alert severity="warning">{cryptoWalletsError}</Alert>}
+        <Stack direction="row" justifyContent="flex-end" spacing={1}>
+          <Button
+            color="inherit"
+            startIcon={<Iconify icon={ACTION_ICONS.refresh} />}
+            onClick={onRefresh}
+          >
+            刷新账户
+          </Button>
+          <Button variant="outlined" onClick={onClose}>
+            关闭
+          </Button>
+        </Stack>
       </Stack>
     </Drawer>
   );
@@ -2815,50 +2908,6 @@ function fiatUsdValuation(balances: MoneyAccount[], marketQuotes: MarketQuote[])
 
 function formatUsdValue(value: number) {
   return formatMoney(String(value), 'USD');
-}
-
-function formatRate(value: number) {
-  return new Intl.NumberFormat('zh-CN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 6,
-  }).format(value);
-}
-
-function DigitalWalletCard({
-  account,
-  wallet,
-  loading,
-  error,
-}: {
-  account: MoneyAccount;
-  wallet?: CryptoWallet;
-  loading: boolean;
-  error: boolean;
-}) {
-  const presentation = digitalWalletPresentation(account, wallet, { loading, error });
-  return (
-    <Card>
-      <CardContent>
-        <Stack direction="row" justifyContent="space-between">
-          <Box>
-            <Typography variant="subtitle1">{accountProductName(account)}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {account.currency} 余额{account.accountNumber ? ` · ${account.accountNumber}` : ''}
-            </Typography>
-          </Box>
-          <Label color={presentation.color}>{presentation.label}</Label>
-        </Stack>
-        <Typography variant="h4" sx={{ mt: 2 }}>
-          {formatMoney(account.availableBalance, account.currency)}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          冻结：{formatMoney(account.frozenBalance, account.currency)}
-        </Typography>
-        <Divider sx={{ my: 2 }} />
-        <Typography variant="body2">{presentation.description}</Typography>
-      </CardContent>
-    </Card>
-  );
 }
 
 function operationActionText(status: Operation['status']) {
@@ -3568,12 +3617,6 @@ function StatusLabel({ status }: { status: Operation['status'] }) {
     CANCELLED: '已取消',
   };
   return <Label color={color}>{labels[status]}</Label>;
-}
-function fiatBalanceDescription(account: MoneyAccount) {
-  if (account.kind === 'VIRTUAL_ACCOUNT') {
-    return `${account.bankName || '待分配银行'} · ${account.accountNumber || '待分配账号'}`;
-  }
-  return '系统自动分配';
 }
 function operationTypeText(type: OperationType) {
   return (

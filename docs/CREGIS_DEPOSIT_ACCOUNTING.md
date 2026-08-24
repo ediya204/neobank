@@ -91,6 +91,12 @@ destination, amount, wallet ownership, and absence of any existing Core referenc
 Only then approve `release`. Releasing changes the row to `pending`; the worker,
 not the command, performs the financial transaction.
 
+The Admin reconciliation page is a read-only triage surface. A completed deposit
+with `accounting_status=missing` is marked as a critical manual-reconciliation
+candidate, but the page never creates the intent or changes money. Operators must
+still run the exact single-record preview and complete every backup, restore,
+approval, `hold`, evidence-review, and `release` gate above.
+
 ## Acceptance invariants
 
 For each posted deposit:

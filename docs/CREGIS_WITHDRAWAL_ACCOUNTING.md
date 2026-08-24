@@ -141,6 +141,25 @@ A signed Cregis rejection remains visible as an auditable provider rejection, bu
 Historical-state closure remains a separate, approved workflow and must not mutate
 balances directly.
 
+## Admin reconciliation triage
+
+The Admin reconciliation page classifies missing intents without mutating funds:
+
+- exactly one signed rejected or failed callback makes the item eligible for the
+  guarded single-record `preview` / `hold` / `release` flow;
+- `executing` or `submitted_to_cregis` without final evidence remains blocked while
+  the operator waits for and verifies Cregis and chain finality;
+- a terminal-looking custody status without final callback evidence remains blocked;
+- a completed callback or completed custody status must not use the release command;
+  it requires exact settlement evidence and a separately approved compensating
+  accounting review;
+- conflicting completed/rejected/failed callback evidence is critical and disables
+  manual reconciliation eligibility.
+
+The page is advisory and read-only. It does not replace the command's validation,
+the complete PostgreSQL backup, checksum, isolated restore proof, named approval,
+or post-release invariant checks.
+
 ## Acceptance invariants
 
 - one custody withdrawal maps to one accounting intent, Core Operation, and Core
