@@ -33,7 +33,6 @@ const navItems = [
   ['客户账户', '/portal/money/accounts', 'solar:wallet-money-bold-duotone'],
   ['资金服务', '/portal/money/transfers', 'solar:transfer-horizontal-bold-duotone'],
   ['交易明细', '/portal/transactions', 'solar:history-bold-duotone'],
-  ['收款人管理', '/portal/money/beneficiaries', 'solar:user-id-bold-duotone'],
 ] as const;
 
 const customerNavItems = [

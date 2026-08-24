@@ -7,6 +7,7 @@ import { hasAdminPermission, hasPortalPermission } from 'src/auth/permissions';
 import { requiredAdminPermissionForPath } from 'src/auth/admin-access';
 import { AuthSessionUser } from 'src/auth/types';
 import Iconify from 'src/components/iconify';
+import AssetIcon from 'src/components/asset-icon';
 import { ACTION_ICONS } from 'src/theme/iconography';
 
 export function useNavData() {
@@ -122,11 +123,6 @@ export function useNavData() {
                         path: '/portal/money/payouts',
                         icon: <Iconify icon="solar:upload-minimalistic-bold-duotone" />,
                       },
-                      {
-                        title: '收款人管理',
-                        path: '/portal/money/beneficiaries',
-                        icon: <Iconify icon="solar:user-id-bold-duotone" />,
-                      },
                     ]
                   : []),
                 ...(hasPortalPermission(user, 'customers.read') &&
@@ -218,6 +214,11 @@ export function useNavData() {
                   title: t('navigation.depositProcessing'),
                   path: paths.dashboard.fundOperations.deposits,
                   icon: <Iconify icon="solar:download-minimalistic-bold-duotone" />,
+                },
+                {
+                  title: t('navigation.usdtInbound'),
+                  path: paths.dashboard.fundOperations.usdtInbound,
+                  icon: <AssetIcon asset="USDT" network="TRON" size={24} />,
                 },
                 {
                   title: t('navigation.fiatPayouts'),

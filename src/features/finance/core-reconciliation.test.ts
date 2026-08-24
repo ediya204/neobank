@@ -89,6 +89,14 @@ describe('buildCoreReconciliationSnapshot', () => {
     });
 
     expect(snapshot.unbalancedJournalCount).toBe(1);
+    expect(snapshot.unbalancedJournals).toEqual([
+      {
+        id: 'journal_1',
+        reference: 'JR-1',
+        postedAt: '2026-08-20T02:00:00.000Z',
+        deltas: [{ currency: 'USD', debits: 125.5, credits: 120, delta: 5.5 }],
+      },
+    ]);
     expect(snapshot.ledgerChecks[0]).toMatchObject({ delta: 5.5, balanced: false });
     expect(snapshot.completedWithoutJournal.map((row) => row.id)).toEqual(['op_2']);
   });

@@ -2,7 +2,6 @@ import * as Yup from 'yup';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import QRCode from 'qrcode';
 import { yupResolver } from '@hookform/resolvers/yup';
 import LoadingButton from '@mui/lab/LoadingButton';
 import Alert from '@mui/material/Alert';
@@ -31,6 +30,7 @@ import { useRouter, useSearchParams } from 'src/routes/hooks';
 import Iconify from 'src/components/iconify';
 import FormProvider, { RHFCode, RHFTextField } from 'src/components/hook-form';
 import { useSnackbar } from 'src/components/snackbar';
+import TotpEnrollmentPanel from 'src/components/totp-enrollment-panel/totp-enrollment-panel';
 import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
 import { paths } from 'src/routes/paths';
 import { RouterLink } from 'src/routes/components';
@@ -112,8 +112,6 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
   const [setupToken, setSetupToken] = useState(invitationToken);
   const [totpSetupData, setTotpSetupData] = useState<TotpSetupData | null>(null);
-  const [totpQrCode, setTotpQrCode] = useState('');
-  const [totpQrCodeFailed, setTotpQrCodeFailed] = useState(false);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [authenticatedUser, setAuthenticatedUser] = useState<AuthSessionUser | null>(null);
   const [verificationMethod, setVerificationMethod] = useState<'totp' | 'recovery'>('totp');
@@ -127,40 +125,6 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     url.hash = '';
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
   }, [fragmentSetupToken]);
-
-  useEffect(() => {
-    let active = true;
-    setTotpQrCode('');
-    setTotpQrCodeFailed(false);
-    if (!totpSetupData) return () => undefined;
-    if (totpSetupData.qrCodeDataUri) {
-      setTotpQrCode(totpSetupData.qrCodeDataUri);
-      return () => {
-        active = false;
-      };
-    }
-    if (!totpSetupData.otpauthUri) {
-      setTotpQrCodeFailed(true);
-      return () => {
-        active = false;
-      };
-    }
-    QRCode.toDataURL(totpSetupData.otpauthUri, {
-      errorCorrectionLevel: 'M',
-      margin: 1,
-      width: 220,
-      color: { dark: '#111827', light: '#FFFFFF' },
-    })
-      .then((value) => {
-        if (active) setTotpQrCode(value);
-      })
-      .catch(() => {
-        if (active) setTotpQrCodeFailed(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [totpSetupData]);
 
   const loginSchema = useMemo(() => {
     const accountSchema = Yup.string()
@@ -817,61 +781,24 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
 
   const renderTotpEnrollment = totpSetupData ? (
     <Stack spacing={3}>
-      <Box
-        sx={{
-          width: 220,
-          height: 220,
-          mx: 'auto',
-          borderRadius: 1.5,
-          border: (theme) => `1px solid ${theme.palette.divider}`,
-          bgcolor: 'common.white',
-          display: 'grid',
-          placeItems: 'center',
-          overflow: 'hidden',
+      <TotpEnrollmentPanel
+        secret={totpSetupData.secret}
+        otpauthUri={totpSetupData.otpauthUri}
+        qrCodeDataUri={totpSetupData.qrCodeDataUri}
+        issuer={totpSetupData.issuer}
+        accountName={totpSetupData.accountName}
+        onCopy={copyText}
+        labels={{
+          qrAlt: t('auth.totp_setup.qr_alt'),
+          qrGenerating: t('auth.totp_setup.qr_generating'),
+          qrUnavailable: t('auth.totp_setup.qr_unavailable'),
+          manualKey: t('auth.totp_setup.manual_key'),
+          copyManualKey: t('auth.totp_setup.copy_manual_key'),
+          account: t('auth.totp_setup.account'),
+          period: t('auth.totp_setup.period'),
+          localOnlyNotice: t('auth.totp_setup.no_external_qr'),
         }}
-      >
-        {totpQrCode ? (
-          <Box
-            component="img"
-            src={totpQrCode}
-            alt={t('auth.totp_setup.qr_alt')}
-            sx={{ width: 220, height: 220 }}
-          />
-        ) : (
-          <Typography
-            variant="caption"
-            sx={{ px: 2, color: 'text.secondary', textAlign: 'center' }}
-          >
-            {t(
-              totpQrCodeFailed ? 'auth.totp_setup.qr_unavailable' : 'auth.totp_setup.qr_generating'
-            )}
-          </Typography>
-        )}
-      </Box>
-
-      {totpQrCodeFailed && <Alert severity="warning">{t('auth.totp_setup.qr_unavailable')}</Alert>}
-
-      <Paper variant="outlined" sx={{ p: 2.5 }}>
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-          {t('auth.totp_setup.manual_key')}
-        </Typography>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.75 }}>
-          <Typography
-            variant="subtitle1"
-            sx={{ flexGrow: 1, letterSpacing: 1.2, overflowWrap: 'anywhere' }}
-          >
-            {totpSetupData.secret}
-          </Typography>
-          <IconButton
-            aria-label={t('auth.totp_setup.copy_manual_key')}
-            onClick={() => copyText(totpSetupData.secret)}
-          >
-            <Iconify icon="solar:copy-linear" />
-          </IconButton>
-        </Stack>
-      </Paper>
-
-      <Alert severity="info">{t('auth.totp_setup.no_external_qr')}</Alert>
+      />
 
       <Divider>
         <Typography variant="caption" sx={{ color: 'text.secondary' }}>

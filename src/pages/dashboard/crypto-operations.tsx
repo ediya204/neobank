@@ -43,6 +43,8 @@ type CregisHistoryRow = {
   net_amount?: string;
   fee_rule_version?: string;
   status: string;
+  custody_status?: string;
+  accounting_status?: string;
   address: string;
   txid?: string;
   maker_id?: string;
@@ -54,7 +56,11 @@ type CregisHistoryRow = {
   created_at: string;
 };
 
-type AdminCryptoTransfer = CryptoTransfer & { rawStatus?: string; customerName?: string };
+type AdminCryptoTransfer = CryptoTransfer & {
+  rawStatus?: string;
+  accountingStatus?: string;
+  customerName?: string;
+};
 
 type AdminCustomer = {
   id: string;
@@ -97,6 +103,27 @@ function normalizedCregisStatus(status: string): CryptoTransfer['status'] {
   if (status === 'rejected' || status === 'provider_rejected') return 'REJECTED';
   if (['failed', 'exception', 'cancelled'].includes(status)) return 'FAILED';
   return 'PROCESSING';
+}
+
+function accountingStatusText(status?: string) {
+  const names: Record<string, string> = {
+    pending_reservation: '等待冻结',
+    reserving: '冻结处理中',
+    reserved: '资金已冻结',
+    pending_approval: '等待账务审批',
+    approving: '账务审批中',
+    approved: '账务已批准',
+    pending_release: '等待自动释放',
+    releasing: '资金释放中',
+    released: '资金已释放',
+    pending_settlement: '等待结算',
+    settling: '结算中',
+    settled: '已结算',
+    held: '历史对账待放行',
+    exception: '账务异常',
+    not_accounted: '未关联会计记录',
+  };
+  return status ? names[status] || status : '未知';
 }
 
 function automaticWalletStatusLabel(customer: AdminCustomer) {
@@ -149,6 +176,7 @@ function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
     direction: 'WITHDRAWAL',
     status,
     rawStatus: row.status,
+    accountingStatus: row.accounting_status,
     amount: row.amount,
     feeAmount: row.fee_amount || '0',
     netAmount: row.net_amount || row.amount,
@@ -292,7 +320,7 @@ export default function CryptoOperationsAdmin() {
       setReason('');
       let message = '请求已发送至 Cregis，等待签名通知确认最终结果';
       if (action === 'approve') message = '审批通过；尚未请求 Cregis，请继续执行提交';
-      if (action === 'reject') message = '指令已拒绝，冻结余额已释放';
+      if (action === 'reject') message = '指令已拒绝；如存在冻结资金，系统将自动进入释放队列';
       setSuccess(message);
       await load();
       setSelected(null);
@@ -488,6 +516,7 @@ export default function CryptoOperationsAdmin() {
               <Info label="预计到账" value={`${selected.netAmount} USDT`} />
               <Info label="目标地址" value={selected.toAddress} mono />
               <Info label="交易哈希" value={selected.txHash || '执行后生成'} mono />
+              <Info label="资金处理" value={accountingStatusText(selected.accountingStatus)} />
             </Card>
             {selected.rawStatus === 'exception' && (
               <Stack spacing={1.5}>
@@ -508,7 +537,25 @@ export default function CryptoOperationsAdmin() {
             {selected.rawStatus === 'provider_rejected' && (
               <Alert severity="error">
                 Cregis 已驳回该笔提现。该历史指令尚未关联内部会计记录，资金状态仍需完成审计对账；
-                请勿重复提交或直接人工释放资金。
+                请通过受审批的历史出款对账流程处理，勿重复提交或直接修改余额。
+              </Alert>
+            )}
+            {selected.rawStatus === 'reconciliation_held' && (
+              <Alert severity="warning">
+                历史出款证据已固化为 held；该步骤尚未移动资金。完成独立复核后，使用受审批的 release
+                步骤送入自动释放队列。
+              </Alert>
+            )}
+            {selected.rawStatus === 'pending_release' && (
+              <Alert severity="warning">
+                出款已进入终止流程，资金正在等待会计 Worker
+                自动释放；当前仍未完成，请勿人工修改余额。
+              </Alert>
+            )}
+            {selected.rawStatus === 'releasing' && (
+              <Alert severity="info">
+                会计 Worker 正在原子释放 Account 与 CryptoWallet
+                的冻结余额，请等待最终状态变为“资金已释放”。
               </Alert>
             )}
             {selected.status === 'SUBMITTED' && (
@@ -784,6 +831,9 @@ function StatusLabel({
   rawStatus?: string;
 }) {
   if (rawStatus === 'provider_rejected') return <Label color="error">Cregis 已驳回 · 待对账</Label>;
+  if (rawStatus === 'reconciliation_held') return <Label color="warning">历史对账待放行</Label>;
+  if (rawStatus === 'pending_release') return <Label color="warning">等待资金释放</Label>;
+  if (rawStatus === 'releasing') return <Label color="info">资金释放中</Label>;
   if (rawStatus === 'exception') return <Label color="warning">异常调单</Label>;
   if (rawStatus === 'cancelled') return <Label color="default">已取消</Label>;
   const names = {

@@ -232,6 +232,14 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 		app.listCustomerWithdrawalAddresses(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/customer/withdrawal-addresses":
 		app.createCustomerWithdrawalAddress(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/customer/withdrawal-addresses/") && strings.HasSuffix(r.URL.Path, "/revoke"):
+		app.revokeCustomerWithdrawalAddress(w, r, withdrawalDestinationRouteID(r.URL.Path, "/api/v1/customer/withdrawal-addresses/"))
+	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/fiat-beneficiaries":
+		app.listCustomerFiatBeneficiaries(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/customer/fiat-beneficiaries":
+		app.createCustomerFiatBeneficiary(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/customer/fiat-beneficiaries/") && strings.HasSuffix(r.URL.Path, "/revoke"):
+		app.revokeCustomerFiatBeneficiary(w, r, withdrawalDestinationRouteID(r.URL.Path, "/api/v1/customer/fiat-beneficiaries/"))
 	default:
 		return false
 	}

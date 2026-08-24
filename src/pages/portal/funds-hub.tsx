@@ -1,6 +1,6 @@
 import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Box, Container, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Container, Stack, Typography } from '@mui/material';
 import CustomBreadcrumbs from 'src/components/custom-breadcrumbs';
 import Iconify from 'src/components/iconify';
 import { APP_DISPLAY_NAME } from 'src/config-global';
@@ -89,6 +89,22 @@ export default function FundsHub() {
           <Typography color="text.secondary" sx={{ mt: -2 }}>
             {portalText('集中办理银行转入、转出、法币兑换及 USDT 资金操作。')}
           </Typography>
+
+          <Alert
+            severity="info"
+            icon={<Iconify icon="solar:shield-check-bold-duotone" width={24} />}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => navigate('/portal/settings/allowlist')}
+              >
+                {portalText('管理转出白名单')}
+              </Button>
+            }
+          >
+            {portalText('法币和数字货币转出仅使用已验证的白名单目标。')}
+          </Alert>
 
           <FundsActionList
             title={portalText('法币')}

@@ -9,6 +9,7 @@
     "start:financial-accounting-worker": "node dist/src/deposit-accounting/deposit-accounting-main.js",
     "start:deposit-accounting-worker": "npm run start:financial-accounting-worker",
     "deposit:reconcile": "node dist/src/deposit-accounting/deposit-reconciliation.js",
+    "withdrawal:reconcile": "node dist/src/deposit-accounting/withdrawal-reconciliation.js",
     "start:dev": "npm run build && node --watch dist/src/main.js",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "prisma:generate": "prisma generate",

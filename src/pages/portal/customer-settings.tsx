@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
-import QRCode from 'qrcode';
+import { useNavigate } from 'react-router-dom';
 import LoadingButton from '@mui/lab/LoadingButton';
 import {
   Alert, Box, Button, Card, CardContent, Chip, Container, Dialog, DialogActions,
@@ -23,6 +23,7 @@ import {
 import { CustomerTotpEnrollmentResult } from 'src/auth/types';
 import Iconify from 'src/components/iconify';
 import { useSnackbar } from 'src/components/snackbar';
+import TotpEnrollmentPanel from 'src/components/totp-enrollment-panel/totp-enrollment-panel';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 import { portalLocale, portalText } from 'src/locales/portal-text';
 
@@ -86,6 +87,7 @@ function describeError(error: unknown) {
 }
 
 export default function CustomerSettings() {
+  const navigate = useNavigate();
   const { customer } = usePortalCustomer();
   const { user, refreshSession } = useAuthContext();
   const { enqueueSnackbar } = useSnackbar();
@@ -104,7 +106,6 @@ export default function CustomerSettings() {
   const [enrollmentPassword, setEnrollmentPassword] = useState('');
   const [enrollmentLoading, setEnrollmentLoading] = useState(false);
   const [verificationLoading, setVerificationLoading] = useState(false);
-  const [qrCode, setQrCode] = useState('');
   const totpEnabled = Boolean(summary?.totp_enabled || user?.totpEnabled || recoveryCodes.length);
 
   const reload = useCallback(async () => {
@@ -115,16 +116,6 @@ export default function CustomerSettings() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
-  useEffect(() => {
-    let active = true;
-    const setup = replacement || enrollment;
-    setQrCode('');
-    if (!setup?.otpauthUri) return () => undefined;
-    QRCode.toDataURL(setup.otpauthUri, { errorCorrectionLevel: 'M', margin: 1, width: 220,
-      color: { dark: '#111827', light: '#FFFFFF' } })
-      .then((value) => active && setQrCode(value)).catch(() => active && setQrCode(''));
-    return () => { active = false; };
-  }, [enrollment, replacement]);
 
   const openAction = (next: SecurityAction, nextTarget = '') => {
     setAction(next); setTarget(nextTarget); setFields(emptyFields); setActionError('');
@@ -233,6 +224,16 @@ export default function CustomerSettings() {
     catch (error) { enqueueSnackbar(describeError(error), { variant: 'error' }); }
   };
 
+  const copyTotpSecret = useCallback(async (value: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable');
+      await navigator.clipboard.writeText(value);
+      enqueueSnackbar(portalText('已复制到剪贴板'), { variant: 'success' });
+    } catch {
+      enqueueSnackbar(portalText('复制失败，请手动选择并复制'), { variant: 'error' });
+    }
+  }, [enqueueSnackbar]);
+
   const score = useMemo(() => summary ? [summary.email_verified, summary.totp_enabled,
     summary.passkeys.length > 0, summary.recovery_codes_remaining >= 5].filter(Boolean).length * 25 : 0, [summary]);
   const setup = replacement || enrollment;
@@ -248,7 +249,26 @@ export default function CustomerSettings() {
   } else if (setup) {
     totpControl = <Box component="form" onSubmit={verifyEnrollment}><Stack spacing={2.5}>
       <Alert severity="warning">{portalText(replacement ? '请先把新账户添加至验证器。确认成功后旧验证器和旧恢复码会立即失效。' : '请先把账户添加至验证器，再输入当前动态码完成启用。')}</Alert>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems="center"><Box sx={{ width: 220, height: 220, border: '1px solid', borderColor: 'divider', borderRadius: 1.5, bgcolor: 'common.white', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{qrCode ? <Box component="img" src={qrCode} alt={portalText('两步验证绑定二维码')} sx={{ width: 220 }} /> : <Typography variant="caption" color="text.secondary">{portalText('正在生成二维码…')}</Typography>}</Box><Stack spacing={1.5} sx={{ width: 1, minWidth: 0 }}><Typography variant="subtitle1">{portalText('无法扫码？手动输入密钥')}</Typography><Typography sx={{ p: 1.5, borderRadius: 1, bgcolor: 'background.neutral', fontFamily: 'monospace', fontWeight: 700, overflowWrap: 'anywhere' }}>{setup.secret}</Typography><TextField required label={portalText('新验证器的 6 位动态码')} value={setupCode} onChange={(e) => setSetupCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoComplete="one-time-code" /></Stack></Stack>
+      <TotpEnrollmentPanel
+        layout="wide"
+        secret={setup.secret}
+        otpauthUri={setup.otpauthUri}
+        qrCodeDataUri={setup.qrCodeDataUri}
+        issuer={setup.issuer}
+        accountName={setup.accountName}
+        onCopy={copyTotpSecret}
+        labels={{
+          qrAlt: portalText('两步验证绑定二维码'),
+          qrGenerating: portalText('正在生成二维码…'),
+          qrUnavailable: portalText('二维码生成失败，请使用手动密钥完成绑定。'),
+          manualKey: portalText('无法扫码？手动输入密钥'),
+          copyManualKey: portalText('复制手动输入密钥'),
+          account: portalText('账户：'),
+          period: portalText('· 每 30 秒更新'),
+          localOnlyNotice: portalText('二维码在当前浏览器本地生成，不会把验证器密钥发送给第三方服务。'),
+        }}
+      />
+      <TextField required label={portalText('新验证器的 6 位动态码')} value={setupCode} onChange={(e) => setSetupCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoComplete="one-time-code" />
       <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5}><Button onClick={() => { setEnrollment(null); setReplacement(null); setSetupCode(''); }}>{portalText('取消')}</Button><LoadingButton type="submit" variant="contained" loading={verificationLoading} disabled={!/^\d{6}$/.test(setupCode)}>{portalText(replacement ? '验证并更换验证器' : '验证并启用两步验证')}</LoadingButton></Stack>
     </Stack></Box>;
   } else if (totpEnabled) {
@@ -276,6 +296,25 @@ export default function CustomerSettings() {
           <StatusTile icon="solar:smartphone-update-bold-duotone" label={portalText('活跃设备')} active={Boolean(summary?.sessions.length)} activeText={portalText('{{count}} 台', { count: summary?.sessions.length || 0 })} inactiveText={portalText('无')} />
         </Grid>
       </CardContent></Card>
+
+      <SecurityCard
+        icon="solar:user-id-bold-duotone"
+        title={portalText('转出白名单')}
+        description={portalText('统一管理法币银行账户与 USDT-TRON 地址。新增和停用均需两步验证，已保存资料不可修改。')}
+        action={
+          <Button
+            variant="outlined"
+            endIcon={<Iconify icon="solar:arrow-right-linear" />}
+            onClick={() => navigate('/portal/settings/allowlist')}
+          >
+            {portalText('管理转出白名单')}
+          </Button>
+        }
+      >
+        <Alert severity="info">
+          {portalText('停用白名单只影响后续转出，不会删除历史交易。')}
+        </Alert>
+      </SecurityCard>
 
       <SecurityCard icon="solar:user-id-bold-duotone" title={portalText('客户资料')} description={portalText(customer?.type === 'BUSINESS' ? '企业认证资料' : '个人认证资料')} action={<Chip label={customer?.status === 'ACTIVE' ? portalText('账户正常') : customer?.status || '—'} />}>
         <Detail label={portalText(customer?.type === 'BUSINESS' ? '企业名称' : '姓名')} value={customer?.legalName || customer?.displayName || '—'} />

@@ -12,6 +12,7 @@ import { CryptoWalletsModule } from './crypto-wallets/crypto-wallets.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { EmailModule } from './email/email.module';
 import { WithdrawalFeesModule } from './withdrawal-fees/withdrawal-fees.module';
+import { UsdtInboundModule } from './usdt-inbound/usdt-inbound.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { WithdrawalFeesModule } from './withdrawal-fees/withdrawal-fees.module';
     AccountsModule,
     OperationsModule,
     WithdrawalFeesModule,
+    UsdtInboundModule,
   ],
   controllers: [HealthController],
 })

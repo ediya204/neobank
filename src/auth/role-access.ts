@@ -57,7 +57,8 @@ function isCustomerWalletPath(pathname: string) {
     pathname === '/portal/crypto-wallet' ||
     pathname.startsWith('/portal/crypto-wallet/') ||
     pathname === '/portal/virtual-accounts' ||
-    pathname === '/portal/settings'
+    pathname === '/portal/settings' ||
+    pathname.startsWith('/portal/settings/')
   );
 }
 
@@ -84,7 +85,13 @@ export function canAccessPortalPath(user: AuthSessionUser, pathname: string) {
     return allowed || pathname === '/portal/settings';
   }
   if (user.role !== 'partner') return false;
-  if (pathname === '/portal' || pathname === '/portal/settings') return true;
+  if (
+    pathname === '/portal' ||
+    pathname === '/portal/settings' ||
+    pathname.startsWith('/portal/settings/')
+  ) {
+    return true;
+  }
   if (pathname === '/portal/home') return canUsePortalOverview(user);
   if (pathname === '/portal/reconciliation') return canUsePortalOverview(user);
   if (pathname === '/portal/customers' || pathname.startsWith('/portal/customers/')) {

@@ -88,6 +88,11 @@ const isolatedWalletRoutes = [
       { path: 'crypto-wallet/withdraw', element: <CryptoWalletPage view="withdraw" /> },
       { path: 'virtual-accounts', element: <VirtualAccountsPage /> },
       { path: 'settings', element: <CustomerSettings /> },
+      { path: 'settings/allowlist', element: <CustomerActionPage action="beneficiaries" /> },
+      {
+        path: 'money/beneficiaries',
+        element: <Navigate to="/portal/settings/allowlist" replace />,
+      },
       { path: '*', element: <Page404 /> },
     ],
   },
@@ -138,14 +143,10 @@ const fullAdminWalletRoutes = [
           />
         ),
       },
+      { path: 'settings/allowlist', element: <CustomerActionPage action="beneficiaries" /> },
       {
         path: 'money/beneficiaries',
-        element: (
-          <CustomerActionPage
-            action="beneficiaries"
-            submissionDisabledReason="收款人资料当前仅供查询，暂不支持新增或修改。"
-          />
-        ),
+        element: <Navigate to="/portal/settings/allowlist" replace />,
       },
       { path: 'transactions', element: <CustomerActivity /> },
       { path: 'crypto-wallet', element: <CryptoWalletPage /> },
@@ -227,6 +228,7 @@ const fullApplicationRoutes = [
         ),
       },
       { path: 'settings', element: <PortalSettingsEntry /> },
+      { path: 'settings/allowlist', element: <CustomerActionPage action="beneficiaries" /> },
       {
         path: 'webhook-deliveries',
         element: permissionRoute('integrations.read', <PortalWebhookDeliveries />),
@@ -257,7 +259,10 @@ const fullApplicationRoutes = [
       { path: 'money/fx', element: <CustomerActionPage action="fx" /> },
       { path: 'money/otc', element: <CustomerActionPage action="otc" /> },
       { path: 'money/payouts', element: <CustomerActionPage action="payout" /> },
-      { path: 'money/beneficiaries', element: <CustomerActionPage action="beneficiaries" /> },
+      {
+        path: 'money/beneficiaries',
+        element: <Navigate to="/portal/settings/allowlist" replace />,
+      },
       { path: 'onboarding', element: <Navigate to="/portal/money/accounts" replace /> },
       { path: ':view/:customerId/:action', element: <PartnerPortalPage /> },
       { path: ':view/:customerId?', element: <PartnerPortalPage /> },

@@ -63,6 +63,7 @@ export const paths = {
     fundOperations: {
       reconciliation: `${DASHBOARD_ROOT}/operations/reconciliation`,
       deposits: `${DASHBOARD_ROOT}/operations/deposits`,
+      usdtInbound: `${DASHBOARD_ROOT}/operations/usdt-inbound`,
       withdrawals: `${DASHBOARD_ROOT}/operations/withdrawals`,
       transfers: `${DASHBOARD_ROOT}/operations/transfers`,
       fx: `${DASHBOARD_ROOT}/operations/fx`,

@@ -27,6 +27,7 @@ const VaRequestManagementPage = lazy(() => import('src/pages/dashboard/va-reques
 const VaRequestReviewPage = lazy(() => import('src/pages/dashboard/va-request-review'));
 const CoreReconciliationPage = lazy(() => import('src/pages/dashboard/core-reconciliation'));
 const AdminUsersPage = lazy(() => import('src/pages/dashboard/admin-users'));
+const UsdtInboundAdmin = lazy(() => import('src/pages/dashboard/usdt-inbound'));
 
 export const dashboardRoutes = [
   {
@@ -88,6 +89,7 @@ export const dashboardRoutes = [
             index: true,
           },
           { path: 'deposits', element: <FinanceWorkspace section="deposits" /> },
+          { path: 'usdt-inbound', element: <UsdtInboundAdmin /> },
           { path: 'reconciliation', element: <CoreReconciliationPage /> },
           { path: 'withdrawals', element: <FinanceWorkspace section="payouts" /> },
           {

@@ -30,15 +30,20 @@ import {
   Typography,
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
+import AssetIcon from 'src/components/asset-icon';
 import CustomBreadcrumbs from 'src/components/custom-breadcrumbs';
 import Label from 'src/components/label';
+import { useAuthContext } from 'src/auth/hooks';
 import BeneficiaryDialog from 'src/features/finance/beneficiary-dialog';
 import { usePortalCustomer } from 'src/features/finance/portal-customer-context';
 import {
   coreApi,
+  Beneficiary,
   Customer,
+  customerAuthApi,
   FundingChannel,
   isSupportedPortalAccount,
+  neobankApi,
   Operation,
   OperationType,
   RateVersion,
@@ -61,6 +66,16 @@ import { accountLabel, money } from './customer-shared';
 export type CustomerAction = 'transfer' | 'fx' | 'otc' | 'payout' | 'beneficiaries';
 
 type PayoutMethod = 'PLATFORM' | 'POBO' | 'VA';
+
+type CustomerWithdrawalAddressRow = {
+  id: string;
+  label: string;
+  network: 'TRON';
+  address: string;
+  status: 'active' | 'revoked' | 'suspended';
+  verified_at: string;
+  revoked_at?: string | null;
+};
 
 const payoutMethods: Array<{
   value: PayoutMethod;
@@ -110,8 +125,8 @@ const copy: Record<CustomerAction, { title: string; description: string; icon: s
     icon: 'solar:upload-minimalistic-bold-duotone',
   },
   beneficiaries: {
-    title: '收款人管理',
-    description: '管理经核对的第三方银行账户及数字资产地址。',
+    title: '转出白名单',
+    description: '管理经两步验证的法币银行账户及数字货币地址。',
     icon: 'solar:user-id-bold-duotone',
   },
 };
@@ -124,8 +139,11 @@ export default function CustomerActionPage({
   submissionDisabledReason?: string;
 }) {
   const [searchParams] = useSearchParams();
+  const { user } = useAuthContext();
   const { customer, refresh } = usePortalCustomer();
+  const customerSession = user?.role === 'customer';
   const [detail, setDetail] = useState<Customer | null>(null);
+  const [customerCryptoBeneficiaries, setCustomerCryptoBeneficiaries] = useState<Beneficiary[]>([]);
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [rates, setRates] = useState<RateVersion[]>([]);
   const [ratesLoading, setRatesLoading] = useState(false);
@@ -174,7 +192,7 @@ export default function CustomerActionPage({
   const loadDetail = async () => {
     if (!customer) return;
     const loadPayoutConfiguration = action === 'payout' && !submissionDisabledReason;
-    const [customerDetail, channelRows, feeRows] = await Promise.all([
+    const [customerDetail, channelRows, feeRows, withdrawalAddressPayload] = await Promise.all([
       coreApi<Customer>(`/customers/${customer.id}`),
       loadPayoutConfiguration
         ? coreApi<FundingChannel[]>(`/funding-channels?organizationId=${customer.organizationId}`)
@@ -184,10 +202,32 @@ export default function CustomerActionPage({
             `/withdrawal-fees?organizationId=${customer.organizationId}&active=true`
           )
         : Promise.resolve([] as WithdrawalFeeRule[]),
+      action === 'beneficiaries' && customerSession
+        ? neobankApi<{ data: CustomerWithdrawalAddressRow[] }>(
+            '/customer/withdrawal-addresses'
+          )
+        : Promise.resolve(null),
     ]);
     setDetail(customerDetail);
     setChannels(channelRows);
     setWithdrawalFees(feeRows);
+    setCustomerCryptoBeneficiaries(
+      withdrawalAddressPayload
+        ? withdrawalAddressPayload.data.map((row) => ({
+            id: row.id,
+            customerId: customer.id,
+            type: 'CRYPTO' as const,
+            name: row.label,
+            currency: 'USDT' as const,
+            walletAddress: row.address,
+            network: row.network,
+            active: row.status === 'active',
+            status: row.status.toUpperCase() as Beneficiary['status'],
+            verifiedAt: row.verified_at,
+            revokedAt: row.revoked_at || undefined,
+          }))
+        : []
+    );
   };
 
   useEffect(() => {
@@ -231,7 +271,9 @@ export default function CustomerActionPage({
           }),
     [accounts, action, otcDirection, source, sourceId]
   );
-  const beneficiaries = (detail?.beneficiaries || []).filter((row) => row.type === 'BANK');
+  const beneficiaries = (detail?.beneficiaries || []).filter(
+    (row) => row.type === 'BANK' && row.active
+  );
   const selectedBeneficiary = beneficiaries.find((row) => row.id === beneficiaryId);
   const sourceOptions = useMemo(() => {
     if (action === 'payout') {
@@ -544,6 +586,9 @@ export default function CustomerActionPage({
         onReload={loadDetail}
         dialogOpen={beneficiaryOpen}
         setDialogOpen={setBeneficiaryOpen}
+        customerSession={customerSession}
+        totpEnabled={Boolean(user?.totpEnabled)}
+        customerCryptoBeneficiaries={customerCryptoBeneficiaries}
       />
     );
 
@@ -1105,6 +1150,8 @@ export default function CustomerActionPage({
       <BeneficiaryDialog
         open={beneficiaryOpen}
         customerId={customer?.id || ''}
+        customerSession={customerSession}
+        totpEnabled={Boolean(user?.totpEnabled)}
         onClose={() => setBeneficiaryOpen(false)}
         onCreated={() => {
           setBeneficiaryOpen(false);
@@ -1128,6 +1175,9 @@ function BeneficiaryPage({
   onReload,
   dialogOpen,
   setDialogOpen,
+  customerSession,
+  totpEnabled,
+  customerCryptoBeneficiaries,
 }: {
   customer: Customer | null;
   readOnlyReason?: string;
@@ -1135,24 +1185,91 @@ function BeneficiaryPage({
   onReload: () => Promise<void>;
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
+  customerSession: boolean;
+  totpEnabled: boolean;
+  customerCryptoBeneficiaries: Beneficiary[];
 }) {
-  const rows = customer?.beneficiaries || [];
+  const coreRows = customer?.beneficiaries || [];
+  const rows = customerSession
+    ? [...coreRows.filter((row) => row.type === 'BANK'), ...customerCryptoBeneficiaries]
+    : coreRows;
   const [filter, setFilter] = useState<'ALL' | 'BANK' | 'CRYPTO'>('ALL');
   const visibleRows = rows.filter((row) => filter === 'ALL' || row.type === filter);
   const bankCount = rows.filter((row) => row.type === 'BANK').length;
   const cryptoCount = rows.filter((row) => row.type === 'CRYPTO').length;
+  const activeCount = rows.filter((row) => row.active).length;
+  const [revokeTarget, setRevokeTarget] = useState<Beneficiary | null>(null);
+  const [revokeOtpCode, setRevokeOtpCode] = useState('');
+  const [revokeError, setRevokeError] = useState('');
+  const [revokeSuccess, setRevokeSuccess] = useState('');
+  const [revoking, setRevoking] = useState(false);
+
+  const closeRevokeDialog = () => {
+    if (revoking) return;
+    setRevokeTarget(null);
+    setRevokeOtpCode('');
+    setRevokeError('');
+  };
+
+  const revokeDestination = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!revokeTarget || !/^\d{6}$/.test(revokeOtpCode)) {
+      setRevokeError(portalText('请输入验证器当前显示的 6 位动态码。'));
+      return;
+    }
+    setRevoking(true);
+    setRevokeError('');
+    try {
+      const stepUp = await customerAuthApi<{ step_up_token: string }>('/step-up/totp', {
+        method: 'POST',
+        body: JSON.stringify({
+          purpose: 'revoke_withdrawal_address',
+          otp_code: revokeOtpCode,
+        }),
+      });
+      const route =
+        revokeTarget.type === 'CRYPTO'
+          ? `/customer/withdrawal-addresses/${encodeURIComponent(revokeTarget.id)}/revoke`
+          : `/customer/fiat-beneficiaries/${encodeURIComponent(revokeTarget.id)}/revoke`;
+      await neobankApi(route, {
+        method: 'POST',
+        body: JSON.stringify({ step_up_token: stepUp.step_up_token }),
+      });
+      const targetName = revokeTarget.name;
+      setRevokeTarget(null);
+      setRevokeOtpCode('');
+      setRevokeError('');
+      setRevokeSuccess(
+        portalText('白名单“{{value0}}”已停用，后续转出将不能再选择该目标。', {
+          value0: targetName,
+        })
+      );
+      await onReload();
+    } catch (value) {
+      const message = value instanceof Error ? value.message : portalText('暂时无法停用白名单。');
+      if (message === 'invalid_totp_code') {
+        setRevokeError(portalText('动态码无效、已过期或已使用，请输入当前动态码。'));
+      } else {
+        setRevokeError(message);
+      }
+    } finally {
+      setRevoking(false);
+    }
+  };
   return (
     <>
       <Helmet>
-        <title>{portalText('收款人管理 | SSC Digital Bank')}</title>
+        <title>{portalText('转出白名单 | SSC Digital Bank')}</title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2}>
             <Box>
-              <Typography variant="h4">{portalText('收款人管理')}</Typography>
+              <Typography variant="h4">{portalText('转出白名单')}</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                {portalText('统一管理经核对的银行账户与数字资产地址，付款前请再次确认收款资料。')}
+                {portalText(
+                  '统一管理法币银行账户与 USDT-TRON 地址。新增和停用均需两步验证，已保存资料不可修改。'
+                )}
               </Typography>
             </Box>
             {!readOnlyReason && (
@@ -1161,11 +1278,24 @@ function BeneficiaryPage({
                 startIcon={<Iconify icon="solar:add-circle-linear" />}
                 onClick={onCreate}
               >
-                {portalText('新增收款人')}
+                {portalText('新增白名单')}
               </Button>
             )}
           </Stack>
           {readOnlyReason && <Alert severity="info">{portalText(readOnlyReason)}</Alert>}
+          {revokeSuccess && (
+            <Alert severity="success" onClose={() => setRevokeSuccess('')}>
+              {revokeSuccess}
+            </Alert>
+          )}
+          <Alert
+            severity={activeCount ? 'info' : 'warning'}
+            icon={<Iconify icon="solar:shield-check-bold-duotone" width={24} />}
+          >
+            {portalText('当前共有 {{value0}} 个可用目标；停用只影响后续转出，不会删除历史交易。', {
+              value0: activeCount,
+            })}
+          </Alert>
           <Card>
             <Tabs
               value={filter}
@@ -1174,11 +1304,11 @@ function BeneficiaryPage({
             >
               <Tab value="ALL" label={portalText('全部 {{value0}}', { value0: rows.length })} />
 
-              <Tab value="BANK" label={portalText('银行账户 {{value0}}', { value0: bankCount })} />
+              <Tab value="BANK" label={portalText('法币 {{value0}}', { value0: bankCount })} />
 
               <Tab
                 value="CRYPTO"
-                label={portalText('数字资产 {{value0}}', { value0: cryptoCount })}
+                label={portalText('数字货币 {{value0}}', { value0: cryptoCount })}
               />
             </Tabs>
             <Stack divider={<Divider flexItem />}>
@@ -1200,28 +1330,29 @@ function BeneficiaryPage({
                       sx={{
                         width: 44,
                         height: 44,
-                        borderRadius: 1.5,
-                        bgcolor: cryptoRecipient ? 'success.lighter' : 'primary.lighter',
+                        borderRadius: '50%',
+                        bgcolor: 'background.paper',
+                        border: '1px solid',
+                        borderColor: 'divider',
                         display: 'grid',
                         placeItems: 'center',
                         flexShrink: 0,
                       }}
                     >
-                      <Iconify
-                        icon={
-                          cryptoRecipient
-                            ? 'solar:wallet-money-bold-duotone'
-                            : 'solar:buildings-2-bold-duotone'
-                        }
-                        color={cryptoRecipient ? 'success.main' : 'primary.main'}
-                        width={24}
+                      <AssetIcon
+                        asset={cryptoRecipient ? 'USDT' : row.currency}
+                        network={cryptoRecipient ? row.network : undefined}
+                        size={30}
                       />
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                         <Typography variant="subtitle1">{row.name}</Typography>
                         <Label color={cryptoRecipient ? 'success' : 'info'}>
-                          {cryptoRecipient ? portalText('数字资产') : portalText('银行账户')}
+                          {cryptoRecipient ? portalText('数字货币') : portalText('法币')}
+                        </Label>
+                        <Label color={row.active ? 'success' : 'default'}>
+                          {row.active ? portalText('可用') : portalText('已停用')}
                         </Label>
                       </Stack>
                       <Typography variant="body2" color="text.secondary">
@@ -1230,15 +1361,36 @@ function BeneficiaryPage({
                           : `${row.bankName} · ${row.currency} · ${maskedDestination}`}
                       </Typography>
                     </Box>
-                    <Button
-                      href={
-                        cryptoRecipient ? '/portal/crypto-wallet/withdraw' : '/portal/money/payouts'
-                      }
-                      endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}
+                    <Stack
+                      direction="row"
+                      spacing={0.5}
                       sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, flexShrink: 0 }}
                     >
-                      {cryptoRecipient ? portalText('用于转出') : portalText('用于付款')}
-                    </Button>
+                      {row.active && (
+                        <Button
+                          href={
+                            cryptoRecipient
+                              ? '/portal/crypto-wallet/withdraw'
+                              : '/portal/money/payouts'
+                          }
+                          endIcon={<Iconify icon="solar:alt-arrow-right-linear" />}
+                        >
+                          {cryptoRecipient ? portalText('用于转出') : portalText('用于付款')}
+                        </Button>
+                      )}
+                      {customerSession && row.active && (
+                        <Button
+                          color="error"
+                          onClick={() => {
+                            setRevokeTarget(row);
+                            setRevokeOtpCode('');
+                            setRevokeError('');
+                          }}
+                        >
+                          {portalText('停用')}
+                        </Button>
+                      )}
+                    </Stack>
                   </Stack>
                 );
               })}
@@ -1256,17 +1408,17 @@ function BeneficiaryPage({
 
                   <Typography variant="subtitle1" sx={{ mt: 1.5 }}>
                     {filter === 'CRYPTO'
-                      ? portalText('暂无数字资产收款人')
-                      : portalText('暂无第三方收款人')}
+                      ? portalText('暂无数字货币白名单')
+                      : portalText('暂无法币白名单')}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                     {filter === 'CRYPTO'
-                      ? portalText('添加经过核对的 USDT · TRON (TRC20) 地址。')
-                      : portalText('添加银行账户或数字资产地址后，可在付款页面直接选择。')}
+                      ? portalText('添加经过两步验证的 USDT · TRON（TRC20）地址。')
+                      : portalText('添加银行账户或数字货币地址后，可在转出页面直接选择。')}
                   </Typography>
                   {!readOnlyReason && (
                     <Button onClick={onCreate} sx={{ mt: 1.5 }}>
-                      {portalText('添加收款人')}
+                      {portalText('新增白名单')}
                     </Button>
                   )}
                 </Stack>
@@ -1279,6 +1431,8 @@ function BeneficiaryPage({
         <BeneficiaryDialog
           open={dialogOpen}
           customerId={customer?.id || ''}
+          customerSession={customerSession}
+          totpEnabled={totpEnabled}
           onClose={() => setDialogOpen(false)}
           onCreated={() => {
             setDialogOpen(false);
@@ -1286,6 +1440,52 @@ function BeneficiaryPage({
           }}
         />
       )}
+      <Dialog open={Boolean(revokeTarget)} onClose={closeRevokeDialog} fullWidth maxWidth="xs">
+        <Box component="form" onSubmit={revokeDestination}>
+          <DialogTitle>{portalText('停用转出白名单')}</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ pt: 0.5 }}>
+              <Alert severity="warning">
+                {portalText(
+                  '停用“{{value0}}”后，新的转出申请不能再选择该目标；历史交易记录不会被删除。',
+                  { value0: revokeTarget?.name || '' }
+                )}
+              </Alert>
+              {!totpEnabled && (
+                <Alert severity="error">
+                  {portalText('当前账户尚未启用两步验证，请先前往“安全与设置”完成绑定。')}
+                </Alert>
+              )}
+              {revokeError && <Alert severity="error">{revokeError}</Alert>}
+              <TextField
+                required
+                autoFocus
+                disabled={!totpEnabled}
+                label={portalText('6 位动态码')}
+                value={revokeOtpCode}
+                onChange={(event) => {
+                  setRevokeOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6));
+                  setRevokeError('');
+                }}
+                inputProps={{ inputMode: 'numeric', pattern: '[0-9]*', maxLength: 6 }}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button disabled={revoking} onClick={closeRevokeDialog}>
+              {portalText('保留白名单')}
+            </Button>
+            <Button
+              type="submit"
+              color="error"
+              variant="contained"
+              disabled={revoking || !totpEnabled || revokeOtpCode.length !== 6}
+            >
+              {revoking ? portalText('正在验证并停用…') : portalText('验证并停用')}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
     </>
   );
 }

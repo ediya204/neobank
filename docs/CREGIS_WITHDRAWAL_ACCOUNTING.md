@@ -64,6 +64,41 @@ balance effect. If it was not reflected, use a separately reviewed compensating
 accounting transaction. Never rewrite a historical journal, edit a balance, reuse a
 transaction hash, or silently bind a different wallet.
 
+For a historical withdrawal with a signed rejected or failed Cregis callback, use
+the PostgreSQL-only reconciliation command. `preview` is read-only and may list the
+candidate set or inspect one exact withdrawal:
+
+```bash
+npm --prefix server run build
+npm --prefix server run withdrawal:reconcile -- preview
+npm --prefix server run withdrawal:reconcile -- preview --withdrawal-id WITHDRAWAL_ID
+```
+
+The command rejects any completed callback, transaction hash, existing journal,
+ambiguous Core match, amount/address mismatch, non-mirrored Account and CryptoWallet,
+or insufficient frozen balance. A candidate with no Core Operation is classified as
+`no_core_reservation`; closing it changes no balance. One exact linked Core reservation
+is classified as `linked_core_reservation` and may release only that stored total.
+
+Mutations are deliberately split into two invocations. `hold` creates a non-queued
+manual reconciliation record and does not change custody status or money. Both steps
+require a complete PostgreSQL backup checksum, an isolated restore test, a named
+approver, and an exact reason supplied through hidden environment input. `release`
+also requires the separate `WITHDRAWAL_RECONCILIATION_RELEASE_APPROVED=true` gate:
+
+```bash
+npm --prefix server run withdrawal:reconcile -- hold --withdrawal-id WITHDRAWAL_ID
+npm --prefix server run withdrawal:reconcile -- release --withdrawal-id WITHDRAWAL_ID
+```
+
+Do not paste approval values, backup checksums, database URLs, or customer evidence
+into chat, source, shell history, or tickets. After `release`, the command only changes
+the custody row to its signed terminal result and queues `pending_release`. The
+financial worker performs the serializable balance change. Verify the accounting row
+reaches `released`, both frozen balances decrease by the exact total, both available
+balances increase by the same total, linked Core records become `REJECTED` or `FAILED`,
+and `/ledger/reconciliation/usdt` no longer reports the item.
+
 ## Acceptance invariants
 
 - one custody withdrawal maps to one accounting intent, Core Operation, and Core

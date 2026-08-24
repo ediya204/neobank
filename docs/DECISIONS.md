@@ -107,6 +107,11 @@ that the assumption no longer applies.
   reject, and execute actions and the complete audit trail. The old approval route is
   a compatibility redirect. The legacy audit page is not exposed in the Render-only
   navigation and resolves to 404 until a PostgreSQL audit store and API exist.
+- Admin Fund Processing includes a read-only `USDT 入账` workspace. It combines
+  Cregis on-chain deposits and Core OTC operations whose target asset is USDT,
+  while preserving distinct source, custody, and accounting states. It never
+  creates deposits, edits balances, or treats a custody callback alone as completed
+  customer accounting.
 
 ## Partner integration
 

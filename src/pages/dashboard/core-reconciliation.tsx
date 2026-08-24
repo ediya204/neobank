@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import {
   Alert,
@@ -105,8 +105,28 @@ type UsdtReconciliation = {
     direction: 'deposit' | 'withdrawal' | 'core';
     custody_status: string;
     accounting_status: string;
+    core_operation_id: string | null;
     reason: string;
   }>;
+};
+
+const ISSUE_DIRECTION_LABELS: Record<UsdtReconciliation['issues'][number]['direction'], string> = {
+  deposit: 'Cregis 入账',
+  withdrawal: 'Cregis 出款',
+  core: 'Core 账务',
+};
+
+const ISSUE_REASON_LABELS: Record<string, string> = {
+  accounting_intent_missing: '缺少托管到 Core 的记账意图',
+  accounting_exception: '记账处理进入异常状态',
+  completed_custody_not_posted: '托管已完成，但 Core 尚未入账',
+  completed_custody_not_settled: '托管已完成，但 Core 尚未结算',
+  terminal_custody_not_released: '托管已终止，但 Core 尚未释放冻结资金',
+  custody_accounting_state_mismatch: '托管状态与 Core 记账状态不匹配',
+  core_operation_without_custody_handoff: 'Core 业务缺少对应的托管交接记录',
+  core_crypto_account_missing: '数字钱包缺少对应的 Core 资金账户',
+  core_crypto_account_duplicated: '数字钱包存在重复的 Core 资金账户',
+  core_crypto_materialized_balance_mismatch: '数字钱包与 Core 资金账户余额不一致',
 };
 
 export default function CoreReconciliationPage() {
@@ -164,14 +184,54 @@ export default function CoreReconciliationPage() {
     (operation) => status === 'all' || operation.status === status
   );
   const visibleMovements = filteredMovements.slice(page * 25, page * 25 + 25);
+  const ledgerChecksPass = snapshot.unbalancedJournalCount === 0;
   const checksPass =
-    snapshot.unbalancedJournalCount === 0 &&
+    ledgerChecksPass &&
     snapshot.completedWithoutJournal.length === 0 &&
     usdtReconciliation?.issueCount === 0;
   const consistencyIssueCount =
     snapshot.unbalancedJournalCount +
     snapshot.completedWithoutJournal.length +
     (usdtReconciliation?.issueCount || 0);
+  const consistencyIssues = useMemo(
+    () => [
+      ...snapshot.unbalancedJournals.map((journal) => ({
+        key: `journal-${journal.id}`,
+        category: '账本凭证',
+        item: `${journal.reference} · ${journal.id}`,
+        businessStatus: new Date(journal.postedAt).toLocaleString('zh-CN'),
+        accountingStatus: '借贷不平衡',
+        reason: journal.deltas
+          .map(
+            (row) =>
+              `${row.currency}：借 ${formatAmount(row.debits)}，贷 ${formatAmount(
+                row.credits
+              )}，差额 ${formatAmount(row.delta)}`
+          )
+          .join('；'),
+        coreOperationId: '—',
+      })),
+      ...snapshot.completedWithoutJournal.map((operation) => ({
+        key: `operation-${operation.id}`,
+        category: 'Core 业务',
+        item: `${operation.reference} · ${operation.id}`,
+        businessStatus: STATUS_LABELS[operation.status],
+        accountingStatus: '缺少账本凭证',
+        reason: '业务已完成，但未找到对应的复式账本凭证',
+        coreOperationId: operation.id,
+      })),
+      ...(usdtReconciliation?.issues || []).map((issue) => ({
+        key: `usdt-${issue.direction}-${issue.id}-${issue.reason}`,
+        category: ISSUE_DIRECTION_LABELS[issue.direction],
+        item: issue.id,
+        businessStatus: issue.custody_status,
+        accountingStatus: issue.accounting_status,
+        reason: ISSUE_REASON_LABELS[issue.reason] || issue.reason,
+        coreOperationId: issue.core_operation_id || '—',
+      })),
+    ],
+    [snapshot.completedWithoutJournal, snapshot.unbalancedJournals, usdtReconciliation]
+  );
 
   useEffect(() => setPage(0), [date, status]);
 
@@ -278,8 +338,74 @@ export default function CoreReconciliationPage() {
               helper="账本、托管或 Core 状态不一致"
               icon="solar:shield-warning-bold-duotone"
               tone={checksPass ? 'success' : 'error'}
+              action={
+                consistencyIssueCount > 0 ? (
+                  <Button size="small" color="error" href="#consistency-issues" sx={{ mt: 1 }}>
+                    查看异常项目
+                  </Button>
+                ) : undefined
+              }
             />
           </Box>
+
+          <Card id="consistency-issues" variant="outlined" sx={{ boxShadow: 'none' }}>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              justifyContent="space-between"
+              spacing={2}
+              sx={{ p: 3 }}
+            >
+              <Box>
+                <Typography variant="h6">一致性异常明细</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  分别核对复式账本、已完成业务凭证，以及 Cregis 托管与 Core 账务状态。
+                </Typography>
+              </Box>
+              <Label color={consistencyIssueCount ? 'error' : 'success'}>
+                {consistencyIssueCount ? `${consistencyIssueCount} 项待核对` : '未发现异常'}
+              </Label>
+            </Stack>
+            {usdtReconciliation?.truncated && (
+              <Alert severity="warning" sx={{ mx: 3, mb: 2 }}>
+                异常结果已达到接口上限，当前列表可能不完整，请先处理已显示项目后刷新。
+              </Alert>
+            )}
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>类别</TableCell>
+                    <TableCell>异常项目</TableCell>
+                    <TableCell>托管/业务状态</TableCell>
+                    <TableCell>记账状态</TableCell>
+                    <TableCell>异常原因</TableCell>
+                    <TableCell>Core 业务 ID</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {consistencyIssues.map((issue) => (
+                    <TableRow key={issue.key} hover>
+                      <TableCell>
+                        <Label color="error">{issue.category}</Label>
+                      </TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        {issue.item}
+                      </TableCell>
+                      <TableCell>{issue.businessStatus}</TableCell>
+                      <TableCell>{issue.accountingStatus}</TableCell>
+                      <TableCell sx={{ minWidth: 260 }}>{issue.reason}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        {issue.coreOperationId}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!consistencyIssues.length && (
+                    <EmptyRow colSpan={6} text="当前未发现一致性异常" />
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Card>
 
           <Box
             sx={{
@@ -340,8 +466,8 @@ export default function CoreReconciliationPage() {
                     按所选日期与币种汇总借方、贷方和差额。
                   </Typography>
                 </Box>
-                <Label color={checksPass ? 'success' : 'error'}>
-                  {checksPass ? '检查通过' : '发现异常'}
+                <Label color={ledgerChecksPass ? 'success' : 'error'}>
+                  {ledgerChecksPass ? '检查通过' : '发现异常'}
                 </Label>
               </Stack>
               <TableContainer>
@@ -473,12 +599,14 @@ function MetricCard({
   helper,
   icon,
   tone,
+  action,
 }: {
   title: string;
   value: string;
   helper: string;
   icon: string;
   tone: UiIconBadgeTone;
+  action?: ReactNode;
 }) {
   return (
     <Card variant="outlined" sx={{ p: 2.5, boxShadow: 'none' }}>
@@ -496,6 +624,7 @@ function MetricCard({
       <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: 'block' }}>
         {helper}
       </Typography>
+      {action}
     </Card>
   );
 }

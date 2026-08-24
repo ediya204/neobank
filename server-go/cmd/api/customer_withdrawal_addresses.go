@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,11 +14,18 @@ import (
 )
 
 const (
-	addWithdrawalAddressPurpose = "add_withdrawal_address"
-	customerStepUpDuration      = 5 * time.Minute
+	addWithdrawalAddressPurpose    = "add_withdrawal_address"
+	revokeWithdrawalAddressPurpose = "revoke_withdrawal_address"
+	customerStepUpDuration         = 5 * time.Minute
 )
 
 const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+var (
+	isoCountryCodePattern = regexp.MustCompile(`^[A-Z]{2}$`)
+	swiftBICPattern       = regexp.MustCompile(`^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$`)
+	ibanPattern           = regexp.MustCompile(`^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$`)
+)
 
 func (app *application) createCustomerTOTPStepUp(w http.ResponseWriter, r *http.Request) {
 	session, _, err := app.requireCustomerMutation(r)
@@ -29,7 +37,9 @@ func (app *application) createCustomerTOTPStepUp(w http.ResponseWriter, r *http.
 		Purpose string `json:"purpose"`
 		Code    string `json:"otp_code"`
 	}
-	if !decodeJSON(w, r, &input) || input.Purpose != addWithdrawalAddressPurpose || len(input.Code) != 6 {
+	if !decodeJSON(w, r, &input) ||
+		(input.Purpose != addWithdrawalAddressPurpose && input.Purpose != revokeWithdrawalAddressPurpose) ||
+		len(input.Code) != 6 {
 		validationError(w)
 		return
 	}
@@ -93,6 +103,306 @@ func (app *application) createCustomerTOTPStepUp(w http.ResponseWriter, r *http.
 		"purpose":       input.Purpose,
 		"expires_at":    expiresAt,
 	})
+}
+
+type customerFiatBeneficiaryInput struct {
+	Name           string `json:"name"`
+	Currency       string `json:"currency"`
+	BankName       string `json:"bank_name"`
+	AccountNumber  string `json:"account_number"`
+	SwiftBIC       string `json:"swift_bic"`
+	IBAN           string `json:"iban"`
+	BankAddress    string `json:"bank_address"`
+	CountryCode    string `json:"country_code"`
+	StepUpToken    string `json:"step_up_token"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+func normalizeFiatBeneficiaryInput(input customerFiatBeneficiaryInput) (customerFiatBeneficiaryInput, bool) {
+	input.Name = strings.TrimSpace(input.Name)
+	input.Currency = strings.ToUpper(strings.TrimSpace(input.Currency))
+	input.BankName = strings.TrimSpace(input.BankName)
+	input.AccountNumber = strings.TrimSpace(input.AccountNumber)
+	input.SwiftBIC = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(input.SwiftBIC), " ", ""))
+	input.IBAN = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(input.IBAN), " ", ""))
+	input.BankAddress = strings.TrimSpace(input.BankAddress)
+	input.CountryCode = strings.ToUpper(strings.TrimSpace(input.CountryCode))
+	input.StepUpToken = strings.TrimSpace(input.StepUpToken)
+	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
+	valid := len(input.Name) > 0 && len(input.Name) <= 160 &&
+		(input.Currency == "USD" || input.Currency == "HKD") &&
+		len(input.BankName) > 0 && len(input.BankName) <= 160 &&
+		len(input.AccountNumber) >= 4 && len(input.AccountNumber) <= 80 &&
+		len(input.BankAddress) <= 300 && isoCountryCodePattern.MatchString(input.CountryCode) &&
+		(input.SwiftBIC == "" || swiftBICPattern.MatchString(input.SwiftBIC)) &&
+		(input.IBAN == "" || ibanPattern.MatchString(input.IBAN)) &&
+		safeIdentifier.MatchString(input.StepUpToken) && safeIdentifier.MatchString(input.IdempotencyKey)
+	return input, valid
+}
+
+func fiatBeneficiaryID(customerID, idempotencyKey string) string {
+	digest := sha256.Sum256([]byte(customerID + "\x00" + idempotencyKey))
+	return "beneficiary_" + hex.EncodeToString(digest[:16])
+}
+
+func normalizedBankAccount(value string) string {
+	var normalized strings.Builder
+	for _, character := range strings.ToUpper(value) {
+		if (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') {
+			normalized.WriteRune(character)
+		}
+	}
+	return normalized.String()
+}
+
+const customerFiatBeneficiaryFields = `id, "customerId" AS customer_id, type, name, currency,
+  "bankName" AS bank_name, "accountNumber" AS account_number, "swiftBic" AS swift_bic,
+  iban, "bankAddress" AS bank_address, "countryCode" AS country_code, active,
+  "createdAt" AS created_at, "updatedAt" AS updated_at`
+
+const updatedCustomerFiatBeneficiaryFields = `beneficiary.id,
+  beneficiary."customerId" AS customer_id, beneficiary.type, beneficiary.name,
+  beneficiary.currency, beneficiary."bankName" AS bank_name,
+  beneficiary."accountNumber" AS account_number, beneficiary."swiftBic" AS swift_bic,
+  beneficiary.iban, beneficiary."bankAddress" AS bank_address,
+  beneficiary."countryCode" AS country_code, beneficiary.active,
+  beneficiary."createdAt" AS created_at, beneficiary."updatedAt" AS updated_at`
+
+func (app *application) listCustomerFiatBeneficiaries(w http.ResponseWriter, r *http.Request) {
+	session, _, err := app.loadCustomerSession(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "session_expired"}})
+		return
+	}
+	rows, err := app.db.Query(r.Context(), `SELECT `+customerFiatBeneficiaryFields+`
+	  FROM "Beneficiary" WHERE "customerId"=? AND type='BANK'
+	  ORDER BY "createdAt" DESC`, session.CustomerID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+func (app *application) createCustomerFiatBeneficiary(w http.ResponseWriter, r *http.Request) {
+	session, _, err := app.requireCustomerMutation(r)
+	if err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]string{"code": "csrf_or_session_invalid"}})
+		return
+	}
+	var raw customerFiatBeneficiaryInput
+	if !decodeJSON(w, r, &raw) {
+		return
+	}
+	input, valid := normalizeFiatBeneficiaryInput(raw)
+	if !valid || normalizedBankAccount(input.AccountNumber) == "" {
+		validationError(w)
+		return
+	}
+	beneficiaryID := fiatBeneficiaryID(session.CustomerID, input.IdempotencyKey)
+	existing, err := app.db.Query(r.Context(), `SELECT `+customerFiatBeneficiaryFields+`
+	  FROM "Beneficiary" WHERE id=? AND "customerId"=? AND type='BANK'`, beneficiaryID, session.CustomerID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(existing) == 1 {
+		row := existing[0]
+		if text(row["name"]) != input.Name || text(row["currency"]) != input.Currency ||
+			text(row["bank_name"]) != input.BankName || text(row["account_number"]) != input.AccountNumber ||
+			text(row["swift_bic"]) != input.SwiftBIC || text(row["iban"]) != input.IBAN ||
+			text(row["bank_address"]) != input.BankAddress || text(row["country_code"]) != input.CountryCode {
+			conflict(w, "idempotency_payload_mismatch")
+			return
+		}
+		writeJSON(w, http.StatusOK, row)
+		return
+	}
+	if len(existing) != 0 {
+		databaseError(app, w, errors.New("duplicate fiat beneficiary idempotency rows"))
+		return
+	}
+	duplicates, err := app.db.Query(r.Context(), `SELECT id FROM "Beneficiary"
+	  WHERE "customerId"=? AND type='BANK' AND active=TRUE AND currency=?::"Currency"
+	    AND LOWER(TRIM("bankName"))=LOWER(?)
+	    AND regexp_replace(UPPER("accountNumber"), '[^A-Z0-9]', '', 'g')=?`,
+		session.CustomerID, input.Currency, input.BankName, normalizedBankAccount(input.AccountNumber))
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(duplicates) != 0 {
+		conflict(w, "fiat_beneficiary_already_exists")
+		return
+	}
+
+	nowText := databaseTimestamp(time.Now().UTC())
+	tokenDigest := tokenHash(input.StepUpToken)
+	results, err := app.db.Batch(r.Context(),
+		d1.Statement{SQL: `WITH consumed AS (
+		  UPDATE customer_step_up_challenges SET used_at=?
+		  WHERE customer_id=? AND session_id=? AND token_hash=? AND purpose=?
+		    AND credential_version=? AND expires_at>? AND used_at IS NULL
+		    AND EXISTS (SELECT 1 FROM "Customer" c
+		      WHERE c.id=? AND c."organizationId"=?)
+		    AND NOT EXISTS (SELECT 1 FROM "Beneficiary" b
+		      WHERE b."customerId"=? AND b.type='BANK' AND b.active=TRUE
+		        AND b.currency=?::"Currency" AND LOWER(TRIM(b."bankName"))=LOWER(?)
+		        AND regexp_replace(UPPER(b."accountNumber"), '[^A-Z0-9]', '', 'g')=?)
+		  RETURNING id
+		), inserted AS (
+		  INSERT INTO "Beneficiary"
+		    (id, "customerId", type, name, currency, "bankName", "accountNumber", "swiftBic",
+		     iban, "bankAddress", "countryCode", active, "createdAt", "updatedAt")
+		  SELECT ?, ?, 'BANK'::"BeneficiaryType", ?, ?::"Currency", ?, ?, NULLIF(?, ''),
+		    NULLIF(?, ''), NULLIF(?, ''), ?, TRUE, ?::timestamptz, ?::timestamptz
+		  FROM consumed
+		  RETURNING ` + customerFiatBeneficiaryFields + `
+		), audited AS (
+		  INSERT INTO customer_auth_audit_events
+		    (id, customer_id, event_type, actor, metadata_json, created_at)
+		  SELECT ?, ?, 'fiat_beneficiary.added', ?, ?, ? FROM inserted
+		  RETURNING id
+		)
+		SELECT * FROM inserted WHERE EXISTS (SELECT 1 FROM audited)`, Params: []any{
+			nowText, session.CustomerID, session.ID, tokenDigest, addWithdrawalAddressPurpose,
+			session.CredentialVersion, nowText, session.CustomerID, app.coreOrganizationID,
+			session.CustomerID, input.Currency, input.BankName, normalizedBankAccount(input.AccountNumber),
+			beneficiaryID, session.CustomerID, input.Name, input.Currency, input.BankName,
+			input.AccountNumber, input.SwiftBIC, input.IBAN, input.BankAddress, input.CountryCode,
+			nowText, nowText,
+			randomID("audit"), session.CustomerID, session.CustomerID,
+			mustJSON(map[string]string{"beneficiary_id": beneficiaryID, "currency": input.Currency}),
+			nowText,
+		}},
+	)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != 1 || len(results[0].Results) != 1 {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "step_up_required"}})
+		return
+	}
+	writeJSON(w, http.StatusCreated, results[0].Results[0])
+}
+
+type revokeWithdrawalDestinationInput struct {
+	StepUpToken string `json:"step_up_token"`
+}
+
+func withdrawalDestinationRouteID(path, prefix string) string {
+	value := strings.TrimSuffix(strings.TrimPrefix(path, prefix), "/revoke")
+	if strings.Contains(value, "/") || !safeIdentifier.MatchString(value) {
+		return ""
+	}
+	return value
+}
+
+func (app *application) revokeCustomerFiatBeneficiary(w http.ResponseWriter, r *http.Request, beneficiaryID string) {
+	session, _, err := app.requireCustomerMutation(r)
+	if err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]string{"code": "csrf_or_session_invalid"}})
+		return
+	}
+	var input revokeWithdrawalDestinationInput
+	if !decodeJSON(w, r, &input) || beneficiaryID == "" || !safeIdentifier.MatchString(input.StepUpToken) {
+		validationError(w)
+		return
+	}
+	nowText := databaseTimestamp(time.Now().UTC())
+	results, err := app.db.Batch(r.Context(),
+		d1.Statement{SQL: `WITH consumed AS (
+		  UPDATE customer_step_up_challenges SET used_at=?
+		  WHERE customer_id=? AND session_id=? AND token_hash=? AND purpose=?
+		    AND credential_version=? AND expires_at>? AND used_at IS NULL
+		    AND EXISTS (SELECT 1 FROM "Beneficiary"
+		      WHERE id=? AND "customerId"=? AND type='BANK' AND active=TRUE)
+		  RETURNING id
+		), updated AS (
+		  UPDATE "Beneficiary" AS beneficiary SET active=FALSE, "updatedAt"=?::timestamptz
+		  FROM consumed WHERE beneficiary.id=? AND beneficiary."customerId"=?
+		    AND beneficiary.type='BANK' AND beneficiary.active=TRUE
+		  RETURNING ` + updatedCustomerFiatBeneficiaryFields + `
+		), audited AS (
+		  INSERT INTO customer_auth_audit_events
+		    (id, customer_id, event_type, actor, metadata_json, created_at)
+		  SELECT ?, ?, 'fiat_beneficiary.revoked', ?, ?, ? FROM updated
+		  RETURNING id
+		)
+		SELECT * FROM updated WHERE EXISTS (SELECT 1 FROM audited)`, Params: []any{
+			nowText, session.CustomerID, session.ID, tokenHash(input.StepUpToken),
+			revokeWithdrawalAddressPurpose, session.CredentialVersion, nowText,
+			beneficiaryID, session.CustomerID, nowText, beneficiaryID, session.CustomerID,
+			randomID("audit"), session.CustomerID, session.CustomerID,
+			mustJSON(map[string]string{"beneficiary_id": beneficiaryID}), nowText,
+		}},
+	)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != 1 || len(results[0].Results) != 1 {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "step_up_required"}})
+		return
+	}
+	writeJSON(w, http.StatusOK, results[0].Results[0])
+}
+
+func (app *application) revokeCustomerWithdrawalAddress(w http.ResponseWriter, r *http.Request, addressID string) {
+	session, _, err := app.requireCustomerMutation(r)
+	if err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]string{"code": "csrf_or_session_invalid"}})
+		return
+	}
+	var input revokeWithdrawalDestinationInput
+	if !decodeJSON(w, r, &input) || addressID == "" || !safeIdentifier.MatchString(input.StepUpToken) {
+		validationError(w)
+		return
+	}
+	nowText := databaseTimestamp(time.Now().UTC())
+	results, err := app.db.Batch(r.Context(),
+		d1.Statement{SQL: `WITH consumed AS (
+		  UPDATE customer_step_up_challenges SET used_at=?
+		  WHERE customer_id=? AND session_id=? AND token_hash=? AND purpose=?
+		    AND credential_version=? AND expires_at>? AND used_at IS NULL
+		    AND EXISTS (SELECT 1 FROM customer_withdrawal_addresses
+		      WHERE id=? AND tenant_id=? AND customer_id=? AND status='active')
+		  RETURNING id
+		), updated AS (
+		  UPDATE customer_withdrawal_addresses
+		  SET status='revoked', revoked_at=?, updated_at=?
+		  FROM consumed WHERE customer_withdrawal_addresses.id=?
+		    AND customer_withdrawal_addresses.tenant_id=?
+		    AND customer_withdrawal_addresses.customer_id=?
+		    AND customer_withdrawal_addresses.status='active'
+		  RETURNING customer_withdrawal_addresses.id, label, currency, network, address, status,
+		    verified_at, revoked_at, created_at, updated_at
+		), audited AS (
+		  INSERT INTO customer_auth_audit_events
+		    (id, customer_id, event_type, actor, metadata_json, created_at)
+		  SELECT ?, ?, 'withdrawal_address.revoked', ?, ?, ? FROM updated
+		  RETURNING id
+		)
+		SELECT * FROM updated WHERE EXISTS (SELECT 1 FROM audited)`, Params: []any{
+			nowText, session.CustomerID, session.ID, tokenHash(input.StepUpToken),
+			revokeWithdrawalAddressPurpose, session.CredentialVersion, nowText,
+			addressID, app.tenantID, session.CustomerID, nowText, nowText,
+			addressID, app.tenantID, session.CustomerID,
+			randomID("audit"), session.CustomerID, session.CustomerID,
+			mustJSON(map[string]string{"withdrawal_address_id": addressID, "network": "TRON"}),
+			nowText,
+		}},
+	)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != 1 || len(results[0].Results) != 1 {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "step_up_required"}})
+		return
+	}
+	writeJSON(w, http.StatusOK, results[0].Results[0])
 }
 
 func (app *application) listCustomerWithdrawalAddresses(w http.ResponseWriter, r *http.Request) {

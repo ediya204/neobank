@@ -736,6 +736,9 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 	  ) THEN 'provider_rejected'
 	  WHEN a.withdrawal_id IS NULL THEN 'exception'
 	  WHEN a.status='settled' THEN 'completed'
+	  WHEN a.status='held' THEN 'reconciliation_held'
+	  WHEN a.status='pending_release' THEN 'pending_release'
+	  WHEN a.status='releasing' THEN 'releasing'
 	  WHEN a.status='released' THEN x.status
 	  WHEN a.status='exception' THEN 'exception'
 	  ELSE 'processing'

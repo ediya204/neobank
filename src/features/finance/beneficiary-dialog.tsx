@@ -19,7 +19,14 @@ import {
   Typography,
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
-import { coreApi, Currency, supportedCryptoNetwork, supportedFiatCurrencies } from './core-api';
+import {
+  coreApi,
+  Currency,
+  customerAuthApi,
+  neobankApi,
+  supportedCryptoNetwork,
+  supportedFiatCurrencies,
+} from './core-api';
 
 type BeneficiaryType = 'BANK' | 'CRYPTO';
 
@@ -27,6 +34,8 @@ type Props = {
   open: boolean;
   customerId: string;
   userId?: string;
+  customerSession?: boolean;
+  totpEnabled?: boolean;
   onClose: () => void;
   onCreated: () => void;
 };
@@ -39,28 +48,39 @@ const options: Array<{
 }> = [
   {
     type: 'BANK',
-    title: '银行账户',
-    description: 'USD / HKD 法币付款',
+    title: '法币银行账户',
+    description: 'USD / HKD 转出白名单',
     icon: 'solar:buildings-2-bold-duotone',
   },
   {
     type: 'CRYPTO',
     title: '数字货币地址',
-    description: 'USDT · TRON (TRC20)',
+    description: 'USDT · TRON（TRC20）白名单',
     icon: 'solar:wallet-money-bold-duotone',
   },
 ];
 
-export default function BeneficiaryDialog({ open, customerId, userId, onClose, onCreated }: Props) {
+export default function BeneficiaryDialog({
+  open,
+  customerId,
+  userId,
+  customerSession = false,
+  totpEnabled = false,
+  onClose,
+  onCreated,
+}: Props) {
   const [type, setType] = useState<BeneficiaryType>('BANK');
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState<Currency>('USD');
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [swiftBic, setSwiftBic] = useState('');
+  const [iban, setIban] = useState('');
+  const [bankAddress, setBankAddress] = useState('');
   const [countryCode, setCountryCode] = useState('HK');
   const [walletAddress, setWalletAddress] = useState('');
   const [addressConfirmed, setAddressConfirmed] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -72,9 +92,12 @@ export default function BeneficiaryDialog({ open, customerId, userId, onClose, o
     setBankName('');
     setAccountNumber('');
     setSwiftBic('');
+    setIban('');
+    setBankAddress('');
     setCountryCode('HK');
     setWalletAddress('');
     setAddressConfirmed(false);
+    setOtpCode('');
     setError('');
   }, [open]);
 
@@ -114,37 +137,96 @@ export default function BeneficiaryDialog({ open, customerId, userId, onClose, o
       setError('请确认已核对收款网络和钱包地址');
       return;
     }
+    if (customerSession && !totpEnabled) {
+      setError('请先在“安全与设置”中启用两步验证');
+      return;
+    }
+    if (customerSession && !/^\d{6}$/.test(otpCode)) {
+      setError('请输入验证器当前显示的 6 位动态码');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
-      await coreApi('/beneficiaries', {
-        method: 'POST',
-        userId,
-        body: JSON.stringify(
-          type === 'BANK'
-            ? {
-                customerId,
-                type,
-                name: normalizedName,
-                currency,
-                bankName: normalizedBankName,
-                accountNumber: normalizedAccountNumber,
-                swiftBic: swiftBic.trim().toUpperCase() || undefined,
-                countryCode: normalizedCountryCode,
-              }
-            : {
-                customerId,
-                type,
-                name: normalizedName,
-                currency: 'USDT',
-                network: supportedCryptoNetwork,
-                walletAddress: normalizedWalletAddress,
-              }
-        ),
-      });
+      if (customerSession) {
+        const stepUp = await customerAuthApi<{ step_up_token: string }>('/step-up/totp', {
+          method: 'POST',
+          body: JSON.stringify({
+            purpose: 'add_withdrawal_address',
+            otp_code: otpCode,
+          }),
+        });
+        if (type === 'BANK') {
+          await neobankApi('/customer/fiat-beneficiaries', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: normalizedName,
+              currency,
+              bank_name: normalizedBankName,
+              account_number: normalizedAccountNumber,
+              swift_bic: swiftBic.trim().toUpperCase(),
+              iban: iban.trim().toUpperCase(),
+              bank_address: bankAddress.trim(),
+              country_code: normalizedCountryCode,
+              step_up_token: stepUp.step_up_token,
+              idempotency_key: crypto.randomUUID(),
+            }),
+          });
+        } else {
+          await neobankApi('/customer/withdrawal-addresses', {
+            method: 'POST',
+            body: JSON.stringify({
+              label: normalizedName,
+              address: normalizedWalletAddress,
+              step_up_token: stepUp.step_up_token,
+              idempotency_key: crypto.randomUUID(),
+            }),
+          });
+        }
+      } else {
+        await coreApi('/beneficiaries', {
+          method: 'POST',
+          userId,
+          body: JSON.stringify(
+            type === 'BANK'
+              ? {
+                  customerId,
+                  type,
+                  name: normalizedName,
+                  currency,
+                  bankName: normalizedBankName,
+                  accountNumber: normalizedAccountNumber,
+                  swiftBic: swiftBic.trim().toUpperCase() || undefined,
+                  iban: iban.trim().toUpperCase() || undefined,
+                  bankAddress: bankAddress.trim() || undefined,
+                  countryCode: normalizedCountryCode,
+                }
+              : {
+                  customerId,
+                  type,
+                  name: normalizedName,
+                  currency: 'USDT',
+                  network: supportedCryptoNetwork,
+                  walletAddress: normalizedWalletAddress,
+                }
+          ),
+        });
+      }
       onCreated();
     } catch (value) {
-      setError(value instanceof Error ? value.message : '保存失败');
+      const message = value instanceof Error ? value.message : '保存失败';
+      if (message === 'invalid_totp_code') {
+        setError('动态码无效、已过期或已使用，请输入验证器当前显示的动态码');
+      } else if (message === 'totp_not_enrolled') {
+        setError('当前账户尚未绑定验证器，无法新增转出白名单');
+      } else if (
+        message === 'withdrawal_address_already_exists' ||
+        message === 'fiat_beneficiary_already_exists'
+      ) {
+        setError('该收款目标已经在转出白名单中');
+      } else {
+        setError(message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -153,10 +235,10 @@ export default function BeneficiaryDialog({ open, customerId, userId, onClose, o
   return (
     <Dialog open={open} onClose={submitting ? undefined : onClose} fullWidth maxWidth="sm">
       <Box component="form" onSubmit={submit} noValidate>
-        <DialogTitle sx={{ pb: 1 }}>新增第三方收款人</DialogTitle>
+        <DialogTitle sx={{ pb: 1 }}>新增转出白名单</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-            选择收款方式后，只填写该通道必需的资料。
+            选择目标类型并填写完整资料。保存后目标资料不可修改，如有变更请停用后重新添加。
           </Typography>
           <Box
             sx={{
@@ -262,7 +344,7 @@ export default function BeneficiaryDialog({ open, customerId, userId, onClose, o
                 />
                 <TextField
                   required
-                  label="银行账号 / IBAN"
+                  label="银行账号"
                   value={accountNumber}
                   onChange={(event) => {
                     setAccountNumber(event.target.value);
@@ -273,6 +355,18 @@ export default function BeneficiaryDialog({ open, customerId, userId, onClose, o
                   label="SWIFT / BIC"
                   value={swiftBic}
                   onChange={(event) => setSwiftBic(event.target.value.toUpperCase())}
+                />
+                <TextField
+                  label="IBAN（选填）"
+                  value={iban}
+                  onChange={(event) => setIban(event.target.value.toUpperCase())}
+                />
+                <TextField
+                  label="银行地址（选填）"
+                  value={bankAddress}
+                  onChange={(event) => setBankAddress(event.target.value)}
+                  multiline
+                  minRows={2}
                 />
               </>
             ) : (
@@ -313,6 +407,27 @@ export default function BeneficiaryDialog({ open, customerId, userId, onClose, o
                 />
               </>
             )}
+
+            {customerSession && (
+              <>
+                <Alert severity={totpEnabled ? 'info' : 'warning'}>
+                  {totpEnabled
+                    ? '新增转出白名单必须使用当前账户验证器生成的动态码确认。'
+                    : '当前账户尚未启用两步验证，请先前往“安全与设置”完成绑定。'}
+                </Alert>
+                <TextField
+                  required
+                  disabled={!totpEnabled}
+                  label="6 位动态码"
+                  value={otpCode}
+                  onChange={(event) => {
+                    setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6));
+                    setError('');
+                  }}
+                  inputProps={{ inputMode: 'numeric', pattern: '[0-9]*', maxLength: 6 }}
+                />
+              </>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
@@ -322,9 +437,14 @@ export default function BeneficiaryDialog({ open, customerId, userId, onClose, o
           <Button
             type="submit"
             variant="contained"
-            disabled={submitting || !customerId || (type === 'CRYPTO' && !addressConfirmed)}
+            disabled={
+              submitting ||
+              !customerId ||
+              (type === 'CRYPTO' && !addressConfirmed) ||
+              (customerSession && (!totpEnabled || otpCode.length !== 6))
+            }
           >
-            {submitting ? '保存中…' : '保存收款人'}
+            {submitting ? '正在验证并保存…' : '验证并加入白名单'}
           </Button>
         </DialogActions>
       </Box>

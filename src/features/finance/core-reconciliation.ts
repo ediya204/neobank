@@ -25,12 +25,25 @@ export type ReconciliationLedgerCheck = {
   balanced: boolean;
 };
 
+export type ReconciliationJournalIssue = {
+  id: string;
+  reference: string;
+  postedAt: string;
+  deltas: Array<{
+    currency: Currency;
+    debits: number;
+    credits: number;
+    delta: number;
+  }>;
+};
+
 export type CoreReconciliationSnapshot = {
   balances: ReconciliationBalance[];
   ledgerChecks: ReconciliationLedgerCheck[];
   movements: Operation[];
   journalCount: number;
   unbalancedJournalCount: number;
+  unbalancedJournals: ReconciliationJournalIssue[];
   completedWithoutJournal: Operation[];
   pendingOperations: Operation[];
   inflows: Partial<Record<Currency, number>>;
@@ -93,7 +106,7 @@ export function buildCoreReconciliationSnapshot({
 
   const selectedJournals = journals.filter((journal) => hongKongDate(journal.postedAt) === date);
   const ledgerMap = new Map<Currency, ReconciliationLedgerCheck>();
-  let unbalancedJournalCount = 0;
+  const unbalancedJournals: ReconciliationJournalIssue[] = [];
   selectedJournals.forEach((journal) => {
     const journalCurrencyTotals = new Map<Currency, { debits: number; credits: number }>();
     journal.lines.forEach((line) => {
@@ -113,12 +126,21 @@ export function buildCoreReconciliationSnapshot({
       journalTotals[line.side === 'DEBIT' ? 'debits' : 'credits'] += amount;
       journalCurrencyTotals.set(line.currency, journalTotals);
     });
-    if (
-      Array.from(journalCurrencyTotals.values()).some(
-        (row) => Math.abs(row.debits - row.credits) > EPSILON
-      )
-    ) {
-      unbalancedJournalCount += 1;
+    const deltas = Array.from(journalCurrencyTotals.entries())
+      .map(([currency, row]) => ({
+        currency,
+        debits: row.debits,
+        credits: row.credits,
+        delta: row.debits - row.credits,
+      }))
+      .filter((row) => Math.abs(row.delta) > EPSILON);
+    if (deltas.length) {
+      unbalancedJournals.push({
+        id: journal.id,
+        reference: journal.reference,
+        postedAt: journal.postedAt,
+        deltas,
+      });
     }
   });
   ledgerMap.forEach((row) => {
@@ -165,7 +187,8 @@ export function buildCoreReconciliationSnapshot({
     ledgerChecks: Array.from(ledgerMap.values()).sort(byCurrency),
     movements,
     journalCount: selectedJournals.length,
-    unbalancedJournalCount,
+    unbalancedJournalCount: unbalancedJournals.length,
+    unbalancedJournals,
     completedWithoutJournal,
     pendingOperations,
     inflows,

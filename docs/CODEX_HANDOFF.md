@@ -110,6 +110,10 @@ The source includes:
   unlock, customer-visible security activity, safe data export, and manual-review
   account closure. Production requires PostgreSQL migration `0013` before the Go,
   Core/email, and Worker code that reads the new schema.
+- Customer Portal withdrawal allowlist management: one workspace covers the
+  customer's own USD/HKD bank beneficiaries and USDT/TRON addresses. Add and
+  deactivate operations require a fresh TOTP step-up, destinations are immutable,
+  and deactivation never deletes historical transaction evidence.
 - Local transaction-history and Webhook demo fixtures used by the travel setup.
 
 Partner roles cannot perform settlement, ledger posting, withdrawal, manual OTC,

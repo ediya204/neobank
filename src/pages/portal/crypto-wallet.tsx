@@ -1038,7 +1038,7 @@ function WithdrawView({
                       setAddressDialogOpen(true);
                       return;
                     }
-                    navigate('/portal/money/beneficiaries');
+                    navigate('/portal/settings/allowlist');
                   }}
                   disabled={!wallet}
                   sx={{ mt: -1, alignSelf: 'flex-start', px: 0 }}

@@ -336,6 +336,42 @@ export type CryptoTransfer = {
   operator?: { id: string; displayName: string };
 };
 
+export type UsdtInboundRecord = {
+  id: string;
+  source: 'ON_CHAIN' | 'LOCAL_OTC';
+  customerId: string;
+  customerName: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'EXCEPTION';
+  amount: string;
+  asset: 'USDT';
+  network: 'TRON';
+  occurredAt: string;
+  completedAt?: string | null;
+  reference: string;
+  txHash?: string | null;
+  fromAddress?: string | null;
+  toAddress?: string | null;
+  sourceCurrency?: string | null;
+  sourceAmount?: string | null;
+  rate?: string | null;
+  custodyStatus?: string | null;
+  accountingStatus?: string | null;
+  exceptionReason?: string | null;
+  coreOperationId?: string | null;
+};
+
+export type UsdtInboundResponse = {
+  data: UsdtInboundRecord[];
+  pagination: { total: number; limit: number; offset: number };
+  summary: {
+    chain: number;
+    localOtc: number;
+    completed: number;
+    processing: number;
+    attention: number;
+  };
+};
+
 const coreBaseUrl = process.env.REACT_APP_CORE_API_URL || '/api/v1';
 const transientReadStatuses = new Set([502, 503, 504]);
 const defaultRequestTimeoutMs = 10_000;

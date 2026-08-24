@@ -216,3 +216,97 @@ test('a completed signed custody withdrawal consumes the freeze and posts balanc
     assert.equal(debit.equals(credit), true);
   }
 });
+
+test('a rejected linked withdrawal releases both materialized balances atomically', async () => {
+  const releasing = {
+    ...row,
+    accounting_status: 'releasing',
+    withdrawal_status: 'rejected',
+    core_operation_id: 'core_withdrawal',
+    core_transfer_id: 'core_withdrawal',
+    checker_id: 'checker@example.test',
+    rejection_reason: 'Cregis rejected the payout',
+  };
+  const operation = {
+    id: 'core_withdrawal',
+    status: 'PROCESSING',
+    sourceAccountId: account.id,
+  };
+  const transfer = { id: operation.id, status: 'PROCESSING', walletId: wallet.id };
+  const observed = { accountReleases: [], walletReleases: [], operation: null, transfer: null };
+  let rawQueryCount = 0;
+  const tx = {
+    $queryRaw: async () => {
+      rawQueryCount += 1;
+      return rawQueryCount === 1 ? [releasing] : [{ id: admin.id }];
+    },
+    $executeRaw: async () => 1,
+    operation: {
+      findUnique: async () => operation,
+      update: async ({ data }) => {
+        observed.operation = data;
+        return { ...operation, ...data };
+      },
+    },
+    cryptoTransfer: {
+      findUnique: async () => transfer,
+      update: async ({ data }) => {
+        observed.transfer = data;
+        return { ...transfer, ...data };
+      },
+    },
+    cryptoWallet: {
+      updateMany: async (input) => {
+        observed.walletReleases.push(input);
+        return { count: 1 };
+      },
+    },
+    account: {
+      updateMany: async (input) => {
+        observed.accountReleases.push(input);
+        return { count: 1 };
+      },
+    },
+  };
+  const db = {
+    $queryRaw: async () => [],
+    $executeRaw: async () => 1,
+    $transaction: async (operationFn) => operationFn(tx),
+  };
+
+  await new WithdrawalAccountingWorker(db).processWithdrawal(releasing.withdrawal_id, 'releasing');
+
+  assert.equal(observed.walletReleases.length, 1);
+  assert.equal(observed.accountReleases.length, 1);
+  for (const released of [observed.walletReleases[0], observed.accountReleases[0]]) {
+    assert.equal(released.data.availableBalance.increment.toString(), '1.25');
+    assert.equal(released.data.frozenBalance.decrement.toString(), '1.25');
+  }
+  assert.equal(observed.operation.status, 'FAILED');
+  assert.equal(observed.transfer.status, 'FAILED');
+});
+
+test('a proven historical rejection with no Core reservation closes without changing balances', async () => {
+  const releasing = {
+    ...row,
+    accounting_status: 'releasing',
+    withdrawal_status: 'rejected',
+    core_operation_id: null,
+    core_transfer_id: null,
+  };
+  const tx = {
+    $queryRaw: async () => [releasing],
+    $executeRaw: async () => 1,
+    operation: { findUnique: async () => assert.fail('operation lookup must not run') },
+    cryptoTransfer: { findUnique: async () => assert.fail('transfer lookup must not run') },
+    cryptoWallet: { updateMany: async () => assert.fail('wallet balance must not change') },
+    account: { updateMany: async () => assert.fail('account balance must not change') },
+  };
+  const db = {
+    $queryRaw: async () => [],
+    $executeRaw: async () => 1,
+    $transaction: async (operationFn) => operationFn(tx),
+  };
+
+  await new WithdrawalAccountingWorker(db).processWithdrawal(releasing.withdrawal_id, 'releasing');
+});

@@ -34,6 +34,7 @@ export function requiredAdminPermissionForPath(pathname: string): AdminPermissio
   }
   if (
     pathname.startsWith('/dashboard/operations/deposits') ||
+    pathname.startsWith('/dashboard/operations/usdt-inbound') ||
     pathname.startsWith('/dashboard/operations/withdrawals') ||
     pathname.startsWith('/dashboard/operations/crypto-wallets') ||
     pathname.startsWith('/dashboard/operations/adjustments') ||

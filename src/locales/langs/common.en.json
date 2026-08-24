@@ -359,6 +359,8 @@
       "qr_unavailable": "The QR code could not be generated. Use the key below to enroll manually.",
       "manual_key": "Manual setup key",
       "copy_manual_key": "Copy manual setup key",
+      "account": "Account:",
+      "period": "· Updates every 30 seconds",
       "otpauth_uri": "Authenticator configuration URI",
       "copy_otpauth_uri": "Copy authenticator configuration URI",
       "no_external_qr": "QR codes use server-provided local data only. Your TOTP secret is never sent to an external QR service.",

@@ -359,6 +359,8 @@
       "qr_unavailable": "二维码生成失败，请使用下方密钥手动绑定。",
       "manual_key": "手动输入密钥",
       "copy_manual_key": "复制手动输入密钥",
+      "account": "账户：",
+      "period": "· 每 30 秒更新",
       "otpauth_uri": "验证器配置 URI",
       "copy_otpauth_uri": "复制验证器配置 URI",
       "no_external_qr": "二维码仅使用服务器返回的本地数据，不会把 TOTP 密钥发送给第三方服务。",
