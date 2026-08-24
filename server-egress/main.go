@@ -36,6 +36,7 @@ var allowedPaths = map[string]struct{}{
 	"/api/v1/address/create": {},
 	"/api/v1/address/inner":  {},
 	"/api/v1/address/legal":  {},
+	"/api/v1/payout/query":   {},
 	"/api/v1/trade/page":     {},
 	"/api/v2/payout":         {},
 }
@@ -113,6 +114,7 @@ func (app *relay) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/address/create", app.forward)
 	mux.HandleFunc("POST /api/v1/address/inner", app.forward)
 	mux.HandleFunc("POST /api/v1/address/legal", app.forward)
+	mux.HandleFunc("POST /api/v1/payout/query", app.forward)
 	mux.HandleFunc("POST /api/v1/trade/page", app.forward)
 	mux.HandleFunc("POST /api/v2/payout", app.forward)
 	mux.HandleFunc("/", app.notFound)

@@ -88,6 +88,23 @@ func TestRelayRoutesTradeQueryThroughAuthentication(t *testing.T) {
 	}
 }
 
+func TestRelayRoutesPayoutQueryThroughAuthentication(t *testing.T) {
+	app := &relay{
+		secret: []byte("0123456789abcdef0123456789abcdef"),
+		now:    time.Now,
+		nonces: make(map[string]time.Time),
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/payout/query", strings.NewReader(`{}`))
+	response := httptest.NewRecorder()
+
+	app.routes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("payout query route must reach relay authentication, got status %d", response.Code)
+	}
+}
+
 func TestRelayAllowsWalletPayoutAndRejectsSubAddressWithdrawal(t *testing.T) {
 	app := &relay{
 		secret: []byte("0123456789abcdef0123456789abcdef"),

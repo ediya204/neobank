@@ -172,7 +172,7 @@ credential-version checks.
 `CREGIS_RELAY_URL` affects only the Cregis client. Do not configure a global
 `HTTP_PROXY` or `HTTPS_PROXY`.
 The relay accepts only the Cregis address-create, address-ownership,
-address-legality, transaction-query, and sub-address-withdrawal
+address-legality, transaction-query, payout-query, and wallet-payout
 paths, authenticates the complete request body, rejects replayed nonces, and
 pins its upstream to the configured Cregis test gateway.
 
@@ -186,6 +186,16 @@ Release this path in dependency order: update the relay allowlist, apply reviewe
 PostgreSQL migration `0009_deposit_source_address.sql` through the backup and
 approval gate, release the Go service, then release the web Worker. Only after
 those checks may an operator re-push an existing Cregis callback.
+
+For a final payout callback, the Go service also queries
+`POST /api/v1/payout/query` through the authenticated relay. The provider order
+must exactly match the signed callback and immutable PostgreSQL withdrawal for
+CID, business reference, chain, token, destination, net amount, currency,
+status, and transaction hash. A query failure asks Cregis to retry. A durable
+mismatch is acknowledged, recorded as `exception`, and leaves the Core freeze
+unchanged for manual review. Deploy the relay allowlist change before the Go
+callback code; otherwise the safe result is repeated callback retry with no
+ledger movement.
 
 `GET /api/v1/admin/market-rate?base=USD&quote=HKD` and the customer-session
 equivalent `GET /api/v1/customer/market-rate` read FastForex midpoint spot
