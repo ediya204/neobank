@@ -130,6 +130,25 @@ test('password reset template derives a fragment token without storing it in the
   );
 });
 
+test('registration email verification continues onboarding and never describes password recovery', () => {
+  const rendered = renderEmailTemplate(
+    EmailTemplateKey.CUSTOMER_EMAIL_VERIFICATION,
+    {
+      displayName: 'Test Customer',
+      verificationRequestId: 'email_verify_0123456789abcdef0123456789abcdef',
+    },
+    'https://portal.example.com',
+    'test-password-reset-secret-at-least-32-bytes'
+  );
+  assert.match(rendered.subject, /验证您的客户邮箱/);
+  assert.match(
+    rendered.html,
+    /\/customer\/verify-email#verification_token=email_verify_0123456789abcdef0123456789abcdef\./
+  );
+  assert.match(rendered.html, /设置登录密码/);
+  assert.doesNotMatch(rendered.html, /重新发起密码重置/);
+});
+
 test('email change verification derives a purpose-bound fragment token', () => {
   const rendered = renderEmailTemplate(
     EmailTemplateKey.CUSTOMER_EMAIL_CHANGE_VERIFICATION,

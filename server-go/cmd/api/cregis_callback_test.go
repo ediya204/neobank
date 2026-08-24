@@ -17,7 +17,9 @@ import (
 )
 
 type callbackDatabase struct {
-	rows []map[string]any
+	rows         []map[string]any
+	batchResults []d1.Result
+	batches      [][]d1.Statement
 }
 
 type depositCallbackDatabase struct {
@@ -45,8 +47,13 @@ func (db *depositCallbackDatabase) Query(context.Context, string, ...any) ([]map
 	return db.queries[index], nil
 }
 
-func (db *callbackDatabase) Batch(context.Context, ...d1.Statement) ([]d1.Result, error) {
+func (db *callbackDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
+	db.batches = append(db.batches, statements)
+	if db.batchResults != nil {
+		return db.batchResults, nil
+	}
 	return []d1.Result{
+		{Meta: map[string]any{"changes": float64(1)}},
 		{Meta: map[string]any{"changes": float64(1)}},
 		{Meta: map[string]any{"changes": float64(0)}},
 	}, nil
@@ -54,6 +61,55 @@ func (db *callbackDatabase) Batch(context.Context, ...d1.Statement) ([]d1.Result
 
 func (db *callbackDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
 	return db.rows, nil
+}
+
+func TestPayoutRejectionAcknowledgesHistoricalExceptionForReconciliation(t *testing.T) {
+	client, err := cregis.New(cregis.Config{
+		BaseURL:     "https://t-wsmbuuhb.cregis.io",
+		ProjectID:   "1463535767997152",
+		Secret:      "cregis-test-secret",
+		RelayURL:    "https://relay.example.test",
+		RelaySecret: strings.Repeat("r", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]any{
+		"pid":            int64(1463535767997152),
+		"cid":            int64(1463535767997999),
+		"third_party_id": "historical-withdrawal",
+		"chain_id":       usdtTRC20ChainID,
+		"token_id":       usdtTRC20TokenID,
+		"status":         4,
+		"timestamp":      int64(1_800_000_000_000),
+		"nonce":          "abc123",
+	}
+	payload["sign"] = client.Sign(payload)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := &callbackDatabase{rows: []map[string]any{{
+		"status": "exception", "cregis_cid": "1463535767997999", "accounting_status": "missing",
+	}}}
+	app := &application{
+		db: db, cregis: client, cregisLive: true, tenantID: "tenant_test",
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/callbacks/cregis/payout", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	app.cregisPayoutCallback(response, request)
+	if response.Code != http.StatusOK || response.Body.String() != "success" {
+		t.Fatalf("status = %d, body=%q; want recorded provider rejection", response.Code, response.Body.String())
+	}
+	if len(db.batches) != 1 || len(db.batches[0]) != 3 {
+		t.Fatalf("payout callback statements = %#v; want event, CID capture, and terminal transition", db.batches)
+	}
+	terminalSQL := db.batches[0][2].SQL
+	if !strings.Contains(terminalSQL, "status IN ('submitted_to_cregis', 'executing', 'exception')") ||
+		!strings.Contains(terminalSQL, "AND cregis_cid=?") {
+		t.Fatalf("terminal transition does not safely handle callback races: %s", terminalSQL)
+	}
 }
 
 type callbackCregisClient struct {

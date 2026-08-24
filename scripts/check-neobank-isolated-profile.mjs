@@ -157,7 +157,7 @@ assert.match(authLayout, /mdUp && !focused && renderSection/);
 assert.match(authLayout, /maxWidth: focused \? 1180 : 520/);
 assert.match(
   registrationPage,
-  /const individualStartsSumsub = form\.accountType === 'individual' && activeStep === 2/
+  /const individualStartsSumsub = form\.accountType === 'individual' && activeStep === 4/
 );
 assert.match(
   registrationPage,
@@ -177,18 +177,22 @@ const registrationDetails = registrationPage.slice(
 const registrationFieldOrder = [
   "countrySelect('residenceCountry'",
   'auth.registration.details.contact',
-  'auth.registration.fields.email',
   'auth.registration.fields.phone',
-  'auth.registration.details.security',
-  'auth.registration.fields.password',
 ].map((marker) => registrationDetails.indexOf(marker));
 assert.ok(
   registrationFieldOrder.every(
     (position, index) =>
       position >= 0 && (index === 0 || position > registrationFieldOrder[index - 1])
   ),
-  'registration details must keep identity, contact, and sign-in security fields grouped'
+  'registration details must keep identity and contact fields grouped'
 );
+assert.doesNotMatch(registrationDetails, /auth\.registration\.fields\.(email|password)/);
+assert.match(registrationPage, /const renderEmailVerification =/);
+assert.match(registrationPage, /const renderPassword =/);
+assert.match(registrationPage, /\/api\/auth\/customer\/registration\/start/);
+assert.match(registrationPage, /\/api\/auth\/customer\/registration\/password/);
+assert.match(registrationPage, /\/api\/auth\/customer\/registration\/complete/);
+assert.match(registrationPage, /'x-csrf-token': sumsubCSRFToken/);
 assert.match(roleAccess, /admin: IS_ISOLATED_WALLET_DEPLOYMENT \? '\/admin'/);
 assert.match(roleAccess, /customer: '\/portal\/home'/);
 assert.match(roleAccess, /pathname === '\/portal\/virtual-accounts'/);

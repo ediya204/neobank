@@ -79,6 +79,8 @@ type customerOnboardingSession struct {
 	ExternalUserID       string
 	ApplicantID          string
 	ProviderStatus       string
+	EmailVerified        bool
+	PasswordReady        bool
 	ExpiresAt            time.Time
 	IdleExpiresAt        time.Time
 }
@@ -153,12 +155,13 @@ func (app *application) loadOnboardingSession(r *http.Request) (*customerOnboard
 		return nil, "", errors.New("onboarding session missing")
 	}
 	rows, err := app.db.Query(r.Context(), `SELECT s.id, s.customer_id, s.csrf_hash, s.expires_at, s.idle_expires_at,
-	  c.email, ca.phone_country_code, ca.phone, ca.residence_country, ca.application_reference,
+	  c.email, c.email_verified_at, cc.password_hash, ca.phone_country_code, ca.phone, ca.residence_country, ca.application_reference,
 	  v.id AS verification_id, v.external_user_id, v.applicant_id, v.status AS provider_status
 	  FROM customer_onboarding_sessions s
 	  JOIN customers c ON c.id=s.customer_id
-	  JOIN customer_applications ca ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id
-	  JOIN customer_kyc_verifications v ON v.customer_id=c.id AND v.tenant_id=c.tenant_id
+	  LEFT JOIN customer_credentials cc ON cc.customer_id=c.id
+	  LEFT JOIN customer_applications ca ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id
+	  LEFT JOIN customer_kyc_verifications v ON v.customer_id=c.id AND v.tenant_id=c.tenant_id
 	  WHERE s.token_hash=? AND s.revoked_at IS NULL AND c.tenant_id=?
 	    AND c.kyc_status='pending' AND c.operations_status='pending'
 	    AND s.expires_at>? AND s.idle_expires_at>?`, tokenHash(cookie.Value), app.tenantID,
@@ -186,7 +189,9 @@ func (app *application) loadOnboardingSession(r *http.Request) (*customerOnboard
 		ResidenceCountry: text(rows[0]["residence_country"]), ApplicationReference: text(rows[0]["application_reference"]),
 		VerificationID: text(rows[0]["verification_id"]), ExternalUserID: text(rows[0]["external_user_id"]),
 		ApplicantID: text(rows[0]["applicant_id"]), ProviderStatus: text(rows[0]["provider_status"]),
-		ExpiresAt: expiresAt, IdleExpiresAt: idleExpiresAt,
+		EmailVerified: text(rows[0]["email_verified_at"]) != "",
+		PasswordReady: text(rows[0]["password_hash"]) != "",
+		ExpiresAt:     expiresAt, IdleExpiresAt: idleExpiresAt,
 	}, csrfCookie.Value, nil
 }
 
@@ -207,10 +212,6 @@ func countryAlpha3(value string) string {
 }
 
 func (app *application) onboardingLogin(w http.ResponseWriter, r *http.Request) {
-	if app.sumsub == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"code": "sumsub_not_configured"}})
-		return
-	}
 	var input struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -219,13 +220,12 @@ func (app *application) onboardingLogin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	email := normalizeCustomerEmail(input.Email)
-	rows, err := app.db.Query(r.Context(), `SELECT c.id, cc.password_salt, cc.password_hash, cc.password_algorithm,
+	rows, err := app.db.Query(r.Context(), `SELECT c.id, c.email_verified_at, cc.password_salt, cc.password_hash, cc.password_algorithm,
 	  cc.password_iterations, cc.password_memory_kib, cc.password_time_cost, cc.password_parallelism,
 	  ca.application_reference
 	  FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
-	  JOIN customer_applications ca ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id
-	  JOIN customer_kyc_verifications v ON v.customer_id=c.id AND v.tenant_id=c.tenant_id
-	  WHERE c.tenant_id=? AND c.email=? AND ca.account_type='individual'
+	  LEFT JOIN customer_applications ca ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id
+	  WHERE c.tenant_id=? AND c.email=? AND c.created_by='public_registration'
 	    AND c.kyc_status='pending' AND c.operations_status='pending'`, app.tenantID, email)
 	valid := false
 	if err == nil && len(rows) == 1 {
@@ -251,6 +251,8 @@ func (app *application) onboardingLogin(w http.ResponseWriter, r *http.Request) 
 	app.setOnboardingSessionCookies(w, token, csrfToken, now.Add(onboardingSessionDuration))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"application_reference": text(rows[0]["application_reference"]), "csrf_token": csrfToken,
+		"email_verified":        text(rows[0]["email_verified_at"]) != "",
+		"application_completed": text(rows[0]["application_reference"]) != "",
 	})
 }
 
@@ -258,6 +260,15 @@ func (app *application) onboardingStatus(w http.ResponseWriter, r *http.Request)
 	session, _, err := app.loadOnboardingSession(r)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "onboarding_session_expired"}})
+		return
+	}
+	if session.VerificationID == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"application_reference": session.ApplicationReference,
+			"application_completed": session.ApplicationReference != "",
+			"email_verified":        session.EmailVerified,
+			"password_ready":        session.PasswordReady,
+		})
 		return
 	}
 	rows, err := app.db.Query(r.Context(), `SELECT status, review_status, review_answer, review_reject_type,
@@ -274,6 +285,9 @@ func (app *application) onboardingStatus(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"application_reference": session.ApplicationReference,
+		"application_completed": true,
+		"email_verified":        session.EmailVerified,
+		"password_ready":        session.PasswordReady,
 		"verification":          customerVisibleVerification(rows[0], steps),
 	})
 }
@@ -284,7 +298,6 @@ func (app *application) restartCustomerOnboarding(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "onboarding_session_expired"}})
 		return
 	}
-
 	nowText := databaseTimestamp(time.Now())
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: `UPDATE customer_onboarding_sessions
@@ -358,6 +371,18 @@ func (app *application) createOnboardingSumsubToken(w http.ResponseWriter, r *ht
 	session, err := app.requireOnboardingMutation(r)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "onboarding_session_expired"}})
+		return
+	}
+	if !session.EmailVerified {
+		conflict(w, "customer_email_verification_required")
+		return
+	}
+	if !session.PasswordReady {
+		conflict(w, "customer_registration_password_required")
+		return
+	}
+	if session.VerificationID == "" || session.ExternalUserID == "" {
+		conflict(w, "customer_registration_incomplete")
 		return
 	}
 	providerInput := sumsubapi.ApplicantInput{

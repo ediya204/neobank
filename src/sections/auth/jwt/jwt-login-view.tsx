@@ -45,6 +45,13 @@ type Props = {
 const AUTH_ERROR_KEYS: Record<string, string> = {
   invalid_credentials: 'auth.errors.invalid_credentials',
   invalid_email_or_password: 'auth.errors.invalid_credentials',
+  customer_email_verification_required: 'auth.errors.customer_email_verification_required',
+  customer_verification_pending: 'auth.errors.customer_verification_pending',
+  customer_verification_resubmission_required:
+    'auth.errors.customer_verification_resubmission_required',
+  customer_verification_rejected: 'auth.errors.customer_verification_rejected',
+  customer_approval_pending: 'auth.errors.customer_approval_pending',
+  customer_activation_pending: 'auth.errors.customer_activation_pending',
   invalid_totp: 'auth.errors.invalid_totp',
   invalid_totp_code: 'auth.errors.invalid_totp',
   totp_code_invalid: 'auth.errors.invalid_totp',

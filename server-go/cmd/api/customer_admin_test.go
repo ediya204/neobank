@@ -241,7 +241,9 @@ func TestKYCApprovalAutomaticallyActivatesCustomerBeforeWalletProvisioning(t *te
 		"operations_status='pending'",
 		"password_hash IS NOT NULL",
 		"THEN 'active'",
-		"created_by<>'public_registration' OR email_verified_at IS NOT NULL",
+		"created_by<>'public_registration' OR (",
+		"email_verified_at IS NOT NULL AND EXISTS",
+		"customer_applications ca",
 	} {
 		if !strings.Contains(approveCustomerKYCAutomationSQL, required) {
 			t.Fatalf("automatic KYC approval SQL must contain %q", required)

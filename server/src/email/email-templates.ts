@@ -85,7 +85,9 @@ function layout(
         <p style="font-size:15px;line-height:1.7;margin:0 0 24px">${safeMessage}</p>
         <a href="${escapeHtml(
           portalUrl
-        )}" style="display:inline-block;background:#173f8a;color:#ffffff;text-decoration:none;border-radius:8px;padding:11px 18px">${escapeHtml(actionLabel)}</a>
+        )}" style="display:inline-block;background:#173f8a;color:#ffffff;text-decoration:none;border-radius:8px;padding:11px 18px">${escapeHtml(
+          actionLabel
+        )}</a>
         <p style="font-size:12px;line-height:1.6;color:#7a8499;margin:24px 0 0">为保护账户安全，本邮件不包含余额、完整账号、钱包地址或操作凭据。如非本人操作，请通过官方渠道联系支持团队。</p>
       </div>
     </div>
@@ -126,7 +128,8 @@ export function renderEmailTemplate(
     email_change_requested: {
       subject: '邮箱变更申请提醒 | Email change requested',
       title: '已申请变更登录邮箱',
-      message: '我们收到了登录邮箱变更申请。新邮箱验证后仍有 24 小时安全等待期；如非本人操作，请立即联系支持团队。',
+      message:
+        '我们收到了登录邮箱变更申请。新邮箱验证后仍有 24 小时安全等待期；如非本人操作，请立即联系支持团队。',
     },
     email_changed_old: {
       subject: '登录邮箱已变更 | Sign-in email changed',
@@ -151,17 +154,20 @@ export function renderEmailTemplate(
     password_changed: {
       subject: '登录密码已修改 | Sign-in password changed',
       title: '登录密码已修改',
-      message: '您的客户网上银行登录密码已修改，其他设备上的会话已退出。如非本人操作，请立即使用找回密码并联系支持团队。',
+      message:
+        '您的客户网上银行登录密码已修改，其他设备上的会话已退出。如非本人操作，请立即使用找回密码并联系支持团队。',
     },
     recovery_codes_regenerated: {
       subject: '恢复码已重新生成 | Recovery codes regenerated',
       title: '恢复码已重新生成',
-      message: '您的两步验证恢复码已重新生成，所有旧恢复码已立即失效。如非本人操作，请立即联系支持团队。',
+      message:
+        '您的两步验证恢复码已重新生成，所有旧恢复码已立即失效。如非本人操作，请立即联系支持团队。',
     },
     totp_replaced: {
       subject: '验证器已更换 | Authenticator replaced',
       title: '验证器已更换',
-      message: '您的两步验证器已更换，旧验证器、旧恢复码和其他设备会话已失效。如非本人操作，请立即联系支持团队。',
+      message:
+        '您的两步验证器已更换，旧验证器、旧恢复码和其他设备会话已失效。如非本人操作，请立即联系支持团队。',
     },
     'security.withdrawals_locked': {
       subject: '转出保护已锁定 | Withdrawals locked',
@@ -181,7 +187,8 @@ export function renderEmailTemplate(
     account_closure_requested: {
       subject: '账户关闭申请已提交 | Account closure requested',
       title: '账户关闭申请已提交',
-      message: '您的账户关闭申请已进入人工审核。审核完成前账户不会自动关闭，您可在安全中心取消申请。',
+      message:
+        '您的账户关闭申请已进入人工审核。审核完成前账户不会自动关闭，您可在安全中心取消申请。',
     },
   };
   switch (templateKey) {
@@ -221,7 +228,7 @@ export function renderEmailTemplate(
         html: layout(
           payload.displayName,
           '验证您的客户邮箱',
-          '请验证此邮箱属于您本人。验证完成后，您可重新发起密码重置。此链接将在 30 分钟后失效，并且只能使用一次。',
+          '请验证此邮箱属于您本人。完成邮箱验证后，请返回开户注册页面设置登录密码，再填写身份资料并完成身份核验。邮箱验证不代表账户已经开通。此链接将在 30 分钟后失效，并且只能使用一次。',
           portalBaseUrl,
           {
             label: '验证邮箱',

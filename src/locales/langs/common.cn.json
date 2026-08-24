@@ -157,6 +157,8 @@
       "already_have_account": "已有账户？",
       "sign_in": "返回登录",
       "steps": {
+        "verify_email": "验证电子邮箱",
+        "password": "设置登录密码",
         "account_type": "选择开户类型",
         "details": "填写账户申请资料",
         "kyc": "准备身份验证",
@@ -172,6 +174,28 @@
           "title": "企业账户",
           "description": "适用于公司、机构及其他登记实体，需核验董事与最终受益人。"
         }
+      },
+      "email_verification": {
+        "description": "请先验证您的电子邮箱。验证完成前，系统不会收集 KYC 身份资料，也不会向 Sumsub 发送任何申请人资料。",
+        "email_hint": "验证后，该邮箱将用于继续开户注册、接收审核通知及登录网上银行。",
+        "sent_title": "验证邮件已发送",
+        "sent_description": "请打开发送至 {{email}} 的邮件并点击“验证邮箱”，然后返回本页继续。",
+        "sent_notice": "若未收到邮件，请检查垃圾邮件文件夹；验证链接有效期为 30 分钟。",
+        "send": "发送验证邮件",
+        "checking": "正在检查验证状态…",
+        "verified_continue": "我已验证，继续",
+        "resend": "重新发送验证邮件",
+        "start_error": "暂时无法发送验证邮件，请稍后重试。",
+        "not_verified": "邮箱尚未完成验证。请先打开验证邮件并点击“验证邮箱”。",
+        "rate_limited": "验证邮件刚刚发送，请稍候一分钟再重试。",
+        "resend_error": "暂时无法重新发送验证邮件，请稍后重试。"
+      },
+      "password_step": {
+        "email_verified": "邮箱 {{email}} 已验证。",
+        "description": "现在请设置登录密码。完成后才能继续填写 KYC 资料。",
+        "save_continue": "保存密码并继续",
+        "saving": "正在安全保存密码…",
+        "save_error": "暂时无法保存登录密码，请重试。"
       },
       "details": {
         "privacy": "本步骤仅收集账户预审所需资料。身份证件与人脸信息将在受保护的身份验证页面提交。",
@@ -239,14 +263,16 @@
         "required": "请填写此项。",
         "account_type": "请选择个人账户或企业账户。",
         "email": "请输入有效的电子邮箱。",
-        "password": "密码须为 14–128 位，并包含大写字母、小写字母、数字和符号。",
+        "password": "密码须为 14–128 位半角字符，并包含大写字母、小写字母、数字和符号。",
         "passwords_mismatch": "两次输入的密码不一致。",
         "phone": "请输入有效的电话号码。",
         "adult": "个人账户申请人须年满 18 周岁。",
         "english_name": "只能输入英文字母，可使用空格、连字符或英文撇号。",
         "ownership": "比例必须大于 0 且不超过 100。",
         "kyc_consent": "请确认身份验证资料处理授权。",
-        "terms": "请确认声明后再提交。"
+        "terms": "请确认声明后再提交。",
+        "kyc_consent_field": "身份验证资料处理授权",
+        "terms_field": "申请声明"
       },
       "actions": {
         "back": "上一步",
@@ -259,7 +285,8 @@
       "errors": {
         "submit": "申请暂时无法提交，请稍后重试。系统不会因此自动开通账户。",
         "already_exists": "该邮箱已有待审核申请或账户。请使用原申请密码恢复身份验证，或联系客户服务核实进度。",
-        "validation_failed": "提交资料未通过校验，请返回检查邮箱、密码及个人资料格式。"
+        "validation_failed": "提交资料未通过校验，请检查页面中的标红项目。",
+        "fix_fields": "请修正以下标红项目后再继续：{{fields}}。"
       },
       "sumsub": {
         "required_notice": "请在下方完成全部身份核验。核验完成仅代表申请可进入本机构合规审核，不代表账户已经开通。",
@@ -293,7 +320,7 @@
         "title": "账户申请已收到",
         "subtitle": "您的申请已进入资料预审。提交申请不代表账户已经开通；请等待 KYC / KYB 合规审核结果。",
         "reference": "申请编号",
-        "next_email": "妥善保存申请编号，并留意补件联络。",
+        "next_email": "邮箱已经验证；请妥善保存申请编号，并留意补件联络。",
         "next_kyc": "等待合规人员完成人工 KYC / KYB 审核。",
         "next_review": "等待合规人员审核；KYC / KYB 通过并自动激活后，即可使用该邮箱和密码直接登录。",
         "back_to_login": "返回登录",
@@ -388,24 +415,30 @@
         "eyebrow": "邮箱验证",
         "title": "验证账户邮箱",
         "subtitle": "我们正在确认此邮箱属于您的客户账户。验证链接只能使用一次。",
-        "complete": "邮箱验证成功。现在可以重新申请密码重置链接。",
-        "continue": "继续找回密码",
-        "invalid": "此邮箱验证链接无效、已过期或已被使用。请重新发起找回密码。",
-      "request_again": "重新发起找回密码"
-    },
-    "emailChange": {
-      "page_title": "验证新登录邮箱",
-      "eyebrow": "邮箱安全变更",
-      "title": "验证新的登录邮箱",
-      "subtitle": "我们正在确认此邮箱属于您。验证后仍有 24 小时安全等待期，旧邮箱在变更生效前仍可登录。",
-      "complete": "新邮箱验证成功。请在 24 小时安全等待期结束后，返回安全中心确认生效。",
-      "continue": "返回安全中心",
-      "invalid": "此邮箱变更链接无效、已过期或已被使用。请登录后重新申请。",
-      "request_again": "返回登录"
-    }
+        "complete": "邮箱验证成功。现在可以继续设置登录密码并填写开户注册资料。",
+        "continue": "继续开户注册",
+        "invalid": "此邮箱验证链接无效、已过期或已被使用。请返回开户注册页面重新发送验证邮件。",
+        "request_again": "返回开户注册"
+      },
+      "emailChange": {
+        "page_title": "验证新登录邮箱",
+        "eyebrow": "邮箱安全变更",
+        "title": "验证新的登录邮箱",
+        "subtitle": "我们正在确认此邮箱属于您。验证后仍有 24 小时安全等待期，旧邮箱在变更生效前仍可登录。",
+        "complete": "新邮箱验证成功。请在 24 小时安全等待期结束后，返回安全中心确认生效。",
+        "continue": "返回安全中心",
+        "invalid": "此邮箱变更链接无效、已过期或已被使用。请登录后重新申请。",
+        "request_again": "返回登录"
+      }
     },
     "errors": {
       "invalid_credentials": "邮箱或密码不正确。",
+      "customer_email_verification_required": "密码正确，但登录邮箱尚未完成验证。请先打开验证邮件完成邮箱验证。",
+      "customer_verification_pending": "密码正确，身份验证尚未完成或仍在处理中。请返回开户注册页面查看进度。",
+      "customer_verification_resubmission_required": "密码正确，但身份验证需要补充或重新提交资料。请返回开户注册页面继续处理。",
+      "customer_verification_rejected": "密码正确，但身份验证未通过，账户目前不能登录。请查看验证反馈或联系客户服务。",
+      "customer_approval_pending": "密码正确，身份验证已完成，开户注册正在等待后台审批。审批通过并激活后即可登录。",
+      "customer_activation_pending": "密码正确，账户已通过合规审核，正在等待激活。激活完成后即可登录。",
       "invalid_totp": "动态验证码不正确或已过期，请输入当前验证码。",
       "invalid_recovery_code": "恢复代码无效或已被使用。",
       "password_unchanged": "新密码不能与当前密码相同。",

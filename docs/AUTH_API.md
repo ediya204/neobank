@@ -430,6 +430,28 @@ All JSON errors use:
 `details` is optional. Messages may be localized; clients must branch on
 `error.code`.
 
+The staged customer registration API is ordered as follows:
+
+1. `POST /api/auth/customer/registration/start` accepts only the email address,
+   creates a minimal PostgreSQL-backed draft, and queues `CUSTOMER_EMAIL_VERIFICATION`.
+2. `POST /api/auth/customer/email-verification/complete` consumes the one-time link,
+   records `email_verified_at`, and issues a continuation onboarding session.
+3. `POST /api/auth/customer/registration/password` stores the Argon2id password hash.
+4. `POST /api/auth/customer/registration/complete` accepts the KYC/KYB profile and
+   consent fields and creates the submitted application.
+5. Only after the first four stages may
+   `POST /api/auth/customer/onboarding/kyc/token` create or access a Sumsub Applicant.
+
+`POST /api/auth/customer/onboarding/email-verification/resend` requires the
+onboarding cookie plus CSRF token and is limited to one message per minute. The
+legacy all-in-one `POST /api/auth/customer/register` remains for staged-release
+compatibility but is not used by the current registration UI.
+
+For customer registration completion, `422 validation_error` includes
+`error.details.fields`, an array of invalid request-field names that clients can
+map back to the corresponding registration controls. The array never includes
+submitted values.
+
 | HTTP  | Code                   | Applies when                                                 |
 | ----- | ---------------------- | ------------------------------------------------------------ |
 | `400` | `invalid_json`         | Body is not valid JSON or is not a JSON object.              |
@@ -447,6 +469,13 @@ All JSON errors use:
 
 `429` responses include `Retry-After`. No authentication endpoint returns a
 secret in an error response.
+
+Customer password login verifies the password before disclosing a non-active
+application state. A correct password can return `409` with one of
+`customer_email_verification_required`, `customer_verification_pending`,
+`customer_verification_resubmission_required`, `customer_verification_rejected`,
+`customer_approval_pending`, or `customer_activation_pending`. An incorrect
+password always returns the generic `401 invalid_email_or_password` response.
 
 ## Customer security center (P0-P2)
 

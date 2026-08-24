@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +13,25 @@ import (
 
 	sumsubapi "github.com/ediya204/neobank/server-go/internal/sumsub"
 )
+
+type gatedSumsubProvider struct {
+	ensureCalls int
+}
+
+func (provider *gatedSumsubProvider) LevelName() string { return "neobank_individual_v1" }
+func (provider *gatedSumsubProvider) EnsureApplicant(context.Context, sumsubapi.ApplicantInput) (sumsubapi.Applicant, error) {
+	provider.ensureCalls++
+	return sumsubapi.Applicant{ID: "0123456789abcdef01234567"}, nil
+}
+func (provider *gatedSumsubProvider) CreateSDKToken(context.Context, sumsubapi.ApplicantInput, int) (sumsubapi.SDKToken, error) {
+	return sumsubapi.SDKToken{Token: "sdk-token"}, nil
+}
+func (provider *gatedSumsubProvider) GetReviewStatus(context.Context, string) (sumsubapi.ReviewStatus, error) {
+	return sumsubapi.ReviewStatus{}, nil
+}
+func (provider *gatedSumsubProvider) GetRequiredSteps(context.Context, string) (sumsubapi.RequiredSteps, error) {
+	return sumsubapi.RequiredSteps{}, nil
+}
 
 func onboardingRestartFixture(t *testing.T) (*application, *sessionTouchDatabase, *http.Request) {
 	t.Helper()
@@ -32,6 +52,39 @@ func onboardingRestartFixture(t *testing.T) (*application, *sessionTouchDatabase
 	request.AddCookie(&http.Cookie{Name: app.onboardingCSRFCookieName(), Value: csrf})
 	request.Header.Set("X-CSRF-Token", csrf)
 	return app, db, request
+}
+
+func TestSumsubTokenRequiresVerifiedRegistrationEmail(t *testing.T) {
+	app, _, request := onboardingRestartFixture(t)
+	provider := &gatedSumsubProvider{}
+	app.sumsub = provider
+	response := httptest.NewRecorder()
+
+	app.createOnboardingSumsubToken(response, request)
+
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "customer_email_verification_required") {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	if provider.ensureCalls != 0 {
+		t.Fatal("Sumsub must not receive applicant data before email verification")
+	}
+}
+
+func TestSumsubTokenRequiresRegistrationPassword(t *testing.T) {
+	app, db, request := onboardingRestartFixture(t)
+	provider := &gatedSumsubProvider{}
+	app.sumsub = provider
+	db.rows[0]["email_verified_at"] = databaseTimestamp(time.Now().UTC())
+	response := httptest.NewRecorder()
+
+	app.createOnboardingSumsubToken(response, request)
+
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "customer_registration_password_required") {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	if provider.ensureCalls != 0 {
+		t.Fatal("Sumsub must not receive applicant data before the registration password is set")
+	}
 }
 
 func TestRestartCustomerOnboardingRevokesSessionAuditsAndClearsCookies(t *testing.T) {

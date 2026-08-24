@@ -104,6 +104,18 @@ function kycReviewPresentation(status: Customer['kycStatus']) {
   return { label: '待审核', color: 'warning' as const };
 }
 
+function kycReviewErrorMessage(value: unknown) {
+  const code = value instanceof Error ? value.message : '';
+  const messages: Record<string, string> = {
+    customer_email_verification_required: '客户尚未完成邮箱验证，暂时不能通过 KYC 或自动开户。',
+    customer_registration_incomplete: '客户尚未完成开户注册资料，暂时不能进入 KYC 审核。',
+    customer_registration_password_required: '客户尚未设置登录密码，暂时不能通过 KYC 或自动开户。',
+    sumsub_verification_not_ready: 'Sumsub 身份核验尚未完成，请同步最新状态后再审核。',
+    sumsub_configuration_mismatch: 'Sumsub 环境或 Level 配置不一致，请联系系统管理员。',
+  };
+  return messages[code] || code || 'KYC 审核提交失败';
+}
+
 function formatDate(value?: string | null) {
   if (!value) return '—';
   const parsed = new Date(value);
@@ -261,7 +273,7 @@ export default function KycReviewWorkspace() {
       }
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'KYC 审核提交失败');
+      setError(kycReviewErrorMessage(caught));
     } finally {
       setSubmitting(false);
     }

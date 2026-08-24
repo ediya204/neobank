@@ -127,3 +127,11 @@ The Go service and email worker must use the same
 metadata without printing the secret. A controlled production email test is a
 separate action and must verify the selected outbox row reaches `SENT`; service
 health alone is not delivery evidence.
+## Customer registration verification
+
+New customer registration sends `CUSTOMER_EMAIL_VERIFICATION` before collecting
+the password or KYC profile. Its action opens `/customer/verify-email`; after a
+successful one-time verification, the customer returns to `/portal/register` to
+set a password and continue the application. The message must not describe the
+action as password recovery. The link expires after 30 minutes, and authenticated
+onboarding sessions may request a replacement no more than once per minute.

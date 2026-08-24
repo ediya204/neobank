@@ -67,6 +67,10 @@ type customerRegistrationInput struct {
 }
 
 func normalizeRegistrationInput(input *customerRegistrationInput) bool {
+	return normalizeRegistrationInputMode(input, true)
+}
+
+func normalizeRegistrationInputMode(input *customerRegistrationInput, requirePassword bool) bool {
 	input.AccountType = strings.ToLower(strings.TrimSpace(input.AccountType))
 	input.Email = normalizeCustomerEmail(input.Email)
 	input.PhoneCountryCode = strings.TrimSpace(input.PhoneCountryCode)
@@ -90,45 +94,115 @@ func normalizeRegistrationInput(input *customerRegistrationInput) bool {
 	input.BeneficialOwnerName = strings.TrimSpace(input.BeneficialOwnerName)
 	input.BeneficialOwnerOwnership = strings.TrimSpace(input.BeneficialOwnerOwnership)
 
-	if input.Email == "" || !validCustomerPassword(input.Password) ||
-		!customerPhoneCodePattern.MatchString(input.PhoneCountryCode) ||
-		!customerPhonePattern.MatchString(input.Phone) ||
-		!customerCountryPattern.MatchString(input.ResidenceCountry) ||
-		!input.KYCConsent || !input.TermsAccepted {
-		return false
+	fields := registrationValidationFields(input, requirePassword)
+	if len(fields) == 0 && input.AccountType == "individual" &&
+		(input.FamilyName != "" || input.GivenName != "") {
+		input.FullName = input.GivenName + " " + input.FamilyName
 	}
+	return len(fields) == 0
+}
+
+func registrationValidationFields(input *customerRegistrationInput, requirePassword bool) []string {
+	fields := make([]string, 0, 8)
+	add := func(field string) {
+		for _, existing := range fields {
+			if existing == field {
+				return
+			}
+		}
+		fields = append(fields, field)
+	}
+
+	if input.AccountType != "individual" && input.AccountType != "business" {
+		add("account_type")
+	}
+	if input.Email == "" {
+		add("email")
+	}
+	if requirePassword && !validCustomerPassword(input.Password) {
+		add("password")
+	}
+	if !customerPhoneCodePattern.MatchString(input.PhoneCountryCode) {
+		add("phone_country_code")
+	}
+	if !customerPhonePattern.MatchString(input.Phone) {
+		add("phone")
+	}
+	if !customerCountryPattern.MatchString(input.ResidenceCountry) {
+		add("residence_country")
+	}
+	if !input.KYCConsent {
+		add("kyc_consent")
+	}
+	if !input.TermsAccepted {
+		add("terms_accepted")
+	}
+
 	if input.AccountType == "individual" {
 		if input.FamilyName != "" || input.GivenName != "" {
-			if input.FullName != "" || !validEnglishLegalName(input.FamilyName, 50) ||
-				!validEnglishLegalName(input.GivenName, 50) {
-				return false
+			if input.FullName != "" || !validEnglishLegalName(input.FamilyName, 50) {
+				add("family_name")
 			}
-			input.FullName = input.GivenName + " " + input.FamilyName
+			if input.FullName != "" || !validEnglishLegalName(input.GivenName, 50) {
+				add("given_name")
+			}
 		} else if !validEnglishLegalName(input.FullName, 100) {
-			return false
+			add("family_name")
+			add("given_name")
 		}
 		birthDate, err := time.Parse("2006-01-02", input.DateOfBirth)
 		adultCutoff := time.Now().UTC().AddDate(-18, 0, 0)
-		return err == nil && !birthDate.After(adultCutoff) &&
-			customerCountryPattern.MatchString(input.Nationality) &&
-			input.LegalName == "" && input.RegistrationNumber == "" &&
-			input.IncorporationCountry == "" && input.ContactName == "" &&
-			input.ContactRole == "" && input.BeneficialOwnerName == "" &&
-			input.BeneficialOwnerOwnership == ""
+		if err != nil || birthDate.After(adultCutoff) {
+			add("date_of_birth")
+		}
+		if !customerCountryPattern.MatchString(input.Nationality) {
+			add("nationality")
+		}
+		if input.LegalName != "" || input.RegistrationNumber != "" ||
+			input.IncorporationCountry != "" || input.ContactName != "" ||
+			input.ContactRole != "" || input.BeneficialOwnerName != "" ||
+			input.BeneficialOwnerOwnership != "" {
+			add("account_type")
+		}
 	}
 	if input.AccountType == "business" {
 		ownership, err := strconv.ParseFloat(input.BeneficialOwnerOwnership, 64)
-		return err == nil && ownership > 0 && ownership <= 100 &&
-			validRegistrationText(input.LegalName, 160) &&
-			validRegistrationText(input.RegistrationNumber, 100) &&
-			customerCountryPattern.MatchString(input.IncorporationCountry) &&
-			validRegistrationText(input.ContactName, 100) &&
-			validRegistrationText(input.ContactRole, 100) &&
-			validRegistrationText(input.BeneficialOwnerName, 100) &&
-			input.FamilyName == "" && input.GivenName == "" && input.FullName == "" &&
-			input.DateOfBirth == "" && input.Nationality == ""
+		if err != nil || ownership <= 0 || ownership > 100 {
+			add("beneficial_owner_ownership")
+		}
+		if !validRegistrationText(input.LegalName, 160) {
+			add("legal_name")
+		}
+		if !validRegistrationText(input.RegistrationNumber, 100) {
+			add("registration_number")
+		}
+		if !customerCountryPattern.MatchString(input.IncorporationCountry) {
+			add("incorporation_country")
+		}
+		if !validRegistrationText(input.ContactName, 100) {
+			add("contact_name")
+		}
+		if !validRegistrationText(input.ContactRole, 100) {
+			add("contact_role")
+		}
+		if !validRegistrationText(input.BeneficialOwnerName, 100) {
+			add("beneficial_owner_name")
+		}
+		if input.FamilyName != "" || input.GivenName != "" || input.FullName != "" ||
+			input.DateOfBirth != "" || input.Nationality != "" {
+			add("account_type")
+		}
 	}
-	return false
+	return fields
+}
+
+func customerRegistrationValidationError(w http.ResponseWriter, fields []string) {
+	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+		"error": map[string]any{
+			"code":    "validation_error",
+			"details": map[string]any{"fields": fields},
+		},
+	})
 }
 
 func validEnglishLegalName(value string, maximum int) bool {
@@ -169,7 +243,7 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if !normalizeRegistrationInput(&input) {
-		validationError(w)
+		customerRegistrationValidationError(w, registrationValidationFields(&input, true))
 		return
 	}
 	fingerprint := app.registrationFingerprint(input)

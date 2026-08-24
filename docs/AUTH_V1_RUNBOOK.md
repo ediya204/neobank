@@ -26,9 +26,14 @@ gate and automatically activates the customer and provisions the Cregis-verified
 USDT-TRC20 wallet without a second Operations approval click. Business KYB remains
 on the existing manual path.
 
-The intended registration lifecycle is:
+The intended individual registration lifecycle is:
 
-`application_submitted -> sumsub_pending -> ready_for_admin_review -> manual_kyc_approved -> active`
+`email_submitted -> email_verified -> password_set -> application_submitted -> sumsub_pending -> ready_for_admin_review -> manual_kyc_approved -> active`
+
+The browser must not collect KYC profile fields before email verification, and the
+Go API independently refuses application completion and Sumsub token issuance until
+`email_verified_at` is present. Email verification issues a fresh onboarding session
+so the customer can continue safely even when the link is opened on another device.
 
 Sumsub completion does not activate an account. Only the authenticated Admin KYC
 decision does so in the Neobank profile. The existing first-login flow remains

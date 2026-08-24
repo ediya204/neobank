@@ -127,14 +127,17 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
           if (active) setResetState('invalid');
         });
     } else {
-      const token = consumeFragmentToken(mode === 'emailChange' ? 'email_change_token' : 'verification_token');
+      const token = consumeFragmentToken(
+        mode === 'emailChange' ? 'email_change_token' : 'verification_token'
+      );
       if (!token) {
         setVerifyState('invalid');
         return undefined;
       }
-      const verification = mode === 'emailChange'
-        ? verifyCustomerEmailChange(token)
-        : completeCustomerEmailVerification(token);
+      const verification =
+        mode === 'emailChange'
+          ? verifyCustomerEmailChange(token)
+          : completeCustomerEmailVerification(token);
       verification
         .then(() => {
           if (active) setVerifyState('complete');
@@ -190,7 +193,10 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
         size="small"
         sx={{ alignSelf: 'flex-start' }}
       />
-      <Typography variant="overline" sx={{ color: 'primary.main', letterSpacing: 1, fontWeight: 700 }}>
+      <Typography
+        variant="overline"
+        sx={{ color: 'primary.main', letterSpacing: 1, fontWeight: 700 }}
+      >
         {t(`auth.password_recovery.${mode}.eyebrow`)}
       </Typography>
       <Typography variant="h3">{t(`auth.password_recovery.${mode}.title`)}</Typography>
@@ -248,12 +254,22 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
   } else if (mode === 'verify' || mode === 'emailChange') {
     const verifyKey = mode === 'emailChange' ? 'emailChange' : 'verify';
     if (verifyState === 'checking') {
-      content = <Stack spacing={1.5}><Skeleton height={56} /><Skeleton width="70%" /></Stack>;
+      content = (
+        <Stack spacing={1.5}>
+          <Skeleton height={56} />
+          <Skeleton width="70%" />
+        </Stack>
+      );
     } else if (verifyState === 'complete') {
       content = (
         <Stack spacing={2.5}>
           <Alert severity="success">{t(`auth.password_recovery.${verifyKey}.complete`)}</Alert>
-          <Button component={RouterLink} href={mode === 'emailChange' ? '/portal/settings' : paths.auth.customer.forgotPassword} variant="contained" color="inherit">
+          <Button
+            component={RouterLink}
+            href={mode === 'emailChange' ? '/portal/settings' : '/portal/register'}
+            variant="contained"
+            color="inherit"
+          >
             {t(`auth.password_recovery.${verifyKey}.continue`)}
           </Button>
           {backToLogin}
@@ -263,7 +279,12 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
       content = (
         <Stack spacing={2.5}>
           <Alert severity="error">{t(`auth.password_recovery.${verifyKey}.invalid`)}</Alert>
-          <Button component={RouterLink} href={mode === 'emailChange' ? paths.auth.customer.login : paths.auth.customer.forgotPassword} variant="outlined" color="inherit">
+          <Button
+            component={RouterLink}
+            href={mode === 'emailChange' ? paths.auth.customer.login : '/portal/register'}
+            variant="outlined"
+            color="inherit"
+          >
             {t(`auth.password_recovery.${verifyKey}.request_again`)}
           </Button>
           {backToLogin}
@@ -271,12 +292,23 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
       );
     }
   } else if (resetState === 'checking') {
-    content = <Stack spacing={1.5}><Skeleton height={56} /><Skeleton height={56} /><Skeleton width="70%" /></Stack>;
+    content = (
+      <Stack spacing={1.5}>
+        <Skeleton height={56} />
+        <Skeleton height={56} />
+        <Skeleton width="70%" />
+      </Stack>
+    );
   } else if (resetState === 'invalid') {
     content = (
       <Stack spacing={2.5}>
         <Alert severity="error">{t('auth.password_recovery.reset.invalid')}</Alert>
-        <Button component={RouterLink} href={paths.auth.customer.forgotPassword} variant="outlined" color="inherit">
+        <Button
+          component={RouterLink}
+          href={paths.auth.customer.forgotPassword}
+          variant="outlined"
+          color="inherit"
+        >
           {t('auth.password_recovery.reset.request_again')}
         </Button>
         {backToLogin}
@@ -286,7 +318,12 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
     content = (
       <Stack spacing={2.5}>
         <Alert severity="success">{t('auth.password_recovery.reset.complete')}</Alert>
-        <Button component={RouterLink} href={paths.auth.customer.login} variant="contained" color="inherit">
+        <Button
+          component={RouterLink}
+          href={paths.auth.customer.login}
+          variant="contained"
+          color="inherit"
+        >
           {t('auth.password_recovery.reset.sign_in')}
         </Button>
       </Stack>
@@ -306,8 +343,16 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">
-                  <IconButton onClick={passwordVisible.onToggle} edge="end" aria-label={t(passwordVisible.value ? 'auth.hide_password' : 'auth.show_password')}>
-                    <Iconify icon={passwordVisible.value ? 'solar:eye-linear' : 'solar:eye-closed-linear'} />
+                  <IconButton
+                    onClick={passwordVisible.onToggle}
+                    edge="end"
+                    aria-label={t(
+                      passwordVisible.value ? 'auth.hide_password' : 'auth.show_password'
+                    )}
+                  >
+                    <Iconify
+                      icon={passwordVisible.value ? 'solar:eye-linear' : 'solar:eye-closed-linear'}
+                    />
                   </IconButton>
                 </InputAdornment>
               ),
@@ -338,5 +383,10 @@ export default function JwtPasswordRecoveryView({ mode }: Props) {
     );
   }
 
-  return <>{heading}{content}</>;
+  return (
+    <>
+      {heading}
+      {content}
+    </>
+  );
 }

@@ -60,6 +60,34 @@ func TestCustomerRecoveryTokenIsDerivedAndPurposeBound(t *testing.T) {
 	}
 }
 
+func TestEmailVerificationCreatesContinuationSession(t *testing.T) {
+	app := &application{
+		customerPasswordResetSecret: []byte("0123456789abcdef0123456789abcdef"),
+		tenantID:                    "neobank", portalURL: "http://localhost:3000",
+	}
+	db := &passwordRecoveryDatabase{rows: []map[string]any{{
+		"customer_id": "customer_1", "email_snapshot": "customer@example.test", "credential_version": int64(1),
+	}}}
+	app.db = db
+	requestID := "email_verify_0123456789abcdef0123456789abcdef"
+	token := app.deriveCustomerRecoveryToken("email-verification-v1", requestID)
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/email-verification/complete",
+		bytes.NewBufferString(`{"verification_token":"`+token+`"}`))
+	response := httptest.NewRecorder()
+
+	app.completeCustomerEmailVerification(response, request)
+
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"continue_url":"/portal/register"`) {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	if len(response.Result().Cookies()) != 2 {
+		t.Fatalf("email verification must issue onboarding cookies, got %d", len(response.Result().Cookies()))
+	}
+	if len(db.statements) != 5 || !strings.Contains(db.statements[4].SQL, "customer_onboarding_sessions") {
+		t.Fatalf("verification transaction must create a continuation session: %#v", db.statements)
+	}
+}
+
 func TestPasswordResetRequestUsesGenericResponseAndStoresNoRawToken(t *testing.T) {
 	app := &application{
 		customerPasswordResetSecret: []byte("0123456789abcdef0123456789abcdef"),

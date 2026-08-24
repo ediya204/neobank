@@ -157,6 +157,8 @@
       "already_have_account": "Already have an account?",
       "sign_in": "Back to sign in",
       "steps": {
+        "verify_email": "Verify your email",
+        "password": "Create a sign-in password",
         "account_type": "Choose an account type",
         "details": "Enter account application details",
         "kyc": "Prepare identity verification",
@@ -172,6 +174,28 @@
           "title": "Business account",
           "description": "For companies, institutions, and registered entities. Directors and beneficial owners must be verified."
         }
+      },
+      "email_verification": {
+        "description": "Verify your email first. Until verification is complete, the system will not collect KYC identity details or send applicant data to Sumsub.",
+        "email_hint": "After verification, this address is used to continue the application, receive review notices, and sign in to Online Banking.",
+        "sent_title": "Verification email sent",
+        "sent_description": "Open the message sent to {{email}}, select “Verify email,” then return here to continue.",
+        "sent_notice": "Check your spam folder if it does not arrive. The verification link is valid for 30 minutes.",
+        "send": "Send verification email",
+        "checking": "Checking verification status…",
+        "verified_continue": "I have verified my email",
+        "resend": "Resend verification email",
+        "start_error": "The verification email could not be sent. Try again shortly.",
+        "not_verified": "The email has not been verified. Open the verification message and select “Verify email.”",
+        "rate_limited": "A verification email was just sent. Wait one minute before trying again.",
+        "resend_error": "The verification email could not be resent. Try again shortly."
+      },
+      "password_step": {
+        "email_verified": "Email {{email}} is verified.",
+        "description": "Create your sign-in password now. KYC details are collected only after this step.",
+        "save_continue": "Save password and continue",
+        "saving": "Saving password securely…",
+        "save_error": "The sign-in password could not be saved. Try again."
       },
       "details": {
         "privacy": "This step only collects details needed for application pre-screening. Identity documents and facial verification are submitted through a protected verification page.",
@@ -239,14 +263,16 @@
         "required": "Complete this field.",
         "account_type": "Choose an individual or business account.",
         "email": "Enter a valid email address.",
-        "password": "Use 14–128 characters including uppercase, lowercase, number, and symbol.",
+        "password": "Use 14–128 ASCII characters including uppercase, lowercase, number, and symbol.",
         "passwords_mismatch": "The passwords do not match.",
         "phone": "Enter a valid phone number.",
         "adult": "Individual account applicants must be at least 18 years old.",
         "english_name": "Use English letters only. Spaces, hyphens, and apostrophes are allowed.",
         "ownership": "The percentage must be greater than 0 and no more than 100.",
         "kyc_consent": "Confirm the identity-verification data authorization.",
-        "terms": "Confirm the declaration before submitting."
+        "terms": "Confirm the declaration before submitting.",
+        "kyc_consent_field": "Identity-verification consent",
+        "terms_field": "Application declaration"
       },
       "actions": {
         "back": "Back",
@@ -259,7 +285,8 @@
       "errors": {
         "submit": "The application cannot be submitted right now. Please try again later. No account will be activated automatically.",
         "already_exists": "An application or account already exists for this email. Use the original application password to resume identity verification, or contact customer support to confirm its status.",
-        "validation_failed": "The submitted details did not pass validation. Check the email, password, and personal details, then try again."
+        "validation_failed": "The submitted details did not pass validation. Check the highlighted fields.",
+        "fix_fields": "Correct the following highlighted fields to continue: {{fields}}."
       },
       "sumsub": {
         "required_notice": "Complete every identity check below. Completion only makes the application eligible for the institution's Compliance review; it does not open the account.",
@@ -293,7 +320,7 @@
         "title": "Account application received",
         "subtitle": "Your application is in pre-screening. Submission does not mean the account is open; please wait for the KYC / KYB compliance decision.",
         "reference": "Application reference",
-        "next_email": "Keep the application reference and watch for document follow-up.",
+        "next_email": "Your email is verified. Keep the application reference and watch for document follow-up.",
         "next_kyc": "Wait for Compliance to complete the manual KYC / KYB review.",
         "next_review": "Wait for Compliance approval. After automatic activation, sign in directly with this email and password.",
         "back_to_login": "Back to sign in",
@@ -388,24 +415,30 @@
         "eyebrow": "Email verification",
         "title": "Verify your account email",
         "subtitle": "We are confirming that this email belongs to your customer account. The verification link works once.",
-        "complete": "Email verified. You can now request a password reset link again.",
-        "continue": "Continue password recovery",
-        "invalid": "This email-verification link is invalid, expired, or already used. Start password recovery again.",
-      "request_again": "Start password recovery again"
-    },
-    "emailChange": {
-      "page_title": "Verify new sign-in email",
-      "eyebrow": "Secure email change",
-      "title": "Verify your new sign-in email",
-      "subtitle": "We are confirming that this email belongs to you. A 24-hour security hold follows verification, and the old email remains valid until the change is applied.",
-      "complete": "New email verified. Return to Security Center after the 24-hour security hold to apply the change.",
-      "continue": "Return to Security Center",
-      "invalid": "This email-change link is invalid, expired, or already used. Sign in and request another change.",
-      "request_again": "Return to sign in"
-    }
+        "complete": "Email verified. You can now create a sign-in password and continue the account application.",
+        "continue": "Continue account application",
+        "invalid": "This email-verification link is invalid, expired, or already used. Return to the application to send a new verification email.",
+        "request_again": "Return to account application"
+      },
+      "emailChange": {
+        "page_title": "Verify new sign-in email",
+        "eyebrow": "Secure email change",
+        "title": "Verify your new sign-in email",
+        "subtitle": "We are confirming that this email belongs to you. A 24-hour security hold follows verification, and the old email remains valid until the change is applied.",
+        "complete": "New email verified. Return to Security Center after the 24-hour security hold to apply the change.",
+        "continue": "Return to Security Center",
+        "invalid": "This email-change link is invalid, expired, or already used. Sign in and request another change.",
+        "request_again": "Return to sign in"
+      }
     },
     "errors": {
       "invalid_credentials": "The email or password is incorrect.",
+      "customer_email_verification_required": "The password is correct, but the sign-in email has not been verified. Open the verification email to continue.",
+      "customer_verification_pending": "The password is correct, but identity verification is incomplete or still processing. Return to the application page to check its progress.",
+      "customer_verification_resubmission_required": "The password is correct, but identity verification requires additional or resubmitted information. Return to the application page to continue.",
+      "customer_verification_rejected": "The password is correct, but identity verification was not approved, so the account cannot sign in. Review the verification feedback or contact support.",
+      "customer_approval_pending": "The password is correct and identity verification is complete. The account application is waiting for internal approval and can sign in after activation.",
+      "customer_activation_pending": "The password is correct and Compliance review is complete. The account is waiting for activation and can sign in afterward.",
       "invalid_totp": "The verification code is incorrect or expired. Enter the current code.",
       "invalid_recovery_code": "The recovery code is invalid or has already been used.",
       "password_unchanged": "The new password must be different from the current password.",

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -241,7 +242,9 @@ func TestApprovedRegistrationCanLoginDirectlyWithPassword(t *testing.T) {
 	hash := app.deriveCustomerArgon2id(password, salt)
 	db := &customerLoginDatabase{rows: []map[string]any{{
 		"id": "customer_test", "email": "applicant@example.test", "display_name": "Test Applicant",
-		"status": "active", "password_salt": hex.EncodeToString(salt),
+		"status": "active", "kyc_status": "approved", "operations_status": "active",
+		"created_by": "public_registration", "email_verified_at": databaseTimestamp(time.Now().UTC()),
+		"password_salt": hex.EncodeToString(salt),
 		"password_hash": hex.EncodeToString(hash), "password_algorithm": customerPasswordAlgorithm,
 		"password_iterations": int64(0), "password_memory_kib": int64(customerArgonMemoryKiB),
 		"password_time_cost": int64(customerArgonTimeCost), "password_parallelism": int64(customerArgonParallelism),
@@ -261,8 +264,8 @@ func TestApprovedRegistrationCanLoginDirectlyWithPassword(t *testing.T) {
 	if len(response.Result().Cookies()) != 2 {
 		t.Fatalf("expected session and CSRF cookies, got %d", len(response.Result().Cookies()))
 	}
-	if len(db.queries) == 0 || !strings.Contains(db.queries[0], "created_by<>'public_registration' OR c.email_verified_at IS NOT NULL") {
-		t.Fatal("public registration login must require verified email")
+	if len(db.queries) == 0 || strings.Contains(db.queries[0], "c.kyc_status='approved'") {
+		t.Fatal("login must load the password credential before returning an eligible account state")
 	}
 	combined := ""
 	for _, statement := range db.statements {
@@ -270,6 +273,85 @@ func TestApprovedRegistrationCanLoginDirectlyWithPassword(t *testing.T) {
 	}
 	if strings.Contains(combined, "customer_login_challenges") {
 		t.Fatal("password-only registration login must not create a TOTP challenge")
+	}
+}
+
+func TestPendingApprovalStatusRequiresCorrectPassword(t *testing.T) {
+	pepper := []byte("0123456789abcdef0123456789abcdef")
+	password := "Correct-Horse-7-Battery!"
+	salt := []byte("0123456789abcdef")
+	app := &application{
+		customerPasswordPepper: pepper, tenantID: "tenant_test", portalURL: "http://localhost:3000",
+		sumsubSchemaReady: true, logger: slog.Default(),
+	}
+	hash := app.deriveCustomerArgon2id(password, salt)
+	pendingRow := map[string]any{
+		"id": "customer_pending", "email": "pending@example.test", "display_name": "Pending Customer",
+		"status": "pending_setup", "kyc_status": "pending", "operations_status": "pending",
+		"created_by": "public_registration", "email_verified_at": databaseTimestamp(time.Now().UTC()),
+		"sumsub_status": "ready_for_admin_review", "password_salt": hex.EncodeToString(salt),
+		"password_hash": hex.EncodeToString(hash), "password_algorithm": customerPasswordAlgorithm,
+		"password_iterations": int64(0), "password_memory_kib": int64(customerArgonMemoryKiB),
+		"password_time_cost": int64(customerArgonTimeCost), "password_parallelism": int64(customerArgonParallelism),
+		"credential_version": int64(1), "failed_attempts": int64(0), "locked_until": "",
+	}
+
+	t.Run("correct password returns pending approval", func(t *testing.T) {
+		db := &customerLoginDatabase{rows: []map[string]any{pendingRow}}
+		app.db = db
+		request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/login", bytes.NewBufferString(
+			`{"email":"pending@example.test","password":"Correct-Horse-7-Battery!"}`,
+		))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		app.customerLogin(response, request)
+		if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "customer_approval_pending") {
+			t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+		}
+		if len(db.statements) != 0 {
+			t.Fatal("pending status response must not create a login session or failed-attempt audit")
+		}
+	})
+
+	t.Run("wrong password remains generic", func(t *testing.T) {
+		db := &customerLoginDatabase{rows: []map[string]any{pendingRow}}
+		app.db = db
+		request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/login", bytes.NewBufferString(
+			`{"email":"pending@example.test","password":"Wrong-Horse-7-Battery!"}`,
+		))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		app.customerLogin(response, request)
+		if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), "invalid_email_or_password") ||
+			strings.Contains(response.Body.String(), "customer_approval_pending") {
+			t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+		}
+		if len(db.statements) != 2 {
+			t.Fatalf("wrong pending password should record one failed attempt and audit; statements=%d", len(db.statements))
+		}
+	})
+}
+
+func TestCustomerLoginStateCodes(t *testing.T) {
+	tests := []struct {
+		name string
+		row  map[string]any
+		want string
+	}{
+		{name: "email verification", row: map[string]any{"created_by": "public_registration"}, want: "customer_email_verification_required"},
+		{name: "sumsub pending", row: map[string]any{"email_verified_at": "verified", "kyc_status": "pending", "sumsub_status": "provider_reviewing"}, want: "customer_verification_pending"},
+		{name: "resubmission", row: map[string]any{"email_verified_at": "verified", "kyc_status": "pending", "sumsub_status": "resubmission_required"}, want: "customer_verification_resubmission_required"},
+		{name: "rejected", row: map[string]any{"email_verified_at": "verified", "kyc_status": "pending", "sumsub_status": "provider_rejected"}, want: "customer_verification_rejected"},
+		{name: "admin approval", row: map[string]any{"email_verified_at": "verified", "kyc_status": "pending", "sumsub_status": "ready_for_admin_review"}, want: "customer_approval_pending"},
+		{name: "activation", row: map[string]any{"email_verified_at": "verified", "kyc_status": "approved", "operations_status": "pending", "status": "pending_setup"}, want: "customer_activation_pending"},
+		{name: "active", row: map[string]any{"email_verified_at": "verified", "kyc_status": "approved", "operations_status": "active", "status": "active"}, want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := customerLoginStateCode(test.row); got != test.want {
+				t.Fatalf("customerLoginStateCode()=%q want=%q", got, test.want)
+			}
+		})
 	}
 }
 

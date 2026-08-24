@@ -104,6 +104,14 @@ func (app *application) routeCustomerAuth(w http.ResponseWriter, r *http.Request
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/register":
 		app.registerCustomer(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/registration/start":
+		app.startCustomerRegistration(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/registration/complete":
+		app.completeCustomerRegistration(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/registration/password":
+		app.setCustomerRegistrationPassword(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/onboarding/email-verification/resend":
+		app.resendOnboardingEmailVerification(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/auth/customer/onboarding/login":
 		app.onboardingLogin(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/auth/customer/onboarding/status":
@@ -570,13 +578,25 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := normalizeCustomerEmail(input.Email)
-	rows, err := app.db.Query(r.Context(), `SELECT c.id, c.email, c.display_name, c.status,
+	loginSQL := `SELECT c.id, c.email, c.display_name, c.status, c.kyc_status,
+	      c.operations_status, c.created_by, c.email_verified_at, NULL::text AS sumsub_status,
 	      cc.password_salt, cc.password_hash, cc.totp_secret_ciphertext,
 	      cc.password_algorithm, cc.password_iterations, cc.password_memory_kib, cc.password_time_cost,
 	      cc.password_parallelism, cc.credential_version, cc.failed_attempts, cc.locked_until
 	    FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
-		    WHERE c.tenant_id=? AND c.email=? AND c.kyc_status='approved' AND c.operations_status='active'
-	      AND (c.created_by<>'public_registration' OR c.email_verified_at IS NOT NULL)`, app.tenantID, email)
+		    WHERE c.tenant_id=? AND c.email=?`
+	if app.sumsubSchemaReady {
+		loginSQL = `SELECT c.id, c.email, c.display_name, c.status, c.kyc_status,
+	      c.operations_status, c.created_by, c.email_verified_at,
+	      (SELECT v.status FROM customer_kyc_verifications v
+	        WHERE v.customer_id=c.id AND v.tenant_id=c.tenant_id LIMIT 1) AS sumsub_status,
+	      cc.password_salt, cc.password_hash, cc.totp_secret_ciphertext,
+	      cc.password_algorithm, cc.password_iterations, cc.password_memory_kib, cc.password_time_cost,
+	      cc.password_parallelism, cc.credential_version, cc.failed_attempts, cc.locked_until
+	    FROM customers c JOIN customer_credentials cc ON cc.customer_id=c.id
+		    WHERE c.tenant_id=? AND c.email=?`
+	}
+	rows, err := app.db.Query(r.Context(), loginSQL, app.tenantID, email)
 	if err != nil {
 		databaseError(app, w, err)
 		return
@@ -589,7 +609,7 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 	credentialVersion := int64(0)
 	accountLocked := false
 	credentialMetadataValid := false
-	if len(rows) == 1 && text(rows[0]["status"]) == "active" {
+	if len(rows) == 1 {
 		customerID = text(rows[0]["id"])
 		failedAttempts = integer(rows[0]["failed_attempts"])
 		credentialVersion = integer(rows[0]["credential_version"])
@@ -610,9 +630,7 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if !valid {
 		reason := "customer_not_eligible"
-		if len(rows) == 1 && text(rows[0]["status"]) != "active" {
-			reason = "customer_not_active"
-		} else if accountLocked {
+		if accountLocked {
 			reason = "account_locked"
 		} else if len(rows) == 1 && !credentialMetadataValid {
 			reason = "credential_metadata_invalid"
@@ -643,6 +661,11 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "invalid_email_or_password"}})
+		return
+	}
+	if stateCode := customerLoginStateCode(rows[0]); stateCode != "" {
+		app.logger.Info("customer login deferred", "customer_id", customerID, "reason", stateCode)
+		writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]string{"code": stateCode}})
 		return
 	}
 	nowText := databaseTimestamp(now)
@@ -718,6 +741,28 @@ func (app *application) customerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"next_step": "totp_required", "challenge_id": challengeToken})
+}
+
+func customerLoginStateCode(row map[string]any) string {
+	if text(row["created_by"]) == "public_registration" && text(row["email_verified_at"]) == "" {
+		return "customer_email_verification_required"
+	}
+	if text(row["kyc_status"]) != "approved" {
+		switch text(row["sumsub_status"]) {
+		case "ready_for_admin_review":
+			return "customer_approval_pending"
+		case "resubmission_required":
+			return "customer_verification_resubmission_required"
+		case "provider_rejected":
+			return "customer_verification_rejected"
+		default:
+			return "customer_verification_pending"
+		}
+	}
+	if text(row["operations_status"]) != "active" || text(row["status"]) != "active" {
+		return "customer_activation_pending"
+	}
+	return ""
 }
 
 func (app *application) verifyCustomerTOTP(w http.ResponseWriter, r *http.Request) {

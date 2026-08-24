@@ -55,7 +55,10 @@ const (
 	    activated_by=?, activated_at=?, updated_at=?
     WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending'
 	  AND status IN ('pending_setup', 'active')
-	  AND (created_by<>'public_registration' OR email_verified_at IS NOT NULL)`
+	  AND (created_by<>'public_registration' OR (
+	    email_verified_at IS NOT NULL AND EXISTS (
+	      SELECT 1 FROM customer_applications ca WHERE ca.customer_id=customers.id AND ca.tenant_id=customers.tenant_id
+	    )))`
 	auditCustomerKYCReviewSQL = `INSERT INTO customer_auth_audit_events
     (id, customer_id, event_type, actor, metadata_json, created_at)
     SELECT ?, ?, 'customer.kyc_reviewed', ?, ?, ?
@@ -111,7 +114,9 @@ func adminCustomerRouteID(path, suffix string) string {
 
 func (app *application) listAdminCustomers(w http.ResponseWriter, r *http.Request) {
 	rows, err := app.db.Query(r.Context(), `SELECT `+adminCustomerFields+`
-	    `+adminCustomerFrom+` WHERE c.tenant_id=? ORDER BY c.created_at DESC LIMIT 200`, app.tenantID)
+	    `+adminCustomerFrom+` WHERE c.tenant_id=?
+	      AND (c.created_by<>'public_registration' OR ca.id IS NOT NULL)
+	    ORDER BY c.created_at DESC LIMIT 200`, app.tenantID)
 	if err != nil {
 		databaseError(app, w, err)
 		return
@@ -420,6 +425,10 @@ func (app *application) approveCustomerKYCAndProvisionWallet(w http.ResponseWrit
 		text(state["sumsub_steps_ready"]) == "true" || text(state["sumsub_steps_ready"]) == "1", expectedLevel,
 		app.sumsubEnvironment, app.sumsub != nil); blockCode != "" {
 		conflict(w, blockCode)
+		return
+	}
+	if text(state["created_by"]) == "public_registration" && text(state["account_type"]) == "" {
+		conflict(w, "customer_registration_incomplete")
 		return
 	}
 	if text(state["created_by"]) == "public_registration" && text(state["email_verified_at"]) == "" {

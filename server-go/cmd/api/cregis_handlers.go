@@ -716,8 +716,12 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 	withdrawals, err := app.db.Query(r.Context(), `SELECT x.id, x.customer_id, c.display_name AS customer_name,
 	'withdrawal' AS direction, x.currency, x.amount_text AS amount,
     x.fee_amount_text AS fee_amount, x.net_amount_text AS net_amount,
-    CAST(x.fee_rule_version AS TEXT) AS fee_rule_version,
+	CAST(x.fee_rule_version AS TEXT) AS fee_rule_version,
 	CASE
+	  WHEN a.withdrawal_id IS NULL AND EXISTS (
+	    SELECT 1 FROM cregis_callback_events e
+	    WHERE e.event_type='payout' AND e.cregis_cid=x.cregis_cid AND e.status IN ('2', '4')
+	  ) THEN 'provider_rejected'
 	  WHEN a.withdrawal_id IS NULL THEN 'exception'
 	  WHEN a.status='settled' THEN 'completed'
 	  WHEN a.status='released' THEN x.status
@@ -949,15 +953,19 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_callback_events
       (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'payout', ?, ?, ?, ?)`, Params: []any{randomID("callback"), cregisCID, status, sha256Hex(raw), now}},
-		d1.Statement{SQL: `WITH normalized AS (
-		UPDATE cregis_withdrawals
-		SET status='submitted_to_cregis', cregis_cid=?, submitted_at=COALESCE(submitted_at, ?), updated_at=?
-		WHERE tenant_id=? AND third_party_id=? AND status IN ('executing', 'exception')
-		RETURNING id
-	), terminal AS (
+		d1.Statement{SQL: `UPDATE cregis_withdrawals
+		SET cregis_cid=?, submitted_at=COALESCE(submitted_at, ?), updated_at=?
+		WHERE tenant_id=? AND third_party_id=?
+		  AND status IN ('submitted_to_cregis', 'executing', 'exception')
+		  AND (cregis_cid IS NULL OR cregis_cid=?)`, Params: []any{
+			cregisCID, now, now, app.tenantID, thirdPartyID, cregisCID,
+		}},
+		d1.Statement{SQL: `WITH terminal AS (
 		UPDATE cregis_withdrawals
 		SET status=?, cregis_cid=?, txid=?, block_height=?, block_time=?, completed_at=?, updated_at=?
-		WHERE tenant_id=? AND third_party_id=? AND status='submitted_to_cregis'
+		WHERE tenant_id=? AND third_party_id=?
+		  AND status IN ('submitted_to_cregis', 'executing', 'exception')
+		  AND cregis_cid=?
 		  AND EXISTS (
 		    SELECT 1 FROM cregis_withdrawal_accounting a
 		    WHERE a.withdrawal_id=cregis_withdrawals.id
@@ -971,9 +979,8 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 	FROM terminal
 	WHERE a.withdrawal_id=terminal.id AND a.tenant_id=terminal.tenant_id AND a.status='approved'
 	RETURNING a.withdrawal_id`, Params: []any{
-			cregisCID, now, now, app.tenantID, thirdPartyID,
 			target, cregisCID, nullIfEmpty(txid), nullIfEmpty(text(payload["block_height"])), nullIfEmpty(text(payload["block_time"])),
-			completedAt, now, app.tenantID, thirdPartyID, target,
+			completedAt, now, app.tenantID, thirdPartyID, cregisCID, target,
 		}},
 	)
 	if err != nil {
@@ -981,7 +988,7 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "retry", http.StatusServiceUnavailable)
 		return
 	}
-	if len(results) != 2 || len(results[1].Results) != 1 {
+	if len(results) != 3 || len(results[2].Results) != 1 {
 		rows, lookupErr := app.db.Query(r.Context(), `SELECT x.status, x.cregis_cid, COALESCE(a.status, 'missing') AS accounting_status
 		FROM cregis_withdrawals x
 		LEFT JOIN cregis_withdrawal_accounting a ON a.withdrawal_id=x.id AND a.tenant_id=x.tenant_id
@@ -998,6 +1005,16 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 		settlementQueued := target == "completed" && (accountingStatus == "pending_settlement" || accountingStatus == "settling" || accountingStatus == "settled")
 		releaseQueued := target != "completed" && (accountingStatus == "pending_release" || accountingStatus == "releasing" || accountingStatus == "released")
 		if len(rows) == 1 && text(rows[0]["status"]) == target && text(rows[0]["cregis_cid"]) == cregisCID && (settlementQueued || releaseQueued) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = w.Write([]byte("success"))
+			return
+		}
+		providerRejectionRecorded := len(rows) == 1 && target == "rejected" && accountingStatus == "missing" &&
+			(text(rows[0]["status"]) == "exception" || text(rows[0]["status"]) == "submitted_to_cregis") &&
+			text(rows[0]["cregis_cid"]) == cregisCID
+		if providerRejectionRecorded {
+			app.logger.Warn("Cregis rejection recorded for historical withdrawal pending reconciliation",
+				"third_party_id", thirdPartyID, "cregis_cid", cregisCID)
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			_, _ = w.Write([]byte("success"))
 			return

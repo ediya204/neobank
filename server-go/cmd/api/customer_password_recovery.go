@@ -309,6 +309,7 @@ func (app *application) completeCustomerEmailVerification(w http.ResponseWriter,
 		return
 	}
 	customerID := text(rows[0]["customer_id"])
+	_, onboardingToken, onboardingCSRFToken, onboardingStatement := newCustomerOnboardingSession(customerID, time.Now().UTC())
 	results, err := app.db.Batch(r.Context(),
 		d1.Statement{SQL: `UPDATE customer_email_verification_requests SET consumed_at=?
 		  WHERE id=? AND customer_id=? AND consumed_at IS NULL AND cancelled_at IS NULL AND expires_at>?
@@ -332,16 +333,21 @@ func (app *application) completeCustomerEmailVerification(w http.ResponseWriter,
 		  WHERE EXISTS (SELECT 1 FROM customers WHERE id=? AND email_verified_at=?)`, Params: []any{
 			randomID("audit"), customerID, customerID, nowText, customerID, nowText,
 		}},
+		onboardingStatement,
 	)
 	if err != nil {
 		databaseError(app, w, err)
 		return
 	}
-	if len(results) != 4 || resultChanges(results[:1]) != 1 || resultChanges(results[1:2]) != 1 || resultChanges(results[3:4]) != 1 {
+	if len(results) != 5 || resultChanges(results[:1]) != 1 || resultChanges(results[1:2]) != 1 ||
+		resultChanges(results[3:4]) != 1 || resultChanges(results[4:5]) != 1 {
 		conflict(w, "email_verification_state_changed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"email_verified": true})
+	app.setOnboardingSessionCookies(w, onboardingToken, onboardingCSRFToken, time.Now().UTC().Add(onboardingSessionDuration))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"email_verified": true, "csrf_token": onboardingCSRFToken, "continue_url": "/portal/register",
+	})
 }
 
 func (app *application) loadActivePasswordReset(r *http.Request, requestID string, incrementAttempt bool) ([]map[string]any, error) {

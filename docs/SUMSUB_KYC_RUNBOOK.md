@@ -34,8 +34,11 @@
 ## 3. 请求链路
 
 ```text
-个人提交开户注册
-  -> PostgreSQL 原子保存客户、申请、验证记录和短期 onboarding session
+个人输入邮箱
+  -> PostgreSQL 原子保存最小注册草稿、邮箱验证请求和短期 onboarding session
+  -> 客户点击 30 分钟内有效的验证链接；服务端写入 email_verified_at 并恢复安全会话
+  -> 客户设置登录密码，再填写并提交 KYC 基础资料与授权
+  -> PostgreSQL 原子保存完整申请和 Sumsub 验证记录
   -> 浏览器向 Go API 请求 10 分钟 WebSDK token
   -> Go API 以 customer_id 派生 externalUserId 并幂等创建/查找 Applicant
   -> 客户在 Sumsub WebSDK 提交护照、人脸和住址证明
@@ -48,7 +51,11 @@
 
 关键接口：
 
-- `POST /api/auth/customer/register`
+- `POST /api/auth/customer/registration/start`
+- `POST /api/auth/customer/email-verification/complete`
+- `POST /api/auth/customer/registration/password`
+- `POST /api/auth/customer/registration/complete`
+- `POST /api/auth/customer/onboarding/email-verification/resend`
 - `POST /api/auth/customer/onboarding/login`
 - `GET /api/auth/customer/onboarding/status`
 - `POST /api/auth/customer/onboarding/kyc/token`
@@ -113,6 +120,7 @@ Webhook secret 必须与 Render 的 `SUMSUB_WEBHOOK_SECRET` 一致，并启用 S
 - 仅护照、人脸、住址证明三项和申请级结果全部 GREEN 才进入可审批；
 - `RETRY` 可补件，`FINAL` 不可补件；客户看不到 `clientComment`；
 - Sumsub GREEN 后客户仍不能登录，且没有账户或钱包；
+- 邮箱未验证或登录密码未设置时，服务端不得创建 Sumsub Applicant 或签发 WebSDK token；
 - 后台人工批准后才触发现有自动开户流程；
 - 旧个人申请及企业申请保持原有人工流程；
 - 数据库、Render、Cloudflare 和 Sumsub 审计记录可以用 application reference、

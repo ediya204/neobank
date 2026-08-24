@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ediya204/neobank/server-go/internal/d1"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -68,6 +69,148 @@ func validIndividualRegistration() string {
 		"kyc_consent":true,
 		"terms_accepted":true
 	}`
+}
+
+func registrationStartRequest(body string) *http.Request {
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/registration/start", bytes.NewBufferString(body))
+	request.Header.Set("Content-Type", "application/json")
+	return request
+}
+
+func TestCustomerRegistrationStartCreatesOnlyVerifiedEmailDraft(t *testing.T) {
+	db := &registrationDatabase{results: []d1.Result{
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+	}}
+	app := &application{
+		db: db, tenantID: "tenant_test", coreOrganizationID: "org_test",
+		portalURL: "http://localhost:3000", emailNotifications: true,
+		customerPasswordPepper:      []byte("0123456789abcdef0123456789abcdef"),
+		customerPasswordResetSecret: []byte("abcdef0123456789abcdef0123456789"),
+		logger:                      slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	response := httptest.NewRecorder()
+	app.startCustomerRegistration(response, registrationStartRequest(`{
+		"email":"Applicant@Example.test"
+	}`))
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	combined := ""
+	for _, statement := range db.statements {
+		combined += strings.ToLower(statement.SQL)
+	}
+	for _, required := range []string{"insert into customers", "customer_credentials", "customer_email_verification_requests", `"emailoutbox"`, "customer_onboarding_sessions"} {
+		if !strings.Contains(combined, required) {
+			t.Fatalf("registration start must persist %q: %s", required, combined)
+		}
+	}
+	for _, forbidden := range []string{"customer_applications", "customer_kyc_verifications", "cregis_"} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("registration start must not create %q before email verification", forbidden)
+		}
+	}
+	if !strings.Contains(response.Body.String(), `"email_verification_required":true`) ||
+		!strings.Contains(response.Body.String(), `"csrf_token"`) {
+		t.Fatalf("response=%q", response.Body.String())
+	}
+}
+
+func TestCustomerRegistrationCompletionRequiresVerifiedEmail(t *testing.T) {
+	app, _, request := onboardingRestartFixture(t)
+	request = httptest.NewRequest(http.MethodPost, "/api/auth/customer/registration/complete", bytes.NewBufferString(validIndividualRegistration()))
+	request.AddCookie(&http.Cookie{Name: app.onboardingCookieName(), Value: strings.Repeat("t", 32)})
+	request.AddCookie(&http.Cookie{Name: app.onboardingCSRFCookieName(), Value: strings.Repeat("c", 32)})
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", strings.Repeat("c", 32))
+	response := httptest.NewRecorder()
+
+	app.completeCustomerRegistration(response, request)
+
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "customer_email_verification_required") {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func TestCustomerRegistrationPasswordRequiresVerifiedEmailAndStoresOnlyHash(t *testing.T) {
+	app, db, request := onboardingRestartFixture(t)
+	db.rows[0]["email_verified_at"] = databaseTimestamp(time.Now().UTC())
+	request = httptest.NewRequest(http.MethodPost, "/api/auth/customer/registration/password",
+		bytes.NewBufferString(`{"password":"Correct-Horse-7-Battery!"}`))
+	request.AddCookie(&http.Cookie{Name: app.onboardingCookieName(), Value: strings.Repeat("t", 32)})
+	request.AddCookie(&http.Cookie{Name: app.onboardingCSRFCookieName(), Value: strings.Repeat("c", 32)})
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", strings.Repeat("c", 32))
+	app.customerPasswordPepper = []byte("0123456789abcdef0123456789abcdef")
+	response := httptest.NewRecorder()
+
+	app.setCustomerRegistrationPassword(response, request)
+
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"password_ready":true`) {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	combined := ""
+	for _, statement := range db.statements {
+		combined += statement.SQL + fmt.Sprint(statement.Params)
+	}
+	if !strings.Contains(combined, "password_hash") || !strings.Contains(combined, "customer.registration_password_set") {
+		t.Fatalf("password completion did not persist and audit the hash: %s", combined)
+	}
+	if strings.Contains(combined, "Correct-Horse-7-Battery!") {
+		t.Fatal("plaintext registration password must never be sent to PostgreSQL")
+	}
+}
+
+func TestCustomerRegistrationCompletionCreatesApplicationOnlyAfterEmailAndPassword(t *testing.T) {
+	now := time.Now().UTC()
+	token := strings.Repeat("t", 32)
+	csrf := strings.Repeat("c", 32)
+	db := &registrationDatabase{
+		queryResponses: [][]map[string]any{{{
+			"id": "onboarding_session_test", "customer_id": "customer_test", "csrf_hash": tokenHash(csrf),
+			"expires_at": databaseTimestamp(now.Add(time.Hour)), "idle_expires_at": databaseTimestamp(now.Add(30 * time.Minute)),
+			"email": "applicant@example.test", "email_verified_at": databaseTimestamp(now), "password_hash": "stored-hash",
+		}}, {}},
+		results: []d1.Result{
+			{Meta: map[string]any{"changes": float64(1)}},
+			{Meta: map[string]any{"changes": float64(1)}},
+			{Meta: map[string]any{"changes": float64(1)}},
+			{Meta: map[string]any{"changes": float64(1)}},
+		},
+	}
+	app := &application{
+		db: db, tenantID: "tenant_test", portalURL: "http://localhost:3000",
+		customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef"),
+		sumsub:                 &gatedSumsubProvider{}, sumsubEnvironment: "sandbox",
+	}
+	body := strings.Replace(validIndividualRegistration(), `"email":"Applicant@Example.test",`, "", 1)
+	body = strings.Replace(body, `"password":"Correct-Horse-7-Battery!",`, "", 1)
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/customer/registration/complete", bytes.NewBufferString(body))
+	request.AddCookie(&http.Cookie{Name: app.onboardingCookieName(), Value: token})
+	request.AddCookie(&http.Cookie{Name: app.onboardingCSRFCookieName(), Value: csrf})
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", csrf)
+	request.Header.Set("Idempotency-Key", "registration-test-key-0002")
+	response := httptest.NewRecorder()
+
+	app.completeCustomerRegistration(response, request)
+
+	if response.Code != http.StatusAccepted || !strings.Contains(response.Body.String(), `"kyc_provider":"sumsub"`) {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	combined := ""
+	for _, statement := range db.statements {
+		combined += strings.ToLower(statement.SQL)
+	}
+	for _, required := range []string{"customer_applications", "customer_kyc_verifications", "customer.registration_submitted"} {
+		if !strings.Contains(combined, required) {
+			t.Fatalf("registration completion must write %q: %s", required, combined)
+		}
+	}
 }
 
 func TestCustomerRegistrationPersistsPendingApplicationAndPasswordCredential(t *testing.T) {
@@ -139,7 +282,7 @@ func TestCustomerRegistrationIsIdempotent(t *testing.T) {
 	input := customerRegistrationInput{
 		AccountType: "individual", Email: "applicant@example.test", PhoneCountryCode: "+852",
 		Phone: "61234567", ResidenceCountry: "HK", FamilyName: "Applicant", GivenName: "Test",
-		FullName: "Test Applicant",
+		FullName:    "Test Applicant",
 		DateOfBirth: "1990-01-02", Nationality: "HK", Password: "Correct-Horse-7-Battery!",
 		KYCConsent: true, TermsAccepted: true,
 	}
@@ -218,6 +361,9 @@ func TestCustomerRegistrationRejectsUnderageApplicant(t *testing.T) {
 	if response.Code != http.StatusUnprocessableEntity || len(db.statements) != 0 {
 		t.Fatalf("status=%d statements=%d body=%q", response.Code, len(db.statements), response.Body.String())
 	}
+	if !strings.Contains(response.Body.String(), `"details":{"fields":["date_of_birth"]}`) {
+		t.Fatalf("response did not identify date_of_birth: %q", response.Body.String())
+	}
 }
 
 func TestCustomerRegistrationRejectsNonEnglishIndividualName(t *testing.T) {
@@ -232,6 +378,30 @@ func TestCustomerRegistrationRejectsNonEnglishIndividualName(t *testing.T) {
 	app.registerCustomer(response, registrationRequest(body))
 	if response.Code != http.StatusUnprocessableEntity || len(db.statements) != 0 {
 		t.Fatalf("status=%d statements=%d body=%q", response.Code, len(db.statements), response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"details":{"fields":["family_name"]}`) {
+		t.Fatalf("response did not identify family_name: %q", response.Body.String())
+	}
+}
+
+func TestCustomerRegistrationReportsEveryInvalidField(t *testing.T) {
+	db := &registrationDatabase{}
+	app := &application{
+		db: db, tenantID: "tenant_test",
+		customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef"),
+		logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	response := httptest.NewRecorder()
+	body := strings.Replace(validIndividualRegistration(), `"email":"Applicant@Example.test"`, `"email":"not-an-email"`, 1)
+	body = strings.Replace(body, `"password":"Correct-Horse-7-Battery!"`, `"password":"含中文符号Password7！"`, 1)
+	app.registerCustomer(response, registrationRequest(body))
+	if response.Code != http.StatusUnprocessableEntity || len(db.statements) != 0 {
+		t.Fatalf("status=%d statements=%d body=%q", response.Code, len(db.statements), response.Body.String())
+	}
+	for _, field := range []string{`"email"`, `"password"`} {
+		if !strings.Contains(response.Body.String(), field) {
+			t.Fatalf("response did not identify %s: %q", field, response.Body.String())
+		}
 	}
 }
 

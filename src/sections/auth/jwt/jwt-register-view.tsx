@@ -88,6 +88,29 @@ const COUNTRIES = [
 
 const PHONE_CODES = ['+852', '+65', '+86', '+44', '+1'];
 const ENGLISH_LEGAL_NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
+const ASCII_PASSWORD_PATTERN = /^[\x20-\x7e]+$/;
+
+const API_FIELD_MAP: Record<string, FieldName> = {
+  account_type: 'accountType',
+  email: 'email',
+  password: 'password',
+  phone_country_code: 'phoneCountryCode',
+  phone: 'phone',
+  residence_country: 'residenceCountry',
+  family_name: 'familyName',
+  given_name: 'givenName',
+  date_of_birth: 'dateOfBirth',
+  nationality: 'nationality',
+  legal_name: 'legalName',
+  registration_number: 'registrationNumber',
+  incorporation_country: 'incorporationCountry',
+  contact_name: 'contactName',
+  contact_role: 'contactRole',
+  beneficial_owner_name: 'beneficialOwnerName',
+  beneficial_owner_ownership: 'beneficialOwnerOwnership',
+  kyc_consent: 'kycConsent',
+  terms_accepted: 'termsAccepted',
+};
 
 type Props = {
   loginPath: string;
@@ -130,6 +153,10 @@ export default function JwtRegisterView({ loginPath }: Props) {
   const [submittedReference, setSubmittedReference] = useState('');
   const [submissionError, setSubmissionError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [registrationStarted, setRegistrationStarted] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [passwordReady, setPasswordReady] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
   const [sumsubRequired, setSumsubRequired] = useState(false);
   const [sumsubCSRFToken, setSumsubCSRFToken] = useState('');
   const [sumsubAccessToken, setSumsubAccessToken] = useState('');
@@ -150,8 +177,36 @@ export default function JwtRegisterView({ loginPath }: Props) {
     return key ? t(key) : '';
   };
 
+  const fieldLabel = (field: FieldName) => {
+    const labels: Partial<Record<FieldName, string>> = {
+      accountType: t('auth.registration.steps.account_type'),
+      email: t('auth.registration.fields.email'),
+      password: t('auth.registration.fields.password'),
+      confirmPassword: t('auth.registration.fields.confirm_password'),
+      phoneCountryCode: t('auth.registration.fields.phone_code'),
+      phone: t('auth.registration.fields.phone'),
+      residenceCountry: t('auth.registration.fields.residence_country'),
+      familyName: t('auth.registration.fields.family_name'),
+      givenName: t('auth.registration.fields.given_name'),
+      dateOfBirth: t('auth.registration.fields.date_of_birth'),
+      nationality: t('auth.registration.fields.nationality'),
+      legalName: t('auth.registration.fields.legal_name'),
+      registrationNumber: t('auth.registration.fields.registration_number'),
+      incorporationCountry: t('auth.registration.fields.incorporation_country'),
+      contactName: t('auth.registration.fields.contact_name'),
+      contactRole: t('auth.registration.fields.contact_role'),
+      beneficialOwnerName: t('auth.registration.fields.beneficial_owner_name'),
+      beneficialOwnerOwnership: t('auth.registration.fields.ownership'),
+      kycConsent: t('auth.registration.validation.kyc_consent_field'),
+      termsAccepted: t('auth.registration.validation.terms_field'),
+    };
+    return labels[field] || field;
+  };
+
   const steps = useMemo(() => {
     const registrationSteps = [
+      t('auth.registration.steps.verify_email'),
+      t('auth.registration.steps.password'),
       t('auth.registration.steps.account_type'),
       t('auth.registration.steps.details'),
       t('auth.registration.steps.kyc'),
@@ -169,12 +224,33 @@ export default function JwtRegisterView({ loginPath }: Props) {
     idempotencyKey.current = crypto.randomUUID();
   };
 
+  const selectAccountType = (accountType: AccountType) => {
+    setForm((current) => ({
+      ...current,
+      accountType,
+      ...(accountType === 'individual'
+        ? {
+            legalName: '',
+            registrationNumber: '',
+            incorporationCountry: '',
+            contactName: '',
+            contactRole: '',
+            beneficialOwnerName: '',
+            beneficialOwnerOwnership: '',
+          }
+        : { familyName: '', givenName: '', dateOfBirth: '', nationality: '' }),
+    }));
+    setErrors({});
+    setSubmissionError('');
+    idempotencyKey.current = crypto.randomUUID();
+  };
+
   const handleTextChange =
     (field: FieldName) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       updateField(field, event.target.value);
     };
 
-  const validateStep = () => {
+  const collectStepErrors = (step: number) => {
     const nextErrors: Errors = {};
     const required = (field: FieldName) => {
       if (!String(form[field] || '').trim()) {
@@ -182,19 +258,16 @@ export default function JwtRegisterView({ loginPath }: Props) {
       }
     };
 
-    if (activeStep === 0 && !form.accountType) {
-      nextErrors.accountType = 'auth.registration.validation.account_type';
-    }
-
-    if (activeStep === 1) {
+    if (step === 0) {
       required('email');
-      required('password');
-      required('confirmPassword');
-      required('phone');
-      required('residenceCountry');
       if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) {
         nextErrors.email = 'auth.registration.validation.email';
       }
+    }
+
+    if (step === 1) {
+      required('password');
+      required('confirmPassword');
       if (
         form.password &&
         (form.password.length < 14 ||
@@ -202,13 +275,23 @@ export default function JwtRegisterView({ loginPath }: Props) {
           !/[a-z]/.test(form.password) ||
           !/[A-Z]/.test(form.password) ||
           !/\d/.test(form.password) ||
-          !/[^A-Za-z0-9]/.test(form.password))
+          !/[^A-Za-z0-9]/.test(form.password) ||
+          !ASCII_PASSWORD_PATTERN.test(form.password))
       ) {
         nextErrors.password = 'auth.registration.validation.password';
       }
       if (form.confirmPassword && form.confirmPassword !== form.password) {
         nextErrors.confirmPassword = 'auth.registration.validation.passwords_mismatch';
       }
+    }
+
+    if (step === 2 && !form.accountType) {
+      nextErrors.accountType = 'auth.registration.validation.account_type';
+    }
+
+    if (step === 3) {
+      required('phone');
+      required('residenceCountry');
       if (form.phone && form.phone.replace(/\D/g, '').length < 6) {
         nextErrors.phone = 'auth.registration.validation.phone';
       }
@@ -247,7 +330,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
       }
     }
 
-    if (activeStep === 2) {
+    if (step === 4) {
       if (!form.kycConsent) {
         nextErrors.kycConsent = 'auth.registration.validation.kyc_consent';
       }
@@ -256,12 +339,66 @@ export default function JwtRegisterView({ loginPath }: Props) {
       }
     }
 
-    if (activeStep === 3 && !form.termsAccepted) {
+    if (step === 5 && !form.termsAccepted) {
       nextErrors.termsAccepted = 'auth.registration.validation.terms';
     }
 
+    return nextErrors;
+  };
+
+  const validationErrorKey = (field: FieldName) => {
+    if (field === 'accountType') return 'auth.registration.validation.account_type';
+    if (field === 'email') return 'auth.registration.validation.email';
+    if (field === 'password') return 'auth.registration.validation.password';
+    if (field === 'confirmPassword') return 'auth.registration.validation.passwords_mismatch';
+    if (field === 'phone' || field === 'phoneCountryCode') {
+      return 'auth.registration.validation.phone';
+    }
+    if (field === 'familyName' || field === 'givenName') {
+      return 'auth.registration.validation.english_name';
+    }
+    if (field === 'dateOfBirth') return 'auth.registration.validation.adult';
+    if (field === 'beneficialOwnerOwnership') return 'auth.registration.validation.ownership';
+    if (field === 'kycConsent') return 'auth.registration.validation.kyc_consent';
+    if (field === 'termsAccepted') return 'auth.registration.validation.terms';
+    return 'auth.registration.validation.required';
+  };
+
+  const fieldStep = (field: FieldName) => {
+    if (field === 'email') return 0;
+    if (field === 'password' || field === 'confirmPassword') return 1;
+    if (field === 'accountType') return 2;
+    if (field === 'kycConsent') return 4;
+    if (field === 'termsAccepted') return form.accountType === 'business' ? 5 : 4;
+    return 3;
+  };
+
+  const applyValidationErrors = (nextErrors: Errors, navigateToError = false) => {
+    const invalidFields = (Object.keys(nextErrors) as FieldName[]).filter(
+      (field) => nextErrors[field]
+    );
     setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
+    if (invalidFields.length === 0) {
+      setSubmissionError('');
+      return true;
+    }
+    const separator = i18n.language.toLowerCase().startsWith('zh') ? '、' : ', ';
+    const labels = Array.from(new Set(invalidFields.map(fieldLabel))).join(separator);
+    setSubmissionError(t('auth.registration.errors.fix_fields', { fields: labels }));
+    if (navigateToError) {
+      setActiveStep(Math.min(...invalidFields.map(fieldStep)));
+    }
+    return false;
+  };
+
+  const validateStep = () => applyValidationErrors(collectStepErrors(activeStep));
+
+  const validateApplication = () => {
+    const nextErrors = Array.from(
+      { length: Math.max(steps.length - 2, 0) },
+      (_, index) => index + 2
+    ).reduce<Errors>((allErrors, step) => ({ ...allErrors, ...collectStepErrors(step) }), {});
+    return applyValidationErrors(nextErrors, true);
   };
 
   const nextStep = () => {
@@ -271,7 +408,138 @@ export default function JwtRegisterView({ loginPath }: Props) {
 
   const previousStep = () => {
     setErrors({});
-    setActiveStep((step) => Math.max(step - 1, 0));
+    let earliestStep = 0;
+    if (emailVerified) earliestStep = 1;
+    if (passwordReady) earliestStep = 2;
+    setActiveStep((step) => Math.max(step - 1, earliestStep));
+  };
+
+  const startRegistration = async () => {
+    if (!applyValidationErrors(collectStepErrors(0))) return;
+    setSubmitting(true);
+    setSubmissionError('');
+    try {
+      const response = await fetch('/api/auth/customer/registration/start', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: form.email }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        csrf_token?: string;
+        email_verified?: boolean;
+        password_ready?: boolean;
+        error?: { code?: string };
+      } | null;
+      if (!response.ok) {
+        throw new Error(
+          payload?.error?.code === 'application_already_exists'
+            ? t('auth.registration.errors.already_exists')
+            : t('auth.registration.email_verification.start_error')
+        );
+      }
+      setRegistrationStarted(true);
+      setVerificationSent(true);
+      setEmailVerified(Boolean(payload?.email_verified));
+      setPasswordReady(Boolean(payload?.password_ready));
+      if (payload?.csrf_token) setSumsubCSRFToken(payload.csrf_token);
+      if (payload?.email_verified) setActiveStep(payload.password_ready ? 2 : 1);
+    } catch (caught) {
+      setSubmissionError(
+        caught instanceof Error
+          ? caught.message
+          : t('auth.registration.email_verification.start_error')
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const refreshRegistrationStatus = async () => {
+    setSubmitting(true);
+    setSubmissionError('');
+    try {
+      const response = await fetch('/api/auth/customer/onboarding/status', {
+        credentials: 'same-origin',
+        headers: { accept: 'application/json' },
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        email_verified?: boolean;
+        password_ready?: boolean;
+      } | null;
+      if (!response.ok) throw new Error(t('auth.registration.email_verification.not_verified'));
+      setEmailVerified(Boolean(payload?.email_verified));
+      setPasswordReady(Boolean(payload?.password_ready));
+      if (!payload?.email_verified) {
+        throw new Error(t('auth.registration.email_verification.not_verified'));
+      }
+      setActiveStep(payload.password_ready ? 2 : 1);
+    } catch (caught) {
+      setSubmissionError(
+        caught instanceof Error
+          ? caught.message
+          : t('auth.registration.email_verification.not_verified')
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const resendVerificationEmail = async () => {
+    if (!sumsubCSRFToken) {
+      await startRegistration();
+      return;
+    }
+    setSubmitting(true);
+    setSubmissionError('');
+    try {
+      const response = await fetch('/api/auth/customer/onboarding/email-verification/resend', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': sumsubCSRFToken },
+        body: '{}',
+      });
+      if (!response.ok) {
+        throw new Error(
+          response.status === 429
+            ? t('auth.registration.email_verification.rate_limited')
+            : t('auth.registration.email_verification.resend_error')
+        );
+      }
+      setVerificationSent(true);
+    } catch (caught) {
+      setSubmissionError(
+        caught instanceof Error
+          ? caught.message
+          : t('auth.registration.email_verification.resend_error')
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const saveRegistrationPassword = async () => {
+    if (!applyValidationErrors(collectStepErrors(1))) return;
+    setSubmitting(true);
+    setSubmissionError('');
+    try {
+      const response = await fetch('/api/auth/customer/registration/password', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': sumsubCSRFToken },
+        body: JSON.stringify({ password: form.password }),
+      });
+      if (!response.ok) throw new Error(t('auth.registration.password_step.save_error'));
+      setPasswordReady(true);
+      setForm((current) => ({ ...current, password: '', confirmPassword: '' }));
+      setActiveStep(2);
+    } catch (caught) {
+      setSubmissionError(
+        caught instanceof Error ? caught.message : t('auth.registration.password_step.save_error')
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const requestSumsubToken = async (csrfToken = sumsubCSRFToken): Promise<string> => {
@@ -383,13 +651,35 @@ export default function JwtRegisterView({ loginPath }: Props) {
       if (!response.ok || !active) return;
       const payload = (await response.json().catch(() => null)) as {
         application_reference?: string;
+        application_completed?: boolean;
+        email_verified?: boolean;
+        password_ready?: boolean;
         verification?: PublicSumsubVerification;
       } | null;
       const csrfToken = onboardingCSRFCookie();
-      if (!payload?.application_reference || !payload.verification?.status || !csrfToken) return;
-      setSubmittedReference(payload.application_reference);
-      setSumsubRequired(true);
+      if (!payload || !csrfToken) return;
+      setRegistrationStarted(true);
+      setEmailVerified(Boolean(payload.email_verified));
+      setPasswordReady(Boolean(payload.password_ready));
       setSumsubCSRFToken(csrfToken);
+      if (!payload.email_verified) {
+        setActiveStep(0);
+        return;
+      }
+      if (!payload.password_ready) {
+        setActiveStep(1);
+        return;
+      }
+      if (!payload.application_completed || !payload.application_reference) {
+        setActiveStep(2);
+        return;
+      }
+      setSubmittedReference(payload.application_reference);
+      if (!payload.verification?.status) {
+        setSumsubRequired(false);
+        return;
+      }
+      setSumsubRequired(true);
       setSumsubStatus(payload.verification.status);
       setSumsubFeedback(customerVisibleSumsubFeedback(payload.verification));
       if (
@@ -408,21 +698,20 @@ export default function JwtRegisterView({ loginPath }: Props) {
   }, []);
 
   const submitApplication = async () => {
-    if (!validateStep()) return;
+    if (!validateApplication()) return;
     setSubmitting(true);
     setSubmissionError('');
     try {
-      const response = await fetch('/api/auth/customer/register', {
+      const response = await fetch('/api/auth/customer/registration/complete', {
         method: 'POST',
         credentials: 'same-origin',
         headers: {
           'content-type': 'application/json',
           'idempotency-key': idempotencyKey.current,
+          'x-csrf-token': sumsubCSRFToken,
         },
         body: JSON.stringify({
           account_type: form.accountType,
-          email: form.email,
-          password: form.password,
           phone_country_code: form.phoneCountryCode,
           phone: form.phone,
           residence_country: form.residenceCountry,
@@ -446,38 +735,26 @@ export default function JwtRegisterView({ loginPath }: Props) {
         csrf_token?: string;
         kyc_provider?: string;
         kyc_status?: string;
-        error?: { code?: string };
+        error?: { code?: string; details?: { fields?: string[] } };
       } | null;
       if (!response.ok || !payload?.application_reference) {
         const duplicate = payload?.error?.code === 'application_already_exists';
 
-        if (duplicate && form.accountType === 'individual') {
-          const resumeResponse = await fetch('/api/auth/customer/onboarding/login', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ email: form.email, password: form.password }),
-          });
-          const resumePayload = (await resumeResponse.json().catch(() => null)) as {
-            application_reference?: string;
-            csrf_token?: string;
-          } | null;
-          if (
-            resumeResponse.ok &&
-            resumePayload?.application_reference &&
-            resumePayload.csrf_token
-          ) {
-            setSubmittedReference(resumePayload.application_reference);
-            setSumsubRequired(true);
-            setSumsubCSRFToken(resumePayload.csrf_token);
-            setSumsubStatus('initializing');
-            startSumsub(resumePayload.csrf_token).catch(() => undefined);
-            setForm((current) => ({ ...current, password: '', confirmPassword: '' }));
+        const validationFailed = payload?.error?.code === 'validation_error';
+        if (validationFailed && payload?.error?.details?.fields?.length) {
+          const serverErrors = payload.error.details.fields.reduce<Errors>(
+            (nextErrors, apiField) => {
+              const field = API_FIELD_MAP[apiField];
+              if (field) nextErrors[field] = validationErrorKey(field);
+              return nextErrors;
+            },
+            {}
+          );
+          if (Object.keys(serverErrors).length > 0) {
+            applyValidationErrors(serverErrors, true);
             return;
           }
         }
-
-        const validationFailed = payload?.error?.code === 'validation_error';
         let errorKey = 'auth.registration.errors.submit';
         if (duplicate) errorKey = 'auth.registration.errors.already_exists';
         if (validationFailed) errorKey = 'auth.registration.errors.validation_failed';
@@ -486,12 +763,12 @@ export default function JwtRegisterView({ loginPath }: Props) {
       setSubmittedReference(payload.application_reference);
       const requiresSumsub = form.accountType === 'individual' && payload.kyc_provider === 'sumsub';
       setSumsubRequired(requiresSumsub);
-      if (requiresSumsub && payload.csrf_token) {
-        setSumsubCSRFToken(payload.csrf_token);
+      const csrfToken = payload.csrf_token || sumsubCSRFToken;
+      if (requiresSumsub && csrfToken) {
+        setSumsubCSRFToken(csrfToken);
         setSumsubStatus(payload.kyc_status || 'initializing');
-        startSumsub(payload.csrf_token).catch(() => undefined);
+        startSumsub(csrfToken).catch(() => undefined);
       }
-      setForm((current) => ({ ...current, password: '', confirmPassword: '' }));
     } catch (caught) {
       setSubmissionError(
         caught instanceof Error ? caught.message : t('auth.registration.errors.submit')
@@ -506,7 +783,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
     return (
       <ButtonBase
         key={type}
-        onClick={() => updateField('accountType', type)}
+        onClick={() => selectAccountType(type)}
         aria-pressed={selected}
         sx={{ width: 1, textAlign: 'left', borderRadius: 2 }}
       >
@@ -560,6 +837,98 @@ export default function JwtRegisterView({ loginPath }: Props) {
       </ButtonBase>
     );
   };
+
+  const renderEmailVerification = (
+    <Stack spacing={2.5}>
+      <Alert severity="info" icon={<Iconify icon="solar:letter-bold-duotone" />}>
+        {t('auth.registration.email_verification.description')}
+      </Alert>
+      <TextField
+        fullWidth
+        type="email"
+        label={t('auth.registration.fields.email')}
+        value={form.email}
+        onChange={handleTextChange('email')}
+        error={Boolean(errors.email)}
+        helperText={fieldError('email') || t('auth.registration.email_verification.email_hint')}
+        autoComplete="email"
+        disabled={registrationStarted}
+      />
+      {registrationStarted && (
+        <Paper variant="outlined" sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Iconify
+                icon="solar:mailbox-bold-duotone"
+                width={28}
+                sx={{ color: 'primary.main' }}
+              />
+              <Box>
+                <Typography variant="subtitle1">
+                  {t('auth.registration.email_verification.sent_title')}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {t('auth.registration.email_verification.sent_description', {
+                    email: form.email,
+                  })}
+                </Typography>
+              </Box>
+            </Stack>
+            {verificationSent && (
+              <Alert severity="success">
+                {t('auth.registration.email_verification.sent_notice')}
+              </Alert>
+            )}
+            <Button
+              variant="text"
+              color="inherit"
+              onClick={() => resendVerificationEmail().catch(() => undefined)}
+              disabled={submitting}
+              startIcon={<Iconify icon="solar:refresh-linear" />}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              {t('auth.registration.email_verification.resend')}
+            </Button>
+          </Stack>
+        </Paper>
+      )}
+    </Stack>
+  );
+
+  const renderPassword = (
+    <Stack spacing={2.5}>
+      <Alert severity="success" icon={<Iconify icon="solar:verified-check-bold-duotone" />}>
+        {t('auth.registration.password_step.email_verified', { email: form.email })}
+      </Alert>
+      <Typography variant="body2" color="text.secondary">
+        {t('auth.registration.password_step.description')}
+      </Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+        <TextField
+          fullWidth
+          type="password"
+          label={t('auth.registration.fields.password')}
+          value={form.password}
+          onChange={handleTextChange('password')}
+          error={Boolean(errors.password)}
+          helperText={fieldError('password') || t('auth.registration.details.password_hint')}
+          autoComplete="new-password"
+          inputProps={{ minLength: 14, maxLength: 128 }}
+        />
+        <TextField
+          fullWidth
+          type="password"
+          label={t('auth.registration.fields.confirm_password')}
+          value={form.confirmPassword}
+          onChange={handleTextChange('confirmPassword')}
+          error={Boolean(errors.confirmPassword)}
+          helperText={fieldError('confirmPassword')}
+          autoComplete="new-password"
+          inputProps={{ minLength: 14, maxLength: 128 }}
+        />
+      </Stack>
+    </Stack>
+  );
 
   const countrySelect = (field: FieldName, label: string) => (
     <TextField
@@ -717,22 +1086,14 @@ export default function JwtRegisterView({ loginPath }: Props) {
       {countrySelect('residenceCountry', t('auth.registration.fields.residence_country'))}
 
       <Divider>{t('auth.registration.details.contact')}</Divider>
-      <TextField
-        fullWidth
-        type="email"
-        label={t('auth.registration.fields.email')}
-        value={form.email}
-        onChange={handleTextChange('email')}
-        error={Boolean(errors.email)}
-        helperText={fieldError('email') || t('auth.registration.details.email_hint')}
-        autoComplete="email"
-      />
       <Stack direction="row" spacing={2}>
         <TextField
           select
           label={t('auth.registration.fields.phone_code')}
           value={form.phoneCountryCode}
           onChange={handleTextChange('phoneCountryCode')}
+          error={Boolean(errors.phoneCountryCode)}
+          helperText={fieldError('phoneCountryCode')}
           sx={{ width: 132, flexShrink: 0 }}
         >
           {PHONE_CODES.map((code) => (
@@ -750,32 +1111,6 @@ export default function JwtRegisterView({ loginPath }: Props) {
           helperText={fieldError('phone')}
           autoComplete="tel-national"
           inputProps={{ inputMode: 'tel' }}
-        />
-      </Stack>
-
-      <Divider>{t('auth.registration.details.security')}</Divider>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-        <TextField
-          fullWidth
-          type="password"
-          label={t('auth.registration.fields.password')}
-          value={form.password}
-          onChange={handleTextChange('password')}
-          error={Boolean(errors.password)}
-          helperText={fieldError('password') || t('auth.registration.details.password_hint')}
-          autoComplete="new-password"
-          inputProps={{ minLength: 14, maxLength: 128 }}
-        />
-        <TextField
-          fullWidth
-          type="password"
-          label={t('auth.registration.fields.confirm_password')}
-          value={form.confirmPassword}
-          onChange={handleTextChange('confirmPassword')}
-          error={Boolean(errors.confirmPassword)}
-          helperText={fieldError('confirmPassword')}
-          autoComplete="new-password"
-          inputProps={{ minLength: 14, maxLength: 128 }}
         />
       </Stack>
     </Stack>
@@ -1259,21 +1594,40 @@ export default function JwtRegisterView({ loginPath }: Props) {
     );
   }
 
-  const individualStartsSumsub = form.accountType === 'individual' && activeStep === 2;
+  const individualStartsSumsub = form.accountType === 'individual' && activeStep === 4;
   const submitsApplication = individualStartsSumsub || activeStep === steps.length - 1;
   let primaryActionLabel = t('auth.registration.actions.continue');
-  if (individualStartsSumsub) {
+  let primaryAction = nextStep;
+  if (activeStep === 0) {
+    primaryAction = registrationStarted
+      ? () => refreshRegistrationStatus().catch(() => undefined)
+      : () => startRegistration().catch(() => undefined);
+    if (submitting) {
+      primaryActionLabel = t('auth.registration.email_verification.checking');
+    } else if (registrationStarted) {
+      primaryActionLabel = t('auth.registration.email_verification.verified_continue');
+    } else {
+      primaryActionLabel = t('auth.registration.email_verification.send');
+    }
+  } else if (activeStep === 1) {
+    primaryAction = () => saveRegistrationPassword().catch(() => undefined);
+    primaryActionLabel = submitting
+      ? t('auth.registration.password_step.saving')
+      : t('auth.registration.password_step.save_continue');
+  } else if (individualStartsSumsub) {
+    primaryAction = () => submitApplication().catch(() => undefined);
     primaryActionLabel = submitting
       ? t('auth.registration.actions.starting_sumsub')
       : t('auth.registration.actions.start_sumsub');
   } else if (activeStep === steps.length - 1) {
+    primaryAction = () => submitApplication().catch(() => undefined);
     primaryActionLabel = submitting
       ? t('auth.registration.actions.submitting')
       : t('auth.registration.actions.submit');
   }
   let registrationContentWidth = 520;
-  if (activeStep === 1) registrationContentWidth = 760;
-  if (activeStep === 2) registrationContentWidth = 720;
+  if (activeStep === 1 || activeStep === 3) registrationContentWidth = 760;
+  if (activeStep === 4) registrationContentWidth = 720;
 
   return (
     <Box
@@ -1321,10 +1675,12 @@ export default function JwtRegisterView({ loginPath }: Props) {
         </Stack>
       </Stack>
 
-      {activeStep === 0 && renderAccountType}
-      {activeStep === 1 && renderDetails}
-      {activeStep === 2 && renderKyc}
-      {activeStep === 3 && renderReview}
+      {activeStep === 0 && renderEmailVerification}
+      {activeStep === 1 && renderPassword}
+      {activeStep === 2 && renderAccountType}
+      {activeStep === 3 && renderDetails}
+      {activeStep === 4 && renderKyc}
+      {activeStep === 5 && renderReview}
 
       {submissionError && (
         <Alert severity="error" sx={{ mt: 2.5 }}>
@@ -1333,7 +1689,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
       )}
 
       <Stack direction="row" spacing={1.5} sx={{ mt: 4 }}>
-        {activeStep > 0 && (
+        {activeStep > 2 && (
           <Button fullWidth variant="outlined" color="inherit" size="large" onClick={previousStep}>
             {t('auth.registration.actions.back')}
           </Button>
@@ -1344,7 +1700,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
           color="inherit"
           size="large"
           disabled={submitting}
-          onClick={submitsApplication ? () => submitApplication().catch(() => undefined) : nextStep}
+          onClick={primaryAction}
           endIcon={
             submitsApplication ? (
               <Iconify icon="solar:plain-2-bold-duotone" />

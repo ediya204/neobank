@@ -94,7 +94,7 @@ type AdminCustomer = {
 function normalizedCregisStatus(status: string): CryptoTransfer['status'] {
   if (status === 'submitted') return 'SUBMITTED';
   if (status === 'completed') return 'COMPLETED';
-  if (status === 'rejected') return 'REJECTED';
+  if (status === 'rejected' || status === 'provider_rejected') return 'REJECTED';
   if (['failed', 'exception', 'cancelled'].includes(status)) return 'FAILED';
   return 'PROCESSING';
 }
@@ -505,6 +505,12 @@ export default function CryptoOperationsAdmin() {
                 </Button>
               </Stack>
             )}
+            {selected.rawStatus === 'provider_rejected' && (
+              <Alert severity="error">
+                Cregis 已驳回该笔提现。该历史指令尚未关联内部会计记录，资金状态仍需完成审计对账；
+                请勿重复提交或直接人工释放资金。
+              </Alert>
+            )}
             {selected.status === 'SUBMITTED' && (
               <Stack direction="row" spacing={1}>
                 <Button
@@ -777,13 +783,14 @@ function StatusLabel({
   status: CryptoTransfer['status'];
   rawStatus?: string;
 }) {
+  if (rawStatus === 'provider_rejected') return <Label color="error">Cregis 已驳回 · 待对账</Label>;
   if (rawStatus === 'exception') return <Label color="warning">异常调单</Label>;
   if (rawStatus === 'cancelled') return <Label color="default">已取消</Label>;
   const names = {
     SUBMITTED: '待审批',
     PROCESSING: '处理中',
     COMPLETED: '已完成',
-    REJECTED: '已拒绝',
+    REJECTED: '已驳回',
     FAILED: '失败',
   };
   let color: 'default' | 'warning' | 'info' | 'success' | 'error' = 'default';
