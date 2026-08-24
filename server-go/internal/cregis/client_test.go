@@ -133,6 +133,43 @@ func TestDepositTradeReturnsTheSingleExactTransaction(t *testing.T) {
 	}
 }
 
+func TestPayoutOrderQueriesTheExactWalletPayout(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/payout/query" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["cid"] != float64(1463535767997999) {
+			t.Fatalf("cid = %v", payload["cid"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"code":"00000","msg":"ok","data":{"chain_id":"195","token_id":"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t","currency":"USDT","from_address":"TXsmKpEuW7qWnXzJLGP9eDLvWPR2GRn1FS","address":"TFbXZoaXDCWq318W2HghRmrXktCvCzoX9K","amount":"1.2","status":6,"third_party_id":"withdrawal-test","txid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`) // gitleaks:allow
+	}))
+	defer server.Close()
+
+	client, err := New(Config{
+		BaseURL:     "https://t-wsmbuuhb.cregis.io",
+		ProjectID:   "1463535767997152",
+		Secret:      "cregis-test-secret",
+		RelayURL:    server.URL,
+		RelaySecret: strings.Repeat("r", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.httpClient = server.Client()
+	order, err := client.PayoutOrder(context.Background(), 1463535767997999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order.Status != 6 || order.ThirdPartyID != "withdrawal-test" || order.Amount != "1.2" {
+		t.Fatalf("unexpected payout order: %#v", order)
+	}
+}
+
 func TestNewRequiresAuthenticatedRelay(t *testing.T) {
 	base := Config{
 		BaseURL:   "https://t-wsmbuuhb.cregis.io",

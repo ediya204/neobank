@@ -19,6 +19,9 @@ async function bootstrap() {
       'CORE_ACCOUNTING_SHARED_SECRET must be at least 32 bytes when direct accounting is enabled'
     );
   }
+  if (directAccountingEnabled && accountingSecret === edgeSecret) {
+    throw new Error('CORE_ACCOUNTING_SHARED_SECRET must differ from CORE_EDGE_SHARED_SECRET');
+  }
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   app.setGlobalPrefix('api/v1');
   app.use(helmet());

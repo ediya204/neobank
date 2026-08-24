@@ -14,7 +14,9 @@ customer request
   -> Admin approval recorded in custody
   -> Core Operation + CryptoTransfer move to PROCESSING
   -> Cregis submission
-  -> signed final callback and synchronous Core hand-off
+  -> signed final callback + exact Cregis payout-order query
+       (destination + net amount + currency + status + reference + txid)
+  -> synchronous Core hand-off after callback evidence is conflict-free
        completed -> Core consumes frozen funds and posts principal + fee journals
        failed/rejected/cancelled -> Core releases both frozen balances
   -> customer and Admin read the Core result
@@ -27,6 +29,14 @@ approval hand-off is `approved`. With direct accounting enabled, the request doe
 not return business success until the relevant Core result is committed. Queue
 statuses remain durable state and idempotency evidence; the polling worker is not
 required for new requests.
+
+Before any release or settlement, Go queries `POST /api/v1/payout/query` by the Cregis
+CID and compares the provider order with both the signed callback and the immutable
+PostgreSQL withdrawal. A mismatch is stored as callback evidence, moves the custody
+row to `exception`, returns literal `success`, and leaves the Core freeze unchanged.
+Core independently rejects release or settlement when stored payout callback families
+conflict. This extra check is deliberate even though Cregis documents final callback
+statuses `2`, `4`, `6`, and `7` as mutually exclusive and emitted only once.
 
 ## Release order
 

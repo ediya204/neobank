@@ -57,6 +57,7 @@ type application struct {
 type cregisClient interface {
 	Call(context.Context, string, map[string]any) (*cregis.Response, error)
 	DepositTrade(context.Context, int64, string, string, string) (cregis.Trade, error)
+	PayoutOrder(context.Context, int64) (cregis.PayoutOrder, error)
 	ProjectID() int64
 	Verify(map[string]any) bool
 }

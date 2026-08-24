@@ -37,6 +37,8 @@ func (fake *fakeCoreAccounting) AdvanceWithdrawal(_ context.Context, recordID, a
 
 type callbackDatabase struct {
 	rows         []map[string]any
+	queries      [][]map[string]any
+	queryIndex   int
 	batchResults []d1.Result
 	batches      [][]d1.Statement
 }
@@ -71,14 +73,22 @@ func (db *callbackDatabase) Batch(_ context.Context, statements ...d1.Statement)
 	if db.batchResults != nil {
 		return db.batchResults, nil
 	}
-	return []d1.Result{
-		{Meta: map[string]any{"changes": float64(1)}},
-		{Meta: map[string]any{"changes": float64(1)}},
-		{Meta: map[string]any{"changes": float64(0)}},
-	}, nil
+	results := make([]d1.Result, len(statements))
+	for index := range results {
+		results[index] = d1.Result{Meta: map[string]any{"changes": float64(1)}}
+	}
+	return results, nil
 }
 
 func (db *callbackDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+	if db.queries != nil {
+		index := db.queryIndex
+		db.queryIndex++
+		if index >= len(db.queries) {
+			return nil, nil
+		}
+		return db.queries[index], nil
+	}
 	return db.rows, nil
 }
 
@@ -99,6 +109,9 @@ func TestPayoutRejectionAcknowledgesHistoricalExceptionForReconciliation(t *test
 		"third_party_id": "historical-withdrawal",
 		"chain_id":       usdtTRC20ChainID,
 		"token_id":       usdtTRC20TokenID,
+		"currency":       "USDT",
+		"amount":         "1.20",
+		"address":        "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
 		"status":         4,
 		"timestamp":      int64(1_800_000_000_000),
 		"nonce":          "abc123",
@@ -108,11 +121,19 @@ func TestPayoutRejectionAcknowledgesHistoricalExceptionForReconciliation(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	db := &callbackDatabase{rows: []map[string]any{{
+	expected := []map[string]any{{
+		"id": "historical-withdrawal", "currency": usdtTRC20Currency,
+		"net_amount_text": "1.20", "to_address": payload["address"], "cregis_cid": "1463535767997999",
+	}}
+	db := &callbackDatabase{queries: [][]map[string]any{expected, {{
 		"status": "exception", "cregis_cid": "1463535767997999", "accounting_status": "missing",
-	}}}
+	}}}}
 	app := &application{
-		db: db, cregis: client, cregisLive: true, tenantID: "tenant_test",
+		db: db, cregis: &callbackCregisClient{Client: client, payout: cregis.PayoutOrder{
+			ChainID: usdtTRC20ChainID, TokenID: usdtTRC20TokenID, Currency: "USDT",
+			Address: text(payload["address"]), Amount: "1.20", Status: 4,
+			ThirdPartyID: "historical-withdrawal",
+		}}, cregisLive: true, tenantID: "tenant_test",
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/callbacks/cregis/payout", bytes.NewReader(body))
@@ -133,12 +154,18 @@ func TestPayoutRejectionAcknowledgesHistoricalExceptionForReconciliation(t *test
 
 type callbackCregisClient struct {
 	*cregis.Client
-	trade    cregis.Trade
-	tradeErr error
+	trade     cregis.Trade
+	tradeErr  error
+	payout    cregis.PayoutOrder
+	payoutErr error
 }
 
 func (client *callbackCregisClient) DepositTrade(context.Context, int64, string, string, string) (cregis.Trade, error) {
 	return client.trade, client.tradeErr
+}
+
+func (client *callbackCregisClient) PayoutOrder(context.Context, int64) (cregis.PayoutOrder, error) {
+	return client.payout, client.payoutErr
 }
 
 func TestPayoutCallbackRetriesUnknownStateAndAcknowledgesDurableConflictEvidence(t *testing.T) {
@@ -158,6 +185,9 @@ func TestPayoutCallbackRetriesUnknownStateAndAcknowledgesDurableConflictEvidence
 		"third_party_id": "third-party-test",
 		"chain_id":       usdtTRC20ChainID,
 		"token_id":       usdtTRC20TokenID,
+		"currency":       "USDT",
+		"amount":         "1.20",
+		"address":        "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
 		"status":         6,
 		"txid":           strings.Repeat("a", 64),
 		"timestamp":      int64(1_800_000_000_000),
@@ -175,13 +205,31 @@ func TestPayoutCallbackRetriesUnknownStateAndAcknowledgesDurableConflictEvidence
 		wantStatus int
 	}{
 		{name: "unknown payout", wantStatus: http.StatusUnprocessableEntity},
+		{name: "provider order mismatch is held", wantStatus: http.StatusOK},
 		{name: "conflicting payout", rows: []map[string]any{{"status": "exception", "cregis_cid": "", "accounting_status": "approved"}}, wantStatus: http.StatusOK},
 		{name: "exact idempotent callback", rows: []map[string]any{{"status": "completed", "cregis_cid": "1463535767997999", "accounting_status": "settled"}}, wantStatus: http.StatusOK},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			expected := []map[string]any{{
+				"id": "withdrawal_test", "currency": usdtTRC20Currency,
+				"net_amount_text": "1.20", "to_address": payload["address"], "cregis_cid": "1463535767997999",
+			}}
+			queries := [][]map[string]any{expected, test.rows}
+			if test.name == "unknown payout" {
+				queries = [][]map[string]any{{}}
+			}
+			payoutStatus := 6
+			if test.name == "provider order mismatch is held" {
+				payoutStatus = 4
+			}
+			db := &callbackDatabase{queries: queries}
 			app := &application{
-				db:         &callbackDatabase{rows: test.rows},
-				cregis:     client,
+				db: db,
+				cregis: &callbackCregisClient{Client: client, payout: cregis.PayoutOrder{
+					ChainID: usdtTRC20ChainID, TokenID: usdtTRC20TokenID, Currency: "USDT",
+					Address: text(payload["address"]), Amount: "1.20", Status: payoutStatus,
+					ThirdPartyID: "third-party-test", TXID: strings.Repeat("a", 64),
+				}},
 				cregisLive: true,
 				tenantID:   "tenant_test",
 				logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -194,6 +242,10 @@ func TestPayoutCallbackRetriesUnknownStateAndAcknowledgesDurableConflictEvidence
 			}
 			if test.wantStatus == http.StatusOK && response.Body.String() != "success" {
 				t.Fatal("durably recorded final callback must be acknowledged as success")
+			}
+			if test.name == "provider order mismatch is held" &&
+				(len(db.batches) != 1 || len(db.batches[0]) != 2 || !strings.Contains(db.batches[0][1].SQL, "status='exception'")) {
+				t.Fatalf("provider mismatch must be recorded and held: %#v", db.batches)
 			}
 		})
 	}

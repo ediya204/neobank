@@ -54,6 +54,18 @@ type Trade struct {
 	TXID        string `json:"txid"`
 }
 
+type PayoutOrder struct {
+	ChainID      string `json:"chain_id"`
+	TokenID      string `json:"token_id"`
+	Currency     string `json:"currency"`
+	FromAddress  string `json:"from_address"`
+	Address      string `json:"address"`
+	Amount       string `json:"amount"`
+	Status       int    `json:"status"`
+	ThirdPartyID string `json:"third_party_id"`
+	TXID         string `json:"txid"`
+}
+
 func (r *Response) GetCode() string {
 	if r == nil {
 		return ""
@@ -127,6 +139,18 @@ func (c *Client) DepositTrade(ctx context.Context, cid int64, txid, chainID, tok
 		return Trade{}, fmt.Errorf("Cregis deposit trade match count: %d", len(matched))
 	}
 	return matched[0], nil
+}
+
+func (c *Client) PayoutOrder(ctx context.Context, cid int64) (PayoutOrder, error) {
+	response, err := c.Call(ctx, "/api/v1/payout/query", map[string]any{"cid": cid})
+	if err != nil {
+		return PayoutOrder{}, err
+	}
+	var order PayoutOrder
+	if err := json.Unmarshal(response.Data, &order); err != nil {
+		return PayoutOrder{}, fmt.Errorf("decode Cregis payout order: %w", err)
+	}
+	return order, nil
 }
 
 func (c *Client) Call(ctx context.Context, path string, business map[string]any) (*Response, error) {

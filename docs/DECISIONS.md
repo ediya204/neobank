@@ -39,7 +39,10 @@ that the assumption no longer applies.
   creates a custody row plus accounting intent; the Go service synchronously invokes
   a Core serializable transaction to freeze the matching Account and CryptoWallet
   before Admin approval or Cregis execution is possible. Approval, release, and a
-  signed final callback synchronously advance the same stored accounting record.
+  signed final callback synchronously advance the same stored accounting record only
+  after an exact Cregis payout-order lookup matches the stored destination, net amount,
+  currency, status, business reference, and transaction hash. A mismatch is durably
+  recorded and held in exception without moving customer money.
   Only the Core transaction may consume frozen funds, post principal and fee journals,
   or expose a final customer balance.
 - `WITHDRAWAL_ACCOUNTING_ENABLED` is fail-closed and PostgreSQL migration

@@ -33,7 +33,7 @@ and body-hash HMAC format. They are disabled unless
 | ------------------------------------------------------ | ----------------------- | ------------------------ |
 | invalid signature or malformed payload                 | non-success             | none                     |
 | custody/Core/database failure before a durable result  | non-success / retry     | none or unchanged        |
-| posted, settled, released, or exact duplicate          | literal `success`       | exactly once             |
+| posted, queried-and-matched settlement/release, or exact duplicate | literal `success` | exactly once |
 | callback evidence stored but permanently contradictory | literal `success`       | unchanged; manual review |
 
 Delivery acknowledgement is not financial completion. Customer and Admin views use
@@ -46,8 +46,12 @@ the Core accounting state, not callback transport status.
 3. Admin approval synchronously advances the linked Core records.
 4. Only an `approved` accounting record can be submitted to Cregis.
 5. Submission timeout or an invalid response remains `exception` with funds frozen.
-6. Signed Cregis `2`, `4`, or `7` synchronously releases the full freeze.
-7. Signed Cregis `6` consumes the freeze and posts principal plus fee journals.
+6. Signed Cregis `2`, `4`, or `7` plus an exact `/api/v1/payout/query` result
+   synchronously releases the full freeze.
+7. Signed Cregis `6` plus the same exact order check consumes the freeze and posts
+   principal plus fee journals.
+8. Amount, currency, destination, status, business reference, transaction hash, or
+   conflicting terminal evidence mismatch enters exception and moves no money.
 
 The SQL admission check that subtracts very short-lived `pending_reservation` rows is
 retained as a fail-closed concurrency guard across the Go-to-Core HTTP boundary. It

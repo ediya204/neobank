@@ -1166,6 +1166,39 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "invalid callback", http.StatusUnprocessableEntity)
 		return
 	}
+	cid, parseErr := strconv.ParseInt(cregisCID, 10, 64)
+	if parseErr != nil {
+		http.Error(w, "invalid callback", http.StatusUnprocessableEntity)
+		return
+	}
+	withdrawalID, exact, verifyErr := app.verifyPayoutOrder(r.Context(), payload, cid)
+	if verifyErr != nil {
+		app.logger.Error("verify Cregis payout order failed", "third_party_id", thirdPartyID, "cregis_cid", cregisCID, "error", verifyErr)
+		http.Error(w, "retry", http.StatusServiceUnavailable)
+		return
+	}
+	if withdrawalID == "" {
+		http.Error(w, "unknown payout", http.StatusUnprocessableEntity)
+		return
+	}
+	if !exact {
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		conflictResults, conflictErr := app.db.Batch(r.Context(),
+			d1.Statement{SQL: `INSERT OR IGNORE INTO cregis_callback_events
+      (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'payout', ?, ?, ?, ?)`, Params: []any{randomID("callback"), cregisCID, status, sha256Hex(raw), now}},
+			d1.Statement{SQL: `UPDATE cregis_withdrawals SET status='exception', updated_at=?
+      WHERE id=? AND tenant_id=? AND third_party_id=?
+        AND status IN ('submitted_to_cregis', 'executing', 'exception')`, Params: []any{now, withdrawalID, app.tenantID, thirdPartyID}},
+		)
+		if conflictErr != nil || len(conflictResults) != 2 {
+			app.logger.Error("store Cregis payout order conflict failed", "third_party_id", thirdPartyID, "cregis_cid", cregisCID, "error", conflictErr)
+			http.Error(w, "retry", http.StatusServiceUnavailable)
+			return
+		}
+		app.logger.Warn("Cregis payout order conflict recorded for review", "third_party_id", thirdPartyID, "cregis_cid", cregisCID)
+		writeCregisSuccess(w)
+		return
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	completedAt := any(nil)
 	if target == "completed" {
@@ -1176,15 +1209,15 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
       (id, event_type, cregis_cid, status, payload_sha256, received_at) VALUES (?, 'payout', ?, ?, ?, ?)`, Params: []any{randomID("callback"), cregisCID, status, sha256Hex(raw), now}},
 		d1.Statement{SQL: `UPDATE cregis_withdrawals
 		SET cregis_cid=?, submitted_at=COALESCE(submitted_at, ?), updated_at=?
-		WHERE tenant_id=? AND third_party_id=?
+		WHERE id=? AND tenant_id=? AND third_party_id=?
 		  AND status IN ('submitted_to_cregis', 'executing', 'exception')
 		  AND (cregis_cid IS NULL OR cregis_cid=?)`, Params: []any{
-			cregisCID, now, now, app.tenantID, thirdPartyID, cregisCID,
+			cregisCID, now, now, withdrawalID, app.tenantID, thirdPartyID, cregisCID,
 		}},
 		d1.Statement{SQL: `WITH terminal AS (
 		UPDATE cregis_withdrawals
 		SET status=?, cregis_cid=?, txid=?, block_height=?, block_time=?, completed_at=?, updated_at=?
-		WHERE tenant_id=? AND third_party_id=?
+		WHERE id=? AND tenant_id=? AND third_party_id=?
 		  AND status IN ('submitted_to_cregis', 'executing', 'exception')
 		  AND cregis_cid=?
 		  AND EXISTS (
@@ -1201,7 +1234,7 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 	WHERE a.withdrawal_id=terminal.id AND a.tenant_id=terminal.tenant_id AND a.status='approved'
 	RETURNING a.withdrawal_id`, Params: []any{
 			target, cregisCID, nullIfEmpty(txid), nullIfEmpty(text(payload["block_height"])), nullIfEmpty(text(payload["block_time"])),
-			completedAt, now, app.tenantID, thirdPartyID, cregisCID, target,
+			completedAt, now, withdrawalID, app.tenantID, thirdPartyID, cregisCID, target,
 		}},
 	)
 	if err != nil {
@@ -1251,6 +1284,53 @@ func (app *application) cregisPayoutCallback(w http.ResponseWriter, r *http.Requ
 	if !app.finishPayoutAccounting(w, r, text(results[2].Results[0]["withdrawal_id"]), target, cregisCID) {
 		return
 	}
+}
+
+func (app *application) verifyPayoutOrder(ctx context.Context, payload map[string]any, cid int64) (string, bool, error) {
+	thirdPartyID := text(payload["third_party_id"])
+	rows, err := app.db.Query(ctx, `SELECT id, currency, net_amount_text, to_address, cregis_cid
+    FROM cregis_withdrawals WHERE tenant_id=? AND third_party_id=?`, app.tenantID, thirdPartyID)
+	if err != nil {
+		return "", false, err
+	}
+	if len(rows) == 0 {
+		return "", false, nil
+	}
+	if len(rows) != 1 {
+		return "", false, errors.New("Cregis payout business reference is not unique")
+	}
+	row := rows[0]
+	callbackAddress := text(payload["address"])
+	if alternate := text(payload["to_address"]); callbackAddress == "" {
+		callbackAddress = alternate
+	} else if alternate != "" && alternate != callbackAddress {
+		return text(row["id"]), false, nil
+	}
+	callbackAmountMinor, callbackAmountOK := parseUSDTMicroUnits(text(payload["amount"]))
+	storedAmountMinor, storedAmountOK := parseUSDTMicroUnits(text(row["net_amount_text"]))
+	storedCID := text(row["cregis_cid"])
+	if !callbackAmountOK || !storedAmountOK || callbackAmountMinor != storedAmountMinor ||
+		callbackAddress == "" || callbackAddress != text(row["to_address"]) ||
+		text(row["currency"]) != usdtTRC20Currency || (storedCID != "" && storedCID != strconv.FormatInt(cid, 10)) {
+		return text(row["id"]), false, nil
+	}
+	order, err := app.cregis.PayoutOrder(ctx, cid)
+	if err != nil {
+		return text(row["id"]), false, err
+	}
+	orderAmountMinor, orderAmountOK := parseUSDTMicroUnits(order.Amount)
+	callbackStatus, callbackStatusErr := strconv.Atoi(text(payload["status"]))
+	callbackCurrency := text(payload["currency"])
+	callbackFromAddress := text(payload["from_address"])
+	callbackTXID := strings.ToLower(text(payload["txid"]))
+	orderTXID := strings.ToLower(order.TXID)
+	exact := callbackStatusErr == nil && orderAmountOK && orderAmountMinor == callbackAmountMinor &&
+		order.ThirdPartyID == thirdPartyID && order.ChainID == usdtTRC20ChainID &&
+		order.TokenID == usdtTRC20TokenID && callbackCurrency == "USDT" && order.Currency == callbackCurrency &&
+		order.Address == callbackAddress && order.Status == callbackStatus &&
+		(callbackFromAddress == "" || callbackFromAddress == order.FromAddress) &&
+		callbackTXID == orderTXID
+	return text(row["id"]), exact, nil
 }
 
 func (app *application) finishPayoutAccounting(w http.ResponseWriter, r *http.Request, withdrawalID, target, cregisCID string) bool {

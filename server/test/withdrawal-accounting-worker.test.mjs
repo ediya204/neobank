@@ -15,6 +15,10 @@ const row = {
   core_operation_id: null,
   core_transfer_id: null,
   withdrawal_status: 'submitted',
+  cregis_cid: null,
+  callback_rejected: false,
+  callback_failed: false,
+  callback_completed: false,
   currency: '195@TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
   amount_text: '1.25',
   amount_minor: 1_250_000n,
@@ -138,6 +142,8 @@ test('a completed signed custody withdrawal consumes the freeze and posts balanc
     ...row,
     accounting_status: 'settling',
     withdrawal_status: 'completed',
+    cregis_cid: '1463535767997999',
+    callback_completed: true,
     core_operation_id: 'core_withdrawal',
     core_transfer_id: 'core_withdrawal',
     operator_id: 'operator@example.test',
@@ -222,6 +228,8 @@ test('a rejected linked withdrawal releases both materialized balances atomicall
     ...row,
     accounting_status: 'releasing',
     withdrawal_status: 'rejected',
+    cregis_cid: '1463535767997999',
+    callback_rejected: true,
     core_operation_id: 'core_withdrawal',
     core_transfer_id: 'core_withdrawal',
     checker_id: 'checker@example.test',
@@ -309,6 +317,20 @@ test('a proven historical rejection with no Core reservation closes without chan
   };
 
   await new WithdrawalAccountingWorker(db).processWithdrawal(releasing.withdrawal_id, 'releasing');
+});
+
+test('conflicting signed terminal evidence blocks release before any balance movement', () => {
+  const conflicting = {
+    ...row,
+    withdrawal_status: 'rejected',
+    cregis_cid: '1463535767997999',
+    callback_rejected: true,
+    callback_completed: true,
+  };
+  assert.throws(
+    () => new WithdrawalAccountingWorker({}).validateFinalCallbackEvidence(conflicting, 'release'),
+    /withdrawal_final_callback_conflict/
+  );
 });
 
 test('direct duplicate release returns the stored final result without moving balances again', async () => {
