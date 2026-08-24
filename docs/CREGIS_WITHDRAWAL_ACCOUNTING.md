@@ -99,6 +99,44 @@ reaches `released`, both frozen balances decrease by the exact total, both avail
 balances increase by the same total, linked Core records become `REJECTED` or `FAILED`,
 and `/ledger/reconciliation/usdt` no longer reports the item.
 
+## Operator status and copy standard
+
+The operator UI must present three independent facts. A custody status such as
+`exception`, `failed`, or `provider_rejected` must never be used by itself to claim
+that funds are frozen, released, or debited.
+
+1. **Instruction status** — approval, submission, exception, rejection, or completion.
+2. **Cregis / chain result** — not submitted, awaiting signed final callback, rejected
+   without TXID, or completed with TXID.
+3. **Core funds status** — derived from the accounting link and exact Core operation
+   evidence.
+
+The history API exposes `funds_status` using this closed vocabulary:
+
+| `funds_status`        | Operator meaning                                         | Permitted action                                     |
+| --------------------- | -------------------------------------------------------- | ---------------------------------------------------- |
+| `not_reserved`        | This instruction did not create a Core funds reservation | No refund, release, or CID association               |
+| `reservation_pending` | Core reservation has not finished                        | Wait for the accounting worker                       |
+| `frozen`              | The instruction has a verified Core reservation          | Follow the instruction and callback state gate       |
+| `release_pending`     | A verified reservation is being released                 | Wait for the accounting worker; do not edit balances |
+| `released`            | The verified reservation was released                    | No further funds action                              |
+| `settlement_pending`  | A signed completion is awaiting Core settlement          | Wait for the accounting worker                       |
+| `settled`             | Core settlement completed                                | No further funds action                              |
+| `review_required`     | Evidence is incomplete or contradictory                  | Read-only investigation; do not infer a funds state  |
+
+`can_reconcile_cregis_cid` is `true` only for an `exception` row whose accounting
+record is `approved` and has both a Core operation and Core transfer. The UI must fail
+closed: it shows the CID association action only when this field is exactly `true` and
+`funds_status` is exactly `frozen`. The reconcile write endpoint enforces the same
+predicate.
+
+Terminal historical rows with no accounting link, no exact Core operation, no CID,
+and no TXID are shown as `failed`, `rejected`, or `cancelled` with **no funds impact**.
+A signed Cregis rejection remains visible as an auditable provider rejection, but if
+`funds_status=not_reserved` the copy must say that no refund or release is required.
+Historical-state closure remains a separate, approved workflow and must not mutate
+balances directly.
+
 ## Acceptance invariants
 
 - one custody withdrawal maps to one accounting intent, Core Operation, and Core

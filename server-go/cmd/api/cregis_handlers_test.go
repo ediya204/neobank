@@ -176,6 +176,13 @@ func TestExceptionReconciliationKeepsFundsFrozenUntilSignedFinalCallback(t *test
 		"reconciled_by=?",
 		"reconciled_at=?",
 		"status='exception'",
+		"cregis_cid IS NULL",
+		"a.status='approved'",
+		"a.core_operation_id IS NOT NULL",
+		"a.core_transfer_id IS NOT NULL",
+		`FROM "Operation" operation`,
+		`FROM "CryptoTransfer" transfer`,
+		"operation.metadata->>'custodyWithdrawalId'=cregis_withdrawals.id",
 	} {
 		if !strings.Contains(reconcileWithdrawalSubmittedSQL, required) {
 			t.Fatalf("exception reconciliation SQL must contain %q", required)

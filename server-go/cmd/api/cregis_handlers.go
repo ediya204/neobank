@@ -139,7 +139,31 @@ const (
 	    AND wallet.ownership_verified_at IS NOT NULL`
 	reconcileWithdrawalSubmittedSQL = `UPDATE cregis_withdrawals
     SET status='submitted_to_cregis', cregis_cid=?, reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
-    WHERE id=? AND tenant_id=? AND status='exception'`
+    WHERE id=? AND tenant_id=? AND status='exception'
+      AND cregis_cid IS NULL
+      AND EXISTS (
+        SELECT 1 FROM cregis_withdrawal_accounting a
+        WHERE a.withdrawal_id=cregis_withdrawals.id
+          AND a.tenant_id=cregis_withdrawals.tenant_id
+          AND a.status='approved'
+          AND a.core_operation_id IS NOT NULL
+          AND a.core_transfer_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM "Operation" operation
+            WHERE operation.id=a.core_operation_id
+              AND operation."customerId"=cregis_withdrawals.customer_id
+              AND (
+                operation.metadata->>'custodyWithdrawalId'=cregis_withdrawals.id
+                OR operation.reference='CREGIS-WD-' || cregis_withdrawals.tenant_id || '-' || cregis_withdrawals.id
+                OR operation."idempotencyKey"='cregis-withdrawal:' || cregis_withdrawals.tenant_id || ':' || cregis_withdrawals.id
+              )
+          )
+          AND EXISTS (
+            SELECT 1 FROM "CryptoTransfer" transfer
+            WHERE transfer.id=a.core_transfer_id
+              AND transfer."customerId"=cregis_withdrawals.customer_id
+          )
+      )`
 	failWithdrawalForReleaseSQL = `WITH failed AS (
 	  UPDATE cregis_withdrawals SET status='failed', updated_at=?
 	  WHERE id=? AND tenant_id=? AND status='executing'
@@ -734,6 +758,9 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 	    SELECT 1 FROM cregis_callback_events e
 	    WHERE e.event_type='payout' AND e.cregis_cid=x.cregis_cid AND e.status IN ('2', '4')
 	  ) THEN 'provider_rejected'
+	  WHEN a.withdrawal_id IS NULL AND core_operation.id IS NULL
+	    AND x.status IN ('failed', 'rejected', 'cancelled')
+	    AND x.cregis_cid IS NULL AND x.txid IS NULL THEN x.status
 	  WHEN a.withdrawal_id IS NULL THEN 'exception'
 	  WHEN a.status='settled' THEN 'completed'
 	  WHEN a.status='held' THEN 'reconciliation_held'
@@ -744,12 +771,49 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 	  ELSE 'processing'
 	END AS status,
 	x.status AS custody_status, COALESCE(a.status, 'not_accounted') AS accounting_status,
+	CASE
+	  WHEN a.status IN ('pending_reservation', 'reserving') THEN 'reservation_pending'
+	  WHEN a.withdrawal_id IS NULL AND core_operation.id IS NULL THEN 'not_reserved'
+	  WHEN a.status='released' AND a.core_operation_id IS NULL AND core_operation.id IS NULL THEN 'not_reserved'
+	  WHEN a.status IN ('reserved', 'pending_approval', 'approving', 'approved', 'held')
+	    AND core_operation.id IS NOT NULL AND core_transfer.id IS NOT NULL THEN 'frozen'
+	  WHEN a.status IN ('pending_release', 'releasing')
+	    AND core_operation.id IS NOT NULL AND core_transfer.id IS NOT NULL THEN 'release_pending'
+	  WHEN a.status='released'
+	    AND core_operation.id IS NOT NULL AND core_transfer.id IS NOT NULL THEN 'released'
+	  WHEN a.status IN ('pending_settlement', 'settling')
+	    AND core_operation.id IS NOT NULL AND core_transfer.id IS NOT NULL THEN 'settlement_pending'
+	  WHEN a.status='settled'
+	    AND core_operation.id IS NOT NULL AND core_transfer.id IS NOT NULL THEN 'settled'
+	  ELSE 'review_required'
+	END AS funds_status,
+	CASE
+	  WHEN x.status='exception' AND x.cregis_cid IS NULL
+	    AND a.status='approved'
+	    AND a.core_operation_id IS NOT NULL AND a.core_transfer_id IS NOT NULL
+	    AND core_operation.id IS NOT NULL AND core_transfer.id IS NOT NULL
+	  THEN TRUE ELSE FALSE
+	END AS can_reconcile_cregis_cid,
 	a.core_operation_id, a.core_transfer_id,
 	x.to_address AS address, x.txid, x.cregis_cid, x.maker_id, x.checker_id, x.operator_id,
 	x.approved_at, x.submitted_at, x.completed_at, x.created_at
 	FROM cregis_withdrawals x
 	LEFT JOIN customers c ON c.id=x.customer_id AND c.tenant_id=x.tenant_id
 	LEFT JOIN cregis_withdrawal_accounting a ON a.withdrawal_id=x.id AND a.tenant_id=x.tenant_id
+	LEFT JOIN LATERAL (
+	  SELECT operation.id
+	  FROM "Operation" operation
+	  WHERE operation."customerId"=x.customer_id
+	    AND (
+	      operation.metadata->>'custodyWithdrawalId'=x.id
+	      OR operation.reference='CREGIS-WD-' || x.tenant_id || '-' || x.id
+	      OR operation."idempotencyKey"='cregis-withdrawal:' || x.tenant_id || ':' || x.id
+	    )
+	  ORDER BY operation."createdAt" ASC
+	  LIMIT 1
+	) core_operation ON TRUE
+	LEFT JOIN "CryptoTransfer" core_transfer
+	  ON core_transfer.id=a.core_transfer_id AND core_transfer."customerId"=x.customer_id
 	WHERE `+filter+` ORDER BY x.created_at DESC LIMIT 200`, params...)
 	if err != nil {
 		databaseError(app, w, err)

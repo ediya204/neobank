@@ -32,6 +32,7 @@ import {
   demoOrganizationId,
   neobankApi,
 } from 'src/features/finance/core-api';
+import { withdrawalStatusPresentation } from 'src/features/finance/withdrawal-status';
 import { paths } from 'src/routes/paths';
 
 type CregisHistoryRow = {
@@ -45,6 +46,11 @@ type CregisHistoryRow = {
   status: string;
   custody_status?: string;
   accounting_status?: string;
+  funds_status?: string;
+  can_reconcile_cregis_cid?: boolean;
+  cregis_cid?: string;
+  core_operation_id?: string;
+  core_transfer_id?: string;
   address: string;
   txid?: string;
   maker_id?: string;
@@ -58,7 +64,13 @@ type CregisHistoryRow = {
 
 type AdminCryptoTransfer = CryptoTransfer & {
   rawStatus?: string;
+  custodyStatus?: string;
   accountingStatus?: string;
+  fundsStatus?: string;
+  cregisCID?: string;
+  coreOperationId?: string;
+  coreTransferId?: string;
+  canReconcileCregisCID?: boolean;
   customerName?: string;
 };
 
@@ -105,27 +117,6 @@ function normalizedCregisStatus(status: string): CryptoTransfer['status'] {
   return 'PROCESSING';
 }
 
-function accountingStatusText(status?: string) {
-  const names: Record<string, string> = {
-    pending_reservation: '等待冻结',
-    reserving: '冻结处理中',
-    reserved: '资金已冻结',
-    pending_approval: '等待账务审批',
-    approving: '账务审批中',
-    approved: '账务已批准',
-    pending_release: '等待自动释放',
-    releasing: '资金释放中',
-    released: '资金已释放',
-    pending_settlement: '等待结算',
-    settling: '结算中',
-    settled: '已结算',
-    held: '历史对账待放行',
-    exception: '账务异常',
-    not_accounted: '未关联会计记录',
-  };
-  return status ? names[status] || status : '未知';
-}
-
 function automaticWalletStatusLabel(customer: AdminCustomer) {
   if (customer.wallet_status === 'active') return '已自动激活，钱包已启用';
   if (customer.wallet_status === 'error') return '已自动激活，钱包待重试';
@@ -138,7 +129,10 @@ function operationErrorMessage(value: unknown) {
     return 'Cregis 拒绝了出款地址，请核对地址与 TRON 网络后重新创建指令';
   if (message === 'withdrawal_not_executable')
     return '该指令已离开“已审批”状态，请刷新后按当前状态处理';
-  if (message === 'cregis_payout_failed') return 'Cregis 未接受该出款请求，指令已进入异常调单状态';
+  if (message === 'cregis_payout_failed' || message === 'invalid_cregis_response')
+    return '未能确认 Cregis 是否已接收该请求。指令已进入异常待核对，Core 资金状态以详情为准；请勿重复提交。';
+  if (message === 'withdrawal_not_reconcilable')
+    return '该指令不满足 CID 关联条件；请刷新并核对 Core 冻结和会计关联。';
   return message || '操作失败';
 }
 
@@ -146,6 +140,12 @@ function executeActionLabel(performing: boolean) {
   if (performing) return '提交中…';
   if (IS_NEOBANK_DEPLOYMENT) return '提交至 Cregis';
   return '模拟通道执行并回填 TXID';
+}
+
+function localFundsStatus(status: CryptoTransfer['status']) {
+  if (status === 'SUBMITTED' || status === 'PROCESSING') return 'frozen';
+  if (status === 'COMPLETED') return 'settled';
+  return 'released';
 }
 
 function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
@@ -176,7 +176,13 @@ function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
     direction: 'WITHDRAWAL',
     status,
     rawStatus: row.status,
+    custodyStatus: row.custody_status,
     accountingStatus: row.accounting_status,
+    fundsStatus: row.funds_status,
+    cregisCID: row.cregis_cid,
+    coreOperationId: row.core_operation_id,
+    coreTransferId: row.core_transfer_id,
+    canReconcileCregisCID: row.can_reconcile_cregis_cid,
     amount: row.amount,
     feeAmount: row.fee_amount || '0',
     netAmount: row.net_amount || row.amount,
@@ -238,6 +244,8 @@ export default function CryptoOperationsAdmin() {
             .flat()
             .map((row) => ({
               ...row,
+              rawStatus: row.status.toLowerCase(),
+              fundsStatus: localFundsStatus(row.status),
               customerName: customerNames.get(row.customerId),
             }))
             .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
@@ -271,11 +279,17 @@ export default function CryptoOperationsAdmin() {
     load().catch(() => undefined);
   }, [load]);
 
+  const selectedPresentation = useMemo(
+    () => (selected ? transferStatusPresentation(selected) : null),
+    [selected]
+  );
+
   const metrics = useMemo(
     () => ({
       submitted: rows.filter((row) => row.status === 'SUBMITTED').length,
       processing: rows.filter((row) => row.status === 'PROCESSING').length,
       completed: rows.filter((row) => row.status === 'COMPLETED').length,
+      attention: rows.filter((row) => transferStatusPresentation(row).needsAttention).length,
     }),
     [rows]
   );
@@ -337,7 +351,7 @@ export default function CryptoOperationsAdmin() {
   };
 
   const reconcileSubmittedWithdrawal = async () => {
-    if (!selected || selected.rawStatus !== 'exception' || performingAction) return;
+    if (!selected || !selectedPresentation?.canReconcileCregisCID || performingAction) return;
     const note = reconcileNote.trim();
     const cregisCID = reconcileCID.trim();
     if (!note || !cregisCID) return;
@@ -428,6 +442,7 @@ export default function CryptoOperationsAdmin() {
             <Metric label="待审批" value={metrics.submitted} color="warning.main" />
             <Metric label="链上处理中" value={metrics.processing} color="info.main" />
             <Metric label="已完成" value={metrics.completed} color="success.main" />
+            <Metric label="异常待核对" value={metrics.attention} color="error.main" />
           </Stack>
           <Card>
             <TableContainer>
@@ -477,7 +492,7 @@ export default function CryptoOperationsAdmin() {
                       <TableCell>{row.amount} USDT</TableCell>
                       <TableCell>{row.feeAmount} USDT</TableCell>
                       <TableCell>
-                        <StatusLabel status={row.status} rawStatus={row.rawStatus} />
+                        <StatusLabel transfer={row} />
                       </TableCell>
                       <TableCell>{row.maker?.displayName || row.maker?.id}</TableCell>
                       <TableCell>{new Date(row.createdAt).toLocaleString('zh-CN')}</TableCell>
@@ -495,7 +510,7 @@ export default function CryptoOperationsAdmin() {
         onClose={() => setSelected(null)}
         PaperProps={{ sx: { width: { xs: 1, sm: 500 }, p: 3 } }}
       >
-        {selected && (
+        {selected && selectedPresentation && (
           <Stack spacing={3}>
             <Stack direction="row" justifyContent="space-between">
               <Box>
@@ -510,53 +525,31 @@ export default function CryptoOperationsAdmin() {
               <Info label="客户" value={selected.customerName || '未知客户'} />
               <Info label="客户编号" value={selected.customerId} mono />
               <Info label="网络" value={`${selected.network} · ${selected.wallet.tokenStandard}`} />
-              <Info label="钱包总扣账" value={`${selected.amount} USDT`} />
+              <Info label="指令金额" value={`${selected.amount} USDT`} />
               <Info label="转出手续费" value={`${selected.feeAmount} USDT`} />
-              <Info label="链上实际发送" value={`${selected.netAmount} USDT`} />
-              <Info label="预计到账" value={`${selected.netAmount} USDT`} />
+              <Info label="Core 资金占用" value={selectedPresentation.fundsLabel} />
+              <Info label="链上实际发送" value={selectedPresentation.chainAmountLabel} />
+              <Info label="预计到账" value={selectedPresentation.expectedArrivalLabel} />
               <Info label="目标地址" value={selected.toAddress} mono />
-              <Info label="交易哈希" value={selected.txHash || '执行后生成'} mono />
-              <Info label="资金处理" value={accountingStatusText(selected.accountingStatus)} />
+              {selected.cregisCID && <Info label="Cregis CID" value={selected.cregisCID} mono />}
+              <Info label="交易哈希" value={selectedPresentation.transactionHashLabel} mono />
             </Card>
-            {selected.rawStatus === 'exception' && (
+            {selectedPresentation.alertText && (
               <Stack spacing={1.5}>
-                <Alert severity="warning">
-                  该指令仍为异常调单状态，资金继续冻结。请在 Cregis 查明对应 CID 后关联，
-                  并继续等待签名终态回调；切勿重复提交或人工释放资金。
+                <Alert severity={selectedPresentation.alertSeverity || 'warning'}>
+                  {selectedPresentation.alertText}
                 </Alert>
-                <Button
-                  color="warning"
-                  variant="outlined"
-                  disabled={Boolean(performingAction)}
-                  onClick={() => setReconcileOpen(true)}
-                >
-                  关联已确认的 Cregis CID
-                </Button>
+                {selectedPresentation.canReconcileCregisCID && (
+                  <Button
+                    color="warning"
+                    variant="outlined"
+                    disabled={Boolean(performingAction)}
+                    onClick={() => setReconcileOpen(true)}
+                  >
+                    关联已确认的 Cregis CID
+                  </Button>
+                )}
               </Stack>
-            )}
-            {selected.rawStatus === 'provider_rejected' && (
-              <Alert severity="error">
-                Cregis 已驳回该笔提现。该历史指令尚未关联内部会计记录，资金状态仍需完成审计对账；
-                请通过受审批的历史出款对账流程处理，勿重复提交或直接修改余额。
-              </Alert>
-            )}
-            {selected.rawStatus === 'reconciliation_held' && (
-              <Alert severity="warning">
-                历史出款证据已固化为 held；该步骤尚未移动资金。完成独立复核后，使用受审批的 release
-                步骤送入自动释放队列。
-              </Alert>
-            )}
-            {selected.rawStatus === 'pending_release' && (
-              <Alert severity="warning">
-                出款已进入终止流程，资金正在等待会计 Worker
-                自动释放；当前仍未完成，请勿人工修改余额。
-              </Alert>
-            )}
-            {selected.rawStatus === 'releasing' && (
-              <Alert severity="info">
-                会计 Worker 正在原子释放 Account 与 CryptoWallet
-                的冻结余额，请等待最终状态变为“资金已释放”。
-              </Alert>
             )}
             {selected.status === 'SUBMITTED' && (
               <Stack direction="row" spacing={1}>
@@ -632,8 +625,8 @@ export default function CryptoOperationsAdmin() {
         <DialogTitle>异常出款调单</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            仅在 Cregis 客户端查明并确认对应 CID 后使用。关联后 {selected?.amount || '0'} USDT
-            仍保持冻结，只有签名终态回调才能完成或释放账本资金。
+            仅在 Cregis 后台查明并确认对应 CID 后使用。系统已确认 Core 冻结{' '}
+            {selected?.amount || '0'} USDT；关联 CID 不会移动资金，只有签名终态回调才能完成或释放。
           </Alert>
           <TextField
             autoFocus
@@ -665,7 +658,7 @@ export default function CryptoOperationsAdmin() {
             disabled={!reconcileNote.trim() || !reconcileCID.trim() || Boolean(performingAction)}
             onClick={() => reconcileSubmittedWithdrawal().catch(() => undefined)}
           >
-            {performingAction === 'reconcile' ? '处理中…' : '关联 CID 并继续冻结'}
+            {performingAction === 'reconcile' ? '处理中…' : '关联 CID 并等待终态'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -823,30 +816,22 @@ function Info({ label, value, mono = false }: { label: string; value: string; mo
     </Stack>
   );
 }
-function StatusLabel({
-  status,
-  rawStatus,
-}: {
-  status: CryptoTransfer['status'];
-  rawStatus?: string;
-}) {
-  if (rawStatus === 'provider_rejected') return <Label color="error">Cregis 已驳回 · 待对账</Label>;
-  if (rawStatus === 'reconciliation_held') return <Label color="warning">历史对账待放行</Label>;
-  if (rawStatus === 'pending_release') return <Label color="warning">等待资金释放</Label>;
-  if (rawStatus === 'releasing') return <Label color="info">资金释放中</Label>;
-  if (rawStatus === 'exception') return <Label color="warning">异常调单</Label>;
-  if (rawStatus === 'cancelled') return <Label color="default">已取消</Label>;
-  const names = {
-    SUBMITTED: '待审批',
-    PROCESSING: '处理中',
-    COMPLETED: '已完成',
-    REJECTED: '已驳回',
-    FAILED: '失败',
-  };
-  let color: 'default' | 'warning' | 'info' | 'success' | 'error' = 'default';
-  if (status === 'SUBMITTED') color = 'warning';
-  if (status === 'PROCESSING') color = 'info';
-  if (status === 'COMPLETED') color = 'success';
-  if (status === 'REJECTED' || status === 'FAILED') color = 'error';
-  return <Label color={color}>{names[status]}</Label>;
+function transferStatusPresentation(transfer: AdminCryptoTransfer) {
+  return withdrawalStatusPresentation({
+    status: transfer.status,
+    rawStatus: transfer.rawStatus,
+    custodyStatus: transfer.custodyStatus,
+    accountingStatus: transfer.accountingStatus,
+    fundsStatus: transfer.fundsStatus,
+    amount: transfer.amount,
+    netAmount: transfer.netAmount,
+    txHash: transfer.txHash,
+    cregisCID: transfer.cregisCID,
+    canReconcileCregisCID: transfer.canReconcileCregisCID,
+  });
+}
+
+function StatusLabel({ transfer }: { transfer: AdminCryptoTransfer }) {
+  const presentation = transferStatusPresentation(transfer);
+  return <Label color={presentation.statusColor}>{presentation.statusLabel}</Label>;
 }
