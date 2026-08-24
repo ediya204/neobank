@@ -524,6 +524,7 @@ export default function CustomerDetailPage() {
   const [setupLinkReason, setSetupLinkReason] = useState('原设置链接已过期，重新签发');
   const [setupLinkError, setSetupLinkError] = useState('');
   const [setupLinkSaving, setSetupLinkSaving] = useState(false);
+  const [walletRepairing, setWalletRepairing] = useState(false);
   const [setupLinkResult, setSetupLinkResult] = useState<{
     setupUrl: string;
     expiresAt: string;
@@ -628,6 +629,33 @@ export default function CustomerDetailPage() {
   useEffect(() => {
     load().catch(() => undefined);
   }, [load]);
+
+  const repairCryptoWallet = async () => {
+    if (!id || walletRepairing) return;
+    setWalletRepairing(true);
+    setLoadError('');
+    setSuccess('');
+    try {
+      await neobankApi('/crypto/wallets', {
+        method: 'POST',
+        userId,
+        body: JSON.stringify({
+          customer_id: id,
+          chain_id: '195',
+          token_id: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+          currency: '195@TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+          alias: id,
+          idempotency_key: `auto-kyc-${id}`,
+        }),
+      });
+      await load();
+      setSuccess('Cregis 钱包归属验证已完成，链上地址已同步到 Core。');
+    } catch (caught) {
+      setLoadError(caught instanceof Error ? caught.message : '钱包归属验证重试失败');
+    } finally {
+      setWalletRepairing(false);
+    }
+  };
 
   const organizationFeesByKey = useMemo(
     () =>
@@ -1303,6 +1331,12 @@ export default function CustomerDetailPage() {
                   customer={customer}
                   wallets={wallets}
                   vaRequests={vaRequests}
+                  walletRepairing={walletRepairing}
+                  onRepairWallet={
+                    IS_NEOBANK_DEPLOYMENT
+                      ? () => repairCryptoWallet().catch(() => undefined)
+                      : undefined
+                  }
                 />
               </Paper>
               <Paper sx={{ ...panelSx, overflow: 'hidden' }}>
@@ -2150,7 +2184,15 @@ function FiatAccountAsset({ account }: { account: MoneyAccount }) {
   );
 }
 
-function CryptoWalletAsset({ wallet }: { wallet: CryptoWallet }) {
+function CryptoWalletAsset({
+  wallet,
+  repairing,
+  onRepair,
+}: {
+  wallet: CryptoWallet;
+  repairing?: boolean;
+  onRepair?: () => void;
+}) {
   return (
     <Box
       sx={{
@@ -2182,6 +2224,20 @@ function CryptoWalletAsset({ wallet }: { wallet: CryptoWallet }) {
         available={wallet.availableBalance}
         frozen={wallet.frozenBalance}
       />
+
+      {!wallet.walletAddress && onRepair && (
+        <Alert
+          severity="warning"
+          sx={{ mt: 1.5 }}
+          action={
+            <Button color="warning" size="small" disabled={repairing} onClick={onRepair}>
+              {repairing ? '验证中…' : '重新验证并同步地址'}
+            </Button>
+          }
+        >
+          Cregis 地址尚未完成归属验证，Core 暂不展示充值地址。
+        </Alert>
+      )}
 
       <Box
         sx={{
@@ -2223,10 +2279,14 @@ function AccountAssetOverview({
   customer,
   wallets,
   vaRequests,
+  walletRepairing,
+  onRepairWallet,
 }: {
   customer: Customer;
   wallets: CryptoWallet[];
   vaRequests: VirtualAccountRequest[];
+  walletRepairing?: boolean;
+  onRepairWallet?: () => void;
 }) {
   const systemAccounts = customer.accounts.filter((account) => account.kind === 'SYSTEM_WALLET');
   const vaAccounts = customer.accounts.filter((account) => account.kind === 'VIRTUAL_ACCOUNT');
@@ -2294,7 +2354,14 @@ function AccountAssetOverview({
           snapshots={cryptoSnapshots}
         >
           {wallets.length ? (
-            wallets.map((wallet) => <CryptoWalletAsset key={wallet.id} wallet={wallet} />)
+            wallets.map((wallet) => (
+              <CryptoWalletAsset
+                key={wallet.id}
+                wallet={wallet}
+                repairing={walletRepairing}
+                onRepair={onRepairWallet}
+              />
+            ))
           ) : (
             <AssetEmptyState
               icon="solar:wallet-2-linear"

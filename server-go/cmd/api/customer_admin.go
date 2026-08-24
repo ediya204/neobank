@@ -36,7 +36,13 @@ const (
 	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id) AS wallet_count,
 	    (SELECT cw.status FROM cregis_wallets cw
 	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id
-	      ORDER BY cw.created_at DESC LIMIT 1) AS wallet_status`
+	      ORDER BY cw.created_at DESC LIMIT 1) AS wallet_status,
+	    (SELECT CASE WHEN cw.status='active' AND cw.custody_provider='cregis'
+	        AND cw.ownership_verified_at IS NOT NULL AND cw.address IS NOT NULL
+	        AND cw.address<>'' THEN 1 ELSE 0 END
+	      FROM cregis_wallets cw
+	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id
+	      ORDER BY cw.created_at DESC LIMIT 1) AS wallet_deposit_enabled`
 	adminCustomerFrom = ` FROM customers c LEFT JOIN customer_applications ca
 	    ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id`
 	reviewCustomerKYCSQL = `UPDATE customers

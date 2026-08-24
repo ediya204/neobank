@@ -23,6 +23,7 @@ export type NeobankCustomerRecord = {
   beneficial_owner_ownership?: string;
   wallet_count?: number;
   wallet_status?: string | null;
+  wallet_deposit_enabled?: boolean | number | string | null;
   created_at?: string;
   activated_at?: string | null;
   activated_by?: string | null;

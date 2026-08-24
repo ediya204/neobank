@@ -30,6 +30,10 @@ type walletProvisionError struct {
 	cause  error
 }
 
+func walletReservationCanRetryOwnership(status string) bool {
+	return status == "error" || status == "active"
+}
+
 func (err *walletProvisionError) Error() string {
 	if err.cause != nil {
 		return err.code + ": " + err.cause.Error()
@@ -256,11 +260,11 @@ func (app *application) provisionCregisWallet(ctx context.Context, customerID, a
 			reserved["deposit_enabled"] = true
 			return reserved, http.StatusOK, nil
 		}
-		if text(reserved["status"]) != "error" {
+		if !walletReservationCanRetryOwnership(text(reserved["status"])) {
 			return nil, 0, &walletProvisionError{status: http.StatusConflict, code: "wallet_creation_in_progress"}
 		}
 		reset, resetErr := app.db.Query(ctx, `UPDATE cregis_wallets SET status='creating', updated_at=?
-      WHERE id=? AND tenant_id=? AND status='error' RETURNING id`, now, text(reserved["id"]), app.tenantID)
+      WHERE id=? AND tenant_id=? AND status IN ('error', 'active') RETURNING id`, now, text(reserved["id"]), app.tenantID)
 		if resetErr != nil || len(reset) != 1 {
 			if resetErr == nil {
 				resetErr = errors.New("wallet retry reservation failed")

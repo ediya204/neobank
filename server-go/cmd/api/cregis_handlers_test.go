@@ -124,6 +124,21 @@ func TestDepositWalletActivationRequiresCregisOwnershipEvidence(t *testing.T) {
 	}
 }
 
+func TestWalletOwnershipRepairAcceptsUnverifiedActiveReservation(t *testing.T) {
+	tests := map[string]bool{
+		"error":    true,
+		"active":   true,
+		"creating": false,
+		"frozen":   false,
+		"closed":   false,
+	}
+	for status, expected := range tests {
+		if actual := walletReservationCanRetryOwnership(status); actual != expected {
+			t.Fatalf("walletReservationCanRetryOwnership(%q) = %v; want %v", status, actual, expected)
+		}
+	}
+}
+
 func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testing.T) {
 	for _, required := range []string{
 		"INSERT OR IGNORE INTO cregis_withdrawals",

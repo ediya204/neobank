@@ -61,6 +61,7 @@ func TestAdminCustomerViewNeverSelectsCredentialMaterial(t *testing.T) {
 	}
 	for _, required := range []string{
 		"kyc_status", "operations_status", "kyc_reviewed_by", "activated_by", "wallet_count", "wallet_status",
+		"wallet_deposit_enabled", "custody_provider='cregis'", "ownership_verified_at IS NOT NULL",
 	} {
 		if !strings.Contains(adminCustomerFields, required) {
 			t.Fatalf("admin customer response must include %q", required)

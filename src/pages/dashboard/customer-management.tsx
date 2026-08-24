@@ -83,8 +83,12 @@ function statusLabel(customer: ManagedCustomer) {
 function walletLabel(customer: ManagedCustomer) {
   const count = customer.walletCount || Number(customer.source?.wallet_count) || 0;
   const status = customer.walletStatus || customer.source?.wallet_status || '';
+  const enabledValue = customer.source?.wallet_deposit_enabled;
+  const depositEnabled =
+    enabledValue === true || enabledValue === 1 || enabledValue === '1' || enabledValue === 'true';
   if (!count) return <Label color="warning">待创建</Label>;
-  if (status === 'active') return <Label color="success">TRON · 已启用</Label>;
+  if (status === 'active' && depositEnabled) return <Label color="success">TRON · 已启用</Label>;
+  if (status === 'active') return <Label color="warning">TRON · 待验证</Label>;
   if (status === 'error') return <Label color="error">TRON · 待重试</Label>;
   return <Label color="warning">TRON · {status || '同步中'}</Label>;
 }
