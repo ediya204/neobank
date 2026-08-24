@@ -47,8 +47,13 @@ Do not combine these into one unreviewed release:
    and apply it with `cmd/postgres-migrate`.
 3. Verify that the migration created an empty accounting queue. It intentionally
    does not enqueue historical deposits.
-4. Deploy `neobank-financial-accounting-worker`, verify startup and an empty queue,
-   then deploy the Go service that writes new callback intents.
+4. First deploy `neobank-financial-accounting-worker` with
+   `FINANCIAL_ACCOUNTING_PROCESSING_ENABLED=false`. In this fail-closed mode the
+   process must log `financial_accounting_worker_paused` before creating the
+   Nest/Prisma application context, so it cannot claim or update any accounting
+   row. Verify the queues separately through a read-only PostgreSQL check. Enabling
+   processing is a later, separately approved environment change after the queue is
+   proven safe. Then deploy the Go service that writes new callback intents.
 5. Deploy the web Worker only if its source changed. GitHub publication,
    PostgreSQL migration, each Render service deployment, and Cloudflare deployment
    remain separate evidence items.

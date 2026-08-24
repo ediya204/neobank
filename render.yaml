@@ -159,6 +159,8 @@ services:
         value: org_neobank
       - key: NEOBANK_SOURCE_TENANT_ID
         value: neobank
+      - key: FINANCIAL_ACCOUNTING_PROCESSING_ENABLED
+        value: 'false'
       - key: DEPOSIT_ACCOUNTING_POLL_INTERVAL_MS
         value: '3000'
       - key: WITHDRAWAL_ACCOUNTING_POLL_INTERVAL_MS

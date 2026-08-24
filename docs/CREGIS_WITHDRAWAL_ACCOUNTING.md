@@ -34,8 +34,12 @@ These are separate, manually approved changes:
 3. Review and apply migrations `0010` and `0011` in order. Confirm both new queues
    contain no historical rows.
 4. Deploy `neobank-financial-accounting-worker` with withdrawal accounting still
-   disabled in the Go service. Verify worker startup, empty queues, and Core USDT
-   clearing and fee accounts.
+   disabled in the Go service and `FINANCIAL_ACCOUNTING_PROCESSING_ENABLED=false`
+   on the worker. The fail-closed worker must log
+   `financial_accounting_worker_paused` before creating the Nest/Prisma application
+   context, so it cannot query, claim, or update existing queues. Verify queue state
+   and Core USDT clearing and fee accounts separately through read-only checks;
+   enabling processing is a later, separately approved environment change.
 5. Deploy Core and Go code with `WITHDRAWAL_ACCOUNTING_ENABLED=false`. Verify the
    customer endpoint remains closed and the USDT reconciliation endpoint is green.
 6. Reconcile historical deposits and withdrawals one item at a time under a separate
