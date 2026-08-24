@@ -60,6 +60,14 @@ type WithdrawalRow = {
 
 type AccountingError = Error & { code?: string; retryable?: boolean };
 
+export type DirectWithdrawalAccountingAction = 'reserve' | 'approve' | 'release' | 'settle';
+
+export type DirectWithdrawalAccountingResult = {
+  status: 'pending' | 'reserved' | 'approved' | 'released' | 'settled' | 'exception';
+  retryable: boolean;
+  idempotent: boolean;
+};
+
 function accountingError(code: string, retryable: boolean): AccountingError {
   return Object.assign(new Error(code), { code, retryable });
 }
@@ -132,6 +140,46 @@ export class WithdrawalAccountingWorker {
         })
       );
     }
+  }
+
+  async processDirect(
+    withdrawalId: string,
+    action: DirectWithdrawalAccountingAction
+  ): Promise<DirectWithdrawalAccountingResult> {
+    const states = {
+      reserve: ['pending_reservation', 'reserving', 'reserved'],
+      approve: ['pending_approval', 'approving', 'approved'],
+      release: ['pending_release', 'releasing', 'released'],
+      settle: ['pending_settlement', 'settling', 'settled'],
+    } as const;
+    const [pending, processing, completed] = states[action];
+    const staleBefore = new Date(Date.now() - STALE_LOCK_MS);
+    const claimed = await this.db.$executeRaw`
+      UPDATE cregis_withdrawal_accounting
+      SET status=${processing}, locked_at=NOW(), updated_at=NOW()
+      WHERE withdrawal_id=${withdrawalId} AND tenant_id=${this.tenantId()}
+        AND (
+          (status=${pending} AND next_attempt_at <= NOW())
+          OR (status=${processing} AND locked_at < ${staleBefore})
+        )
+    `;
+    if (claimed === 1) await this.processWithdrawal(withdrawalId, processing);
+    const rows = await this.db.$queryRaw<Array<{ status: string }>>`
+      SELECT status FROM cregis_withdrawal_accounting
+      WHERE withdrawal_id=${withdrawalId} AND tenant_id=${this.tenantId()}
+    `;
+    if (rows.length !== 1) throw accountingError('withdrawal_direct_state_conflict', false);
+    const current = rows[0].status;
+    if (current === completed) {
+      return { status: completed, retryable: false, idempotent: claimed === 0 };
+    }
+    if (current === 'exception') {
+      return { status: 'exception', retryable: false, idempotent: false };
+    }
+    if (current === pending || current === processing) {
+      return { status: 'pending', retryable: true, idempotent: false };
+    }
+    throw accountingError('withdrawal_direct_state_conflict', false);
   }
 
   private async claimBatch() {

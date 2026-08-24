@@ -310,3 +310,41 @@ test('a proven historical rejection with no Core reservation closes without chan
 
   await new WithdrawalAccountingWorker(db).processWithdrawal(releasing.withdrawal_id, 'releasing');
 });
+
+test('direct duplicate release returns the stored final result without moving balances again', async () => {
+  let transactionCalls = 0;
+  const db = {
+    $executeRaw: async () => 0,
+    $queryRaw: async () => [{ status: 'released' }],
+    $transaction: async () => {
+      transactionCalls += 1;
+      throw new Error('released accounting must not run again');
+    },
+  };
+  const result = await new WithdrawalAccountingWorker(db).processDirect(
+    row.withdrawal_id,
+    'release'
+  );
+  assert.deepEqual(result, { status: 'released', retryable: false, idempotent: true });
+  assert.equal(transactionCalls, 0);
+});
+
+test('direct withdrawal delivery carries a stale-lock boundary for crash recovery', async () => {
+  let claimValues = [];
+  const db = {
+    $executeRaw: async (strings, ...values) => {
+      claimValues = values;
+      return 0;
+    },
+    $queryRaw: async () => [{ status: 'releasing' }],
+  };
+  const result = await new WithdrawalAccountingWorker(db).processDirect(
+    row.withdrawal_id,
+    'release'
+  );
+  assert.equal(result.retryable, true);
+  assert.equal(
+    claimValues.some((value) => value instanceof Date),
+    true
+  );
+});

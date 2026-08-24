@@ -157,7 +157,7 @@ func TestWithdrawalReservationRechecksFundsAndOnboardingInOneStatement(t *testin
 		"c.kyc_status='approved'",
 		"c.operations_status='active'",
 		"c.status='active'",
-		`"CryptoWallet"`,
+		`"Account"`,
 		`"availableBalance"`,
 		"SUM(x.amount_minor)",
 		"a.status IN ('pending_reservation','reserving')",
@@ -193,8 +193,9 @@ func TestExceptionReconciliationKeepsFundsFrozenUntilSignedFinalCallback(t *test
 			t.Fatalf("ambiguous exception reconciliation must not contain %q", forbidden)
 		}
 	}
-	if !strings.Contains(walletBalancesSQL, `core_wallet."frozenBalance"`) {
-		t.Fatalf("wallet balances must remain authoritative from Core: %s", walletBalancesSQL)
+	if !strings.Contains(walletBalancesSQL, `core_account."frozenBalance"`) ||
+		!strings.Contains(walletBalancesSQL, `core_wallet."frozenBalance"`) {
+		t.Fatalf("wallet balances must expose the Core account and validate its compatibility mirror: %s", walletBalancesSQL)
 	}
 }
 

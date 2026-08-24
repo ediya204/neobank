@@ -9,8 +9,16 @@ import { edgeAuthMiddleware } from './security/edge-auth';
 
 async function bootstrap() {
   const edgeSecret = process.env.CORE_EDGE_SHARED_SECRET || '';
+  const accountingSecret = process.env.CORE_ACCOUNTING_SHARED_SECRET || '';
   const adminUserId = process.env.CORE_ADMIN_USER_ID || '';
   const edgeAuthRequired = process.env.CORE_EDGE_AUTH_REQUIRED === 'true';
+  const directAccountingEnabled =
+    process.env.CREGIS_DIRECT_ACCOUNTING_ENABLED?.trim().toLowerCase() === 'true';
+  if (directAccountingEnabled && Buffer.byteLength(accountingSecret) < 32) {
+    throw new Error(
+      'CORE_ACCOUNTING_SHARED_SECRET must be at least 32 bytes when direct accounting is enabled'
+    );
+  }
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   app.setGlobalPrefix('api/v1');
   app.use(helmet());
@@ -23,8 +31,8 @@ async function bootstrap() {
   };
   app.use(expressJson({ limit: '128kb', verify: captureRawBody }));
   app.use(expressUrlencoded({ extended: true, limit: '128kb', verify: captureRawBody }));
-  if (edgeAuthRequired || edgeSecret || adminUserId) {
-    app.use(edgeAuthMiddleware({ secret: edgeSecret, adminUserId }));
+  if (edgeAuthRequired || edgeSecret || accountingSecret || adminUserId) {
+    app.use(edgeAuthMiddleware({ secret: edgeSecret, accountingSecret, adminUserId }));
   }
   app.enableCors({
     origin: (

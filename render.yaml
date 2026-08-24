@@ -70,6 +70,12 @@ services:
         value: neobank
       - key: WITHDRAWAL_ACCOUNTING_ENABLED
         value: 'false'
+      - key: CREGIS_DIRECT_ACCOUNTING_ENABLED
+        value: 'false'
+      - key: CORE_ACCOUNTING_URL
+        sync: false
+      - key: CORE_ACCOUNTING_SHARED_SECRET
+        sync: false
       - key: EMAIL_NOTIFICATIONS_ENABLED
         value: 'false'
   - type: web
@@ -97,6 +103,10 @@ services:
         value: org_neobank
       - key: NEOBANK_SOURCE_TENANT_ID
         value: neobank
+      - key: CREGIS_DIRECT_ACCOUNTING_ENABLED
+        value: 'false'
+      - key: CORE_ACCOUNTING_SHARED_SECRET
+        sync: false
       - key: WEB_ORIGIN
         value: https://portal.sscdigitalbank.com
       - key: EMAIL_NOTIFICATIONS_ENABLED

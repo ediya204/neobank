@@ -51,9 +51,16 @@ function requestBodiesForSignature(request: Request & { rawBody?: Buffer }): Buf
   return rawBody.equals(canonicalBody) ? [rawBody] : [rawBody, canonicalBody];
 }
 
-export function edgeAuthMiddleware(options: { adminUserId: string; secret: string }) {
+export function edgeAuthMiddleware(options: {
+  accountingSecret?: string;
+  adminUserId: string;
+  secret: string;
+}) {
   if (Buffer.byteLength(options.secret) < 32) {
     throw new Error('CORE_EDGE_SHARED_SECRET must be at least 32 bytes');
+  }
+  if (options.accountingSecret && Buffer.byteLength(options.accountingSecret) < 32) {
+    throw new Error('CORE_ACCOUNTING_SHARED_SECRET must be at least 32 bytes');
   }
   if (!options.adminUserId.trim()) {
     throw new Error('CORE_ADMIN_USER_ID is required');
@@ -67,22 +74,26 @@ export function edgeAuthMiddleware(options: { adminUserId: string; secret: strin
     const identity = request.header('x-neobank-user')?.trim() || '';
     const timestamp = request.header('x-core-edge-timestamp')?.trim() || '';
     const signature = request.header('x-core-edge-signature')?.trim() || '';
+    const accountingRequest = request.originalUrl.startsWith('/api/v1/internal/cregis/');
+    const secret = accountingRequest ? options.accountingSecret || '' : options.secret;
     // Reverse proxies can preserve a differently formatted non-empty raw JSON
     // body than the canonical bytes signed and forwarded by the Worker. Verify
     // the exact raw bytes first, then the deterministic serialization of the
     // parsed JSON. Both candidates remain fully covered by the same HMAC.
-    const verified = requestBodiesForSignature(request).some((body) =>
-      verifyEdgeSignature({
-        body,
-        identity,
-        method: request.method,
-        requestTarget: request.originalUrl,
-        secret: options.secret,
-        signature,
-        timestamp,
-      })
-    );
-    if (!verified) {
+    const verified =
+      (!accountingRequest || Buffer.byteLength(secret) >= 32) &&
+      requestBodiesForSignature(request).some((body) =>
+        verifyEdgeSignature({
+          body,
+          identity,
+          method: request.method,
+          requestTarget: request.originalUrl,
+          secret,
+          signature,
+          timestamp,
+        })
+      );
+    if (!verified || (accountingRequest && identity !== 'service:neobank-go')) {
       response.status(401).json({ error: { code: 'unauthorized_edge_request' } });
       return;
     }

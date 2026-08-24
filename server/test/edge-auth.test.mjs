@@ -186,3 +186,85 @@ test('accepts the previous admin email identity during the staged rollout', () =
   assert.equal(request.headers['x-authenticated-email'], 'legacy-admin@sscdigitalbank.com');
   assert.equal(request.headers['x-authenticated-role'], 'admin');
 });
+
+test('internal Cregis accounting requires the dedicated secret and service identity', () => {
+  const accountingSecret = 'accounting-secret-0123456789-abcdef';
+  const requestTarget = '/api/v1/internal/cregis/withdrawals/withdrawal_test/release';
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const input = {
+    body: Buffer.alloc(0),
+    identity: 'service:neobank-go',
+    method: 'POST',
+    requestTarget,
+    secret: accountingSecret,
+    timestamp,
+  };
+  const request = {
+    body: undefined,
+    headers: {
+      'x-neobank-user': input.identity,
+      'x-core-edge-timestamp': timestamp,
+      'x-core-edge-signature': edgeSignature(input),
+    },
+    method: 'POST',
+    originalUrl: requestTarget,
+    rawBody: Buffer.alloc(0),
+    header(name) {
+      return this.headers[name.toLowerCase()];
+    },
+  };
+  let nextCalled = false;
+  const response = {
+    status() {
+      assert.fail('dedicated accounting signature should be accepted');
+    },
+  };
+  edgeAuthMiddleware({ adminUserId: 'shared-admin', secret, accountingSecret })(
+    request,
+    response,
+    () => {
+      nextCalled = true;
+    }
+  );
+  assert.equal(nextCalled, true);
+  assert.equal(request.headers['x-user-id'], 'shared-admin');
+});
+
+test('internal Cregis accounting rejects an empty dedicated secret even with a matching HMAC', () => {
+  const requestTarget = '/api/v1/internal/cregis/deposits/deposit_test/post';
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const input = {
+    body: Buffer.alloc(0),
+    identity: 'service:neobank-go',
+    method: 'POST',
+    requestTarget,
+    secret: '',
+    timestamp,
+  };
+  const request = {
+    body: undefined,
+    headers: {
+      'x-neobank-user': input.identity,
+      'x-core-edge-timestamp': timestamp,
+      'x-core-edge-signature': edgeSignature(input),
+    },
+    method: 'POST',
+    originalUrl: requestTarget,
+    rawBody: Buffer.alloc(0),
+    header(name) {
+      return this.headers[name.toLowerCase()];
+    },
+  };
+  let status;
+  const response = {
+    status(value) {
+      status = value;
+      return this;
+    },
+    json() {},
+  };
+  edgeAuthMiddleware({ adminUserId: 'shared-admin', secret })(request, response, () => {
+    assert.fail('missing dedicated secret must never authenticate');
+  });
+  assert.equal(status, 401);
+});

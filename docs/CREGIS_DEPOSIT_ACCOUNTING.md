@@ -8,12 +8,12 @@ The supported order is:
 Cregis signed callback
   -> exact trade verification (CID, TxID, asset, amount, destination, source)
   -> PostgreSQL custody row + durable accounting intent
-  -> Core serializable posting transaction
+  -> authenticated synchronous Core serializable posting transaction
        -> completed Operation
        -> completed CryptoTransfer
        -> balanced JournalEntry / JournalLines
        -> Account and CryptoWallet materialized balances
-  -> intent posted
+  -> intent posted in the same Core transaction
   -> customer and Admin show completed / available
 ```
 
@@ -32,9 +32,20 @@ The public states are deliberately conservative:
 
 Callback delivery is at least once. The accounting effect is exactly once through
 the unique Cregis CID, completed TxID, Core operation reference, customer
-idempotency key, and one serializable database transaction. A worker crash before
-commit changes nothing. A crash after commit leaves the intent posted in that same
-commit, so it cannot be claimed again.
+idempotency key, and one serializable database transaction. A lost HTTP response
+before commit is retryable. A lost response after commit sees the intent already
+posted, so it cannot create a second financial effect. The former polling worker
+remains paused only as a staged rollback shell until the direct path and historical
+queue state have been verified.
+
+Callback transport and accounting completion are deliberately distinct:
+
+- invalid signatures are rejected and no payload field is trusted;
+- a transient database or Core failure does not return `success`, allowing Cregis
+  replay;
+- a posted or idempotently duplicate event returns literal `success`;
+- permanently conflicting evidence is durably retained for manual review, moves no
+  balance, and returns `success` because replaying the same evidence cannot repair it.
 
 ## Release order
 
@@ -47,20 +58,23 @@ Do not combine these into one unreviewed release:
    and apply it with `cmd/postgres-migrate`.
 3. Verify that the migration created an empty accounting queue. It intentionally
    does not enqueue historical deposits.
-4. First deploy `neobank-financial-accounting-worker` with
-   `FINANCIAL_ACCOUNTING_PROCESSING_ENABLED=false`. In this fail-closed mode the
-   process must log `financial_accounting_worker_paused` before creating the
-   Nest/Prisma application context, so it cannot claim or update any accounting
-   row. Verify the queues separately through a read-only PostgreSQL check. Enabling
-   processing is a later, separately approved environment change after the queue is
-   proven safe. Then deploy the Go service that writes new callback intents.
-5. Deploy the web Worker only if its source changed. GitHub publication,
+4. Deploy Core and Go from the same reviewed commit with
+   `CREGIS_DIRECT_ACCOUNTING_ENABLED=false`. Configure the dedicated internal URL
+   and secret without exposing either value. Keep
+   `FINANCIAL_ACCOUNTING_PROCESSING_ENABLED=false` on the old worker.
+5. Verify accounting tables, historical queue counts, system accounts, tenant scope,
+   and all balance/journal invariants through read-only PostgreSQL checks. Enable the
+   direct flag only after an approved no-payout test proves the authenticated path.
+6. Deploy the web Worker only if its source changed. GitHub publication,
    PostgreSQL migration, each Render service deployment, and Cloudflare deployment
    remain separate evidence items.
-6. Run one explicitly approved small-deposit UAT. A callback HTTP success is not
+7. Run one explicitly approved small-deposit UAT. A callback HTTP success is not
    acceptance; assert the custody row, posted intent, one Operation, one balanced
    journal, both equal materialized USDT balances, customer history, and Admin
    overview.
+8. Remove the old Render accounting worker only after no new flow depends on it and
+   every historical queue row has an evidenced disposition. Retain the accounting
+   tables for audit until a separately approved archival plan exists.
 
 Never enable a real payout as part of deposit acceptance.
 
@@ -88,8 +102,10 @@ npm --prefix server run deposit:reconcile -- release --deposit-id DEPOSIT_ID
 
 After `hold`, inspect the exact customer, tenant, Cregis CID, TxID, source and
 destination, amount, wallet ownership, and absence of any existing Core reference.
-Only then approve `release`. Releasing changes the row to `pending`; the worker,
-not the command, performs the financial transaction.
+Only then approve `release`. Releasing changes the row to `pending`; the command
+does not perform the financial transaction. Before the old worker can be retired,
+each approved historical row must receive a separately approved Core accounting
+execution and pass the same post-checks as a new direct callback.
 
 The Admin reconciliation page is a read-only triage surface. A completed deposit
 with `accounting_status=missing` is marked as a critical manual-reconciliation
