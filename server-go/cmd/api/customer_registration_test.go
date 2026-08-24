@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,21 +13,30 @@ import (
 	"testing"
 
 	"github.com/ediya204/neobank/server-go/internal/d1"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type registrationDatabase struct {
-	rows       []map[string]any
-	statements []d1.Statement
-	results    []d1.Result
+	rows           []map[string]any
+	queryResponses [][]map[string]any
+	queryCount     int
+	statements     []d1.Statement
+	results        []d1.Result
+	batchErr       error
 }
 
 func (db *registrationDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+	if db.queryCount < len(db.queryResponses) {
+		rows := db.queryResponses[db.queryCount]
+		db.queryCount++
+		return rows, nil
+	}
 	return db.rows, nil
 }
 
 func (db *registrationDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
 	db.statements = statements
-	return db.results, nil
+	return db.results, db.batchErr
 }
 
 func registrationRequest(body string) *http.Request {
@@ -44,7 +54,8 @@ func validIndividualRegistration() string {
 		"phone_country_code":"+852",
 		"phone":"6123 4567",
 		"residence_country":"hk",
-		"full_name":"Test Applicant",
+		"family_name":"Applicant",
+		"given_name":"Test",
 		"date_of_birth":"1990-01-02",
 		"nationality":"hk",
 		"legal_name":"",
@@ -90,6 +101,9 @@ func TestCustomerRegistrationPersistsPendingApplicationAndPasswordCredential(t *
 	if !strings.Contains(combined, "customer_credentials") || strings.Contains(combined, "cregis_") {
 		t.Fatal("public registration must create only the pending password credential and no wallet data")
 	}
+	if strings.Contains(strings.ToLower(db.statements[0].SQL), "insert or ignore") {
+		t.Fatal("customer creation must surface a concurrent email conflict before dependent inserts")
+	}
 	if !strings.Contains(combined, "customer_email_verification_requests") ||
 		!strings.Contains(combined, `"emailoutbox"`) ||
 		!strings.Contains(strings.Join(anyStrings(db.statements[5].Params), " "), "CUSTOMER_EMAIL_VERIFICATION") {
@@ -124,7 +138,8 @@ func TestCustomerRegistrationFailsClosedWithoutEmailVerificationDelivery(t *test
 func TestCustomerRegistrationIsIdempotent(t *testing.T) {
 	input := customerRegistrationInput{
 		AccountType: "individual", Email: "applicant@example.test", PhoneCountryCode: "+852",
-		Phone: "61234567", ResidenceCountry: "HK", FullName: "Test Applicant",
+		Phone: "61234567", ResidenceCountry: "HK", FamilyName: "Applicant", GivenName: "Test",
+		FullName: "Test Applicant",
 		DateOfBirth: "1990-01-02", Nationality: "HK", Password: "Correct-Horse-7-Battery!",
 		KYCConsent: true, TermsAccepted: true,
 	}
@@ -148,6 +163,48 @@ func TestCustomerRegistrationIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestCustomerRegistrationRejectsExistingEmailBeforeCreatingDependentRecords(t *testing.T) {
+	db := &registrationDatabase{queryResponses: [][]map[string]any{
+		{},
+		{{"id": "customer_existing"}},
+	}}
+	app := &application{
+		db: db, tenantID: "tenant_test", emailNotifications: true,
+		customerPasswordPepper:      []byte("0123456789abcdef0123456789abcdef"),
+		customerPasswordResetSecret: []byte("abcdef0123456789abcdef0123456789"),
+		logger:                      slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	response := httptest.NewRecorder()
+	app.registerCustomer(response, registrationRequest(validIndividualRegistration()))
+	if response.Code != http.StatusConflict ||
+		!strings.Contains(response.Body.String(), "application_already_exists") {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	if len(db.statements) != 0 {
+		t.Fatalf("duplicate registration executed %d dependent statements", len(db.statements))
+	}
+}
+
+func TestCustomerRegistrationMapsConcurrentEmailConflictWithoutLeakingDatabaseError(t *testing.T) {
+	db := &registrationDatabase{batchErr: fmt.Errorf("execute postgres batch: %w", &pgconn.PgError{
+		Code:           "23505",
+		TableName:      "customers",
+		ConstraintName: "customers_tenant_id_email_key",
+	})}
+	app := &application{
+		db: db, tenantID: "tenant_test", emailNotifications: true,
+		customerPasswordPepper:      []byte("0123456789abcdef0123456789abcdef"),
+		customerPasswordResetSecret: []byte("abcdef0123456789abcdef0123456789"),
+		logger:                      slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	response := httptest.NewRecorder()
+	app.registerCustomer(response, registrationRequest(validIndividualRegistration()))
+	if response.Code != http.StatusConflict ||
+		!strings.Contains(response.Body.String(), "application_already_exists") {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
 func TestCustomerRegistrationRejectsUnderageApplicant(t *testing.T) {
 	db := &registrationDatabase{}
 	app := &application{
@@ -160,6 +217,33 @@ func TestCustomerRegistrationRejectsUnderageApplicant(t *testing.T) {
 	app.registerCustomer(response, registrationRequest(body))
 	if response.Code != http.StatusUnprocessableEntity || len(db.statements) != 0 {
 		t.Fatalf("status=%d statements=%d body=%q", response.Code, len(db.statements), response.Body.String())
+	}
+}
+
+func TestCustomerRegistrationRejectsNonEnglishIndividualName(t *testing.T) {
+	db := &registrationDatabase{}
+	app := &application{
+		db: db, tenantID: "tenant_test",
+		customerPasswordPepper: []byte("0123456789abcdef0123456789abcdef"),
+		logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	response := httptest.NewRecorder()
+	body := strings.Replace(validIndividualRegistration(), `"family_name":"Applicant"`, `"family_name":"陈"`, 1)
+	app.registerCustomer(response, registrationRequest(body))
+	if response.Code != http.StatusUnprocessableEntity || len(db.statements) != 0 {
+		t.Fatalf("status=%d statements=%d body=%q", response.Code, len(db.statements), response.Body.String())
+	}
+}
+
+func TestCustomerRegistrationAcceptsLegacyEnglishFullNameDuringStagedRelease(t *testing.T) {
+	var input customerRegistrationInput
+	body := strings.Replace(validIndividualRegistration(), `"family_name":"Applicant",
+		"given_name":"Test",`, `"full_name":"Test Applicant",`, 1)
+	if json.Unmarshal([]byte(body), &input) != nil || !normalizeRegistrationInput(&input) {
+		t.Fatal("legacy English full_name must remain valid while the frontend and API deploy separately")
+	}
+	if input.FullName != "Test Applicant" {
+		t.Fatalf("full name = %q", input.FullName)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ediya204/neobank/server-go/internal/d1"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 const (
@@ -38,6 +40,7 @@ var (
 	customerPhoneCodePattern   = regexp.MustCompile(`^\+[1-9][0-9]{0,3}$`)
 	customerPhonePattern       = regexp.MustCompile(`^[0-9]{6,20}$`)
 	customerIdempotencyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$`)
+	englishLegalNamePattern    = regexp.MustCompile(`^[A-Za-z]+(?:[ '-][A-Za-z]+)*$`)
 )
 
 type customerRegistrationInput struct {
@@ -47,6 +50,8 @@ type customerRegistrationInput struct {
 	PhoneCountryCode         string `json:"phone_country_code"`
 	Phone                    string `json:"phone"`
 	ResidenceCountry         string `json:"residence_country"`
+	FamilyName               string `json:"family_name"`
+	GivenName                string `json:"given_name"`
 	FullName                 string `json:"full_name"`
 	DateOfBirth              string `json:"date_of_birth"`
 	Nationality              string `json:"nationality"`
@@ -72,6 +77,8 @@ func normalizeRegistrationInput(input *customerRegistrationInput) bool {
 		return -1
 	}, input.Phone)
 	input.ResidenceCountry = strings.ToUpper(strings.TrimSpace(input.ResidenceCountry))
+	input.FamilyName = strings.TrimSpace(input.FamilyName)
+	input.GivenName = strings.TrimSpace(input.GivenName)
 	input.FullName = strings.TrimSpace(input.FullName)
 	input.DateOfBirth = strings.TrimSpace(input.DateOfBirth)
 	input.Nationality = strings.ToUpper(strings.TrimSpace(input.Nationality))
@@ -91,10 +98,18 @@ func normalizeRegistrationInput(input *customerRegistrationInput) bool {
 		return false
 	}
 	if input.AccountType == "individual" {
+		if input.FamilyName != "" || input.GivenName != "" {
+			if input.FullName != "" || !validEnglishLegalName(input.FamilyName, 50) ||
+				!validEnglishLegalName(input.GivenName, 50) {
+				return false
+			}
+			input.FullName = input.GivenName + " " + input.FamilyName
+		} else if !validEnglishLegalName(input.FullName, 100) {
+			return false
+		}
 		birthDate, err := time.Parse("2006-01-02", input.DateOfBirth)
 		adultCutoff := time.Now().UTC().AddDate(-18, 0, 0)
 		return err == nil && !birthDate.After(adultCutoff) &&
-			validRegistrationText(input.FullName, 100) &&
 			customerCountryPattern.MatchString(input.Nationality) &&
 			input.LegalName == "" && input.RegistrationNumber == "" &&
 			input.IncorporationCountry == "" && input.ContactName == "" &&
@@ -110,9 +125,14 @@ func normalizeRegistrationInput(input *customerRegistrationInput) bool {
 			validRegistrationText(input.ContactName, 100) &&
 			validRegistrationText(input.ContactRole, 100) &&
 			validRegistrationText(input.BeneficialOwnerName, 100) &&
-			input.FullName == "" && input.DateOfBirth == "" && input.Nationality == ""
+			input.FamilyName == "" && input.GivenName == "" && input.FullName == "" &&
+			input.DateOfBirth == "" && input.Nationality == ""
 	}
 	return false
+}
+
+func validEnglishLegalName(value string, maximum int) bool {
+	return value != "" && len(value) <= maximum && englishLegalNamePattern.MatchString(value)
 }
 
 func validRegistrationText(value string, maximum int) bool {
@@ -129,6 +149,13 @@ func (app *application) registrationFingerprint(input customerRegistrationInput)
 
 func registrationReference(now time.Time) string {
 	return "SSC-" + now.UTC().Format("20060102") + "-" + strings.ToUpper(hex.EncodeToString(randomBytes(6)))
+}
+
+func isExistingCustomerEmailViolation(err error) bool {
+	var postgresErr *pgconn.PgError
+	return errors.As(err, &postgresErr) && postgresErr.Code == "23505" &&
+		postgresErr.TableName == "customers" &&
+		postgresErr.ConstraintName == "customers_tenant_id_email_key"
 }
 
 func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request) {
@@ -195,6 +222,16 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusAccepted, response)
 		return
 	}
+	existingCustomer, err := app.db.Query(r.Context(), `SELECT id FROM customers
+	    WHERE tenant_id=? AND email=? LIMIT 1`, app.tenantID, input.Email)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(existingCustomer) != 0 {
+		conflict(w, "application_already_exists")
+		return
+	}
 	if !app.emailNotifications || len(app.customerPasswordResetSecret) < 32 {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"code": "customer_email_verification_unavailable"}})
 		return
@@ -216,7 +253,7 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 		"displayName": displayName, "verificationRequestId": emailVerificationID,
 	})
 	statements := []d1.Statement{
-		d1.Statement{SQL: `INSERT OR IGNORE INTO customers
+		d1.Statement{SQL: `INSERT INTO customers
 	      (id, tenant_id, email, display_name, status, kyc_status, operations_status, created_by, created_at, updated_at)
 	      VALUES (?, ?, ?, ?, 'pending_setup', 'pending', 'pending', ?, ?, ?)`, Params: []any{
 			customerID, app.tenantID, input.Email, displayName, "public_registration", nowText, nowText,
@@ -275,6 +312,10 @@ func (app *application) registerCustomer(w http.ResponseWriter, r *http.Request)
 	}
 	results, err := app.db.Batch(r.Context(), statements...)
 	if err != nil {
+		if isExistingCustomerEmailViolation(err) {
+			conflict(w, "application_already_exists")
+			return
+		}
 		databaseError(app, w, err)
 		return
 	}

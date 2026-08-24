@@ -183,7 +183,8 @@
         "password_hint": "Use 14–128 characters with uppercase, lowercase, number, and symbol. Your password is securely hashed and cannot be used before approval."
       },
       "fields": {
-        "full_name": "Full legal name",
+        "family_name": "Surname (English)",
+        "given_name": "Given name (English)",
         "date_of_birth": "Date of birth",
         "nationality": "Nationality",
         "legal_name": "Registered legal name",
@@ -242,6 +243,7 @@
         "passwords_mismatch": "The passwords do not match.",
         "phone": "Enter a valid phone number.",
         "adult": "Individual account applicants must be at least 18 years old.",
+        "english_name": "Use English letters only. Spaces, hyphens, and apostrophes are allowed.",
         "ownership": "The percentage must be greater than 0 and no more than 100.",
         "kyc_consent": "Confirm the identity-verification data authorization.",
         "terms": "Confirm the declaration before submitting."
@@ -256,7 +258,8 @@
       },
       "errors": {
         "submit": "The application cannot be submitted right now. Please try again later. No account will be activated automatically.",
-        "already_exists": "An application or account already exists for this email. Contact customer support to confirm its status."
+        "already_exists": "An application or account already exists for this email. Use the original application password to resume identity verification, or contact customer support to confirm its status.",
+        "validation_failed": "The submitted details did not pass validation. Check the email, password, and personal details, then try again."
       },
       "sumsub": {
         "required_notice": "Complete every identity check below. Completion only makes the application eligible for the institution's Compliance review; it does not open the account.",

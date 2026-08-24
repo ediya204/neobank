@@ -37,7 +37,8 @@ type ApplicationForm = {
   phoneCountryCode: string;
   phone: string;
   residenceCountry: string;
-  fullName: string;
+  familyName: string;
+  givenName: string;
   dateOfBirth: string;
   nationality: string;
   legalName: string;
@@ -62,7 +63,8 @@ const INITIAL_FORM: ApplicationForm = {
   phoneCountryCode: '+852',
   phone: '',
   residenceCountry: '',
-  fullName: '',
+  familyName: '',
+  givenName: '',
   dateOfBirth: '',
   nationality: '',
   legalName: '',
@@ -85,6 +87,7 @@ const COUNTRIES = [
 ];
 
 const PHONE_CODES = ['+852', '+65', '+86', '+44', '+1'];
+const ENGLISH_LEGAL_NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
 
 type Props = {
   loginPath: string;
@@ -211,9 +214,16 @@ export default function JwtRegisterView({ loginPath }: Props) {
       }
 
       if (form.accountType === 'individual') {
-        required('fullName');
+        required('familyName');
+        required('givenName');
         required('dateOfBirth');
         required('nationality');
+        if (form.familyName && !ENGLISH_LEGAL_NAME_PATTERN.test(form.familyName.trim())) {
+          nextErrors.familyName = 'auth.registration.validation.english_name';
+        }
+        if (form.givenName && !ENGLISH_LEGAL_NAME_PATTERN.test(form.givenName.trim())) {
+          nextErrors.givenName = 'auth.registration.validation.english_name';
+        }
         if (form.dateOfBirth) {
           const birthDate = new Date(`${form.dateOfBirth}T00:00:00Z`);
           const adultCutoff = new Date();
@@ -416,7 +426,8 @@ export default function JwtRegisterView({ loginPath }: Props) {
           phone_country_code: form.phoneCountryCode,
           phone: form.phone,
           residence_country: form.residenceCountry,
-          full_name: form.fullName,
+          family_name: form.familyName,
+          given_name: form.givenName,
           date_of_birth: form.dateOfBirth,
           nationality: form.nationality,
           legal_name: form.legalName,
@@ -439,11 +450,38 @@ export default function JwtRegisterView({ loginPath }: Props) {
       } | null;
       if (!response.ok || !payload?.application_reference) {
         const duplicate = payload?.error?.code === 'application_already_exists';
-        throw new Error(
-          duplicate
-            ? t('auth.registration.errors.already_exists')
-            : t('auth.registration.errors.submit')
-        );
+
+        if (duplicate && form.accountType === 'individual') {
+          const resumeResponse = await fetch('/api/auth/customer/onboarding/login', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email: form.email, password: form.password }),
+          });
+          const resumePayload = (await resumeResponse.json().catch(() => null)) as {
+            application_reference?: string;
+            csrf_token?: string;
+          } | null;
+          if (
+            resumeResponse.ok &&
+            resumePayload?.application_reference &&
+            resumePayload.csrf_token
+          ) {
+            setSubmittedReference(resumePayload.application_reference);
+            setSumsubRequired(true);
+            setSumsubCSRFToken(resumePayload.csrf_token);
+            setSumsubStatus('initializing');
+            startSumsub(resumePayload.csrf_token).catch(() => undefined);
+            setForm((current) => ({ ...current, password: '', confirmPassword: '' }));
+            return;
+          }
+        }
+
+        const validationFailed = payload?.error?.code === 'validation_error';
+        let errorKey = 'auth.registration.errors.submit';
+        if (duplicate) errorKey = 'auth.registration.errors.already_exists';
+        if (validationFailed) errorKey = 'auth.registration.errors.validation_failed';
+        throw new Error(t(errorKey));
       }
       setSubmittedReference(payload.application_reference);
       const requiresSumsub = form.accountType === 'individual' && payload.kyc_provider === 'sumsub';
@@ -570,15 +608,28 @@ export default function JwtRegisterView({ loginPath }: Props) {
 
       {form.accountType === 'individual' ? (
         <>
-          <TextField
-            fullWidth
-            label={t('auth.registration.fields.full_name')}
-            value={form.fullName}
-            onChange={handleTextChange('fullName')}
-            error={Boolean(errors.fullName)}
-            helperText={fieldError('fullName')}
-            autoComplete="name"
-          />
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              fullWidth
+              label={t('auth.registration.fields.family_name')}
+              value={form.familyName}
+              onChange={handleTextChange('familyName')}
+              error={Boolean(errors.familyName)}
+              helperText={fieldError('familyName')}
+              autoComplete="family-name"
+              inputProps={{ maxLength: 50 }}
+            />
+            <TextField
+              fullWidth
+              label={t('auth.registration.fields.given_name')}
+              value={form.givenName}
+              onChange={handleTextChange('givenName')}
+              error={Boolean(errors.givenName)}
+              helperText={fieldError('givenName')}
+              autoComplete="given-name"
+              inputProps={{ maxLength: 50 }}
+            />
+          </Stack>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField
               fullWidth
@@ -827,7 +878,10 @@ export default function JwtRegisterView({ loginPath }: Props) {
     },
     {
       label: t('auth.registration.review.applicant'),
-      value: form.accountType === 'individual' ? form.fullName : form.legalName,
+      value:
+        form.accountType === 'individual'
+          ? `${form.givenName} ${form.familyName}`.trim()
+          : form.legalName,
     },
     { label: t('auth.registration.review.email'), value: form.email },
     {
