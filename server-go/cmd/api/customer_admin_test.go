@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ediya204/neobank/server-go/internal/d1"
 )
@@ -22,6 +23,25 @@ type adminCustomerPasswordDatabase struct {
 type adminCustomerSetupDatabase struct {
 	rows       []map[string]any
 	statements []d1.Statement
+}
+
+type adminCustomerEmailVerificationDatabase struct {
+	rows       []map[string]any
+	statements []d1.Statement
+}
+
+func (db *adminCustomerEmailVerificationDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+	return db.rows, nil
+}
+
+func (db *adminCustomerEmailVerificationDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
+	db.statements = append(db.statements, statements...)
+	return []d1.Result{
+		{Meta: map[string]any{"changes": float64(0)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+		{Meta: map[string]any{"changes": float64(1)}},
+	}, nil
 }
 
 func (db *adminCustomerSetupDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
@@ -66,6 +86,88 @@ func TestAdminCustomerViewNeverSelectsCredentialMaterial(t *testing.T) {
 		if !strings.Contains(adminCustomerFields, required) {
 			t.Fatalf("admin customer response must include %q", required)
 		}
+	}
+}
+
+func TestAdminResendsLegacyCustomerEmailVerificationWithoutForgingVerification(t *testing.T) {
+	db := &adminCustomerEmailVerificationDatabase{rows: []map[string]any{{
+		"email": "legacy@example.test", "display_name": "Legacy Applicant",
+		"credential_version": int64(3), "latest_verification_created_at": "",
+	}}}
+	app := &application{
+		db: db, tenantID: "neobank", coreOrganizationID: "org_neobank",
+		emailNotifications:          true,
+		customerPasswordResetSecret: []byte("0123456789abcdef0123456789abcdef"),
+	}
+	request := httptest.NewRequest(http.MethodPost,
+		"/api/v1/admin/customers/customer_1/email-verification", bytes.NewBufferString(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Neobank-User", "compliance@example.test")
+	response := httptest.NewRecorder()
+
+	app.adminResendLegacyCustomerEmailVerification(response, request, "customer_1")
+
+	if response.Code != http.StatusAccepted || !strings.Contains(response.Body.String(), `"accepted":true`) {
+		t.Fatalf("email verification resend status=%d body=%q", response.Code, response.Body.String())
+	}
+	var payload struct {
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode email verification resend response: %v", err)
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, payload.ExpiresAt)
+	if err != nil {
+		t.Fatalf("parse email verification expiry: %v", err)
+	}
+	if remaining := time.Until(expiresAt); remaining < 5*time.Hour+59*time.Minute || remaining > 6*time.Hour+time.Minute {
+		t.Fatalf("legacy verification link lifetime=%s, want 6 hours", remaining)
+	}
+	if len(db.statements) != 4 {
+		t.Fatalf("email verification resend statements=%d, want 4", len(db.statements))
+	}
+	for _, prohibited := range []string{"UPDATE customers SET email_verified_at", "kyc_status='approved'", "operations_status='active'"} {
+		for _, statement := range db.statements {
+			if strings.Contains(statement.SQL, prohibited) {
+				t.Fatalf("repair must not forge verification or approve the customer: %q", prohibited)
+			}
+		}
+	}
+	for _, required := range []string{
+		"created_by='public_registration'", "email_verified_at IS NULL", "customer_applications",
+	} {
+		if !strings.Contains(db.statements[1].SQL, required) {
+			t.Fatalf("verification request insert must require %q", required)
+		}
+	}
+	if !strings.Contains(db.statements[2].SQL, "CUSTOMER_EMAIL_VERIFICATION") ||
+		!strings.Contains(db.statements[2].SQL, "EXISTS") {
+		t.Fatal("outbox write must use the verification template and depend on the request row")
+	}
+	if !strings.Contains(db.statements[3].SQL, "auth.email_verification_requested") ||
+		!strings.Contains(strings.Join(anyStrings(db.statements[3].Params), " "), "admin_legacy_application_resend") {
+		t.Fatal("verification resend must write a dedicated admin audit event")
+	}
+}
+
+func TestAdminLegacyEmailVerificationResendRejectsIneligibleCustomer(t *testing.T) {
+	db := &adminCustomerEmailVerificationDatabase{}
+	app := &application{
+		db: db, tenantID: "neobank", emailNotifications: true,
+		customerPasswordResetSecret: []byte("0123456789abcdef0123456789abcdef"),
+	}
+	request := httptest.NewRequest(http.MethodPost,
+		"/api/v1/admin/customers/customer_1/email-verification", bytes.NewBufferString(`{}`))
+	response := httptest.NewRecorder()
+
+	app.adminResendLegacyCustomerEmailVerification(response, request, "customer_1")
+
+	if response.Code != http.StatusConflict ||
+		!strings.Contains(response.Body.String(), `"code":"customer_email_verification_repair_unavailable"`) {
+		t.Fatalf("ineligible resend status=%d body=%q", response.Code, response.Body.String())
+	}
+	if len(db.statements) != 0 {
+		t.Fatal("ineligible customer must not enqueue email or audit writes")
 	}
 }
 

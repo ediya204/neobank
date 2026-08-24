@@ -212,6 +212,8 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 		app.adminChangeCustomerPassword(w, r, adminCustomerRouteID(r.URL.Path, "/password"))
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/setup-link"):
 		app.adminReissueCustomerSetupLink(w, r, adminCustomerRouteID(r.URL.Path, "/setup-link"))
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/email-verification"):
+		app.adminResendLegacyCustomerEmailVerification(w, r, adminCustomerRouteID(r.URL.Path, "/email-verification"))
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc"):
 		app.reviewCustomerKYC(w, r, adminCustomerRouteID(r.URL.Path, "/kyc"))
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/activate"):

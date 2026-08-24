@@ -16,6 +16,8 @@ var (
 	errCustomerStateRead = errors.New("customer state read failed")
 )
 
+const legacyCustomerEmailVerificationDuration = 6 * time.Hour
+
 const (
 	adminCustomerFields = `c.id AS id, c.email AS email, c.display_name AS display_name,
 	    c.status AS status, c.kyc_status AS kyc_status, c.operations_status AS operations_status,
@@ -32,6 +34,10 @@ const (
 	    ca.beneficial_owner_ownership AS beneficial_owner_ownership,
 	    ca.kyc_consent_at AS kyc_consent_at, ca.terms_accepted_at AS terms_accepted_at,
 	    ca.submitted_at AS application_submitted_at,
+	    CASE WHEN c.email_verified_at IS NOT NULL THEN TRUE ELSE FALSE END AS email_verified,
+	    CASE WHEN c.created_by='public_registration' AND c.email_verified_at IS NULL
+	      AND ca.id IS NOT NULL AND c.kyc_status='pending' AND c.operations_status='pending'
+	      THEN TRUE ELSE FALSE END AS email_verification_repair_available,
 	    (SELECT COUNT(*) FROM cregis_wallets cw
 	      WHERE cw.tenant_id=c.tenant_id AND cw.customer_id=c.id) AS wallet_count,
 	    (SELECT cw.status FROM cregis_wallets cw
@@ -128,6 +134,103 @@ func (app *application) listAdminCustomers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+func (app *application) adminResendLegacyCustomerEmailVerification(w http.ResponseWriter, r *http.Request, id string) {
+	if !safeIdentifier.MatchString(id) {
+		validationError(w)
+		return
+	}
+	if !app.emailNotifications || len(app.customerPasswordResetSecret) < 32 {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"error": map[string]string{"code": "customer_email_verification_unavailable"},
+		})
+		return
+	}
+
+	rows, err := app.db.Query(r.Context(), `SELECT c.email, c.display_name, cc.credential_version,
+	    (SELECT v.created_at FROM customer_email_verification_requests v
+	      WHERE v.customer_id=c.id AND v.consumed_at IS NULL AND v.cancelled_at IS NULL
+	      ORDER BY v.created_at DESC LIMIT 1) AS latest_verification_created_at
+	  FROM customers c
+	  JOIN customer_credentials cc ON cc.customer_id=c.id
+	  JOIN customer_applications ca ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id
+	  WHERE c.id=? AND c.tenant_id=? AND c.created_by='public_registration'
+	    AND c.email_verified_at IS NULL AND c.kyc_status='pending' AND c.operations_status='pending'`, id, app.tenantID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(rows) != 1 {
+		conflict(w, "customer_email_verification_repair_unavailable")
+		return
+	}
+	if latest, parseErr := time.Parse(time.RFC3339Nano, text(rows[0]["latest_verification_created_at"])); parseErr == nil && time.Since(latest) < customerEmailResendCooldown {
+		conflict(w, "customer_email_verification_recently_sent")
+		return
+	}
+
+	now := time.Now().UTC()
+	nowText := databaseTimestamp(now)
+	verificationID := randomID("email_verify")
+	email := normalizeCustomerEmail(text(rows[0]["email"]))
+	displayName := strings.TrimSpace(text(rows[0]["display_name"]))
+	if displayName == "" {
+		displayName = "Applicant"
+	}
+	payload := mustJSON(map[string]string{
+		"displayName": displayName, "verificationRequestId": verificationID,
+	})
+	actor := edgeUser(r)
+	results, err := app.db.Batch(r.Context(),
+		d1.Statement{SQL: `UPDATE customer_email_verification_requests SET cancelled_at=?
+		  WHERE customer_id=? AND consumed_at IS NULL AND cancelled_at IS NULL`, Params: []any{nowText, id}},
+		d1.Statement{SQL: `INSERT INTO customer_email_verification_requests
+		  (id, customer_id, email_snapshot, credential_version, expires_at, request_ip_hash,
+		   user_agent_hash, created_at)
+		  SELECT ?, c.id, c.email, cc.credential_version, ?, '', '', ?
+		  FROM customers c
+		  JOIN customer_credentials cc ON cc.customer_id=c.id
+		  JOIN customer_applications ca ON ca.customer_id=c.id AND ca.tenant_id=c.tenant_id
+		  WHERE c.id=? AND c.tenant_id=? AND c.created_by='public_registration'
+		    AND c.email_verified_at IS NULL AND c.kyc_status='pending' AND c.operations_status='pending'`, Params: []any{
+			verificationID, databaseTimestamp(now.Add(legacyCustomerEmailVerificationDuration)), nowText, id, app.tenantID,
+		}},
+		d1.Statement{SQL: `INSERT INTO "EmailOutbox"
+		  ("id", "organizationId", "customerId", "dedupeKey", "templateKey", "recipient", "payload",
+		   "status", "attemptCount", "maxAttempts", "nextAttemptAt", "createdAt", "updatedAt")
+		  SELECT ?, organization.id, core_customer.id, ?, 'CUSTOMER_EMAIL_VERIFICATION'::"EmailTemplateKey",
+		    ?, ?::jsonb, 'PENDING'::"EmailDeliveryStatus", 0, 5, NOW(), NOW(), NOW()
+		  FROM "Organization" organization
+		  LEFT JOIN "Customer" core_customer
+		    ON core_customer.id=? AND core_customer."organizationId"=organization.id
+		  WHERE organization.id=? AND EXISTS (
+		    SELECT 1 FROM customer_email_verification_requests WHERE id=? AND customer_id=?)
+		  ON CONFLICT ("dedupeKey") DO NOTHING`, Params: []any{
+			randomID("email"), "customer-auth:" + verificationID, email, payload,
+			id, app.coreOrganizationID, verificationID, id,
+		}},
+		d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
+		  (id, customer_id, event_type, actor, metadata_json, created_at)
+		  SELECT ?, ?, 'auth.email_verification_requested', ?, ?, ?
+		  WHERE EXISTS (SELECT 1 FROM customer_email_verification_requests WHERE id=? AND customer_id=?)`, Params: []any{
+			randomID("audit"), id, actor,
+			mustJSON(map[string]string{"method": "admin_legacy_application_resend"}), nowText,
+			verificationID, id,
+		}},
+	)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(results) != 4 || resultChanges(results[1:2]) != 1 ||
+		resultChanges(results[2:3]) != 1 || resultChanges(results[3:4]) != 1 {
+		conflict(w, "customer_email_verification_state_changed")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"accepted": true, "expires_at": databaseTimestamp(now.Add(legacyCustomerEmailVerificationDuration)),
+	})
 }
 
 func (app *application) adminChangeCustomerPassword(w http.ResponseWriter, r *http.Request, id string) {

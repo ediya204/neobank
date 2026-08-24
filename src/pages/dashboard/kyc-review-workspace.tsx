@@ -33,6 +33,7 @@ import {
   NeobankCustomerRecord,
   NeobankKycReviewResult,
   NeobankSumsubVerification,
+  resendNeobankLegacyEmailVerification,
   syncNeobankSumsubVerification,
 } from 'src/features/customers/neobank-customer';
 import {
@@ -110,6 +111,9 @@ function kycReviewErrorMessage(value: unknown) {
     customer_email_verification_required: '客户尚未完成邮箱验证，暂时不能通过 KYC 或自动开户。',
     customer_registration_incomplete: '客户尚未完成开户注册资料，暂时不能进入 KYC 审核。',
     customer_registration_password_required: '客户尚未设置登录密码，暂时不能通过 KYC 或自动开户。',
+    customer_email_verification_recently_sent: '验证邮件刚刚已经发送，请等待客户查收后再重试。',
+    customer_email_verification_repair_unavailable: '该申请不符合历史邮箱验证补发条件，请刷新页面核对状态。',
+    customer_email_verification_unavailable: '邮件服务当前不可用，暂时无法补发验证邮件。',
     sumsub_verification_not_ready: 'Sumsub 身份核验尚未完成，请同步最新状态后再审核。',
     sumsub_configuration_mismatch: 'Sumsub 环境或 Level 配置不一致，请联系系统管理员。',
   };
@@ -186,6 +190,8 @@ export default function KycReviewWorkspace() {
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [resendingEmailVerification, setResendingEmailVerification] = useState(false);
+  const [emailVerificationSent, setEmailVerificationSent] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -221,11 +227,14 @@ export default function KycReviewWorkspace() {
 
   const allChecksComplete = reviewChecks.every((item) => checks[item.key]);
   const sumsubReady = !sumsubVerification || sumsubVerification.status === 'ready_for_admin_review';
+  const emailReady = !record || record.email_verified !== false;
   const canSubmit =
     customer?.kycStatus === 'PENDING' &&
     confirmed &&
     note.trim().length >= 10 &&
-    (decision === 'approve' ? allChecksComplete && sumsubReady : Boolean(rejectionReason));
+    (decision === 'approve'
+      ? allChecksComplete && sumsubReady && emailReady
+      : Boolean(rejectionReason));
 
   const reviewSummary = useMemo(() => {
     const completed = reviewChecks.filter((item) => checks[item.key]).map((item) => item.label);
@@ -296,6 +305,20 @@ export default function KycReviewWorkspace() {
     }
   };
 
+  const resendEmailVerification = async () => {
+    if (!customer || !record?.email_verification_repair_available) return;
+    setResendingEmailVerification(true);
+    setError('');
+    try {
+      await resendNeobankLegacyEmailVerification(customer.id, userId);
+      setEmailVerificationSent(true);
+    } catch (caught) {
+      setError(kycReviewErrorMessage(caught));
+    } finally {
+      setResendingEmailVerification(false);
+    }
+  };
+
   if (loading && !customer) {
     return (
       <Box sx={{ minHeight: 560, display: 'grid', placeItems: 'center' }}>
@@ -326,6 +349,9 @@ export default function KycReviewWorkspace() {
   const reviewPresentation = kycReviewPresentation(customer.kycStatus);
   let submitButtonLabel = decision === 'approve' ? '通过 KYC 并自动开户' : '拒绝 KYC 申请';
   if (submitting) submitButtonLabel = '正在提交…';
+  let emailVerificationButtonLabel = '补发验证邮件';
+  if (resendingEmailVerification) emailVerificationButtonLabel = '正在发送…';
+  if (emailVerificationSent) emailVerificationButtonLabel = '已发送';
 
   return (
     <>
@@ -373,6 +399,24 @@ export default function KycReviewWorkspace() {
               {error}
             </Alert>
           )}
+          {record?.email_verification_repair_available && (
+            <Alert
+              severity={emailVerificationSent ? 'success' : 'warning'}
+              action={
+                <Button
+                  color="inherit"
+                  disabled={resendingEmailVerification || emailVerificationSent}
+                  onClick={() => resendEmailVerification().catch(() => undefined)}
+                >
+                  {emailVerificationButtonLabel}
+                </Button>
+              }
+            >
+              {emailVerificationSent
+                ? '验证邮件已发送，链接有效期为 6 小时。客户点击一次性链接后，刷新本页即可继续正常审批。'
+                : '该历史申请是在分阶段邮箱验证上线前提交的。请先向客户补发有效期为 6 小时的验证邮件；客户完成验证后才能通过 KYC 和自动开户。'}
+            </Alert>
+          )}
           {success && (
             <Alert
               severity="success"
@@ -415,6 +459,10 @@ export default function KycReviewWorkspace() {
                 >
                   <Field label="显示名称" value={customer.displayName} />
                   <Field label="邮箱" value={customer.email} />
+                  <Field
+                    label="邮箱状态"
+                    value={record?.email_verified ? '已验证' : '待验证'}
+                  />
                   <Field
                     label="电话"
                     value={[customer.phoneCountryCode, customer.phone].filter(Boolean).join(' ')}
@@ -672,6 +720,11 @@ export default function KycReviewWorkspace() {
                   {decision === 'approve' && !sumsubReady && (
                     <Alert severity="warning">
                       Sumsub 的护照、人脸和住址证明尚未全部通过，服务端不会接受批准。
+                    </Alert>
+                  )}
+                  {decision === 'approve' && !emailReady && (
+                    <Alert severity="warning">
+                      客户邮箱尚未验证。请先补发验证邮件，并等待客户本人完成验证。
                     </Alert>
                   )}
 

@@ -123,6 +123,10 @@ Webhook secret 必须与 Render 的 `SUMSUB_WEBHOOK_SECRET` 一致，并启用 S
 - 邮箱未验证或登录密码未设置时，服务端不得创建 Sumsub Applicant 或签发 WebSDK token；
 - 后台人工批准后才触发现有自动开户流程；
 - 旧个人申请及企业申请保持原有人工流程；
+- 分阶段邮箱验证上线前已完整提交、但没有 `email_verified_at` 的公开注册申请，不得由管理员
+  伪造验证时间或绕过门禁。合规人员可在 KYC 审核页补发有效期为 6 小时的一次性验证邮件；
+  客户本人完成验证后，管理员才能继续正常 KYC 审批和自动开户。补发动作及最终验证均写入
+  独立审计记录。正常新开户注册的邮箱验证链接仍保持 30 分钟有效期；
 - 数据库、Render、Cloudflare 和 Sumsub 审计记录可以用 application reference、
   customer id、external user id 和 applicant id 交叉追踪，但不得记录证件内容。
 

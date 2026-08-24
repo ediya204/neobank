@@ -34,6 +34,8 @@ export type NeobankCustomerRecord = {
   terms_accepted_at?: string | null;
   application_reference?: string | null;
   application_submitted_at?: string | null;
+  email_verified?: boolean;
+  email_verification_repair_available?: boolean;
 };
 
 export type NeobankKycReviewResult = NeobankCustomerRecord & {
@@ -150,4 +152,18 @@ export async function syncNeobankSumsubVerification(customerId: string, userId =
     userId,
     body: '{}',
   });
+}
+
+export async function resendNeobankLegacyEmailVerification(
+  customerId: string,
+  userId = 'usr_admin'
+) {
+  return neobankApi<{ accepted: true; expires_at: string }>(
+    `/admin/customers/${customerId}/email-verification`,
+    {
+      method: 'POST',
+      userId,
+      body: '{}',
+    }
+  );
 }
