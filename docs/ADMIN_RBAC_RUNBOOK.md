@@ -93,7 +93,6 @@ npm run api:test
 npm run api:build
 npm run typecheck
 npm run i18n:check
-npm run docs:check
 npm run neobank:typecheck
 npm run neobank:deploy:dry-run
 git diff --check

@@ -21,21 +21,7 @@ export type AuthStateType = {
   user: AuthUserType;
 };
 
-export type AuthRole = 'admin' | 'partner' | 'customer';
-
-export type PortalPermission =
-  | 'team.read'
-  | 'team.invite'
-  | 'team.manage_members'
-  | 'team.manage_roles'
-  | 'customers.read'
-  | 'customers.create'
-  | 'balances.read'
-  | 'transactions.read'
-  | 'integrations.read'
-  | 'integrations.request_change'
-  | 'credentials.reveal'
-  | 'notifications.read';
+export type AuthRole = 'admin' | 'customer';
 
 export type AdminPermission =
   | 'admin_users.manage'
@@ -47,27 +33,13 @@ export type AdminPermission =
   | 'settings.manage'
   | 'reports.read';
 
-export type SessionPermission = PortalPermission | AdminPermission;
+export type SessionPermission = AdminPermission;
 
 export type AdminAccessRole =
   | 'super_admin'
   | 'operations_admin'
   | 'compliance_admin'
   | 'read_only_admin';
-
-export type AuthOrganization = {
-  id: string;
-  name: string;
-  partnerKey: string;
-};
-
-export type AuthMembership = {
-  id: string;
-  roleId: string;
-  roleCode: string;
-  roleName: string;
-  status: 'onboarding' | 'active' | 'suspended';
-};
 
 export type AuthSessionUser = {
   id: string;
@@ -78,8 +50,6 @@ export type AuthSessionUser = {
   totpEnabled?: boolean;
   accessRole?: AdminAccessRole | null;
   photoURL?: string | null;
-  organization: AuthOrganization | null;
-  membership: AuthMembership | null;
   permissions: SessionPermission[];
 };
 

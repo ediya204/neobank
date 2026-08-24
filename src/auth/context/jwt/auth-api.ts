@@ -69,7 +69,6 @@ function normalizeRole(value: unknown): AuthRole | null {
   if (typeof value !== 'string') return null;
   const role = value.trim().toLowerCase();
   if (['admin', 'administrator', 'operator', 'operations'].includes(role)) return 'admin';
-  if (['partner', 'portal', 'client'].includes(role)) return 'partner';
   if (['customer', 'account_holder'].includes(role)) return 'customer';
   return null;
 }
@@ -87,14 +86,6 @@ export function normalizeAuthUser(payload: unknown): AuthSessionUser | null {
 
   if (!email || !role) return null;
 
-  const organizationRecord = readRecord(candidate.organization || data.organization);
-  const membershipRecord = readRecord(candidate.membership || data.membership);
-  const organizationId = readString(organizationRecord, ['id', 'organization_id']);
-  const membershipId = readString(membershipRecord, ['id', 'membership_id']);
-  const roleId = readString(membershipRecord, ['role_id', 'roleId']);
-  const memberRoleCode = readString(membershipRecord, ['role_code', 'roleCode']);
-  const memberRoleName = readString(membershipRecord, ['role_name', 'roleName']);
-  const membershipStatus = readString(membershipRecord, ['status']);
   const permissionsSource = candidate.permissions || data.permissions;
   const permissions = Array.isArray(permissionsSource)
     ? permissionsSource.filter(isSessionPermission)
@@ -102,7 +93,6 @@ export function normalizeAuthUser(payload: unknown): AuthSessionUser | null {
 
   const displayName =
     readString(candidate, ['display_name', 'displayName', 'name', 'full_name']) ||
-    readString(membershipRecord, ['display_name', 'displayName']) ||
     email.split('@')[0];
   const id = readString(candidate, ['id', 'user_id', 'uid']) || email;
   const photoURL = readString(candidate, ['photo_url', 'photoURL', 'avatar_url', 'avatarUrl']);
@@ -119,28 +109,6 @@ export function normalizeAuthUser(payload: unknown): AuthSessionUser | null {
       'accessRole',
     ]) as AuthSessionUser['accessRole'],
     photoURL,
-    organization: organizationId
-      ? {
-          id: organizationId,
-          name: readString(organizationRecord, ['name']) || organizationId,
-          partnerKey:
-            readString(organizationRecord, ['partner_key', 'partnerKey']) || organizationId,
-        }
-      : null,
-    membership:
-      membershipId &&
-      roleId &&
-      memberRoleCode &&
-      memberRoleName &&
-      ['onboarding', 'active', 'suspended'].includes(membershipStatus || '')
-        ? {
-            id: membershipId,
-            roleId,
-            roleCode: memberRoleCode,
-            roleName: memberRoleName,
-            status: membershipStatus as 'onboarding' | 'active' | 'suspended',
-          }
-        : null,
     permissions,
   };
 }
@@ -199,9 +167,7 @@ function safeQrCodeDataUri(value: string | null) {
 }
 
 function scopedAuthPath(role: AuthRole, action: string) {
-  let scope = 'portal';
-  if (role === 'admin') scope = 'admin';
-  if (role === 'customer') scope = 'customer';
+  const scope = role === 'admin' ? 'admin' : 'customer';
   return `/api/auth/${scope}/${action}`;
 }
 
@@ -488,11 +454,14 @@ export async function getCustomerSecuritySummary(): Promise<CustomerSecuritySumm
 }
 
 export async function revokeCustomerSession(sessionId: string, csrfToken: string | null) {
-  await authRequest(`/api/auth/customer/security/sessions/${encodeURIComponent(sessionId)}/revoke`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-    headers: securityHeaders(csrfToken),
-  });
+  await authRequest(
+    `/api/auth/customer/security/sessions/${encodeURIComponent(sessionId)}/revoke`,
+    {
+      method: 'POST',
+      body: JSON.stringify({}),
+      headers: securityHeaders(csrfToken),
+    }
+  );
 }
 
 export async function revokeOtherCustomerSessions(csrfToken: string | null) {
@@ -598,10 +567,7 @@ export async function changeCustomerWithdrawalLock(
   });
 }
 
-export async function exportCustomerData(
-  input: SecurityStepUpInput,
-  csrfToken: string | null
-) {
+export async function exportCustomerData(input: SecurityStepUpInput, csrfToken: string | null) {
   return authRequest('/api/auth/customer/security/data-export', {
     method: 'POST',
     body: JSON.stringify(securityStepUpBody(input)),

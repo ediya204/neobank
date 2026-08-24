@@ -20,13 +20,7 @@ import SvgColor from 'src/components/svg-color';
 import { useSettingsContext } from 'src/components/settings';
 //
 import { HEADER, NAV } from '../config-layout';
-import {
-  AccountPopover,
-  LanguagePopover,
-  NotificationsPopover,
-  Searchbar,
-  SettingsButton,
-} from '../_common';
+import { AccountPopover, LanguagePopover, Searchbar, SettingsButton } from '../_common';
 
 // ----------------------------------------------------------------------
 
@@ -88,7 +82,6 @@ export default function Header({ onOpenNav }: Props) {
           <Searchbar />
         </Box>
         <LanguagePopover />
-        <NotificationsPopover />
         <Box sx={{ display: { xs: isPortal ? 'none' : 'block', sm: 'block' } }}>
           <SettingsButton />
         </Box>

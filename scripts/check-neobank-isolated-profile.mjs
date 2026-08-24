@@ -121,13 +121,15 @@ for (const name of ['neobank:deploy:prepared', 'neobank:deploy:dry-run:prepared'
   assert.doesNotMatch(scripts[name], /npm run cf:/, `${name} must not call the VA API release`);
 }
 
-assert.match(router, /if \(IS_FULL_ADMIN_WALLET_DEPLOYMENT\) routes = fullAdminWalletRoutes/);
+assert.match(
+  router,
+  /useRoutes\(IS_ISOLATED_WALLET_DEPLOYMENT \? isolatedWalletRoutes : fullAdminWalletRoutes\)/
+);
 assert.match(router, /const fullAdminWalletRoutes =/);
 assert.match(router, /<Navigate to="\/dashboard\/overview" replace \/>/);
 assert.match(router, /\.\.\.dashboardRoutes/);
 assert.match(router, /\.\.\.customerAuthRoutes/);
 assert.match(router, /\.\.\.adminAuthRoutes/);
-assert.match(router, /\.\.\.authRoutes/);
 assert.match(router, /\.\.\.dashboardRoutes/);
 assert.match(router, /path: '\/admin'/);
 assert.match(router, /path: '\/admin\/neobank-crypto'/);
@@ -151,7 +153,7 @@ assert.match(authRoutes, /path: 'customer\/register'/);
 assert.match(authRoutes, /path: 'customer\/forgot-password'/);
 assert.match(authRoutes, /path: 'customer\/reset-password'/);
 assert.match(authRoutes, /path: 'customer\/verify-email'/);
-assert.match(authRoutes, /const partnerAuthRoutes/);
+assert.doesNotMatch(authRoutes, /partnerAuthRoutes|expectedRole="partner"/);
 assert.match(authLayout, /type AuthClassicContentMode = 'split' \| 'focused'/);
 assert.match(authLayout, /mdUp && !focused && renderSection/);
 assert.match(authLayout, /maxWidth: focused \? 1180 : 520/);
@@ -199,13 +201,13 @@ assert.match(roleAccess, /pathname === '\/portal\/virtual-accounts'/);
 assert.match(roleAccess, /pathname === '\/portal\/money\/accounts'/);
 assert.match(roleAccess, /pathname === '\/portal\/money\/transfers'/);
 assert.match(roleAccess, /pathname === '\/portal\/money\/otc'/);
-assert.match(roleAccess, /isCustomerFullPortalPath\(canonicalUrl\.pathname\)/);
-assert.match(roleAccess, /!customerPathAllowed/);
+assert.match(roleAccess, /\? isCustomerFullPortalPath\(pathname\)/);
+assert.match(roleAccess, /!canAccessPortalPath\(sessionUser, canonicalUrl\.pathname\)/);
 assert.match(provider, /IS_NEOBANK_DEPLOYMENT \|\|/);
 assert.doesNotMatch(provider, /getAccessAdminSession/);
 assert.match(
   provider,
-  /if \(window\.location\.pathname\.startsWith\('\/customer'\)\) return null;/
+  /startsWith\('\/customer'\)[\s\S]*startsWith\('\/portal'\)/
 );
 assert.match(provider, /error instanceof AuthApiError && error\.status === 401/);
 assert.match(deploymentMode, /IS_FULL_ADMIN_WALLET_DEPLOYMENT/);

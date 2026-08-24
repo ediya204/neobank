@@ -37,8 +37,8 @@
     "search_prompt": "请输入搜索关键词"
   },
   "account": {
-    "partner_role": "合作伙伴工作台",
     "admin_role": "运营管理台",
+    "customer_role": "网上银行",
     "back_home": "返回首页",
     "logout": "退出登录",
     "logout_failed": "服务器会话可能仍然有效，请重新登录后再次退出。"
@@ -47,28 +47,18 @@
     "page_titles": {
       "admin_login": "管理后台安全登录",
       "admin_setup": "管理后台账户激活",
-      "portal_login": "合作伙伴工作台安全登录",
-      "portal_setup": "合作伙伴账户激活",
       "customer_login": "客户网上银行登录",
       "customer_setup": "激活网上银行账户",
       "registration": "个人与企业账户申请"
     },
     "role_entries": {
       "admin": "运营管理后台",
-      "portal": "合作伙伴工作台",
       "customer": "网上银行"
-    },
-    "role_selection": {
-      "page_title": "选择账户类型",
-      "title": "选择账户类型",
-      "description": "网上银行与合作伙伴工作台采用独立的安全会话。请选择与您的账户类型相符的登录入口。",
-      "customer": "进入网上银行",
-      "partner": "进入合作伙伴工作台"
     },
     "invalid_entry": {
       "page_title": "登录入口无效",
       "title": "此登录网址不可用",
-      "description": "运营管理后台与合作伙伴工作台使用不同的登录入口。请使用与您的账户类型相符的入口。"
+      "description": "运营管理后台与网上银行使用不同的登录入口。请使用与您的账户类型相符的入口。"
     },
     "layout": {
       "eyebrow": "金融服务安全工作区",
@@ -77,14 +67,6 @@
       "assurance_session": "会话由安全的 HttpOnly Cookie 保存",
       "assurance_totp": "使用验证器生成的一次性动态验证码",
       "assurance_audit": "登录与敏感操作均可审计",
-      "partner": {
-        "eyebrow": "SSC数字银行合作伙伴服务",
-        "title": "集中管理客户账户与资金服务",
-        "subtitle": "通过合作伙伴工作台管理虚拟账户申请、资金余额、收付款、兑换及交易明细。",
-        "assurance_session": "账户与资金数据按合作方权限隔离",
-        "assurance_totp": "动态验证码保护登录与敏感操作",
-        "assurance_audit": "关键操作与资金记录全程留痕"
-      },
       "customer": {
         "eyebrow": "SSC数字银行客户服务",
         "title": "安全访问您的网上银行",
@@ -102,7 +84,6 @@
     "fields": {
       "email": "登录邮箱",
       "customer_email": "账户邮箱",
-      "local_account": "测试账户",
       "password": "密码",
       "new_password": "设置密码",
       "confirm_password": "确认密码",
@@ -334,15 +315,6 @@
         "restart_error": "暂时无法安全退出当前申请，请重试。当前申请和验证资料未受影响。"
       }
     },
-    "local_dev": {
-      "badge": "仅限本地",
-      "eyebrow": "本地联调",
-      "title": "快速进入 Portal",
-      "subtitle": "此 localhost 页面支持快速联调；使用专用本地旁路命令启动后，可输入任意非空账户和密码。",
-      "warning": "只有 npm run cf:dev:portal-bypass 启动时才跳过密码和 TOTP；普通本地启动仍执行正式校验。",
-      "submit": "进入本地测试 Portal",
-      "helper": "仅 localhost / 127.0.0.1 且服务端明确开启本地旁路时有效。"
-    },
     "setup": {
       "eyebrow": "首次激活",
       "title": "完成账户设置",
@@ -537,7 +509,6 @@
     "duplicate_ip_allowlist_entry": "该 IP 地址或 CIDR 已在白名单中。",
     "not_found": "没有找到请求的记录。",
     "operator_only": "只有管理员可以执行此操作。",
-    "partner_only": "该操作必须由合作方发起。",
     "fee_configuration_missing": "转出手续费尚未配置，请联系管理员。",
     "fee_changed": "手续费已更新，请核对新金额后再次确认。",
     "insufficient_available_balance": "账本可用余额不足。",

@@ -1,11 +1,11 @@
 # SSC数字银行 · SSC Digital Bank
 
-React/TypeScript Portal and Admin UI with a Cloudflare Worker and D1 backend.
+Neobank Admin、Customer Portal、Cloudflare Web Worker、Render Go/Core 服务与
+PostgreSQL 迁移的单一代码库。
 
-## Start on a new computer
+## 本地启动
 
-The verified toolchain is Node `25.7.0`, npm `11.10.1`, and the committed
-`package-lock.json`. Wrangler 4 requires Node 22 or newer.
+项目固定使用 `.nvmrc`、提交的 `package-lock.json`、PostgreSQL 17 和 Redis。
 
 ```bash
 git clone https://github.com/ediya204/neobank.git
@@ -13,33 +13,33 @@ cd neobank
 nvm install
 nvm use
 npm ci
-npm run local:bootstrap
-npm run cf:dev:local
+npm run local:core:bootstrap
+npm run dev
 ```
 
-In a second terminal, run `npm run local:auth:link` for Admin and
-`npm run local:auth:partner-link` for Partner Portal. Open each generated setup
-link and enroll separate local-only credentials. See
-[`docs/LOCAL_DEVELOPMENT.md`](docs/LOCAL_DEVELOPMENT.md) for the complete flow.
+Web 默认监听 `http://localhost:3002`，Nest Core API 默认监听
+`http://localhost:4000/api/v1`。完整说明见
+[`docs/LOCAL_FULL_STACK.md`](docs/LOCAL_FULL_STACK.md)。
 
-Local secrets, TOTP enrollment, sessions, D1 state, build output, and production
-backups are intentionally excluded from Git. They are safely rebuilt on each
-computer instead of copied through GitHub.
-
-## Main commands
+## 主要检查
 
 ```bash
 npm run typecheck
 npm run i18n:check
-npm run docs:check
-npm run accounting:check
-npm run cf:deploy:dry-run
+npm run icons:check
+npm run api:test
+npm run api:build
+npm run local:core:check
+npm run neobank:profile:check
+npm run neobank:deploy:dry-run
 ```
 
-## Documentation
+## 发布边界
 
-- [Codex project handoff](docs/CODEX_HANDOFF.md)
-- [Local development](docs/LOCAL_DEVELOPMENT.md)
-- [Login and account handoff](docs/LOGIN_HANDOFF.md)
-- [Human authentication V1 runbook](docs/AUTH_V1_RUNBOOK.md)
-- [Partner API Guide](docs/PARTNER_API_GUIDE.md)
+- GitHub、Cloudflare、Render 和 PostgreSQL 迁移是四项独立操作。
+- 生产数据库只使用 Render PostgreSQL。
+- 生产迁移必须先完成全量备份、SHA-256、隔离恢复测试、人工批准和迁移后核验。
+- 实际资金或钱包转账必须由人工明确确认，测试和发布不能自动发起。
+
+发布步骤见 [`docs/RELEASE_RUNBOOK.md`](docs/RELEASE_RUNBOOK.md)，项目协作边界见
+[`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md)。

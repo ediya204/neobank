@@ -15,11 +15,11 @@ const currencies: Currency[] = ['USD', 'HKD'];
 async function main() {
   const organization = await db.organization.upsert({
     where: { id: 'org_demo' },
-    update: { slug: 'ssc-digital-bank-demo', name: 'SSC Digital Bank Demo Partner' },
+    update: { slug: 'ssc-digital-bank-demo', name: 'SSC Digital Bank Demo' },
     create: {
       id: 'org_demo',
       slug: 'ssc-digital-bank-demo',
-      name: 'SSC Digital Bank Demo Partner',
+      name: 'SSC Digital Bank Demo',
     },
   });
 
@@ -280,7 +280,9 @@ async function main() {
         : channel.type === 'POBO_PAYOUT'
         ? 'POBO'
         : 'PLATFORM';
-    for (const currency of channel.supportedCurrencies.filter((value) => currencies.includes(value))) {
+    for (const currency of channel.supportedCurrencies.filter((value) =>
+      currencies.includes(value)
+    )) {
       await db.withdrawalFeeRule.upsert({
         where: {
           scopeId_assetClass_currency_method_channelCode_network: {

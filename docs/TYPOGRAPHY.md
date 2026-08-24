@@ -1,6 +1,6 @@
 # 字体规范
 
-本项目的 Admin、Partner Portal、Customer Portal 与认证页面共用 MUI 主题字体系统。
+本项目的 Admin、Customer Portal 与认证页面共用 MUI 主题字体系统。
 全站正文、标题、按钮和辅助信息必须通过 MUI `Typography` variant 或
 `sx={{ typography: '...' }}` 使用主题 token，不为普通界面文字单独写近似字号。
 

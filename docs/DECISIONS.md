@@ -113,17 +113,7 @@ that the assumption no longer applies.
   creates deposits, edits balances, or treats a custody callback alone as completed
   customer accounting.
 
-## Partner integration
-
-- Webhook and query APIs are complementary, not substitutes.
-- Webhook provides timely notification. Consumers verify signatures, deduplicate,
-  tolerate reordering, persist before processing, and return success promptly.
-- Sweep-batch endpoints provide active reconciliation and missed-event recovery.
-- Transaction history provides the completed accounting record.
-- Batch and customer access is explicitly Partner-scoped. A real batch ID belonging
-  to another Partner returns the same not-found response as a nonexistent ID.
-- Partner responses must not expose operator notes, staff identity, internal tenant
-  keys, address configuration versions, or internal Webhook delivery status.
+## Virtual account operations
 - VA 开户必须绑定后台已启用的 `VIRTUAL_ACCOUNT` 银行渠道。客户先选择银行，
   再从该银行声明的支持币种中选择开户币种；服务端重复校验渠道、币种和客户归属。
 - 银行名称、国家/地区、地址与 SWIFT/BIC 是渠道固定资料；通道不配置分行或
@@ -148,12 +138,8 @@ that the assumption no longer applies.
   migrations, reviews, or acceptance. Existing D1 material is historical evidence
   only. Follow `docs/DATASTORE_POLICY.md`; only a new explicit user instruction
   specifically reversing that policy may change this decision.
-- Partner machine authentication and human Portal authentication are separate
-  trust boundaries.
 - Cloudflare Access redirects or denials prove only the edge behavior tested; they
   do not prove Worker business acceptance.
-- Webhook endpoints must be protected against SSRF and DNS rebinding at delivery
-  time, not only when the endpoint is approved.
 - Financial and migration operations must be recoverable and auditable: inspect,
   back up, checksum, restore-test, approve, execute, and verify.
 - GitHub push, Cloudflare web deployment, Render deployment, and PostgreSQL
@@ -167,8 +153,5 @@ that the assumption no longer applies.
 
 ## Documentation
 
-- Partner API machine field names, enums, examples, and release metadata must stay
-  synchronized across OpenAPI, English and Chinese source guides, and generated
-  Portal documents.
 - Documentation describes verified capabilities and boundaries. It must not turn a
   proposed feature or local-only result into a production claim.

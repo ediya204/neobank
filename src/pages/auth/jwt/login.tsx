@@ -13,9 +13,9 @@ type Props = {
 
 export default function LoginPage({ expectedRole }: Props) {
   const { t } = useTranslation('common');
-  let title = t('auth.page_titles.portal_login');
-  if (expectedRole === 'admin') title = t('auth.page_titles.admin_login');
-  if (expectedRole === 'customer') title = t('auth.page_titles.customer_login');
+  const title = t(
+    expectedRole === 'admin' ? 'auth.page_titles.admin_login' : 'auth.page_titles.customer_login'
+  );
 
   return (
     <>

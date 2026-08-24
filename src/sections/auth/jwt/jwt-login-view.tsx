@@ -92,10 +92,6 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   const router = useRouter();
   const searchParams = useSearchParams();
   const passwordVisible = useBoolean();
-  const localPortalBypass =
-    expectedRole === 'partner' &&
-    ['localhost', '127.0.0.1', '[::1]', '::1'].includes(window.location.hostname);
-
   const fragmentParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const fragmentSetupToken =
     fragmentParams.get('setup_token') ||
@@ -129,21 +125,15 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   const loginSchema = useMemo(() => {
     const accountSchema = Yup.string()
       .trim()
-      .required(
-        localPortalBypass
-          ? t('auth.validation.local_account_required')
-          : t('auth.validation.email_required')
-      )
+      .required(t('auth.validation.email_required'))
       .max(254, t('auth.validation.email_too_long'));
     return Yup.object().shape({
-      email: localPortalBypass
-        ? accountSchema
-        : accountSchema.email(t('auth.validation.email_invalid')),
+      email: accountSchema.email(t('auth.validation.email_invalid')),
       password: Yup.string()
         .required(t('auth.validation.password_required'))
         .max(128, t('auth.validation.password_too_long')),
     });
-  }, [localPortalBypass, t]);
+  }, [t]);
 
   const setupSchema = useMemo(
     () =>
@@ -368,9 +358,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     if (!values.email.trim()) {
       loginMethods.setError('email', {
         type: 'manual',
-        message: localPortalBypass
-          ? t('auth.validation.local_account_required')
-          : t('auth.validation.email_required'),
+        message: t('auth.validation.email_required'),
       });
       missing = true;
     }
@@ -472,13 +460,12 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
   const signInCopyScope = expectedRole === 'customer' ? 'auth.sign_in.customer' : 'auth.sign_in';
   let emailFieldLabel = t('auth.fields.email');
   if (expectedRole === 'customer') emailFieldLabel = t('auth.fields.customer_email');
-  if (localPortalBypass) emailFieldLabel = t('auth.fields.local_account');
 
   const stageCopy: Record<Stage, { eyebrow: string; title: string; subtitle: string }> = {
     credentials: {
-      eyebrow: localPortalBypass ? t('auth.local_dev.eyebrow') : t(`${signInCopyScope}.eyebrow`),
-      title: localPortalBypass ? t('auth.local_dev.title') : t(`${signInCopyScope}.title`),
-      subtitle: localPortalBypass ? t('auth.local_dev.subtitle') : t(`${signInCopyScope}.subtitle`),
+      eyebrow: t(`${signInCopyScope}.eyebrow`),
+      title: t(`${signInCopyScope}.title`),
+      subtitle: t(`${signInCopyScope}.subtitle`),
     },
     setup: {
       eyebrow: t('auth.setup.eyebrow'),
@@ -502,15 +489,11 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     },
   };
 
-  let roleEntryIcon = 'solar:buildings-2-bold-duotone';
-  let roleEntryLabel = t('auth.role_entries.portal');
+  let roleEntryIcon = 'solar:user-circle-bold-duotone';
+  let roleEntryLabel = t('auth.role_entries.customer');
   if (expectedRole === 'admin') {
     roleEntryIcon = 'solar:shield-user-bold-duotone';
     roleEntryLabel = t('auth.role_entries.admin');
-  }
-  if (expectedRole === 'customer') {
-    roleEntryIcon = 'solar:user-circle-bold-duotone';
-    roleEntryLabel = t('auth.role_entries.customer');
   }
 
   const renderHead = (
@@ -529,14 +512,6 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
           <Chip
             icon={<Iconify icon="solar:shield-check-bold-duotone" />}
             label={t('auth.secure_verification')}
-            size="small"
-          />
-        )}
-        {stage === 'credentials' && localPortalBypass && (
-          <Chip
-            icon={<Iconify icon="solar:test-tube-bold-duotone" />}
-            label={t('auth.local_dev.badge')}
-            color="warning"
             size="small"
           />
         )}
@@ -595,41 +570,9 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
     );
   }
 
-  if (expectedRole === 'partner') {
-    credentialsFooter = (
-      <>
-        {localPortalBypass && (
-          <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-            {t('auth.local_dev.helper')}
-          </Typography>
-        )}
-        <Divider>
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            {t('auth.sign_in.new_customer')}
-          </Typography>
-        </Divider>
-        <Button
-          fullWidth
-          component={RouterLink}
-          href={paths.auth.portal.register}
-          size="large"
-          variant="outlined"
-          color="inherit"
-          startIcon={<Iconify icon="solar:user-plus-bold-duotone" />}
-        >
-          {t('auth.sign_in.open_account')}
-        </Button>
-        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-          {t('auth.sign_in.registration_helper')}
-        </Typography>
-      </>
-    );
-  }
-
   const renderCredentials = (
     <FormProvider methods={loginMethods} onSubmit={handleCredentialsSubmit}>
       <Stack spacing={2.5}>
-        {localPortalBypass && <Alert severity="warning">{t('auth.local_dev.warning')}</Alert>}
         {sessionError && (
           <Alert severity="warning" sx={{ mb: 0.5 }}>
             {t('auth.errors.session_check_failed')}
@@ -638,7 +581,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
         <RHFTextField
           name="email"
           label={emailFieldLabel}
-          autoComplete={localPortalBypass ? 'off' : 'username'}
+          autoComplete="username"
           inputProps={{ maxLength: 254 }}
         />
         <RHFTextField
@@ -687,7 +630,7 @@ export default function JwtLoginView({ initialMode = 'login', expectedRole }: Pr
           variant="contained"
           loading={loginMethods.formState.isSubmitting || preparingTotp}
         >
-          {localPortalBypass ? t('auth.local_dev.submit') : t(`${signInCopyScope}.submit`)}
+          {t(`${signInCopyScope}.submit`)}
         </LoadingButton>
         {expectedRole === 'customer' && customerPasskeysSupported() && (
           <>

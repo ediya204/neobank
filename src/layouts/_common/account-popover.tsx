@@ -33,8 +33,8 @@ export default function AccountPopover() {
   const { user, logout } = useAuthContext();
   const role = user?.role;
   let roleLabel = '';
-  if (role === 'partner') roleLabel = t('account.partner_role');
   if (role === 'admin') roleLabel = t('account.admin_role');
+  if (role === 'customer') roleLabel = t('account.customer_role');
 
   const identity = {
     displayName: user?.displayName || user?.email?.split('@')[0] || '',

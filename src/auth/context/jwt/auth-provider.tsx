@@ -62,69 +62,31 @@ function localDemoUser(): AuthSessionUser | null {
   ) {
     return null;
   }
-  // Customer authentication is always exercised against the real local Go
-  // session API. A synthetic user here would bypass login and then fail every
-  // customer-scoped request because no server session exists.
-  if (window.location.pathname.startsWith('/customer')) return null;
-
-  const partner = window.location.pathname.startsWith('/portal');
-  let role: AuthRole = 'admin';
-  let id = 'usr_admin';
-  let email = 'admin@ssc-digital-bank.local';
-  let displayName = '本地管理员';
-  if (partner) {
-    role = 'partner';
-    id = 'usr_maker';
-    email = 'partner@ssc-digital-bank.local';
-    displayName = '本地合作方';
+  if (
+    window.location.pathname.startsWith('/customer') ||
+    window.location.pathname.startsWith('/portal')
+  ) {
+    return null;
   }
+
+  const role: AuthRole = 'admin';
+  const id = 'usr_admin';
   return {
     id,
-    email,
-    displayName,
+    email: 'admin@ssc-digital-bank.local',
+    displayName: '本地管理员',
     role,
-    organization: partner
-      ? {
-          id: 'org_demo',
-          name: 'SSC Digital Bank Demo Partner',
-          partnerKey: 'ssc-digital-bank-demo',
-        }
-      : null,
-    membership: partner
-      ? {
-          id: 'mem_demo',
-          roleId: 'role_demo',
-          roleCode: 'owner',
-          roleName: 'Owner',
-          status: 'active',
-        }
-      : null,
-    permissions: partner
-      ? [
-          'team.read',
-          'team.invite',
-          'team.manage_members',
-          'team.manage_roles',
-          'customers.read',
-          'customers.create',
-          'balances.read',
-          'transactions.read',
-          'integrations.read',
-          'integrations.request_change',
-          'credentials.reveal',
-          'notifications.read',
-        ]
-      : [
-          'admin_users.manage',
-          'customers.read',
-          'customers.review',
-          'funds.read',
-          'funds.manage',
-          'settings.manage',
-          'reports.read',
-        ],
-    accessRole: partner ? null : 'super_admin',
-    coreUserId: partner ? null : id,
+    permissions: [
+      'admin_users.manage',
+      'customers.read',
+      'customers.review',
+      'funds.read',
+      'funds.manage',
+      'settings.manage',
+      'reports.read',
+    ],
+    accessRole: 'super_admin',
+    coreUserId: id,
   };
 }
 
@@ -226,7 +188,7 @@ export function AuthProvider({ children }: Props) {
     latestSessionRequestRef.current = requestId;
 
     // The authentication response only establishes identity. Always refresh
-    // the server-derived Partner membership and permissions before rendering.
+    // the server-derived session and permissions before rendering.
     try {
       const session = await getSession(expectedRole);
       if (latestSessionRequestRef.current !== requestId) {

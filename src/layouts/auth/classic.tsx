@@ -40,7 +40,6 @@ export default function AuthClassicLayout({ children, image, workspaceRole, titl
   const [contentMode, setContentMode] = useState<AuthClassicContentMode>('split');
   const focused = contentMode === 'focused';
   let copyScope = 'auth.layout';
-  if (workspaceRole === 'partner') copyScope = 'auth.layout.partner';
   if (workspaceRole === 'customer') copyScope = 'auth.layout.customer';
 
   const renderHeader = (

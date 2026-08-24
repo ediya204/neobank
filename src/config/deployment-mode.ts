@@ -1,4 +1,5 @@
-export const NEOBANK_DEPLOYMENT_MODE = process.env.REACT_APP_NEOBANK_DEPLOYMENT_MODE || 'full';
+export const NEOBANK_DEPLOYMENT_MODE =
+  process.env.REACT_APP_NEOBANK_DEPLOYMENT_MODE || 'full-admin-wallet';
 
 export const IS_ISOLATED_WALLET_DEPLOYMENT = NEOBANK_DEPLOYMENT_MODE === 'isolated-wallet';
 

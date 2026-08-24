@@ -9,7 +9,7 @@
     },
     "withdrawals": {
       "title": "Withdrawal Review",
-      "description": "Review bank and on-chain withdrawals submitted by partners, record the settlement reference, and complete the ledger posting."
+      "description": "Review customer bank and on-chain withdrawals, record the settlement reference, and complete the ledger posting."
     },
     "otc": {
       "title": "OTC Conversion Records",
@@ -233,7 +233,7 @@
     "swift": "8 or 11 uppercase letters or digits"
   },
   "otc": {
-    "adminNotice": "OTC can only be initiated by a partner through the Portal or Partner API. The system validates the USD ↔ USDT quote, 0.5% fee, selected network, and balance, then posts immediately. Admin access is read-only for reconciliation and audit."
+    "adminNotice": "OTC can only be initiated by the customer through Online Banking. The system validates the USD ↔ USDT quote, configured fee, selected network, and balance, then posts immediately. Admin access is read-only for reconciliation and audit."
   },
   "dialogs": {
     "businessDetails": "Transaction details",
@@ -309,7 +309,6 @@
     "admin": "Admin",
     "allActors": "All actors",
     "operationContent": "Operation payload",
-    "partner": "Partner / API",
     "systemConfiguration": "System configuration",
     "time": "Time",
     "actions": {

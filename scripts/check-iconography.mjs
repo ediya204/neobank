@@ -39,7 +39,7 @@ const deprecatedIcons = new Set([
 
 const allowedProductPrefixes = ['solar:', 'circle-flags:', 'cryptocurrency-color:', 'flagpack:'];
 const productPathPattern =
-  /^src\/(?:features\/portal-team|layouts|pages|sections\/auth\/jwt|sections\/portal)\//;
+  /^src\/(?:layouts|pages|sections\/auth\/jwt|sections\/portal)\//;
 const iconPattern = /['"]([a-z0-9-]+:[a-zA-Z0-9_-]+)['"]/g;
 
 async function listSourceFiles(directory) {

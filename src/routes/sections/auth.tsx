@@ -8,7 +8,6 @@ const LoginPage = lazy(() => import('src/pages/auth/jwt/login'));
 const SetupPage = lazy(() => import('src/pages/auth/jwt/setup'));
 const RegisterPage = lazy(() => import('src/pages/auth/jwt/register'));
 const PasswordRecoveryPage = lazy(() => import('src/pages/auth/jwt/password-recovery'));
-const PortalRoleEntryPage = lazy(() => import('src/pages/auth/portal-role-entry'));
 const InvalidAuthEntryPage = lazy(() => import('src/pages/auth/jwt/invalid-entry'));
 
 export const adminAuthRoutes = [
@@ -115,57 +114,9 @@ export const customerAuthRoutes = [
   },
 ];
 
-const partnerAuthRoutes = [
-  {
-    path: 'portal/login',
-    element: (
-      <Suspense fallback={<SplashScreen />}>
-        <GuestGuard expectedRole="partner">
-          <AuthClassicLayout workspaceRole="partner">
-            <LoginPage expectedRole="partner" />
-          </AuthClassicLayout>
-        </GuestGuard>
-      </Suspense>
-    ),
-  },
-  {
-    path: 'portal/setup',
-    element: (
-      <Suspense fallback={<SplashScreen />}>
-        <AuthClassicLayout workspaceRole="partner">
-          <SetupPage expectedRole="partner" />
-        </AuthClassicLayout>
-      </Suspense>
-    ),
-  },
-  {
-    path: 'portal/register',
-    element: (
-      <Suspense fallback={<SplashScreen />}>
-        <GuestGuard expectedRole="partner">
-          <AuthClassicLayout workspaceRole="partner">
-            <RegisterPage loginPath={paths.auth.portal.login} />
-          </AuthClassicLayout>
-        </GuestGuard>
-      </Suspense>
-    ),
-  },
-  {
-    path: 'portal/access',
-    element: (
-      <Suspense fallback={<SplashScreen />}>
-        <AuthClassicLayout workspaceRole="partner">
-          <PortalRoleEntryPage />
-        </AuthClassicLayout>
-      </Suspense>
-    ),
-  },
-];
-
 export const authRoutes = [
   ...adminAuthRoutes,
   ...customerAuthRoutes,
-  ...partnerAuthRoutes,
   {
     path: 'auth/*',
     element: (

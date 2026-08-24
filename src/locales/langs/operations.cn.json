@@ -9,7 +9,7 @@
     },
     "withdrawals": {
       "title": "转出审核",
-      "description": "集中处理合作方提交的银行与链上转出，补录结算参考后完成记账。"
+      "description": "集中处理客户提交的银行与链上转出，补录结算参考后完成记账。"
     },
     "otc": {
       "title": "OTC 兑换记录",
@@ -233,7 +233,7 @@
     "swift": "8 或 11 位大写字母/数字"
   },
   "otc": {
-    "adminNotice": "OTC 只能由合作方通过客户门户或 Partner API 发起。系统校验 USD ↔ USDT 报价、0.5% 手续费、对应网络与余额后即时记账；管理员在此只读对账和审计。"
+    "adminNotice": "OTC 只能由客户通过网上银行发起。系统校验 USD ↔ USDT 报价、已配置手续费、对应网络与余额后即时记账；管理员在此只读对账和审计。"
   },
   "dialogs": {
     "businessDetails": "业务详情",
@@ -309,7 +309,6 @@
     "admin": "管理员",
     "allActors": "全部操作者",
     "operationContent": "操作内容",
-    "partner": "合作方 / API",
     "systemConfiguration": "系统配置",
     "time": "时间",
     "actions": {

@@ -1,78 +1,30 @@
 # Curated collaboration history
 
-This is a privacy-reduced summary of important conversations, not a raw transcript.
-It preserves decisions and task identifiers without copying credentials, customer
-records, temporary links, local database contents, or internal tool output.
+Updated: 25 August 2026 (Asia/Hong_Kong)
 
-## Current datastore instruction
+This file records only current Neobank decisions. Historical task details are not
+proof of live state; inspect the repository and deployments again.
 
-Render PostgreSQL is the only datastore in scope. D1 references below are
-historical context only and must never be used to propose, plan, implement, test,
-deploy, or review current work. `docs/DATASTORE_POLICY.md` overrides every older
-D1-related note in this history.
+## Current direction
 
-## Core product direction
+- Render PostgreSQL is the only business datastore.
+- The repository is Neobank-only. The former Partner Portal, Partner machine API,
+  Partner credentials/Webhooks, default D1 Worker, and D1 VA migration chain were
+  removed on a separate cleanup branch after the consolidated release.
+- Admin and Customer authentication are separate application sessions. Customer
+  Portal routes always require the `customer` role.
+- KYC approval is the final account-opening gate, but never approves or settles a
+  withdrawal.
+- Customer OTC requires a fresh server quote and explicit confirmation within five
+  seconds. Expiry moves no money.
+- Cregis custody state is not the accounting authority. Core journal posting is
+  authoritative, idempotent, and auditable.
+- GitHub publication, Cloudflare deployment, Render deployment, PostgreSQL
+  migration, and real-funds activity must always be reported separately.
 
-- Initial VA planning established a manually controlled lifecycle: create an
-  application, hand off KYC, manually activate the VA account, record financial
-  actions, and keep sensitive money movement under operator confirmation.
-- The business was later narrowed to manual fiat receipt, explicit clearing,
-  automatic fiat-to-USDT conversion, and administrator-controlled USDT/TRON sweep.
-- Customer-facing OTC was later reopened only through the Render Core ledger: a
-  server quote remains valid for five seconds and requires explicit customer
-  confirmation before an immediate, no-approval atomic conversion. Partner machine
-  OTC and unrelated deposit/withdrawal write paths remain disabled unless separately
-  changed; historical visibility and audit records are retained.
+## Working rule
 
-## Accounting and security corrections
-
-- A review identified that fiat deposit completion could bypass clearing and that a
-  submitted sweep could be cancelled after a transaction hash existed.
-- The resulting workflow guards require proper fiat settlement before automatic
-  conversion and distinguish locked cancellation from submitted completion or
-  exception handling.
-- Ledger immutability, idempotency, network-specific balances, and manual approval
-  are continuing invariants.
-
-## Portal and Dashboard evolution
-
-- Portal API integration management was split into clearer management areas.
-- Dashboard and Portal transaction history were aligned while keeping operational
-  actions restricted to authorized administrators.
-- Wallet views gained summaries, transaction direction indicators, and visibility
-  for automatic conversion and completed sweep effects.
-- Authentication and local development were hardened so Admin local testing uses a
-  separate local identity, password, TOTP, session, CSRF, and recovery setup.
-- FX/OTC rate versions were clarified as fee-policy versions rather than fixed
-  quotes. The UI uses live FastForex midpoint data plus the active fee, while the
-  server refreshes and locks the exact transaction quote at submission.
-
-## Partner notification and reconciliation
-
-- The collaboration decided not to choose between Webhook and queries.
-- Webhook is used for real-time events; consumers verify and deduplicate it.
-- Query APIs are used for recovery, reconciliation, and audit.
-- Completed sweep debits appear in transaction history with batch and chain
-  references.
-- Partner-scoped sweep-batch endpoints expose the current batch and per-customer
-  detail without exposing another Partner's data or internal operational metadata.
-
-## Historical sweep source task
-
-Task `019fbebe-4b02-7662-b0b7-7591ff531ad5` produced:
-
-- commit `5d6bdae`: completed USDT sweeps in Partner transaction history
-- commit `3b98733`: Partner-scoped sweep batch reconciliation
-- commit `c562c27`: secure bilingual reconciliation documentation
-
-That task's final state was local and validated at the time. Its changes were later
-integrated with the Portal team, authentication, IBAN, responsive UI, and security
-hardening work on the `main` release line. Do not use the historical commit or
-migration status above as proof of the current GitHub or Cloudflare state.
-
-## How to use this history
-
-Treat this file as orientation. Before continuing any item, inspect current code,
-Git history, current Cloudflare configuration, and relevant data state. If there is
-a conflict, the user's newest explicit instruction and verified current state take
-priority over this historical summary.
+Preserve unrelated dirty work, run PostgreSQL-only checks, stage only intended
+files, and never commit credentials, local state, database exports, build output,
+or `.learnings`. Production database work requires full backup, checksum,
+isolated restore proof, explicit approval, and a post-check.

@@ -12,9 +12,6 @@ import {
 
 const DashboardNotFoundPage = lazy(() => import('src/pages/dashboard/404'));
 const DashboardServerErrorPage = lazy(() => import('src/pages/dashboard/500'));
-const VaApplicationListPage = lazy(() => import('src/pages/dashboard/va-applications/list'));
-const VaApplicationNewPage = lazy(() => import('src/pages/dashboard/va-applications/new'));
-const VaApplicationDetailsPage = lazy(() => import('src/pages/dashboard/va-applications/details'));
 const FinanceWorkspace = lazy(() => import('src/pages/dashboard/finance-workspace'));
 const OnboardingWorkspace = lazy(() => import('src/pages/dashboard/onboarding-workspace'));
 const KycReviewWorkspace = lazy(() => import('src/pages/dashboard/kyc-review-workspace'));
@@ -64,14 +61,6 @@ export const dashboardRoutes = [
           { element: <CustomerManagementPage />, index: true },
           { path: 'demo/:variant', element: <CustomerDetailDemoPage /> },
           { path: ':id', element: <CustomerDetailPage /> },
-        ],
-      },
-      {
-        path: 'va-applications',
-        children: [
-          { element: <VaApplicationListPage />, index: true },
-          { path: 'new', element: <VaApplicationNewPage /> },
-          { path: ':id', element: <VaApplicationDetailsPage /> },
         ],
       },
       {
@@ -135,14 +124,6 @@ export const dashboardRoutes = [
           },
           {
             path: 'fees',
-            element: <Navigate to={paths.dashboard.settings.rates} replace />,
-          },
-          {
-            path: 'api-integration',
-            element: <Navigate to={paths.dashboard.settings.rates} replace />,
-          },
-          {
-            path: 'api-security',
             element: <Navigate to={paths.dashboard.settings.rates} replace />,
           },
           { path: 'rates', element: <FinanceWorkspace section="rates" /> },

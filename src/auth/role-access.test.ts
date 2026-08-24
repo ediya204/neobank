@@ -10,8 +10,8 @@ describe('requiredRoleForPath', () => {
     expect(requiredRoleForPath(pathname, true)).toBe(role);
   });
 
-  it('keeps the legacy Partner Portal role-neutral outside the Neobank profile', () => {
-    expect(requiredRoleForPath('/portal/home', false)).toBeNull();
+  it('keeps the customer Portal role fixed across build profiles', () => {
+    expect(requiredRoleForPath('/portal/home', false)).toBe('customer');
   });
 });
 

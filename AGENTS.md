@@ -1,4 +1,4 @@
-# VA API collaboration instructions
+# Neobank collaboration instructions
 
 Read these files before changing the project:
 
@@ -25,16 +25,15 @@ Production database changes require a complete backup, checksum, restore test,
 manual approval, and an auditable post-check. Never automate a real bank or wallet
 transfer from an inferred request.
 
-Keep Partner data tenant-scoped. Do not expose operator notes, internal identities,
-tenant keys, secret material, internal Webhook delivery state, or other Partners'
-data. Treat transport success, Cloudflare Access redirects, and HTTP 200 as
-insufficient for business acceptance without response and data assertions.
+Keep customer and Admin data tenant-scoped. Do not expose operator notes, internal
+identities, tenant keys, secret material, or another customer's data. Treat
+transport success, Cloudflare Access redirects, and HTTP 200 as insufficient for
+business acceptance without response and data assertions.
 
-Before publishing normal Worker, Portal, or Partner API changes, run the checks
-appropriate to the diff, normally `npm run typecheck`, `npm run i18n:check`,
-`npm run docs:check`, `npm run accounting:check`, a production build,
-the PostgreSQL-only profile's deployment dry-run, and Git whitespace and secret
-checks. Do not commit
+Before publishing normal Worker, Portal, or API changes, run the checks appropriate
+to the diff, normally `npm run typecheck`, `npm run i18n:check`, `npm run api:test`,
+`npm run api:build`, a production build, the PostgreSQL-only profile's deployment
+dry-run, and Git whitespace and secret checks. Do not commit
 `.dev.vars`, `.wrangler`, `.local-auth`, database exports, production data,
 credentials, build output, or `.learnings` unless the user explicitly requests it.
 

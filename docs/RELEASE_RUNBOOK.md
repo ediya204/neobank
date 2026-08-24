@@ -37,26 +37,6 @@ backup, checksum, restore test, manual approval, migration, and post-checks in
 
 ## Build and deploy once
 
-The default VA profile is not the currently bound Neobank production Worker.
-Do not run its release command unless that separate target has been provisioned
-and manually approved:
-
-```bash
-npm run cf:release
-```
-
-This performs one React production build, runs Wrangler dry-run against that
-build, then deploys the same prepared build. `npm run cf:deploy` and
-`npm run cf:deploy:dry-run` remain safe standalone commands and each performs
-its own build. The `:prepared` commands intentionally skip the React build and
-must only be used after a successful `npm run cf:build` in the same worktree.
-Both default and Neobank prepared deployments retain the previous static assets
-for 24 hours so already-open browser tabs can finish loading their versioned
-chunks while the root recovery boundary moves stale clients to the new build.
-
-GitHub push and Cloudflare deployment remain separate actions. Do not infer one
-from the other.
-
 ### Neobank full administration + wallet
 
 The commands above target the separate default VA API profile and must not be

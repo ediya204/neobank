@@ -37,8 +37,8 @@
     "search_prompt": "Enter a search term"
   },
   "account": {
-    "partner_role": "Partner Workspace",
     "admin_role": "Operations Console",
+    "customer_role": "Online Banking",
     "back_home": "Back to home",
     "logout": "Sign out",
     "logout_failed": "The server session may still be active. Sign in again and retry signing out."
@@ -47,28 +47,18 @@
     "page_titles": {
       "admin_login": "Secure admin sign-in",
       "admin_setup": "Activate admin account",
-      "portal_login": "Secure Partner Workspace sign-in",
-      "portal_setup": "Activate partner account",
       "customer_login": "Customer online banking sign-in",
       "customer_setup": "Activate Online Banking account",
       "registration": "Individual and business account application"
     },
     "role_entries": {
       "admin": "Operations Admin",
-      "portal": "Partner Workspace",
       "customer": "Online Banking"
-    },
-    "role_selection": {
-      "page_title": "Choose account type",
-      "title": "Choose your account type",
-      "description": "Online Banking and the Partner Workspace use separate secure sessions. Choose the sign-in page that matches your account.",
-      "customer": "Continue to Online Banking",
-      "partner": "Continue to Partner Workspace"
     },
     "invalid_entry": {
       "page_title": "Invalid sign-in link",
       "title": "This sign-in link isn’t valid",
-      "description": "Operations Admin and Partner Workspace accounts use separate sign-in pages. Use the page that matches your account type."
+      "description": "Operations Admin and Online Banking use separate sign-in pages. Use the page that matches your account type."
     },
     "layout": {
       "eyebrow": "Secure financial services workspace",
@@ -77,14 +67,6 @@
       "assurance_session": "Sessions use secure HttpOnly cookies",
       "assurance_totp": "Verification codes come from your authenticator",
       "assurance_audit": "Sign-ins and sensitive actions are auditable",
-      "partner": {
-        "eyebrow": "SSC Digital Bank partner services",
-        "title": "Manage customer accounts and financial services",
-        "subtitle": "Use the Partner Workspace to manage virtual-account applications, balances, payments, conversions, and transaction details.",
-        "assurance_session": "Account and fund data are isolated by partner permissions",
-        "assurance_totp": "Authenticator verification protects sign-ins and sensitive actions",
-        "assurance_audit": "Key actions and fund records remain fully traceable"
-      },
       "customer": {
         "eyebrow": "SSC Digital Bank customer banking",
         "title": "Secure access to Online Banking",
@@ -102,7 +84,6 @@
     "fields": {
       "email": "Sign-in email",
       "customer_email": "Account email",
-      "local_account": "Test account",
       "password": "Password",
       "new_password": "Create password",
       "confirm_password": "Confirm password",
@@ -334,15 +315,6 @@
         "restart_error": "The current application could not be exited securely. Try again; the application and verification data were not changed."
       }
     },
-    "local_dev": {
-      "badge": "Local only",
-      "eyebrow": "Local integration",
-      "title": "Enter the Portal quickly",
-      "subtitle": "This localhost page supports fast integration testing. Start it with the dedicated bypass command to use any non-empty account and password.",
-      "warning": "Password and TOTP are skipped only when started with npm run cf:dev:portal-bypass. Standard local startup keeps normal validation.",
-      "submit": "Enter local test Portal",
-      "helper": "Available only on localhost / 127.0.0.1 when the server explicitly enables local bypass."
-    },
     "setup": {
       "eyebrow": "First-time activation",
       "title": "Complete account setup",
@@ -537,7 +509,6 @@
     "duplicate_ip_allowlist_entry": "This IP address or CIDR is already allowlisted.",
     "not_found": "The requested record was not found.",
     "operator_only": "Only an administrator can perform this action.",
-    "partner_only": "This action must be initiated by the partner.",
     "fee_configuration_missing": "The withdrawal fee has not been configured. Contact the administrator.",
     "fee_changed": "The fee has changed. Review the updated amount before confirming again.",
     "insufficient_available_balance": "The available ledger balance is insufficient.",

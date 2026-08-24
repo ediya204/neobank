@@ -12,7 +12,6 @@ export function requiredAdminPermissionForPath(pathname: string): AdminPermissio
   }
   if (pathname.startsWith('/dashboard/admin-users')) return 'admin_users.manage';
   if (pathname.startsWith('/dashboard/onboarding')) return 'customers.review';
-  if (pathname.startsWith('/dashboard/va-applications')) return 'customers.review';
   if (pathname.startsWith('/dashboard/operations/virtual-accounts')) {
     return 'customers.review';
   }

@@ -1,6 +1,6 @@
 # 图标规范
 
-本项目的 Admin、Partner Portal、Customer Portal 与认证页面共用 Minimal/MUI 设计系统，
+本项目的 Admin、Customer Portal 与认证页面共用 Minimal/MUI 设计系统，
 图标遵循以下规则。
 
 ## 图标来源

@@ -45,7 +45,7 @@ other disabled financial writes remain visibly unavailable; restoring the pages
 does not bypass those server-side state and authorization gates. The administrator
 Dashboard exposes customer and onboarding review, finance operations, accounts,
 channels, rates, ledger views, and the Go/Cregis digital-wallet operations page.
-Partner Portal routes are not part of this production profile.
+Only Admin and Customer routes are part of this production profile.
 
 Use only the Neobank-prefixed commands for this deployment:
 
@@ -59,9 +59,7 @@ npm run neobank:deploy
 ```
 
 Every Wrangler command above names `wrangler.neobank.jsonc` and therefore targets
-the deployed `neobank-web` Worker bound to `portal.sscdigitalbank.com`. None uses
-the separate default VA configuration in `wrangler.jsonc`; `npm run cf:release`
-is not a Neobank release command and must not be used for this deployment.
+the deployed `neobank-web` Worker bound to `portal.sscdigitalbank.com`.
 
 The Render Go API owns the administrator password + TOTP boundary and stores
 accounts, setup tokens, login challenges, sessions, and audit events in

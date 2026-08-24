@@ -15,7 +15,7 @@ export default function RoleRouteGuard({ roles, children }: Props) {
   if (!user) return null;
   if (!roles.includes(user.role)) return <Navigate to={getUserHome(user)} replace />;
   if (
-    (user.role === 'partner' || user.role === 'customer') &&
+    user.role === 'customer' &&
     pathname.startsWith('/portal') &&
     !canAccessPortalPath(user, pathname)
   ) {

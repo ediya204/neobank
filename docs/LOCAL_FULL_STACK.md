@@ -31,9 +31,8 @@ npm run dev:background
 npm run dev:stop
 ```
 
-前端开发环境启用本地演示身份。访问 `/dashboard/overview` 使用管理员界面；访问
-`/portal/home` 使用合作方界面。资金页面右上角可以切换普通用户和管理员，
-用于验证单人审批与角色隔离规则。
+访问 `/dashboard/overview` 使用管理员界面；访问 `/portal/home` 使用客户界面。
+客户页面必须通过真实本地会话进入，不能使用前端伪造身份绕过认证。
 
 ## 资金闭环
 

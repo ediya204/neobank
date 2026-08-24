@@ -21,11 +21,6 @@ export const paths = {
       verifyEmail: '/customer/verify-email',
       confirmEmailChange: '/customer/confirm-email-change',
     },
-    portal: {
-      login: '/portal/login',
-      setup: '/portal/setup',
-      register: '/portal/register',
-    },
     jwt: {
       login: '/auth/jwt/login',
       register: '/auth/jwt/register',
@@ -83,8 +78,6 @@ export const paths = {
     settings: {
       root: `${DASHBOARD_ROOT}/settings`,
       fees: `${DASHBOARD_ROOT}/settings/fees`,
-      apiIntegration: `${DASHBOARD_ROOT}/settings/api-integration`,
-      apiSecurity: `${DASHBOARD_ROOT}/settings/api-security`,
       rates: `${DASHBOARD_ROOT}/settings/rates`,
     },
     auditLogs: `${DASHBOARD_ROOT}/audit-logs`,
@@ -92,11 +85,6 @@ export const paths = {
     user: {
       profile: `${DASHBOARD_ROOT}/user/profile`,
       account: `${DASHBOARD_ROOT}/user/account`,
-    },
-    vaApplications: {
-      root: `${DASHBOARD_ROOT}/va-applications`,
-      new: `${DASHBOARD_ROOT}/va-applications/new`,
-      details: (id: string) => `${DASHBOARD_ROOT}/va-applications/${id}`,
     },
   },
 };

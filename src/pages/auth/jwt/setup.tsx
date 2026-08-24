@@ -9,9 +9,9 @@ type Props = {
 
 export default function SetupPage({ expectedRole }: Props) {
   const { t } = useTranslation('common');
-  let title = t('auth.page_titles.portal_setup');
-  if (expectedRole === 'admin') title = t('auth.page_titles.admin_setup');
-  if (expectedRole === 'customer') title = t('auth.page_titles.customer_setup');
+  const title = t(
+    expectedRole === 'admin' ? 'auth.page_titles.admin_setup' : 'auth.page_titles.customer_setup'
+  );
 
   return (
     <>
