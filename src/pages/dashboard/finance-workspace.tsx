@@ -40,6 +40,7 @@ import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import BeneficiaryDialog from 'src/features/finance/beneficiary-dialog';
+import { digitalWalletPresentation } from 'src/features/finance/digital-wallet-status';
 import { ACTION_ICONS, UI_ICONS } from 'src/theme/iconography';
 import {
   accountBalanceLabel,
@@ -47,6 +48,7 @@ import {
   Beneficiary,
   coreApi,
   Currency,
+  CryptoWallet,
   Customer,
   demoOrganizationId,
   FundingChannel,
@@ -308,6 +310,9 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const [channelForm, setChannelForm] = useState<ChannelForm>(initialChannelForm);
   const [channelSaving, setChannelSaving] = useState(false);
   const [channelFormError, setChannelFormError] = useState('');
+  const [cryptoWallets, setCryptoWallets] = useState<CryptoWallet[]>([]);
+  const [cryptoWalletsLoading, setCryptoWalletsLoading] = useState(false);
+  const [cryptoWalletsError, setCryptoWalletsError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -449,6 +454,38 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
 
   const selectedCustomer =
     customers.find((customer) => customer.id === selectedCustomerId) || customers[0];
+
+  useEffect(() => {
+    if (section !== 'accounts' || !selectedCustomer?.id) {
+      setCryptoWallets([]);
+      setCryptoWalletsLoading(false);
+      setCryptoWalletsError('');
+      return undefined;
+    }
+    let active = true;
+    setCryptoWallets([]);
+    setCryptoWalletsLoading(true);
+    setCryptoWalletsError('');
+    coreApi<CryptoWallet[]>(
+      `/crypto-wallets?customerId=${encodeURIComponent(selectedCustomer.id)}`,
+      { userId }
+    )
+      .then((rows) => {
+        if (active) setCryptoWallets(rows);
+      })
+      .catch((value) => {
+        if (active) {
+          setCryptoWalletsError(value instanceof Error ? value.message : 'Cregis 状态读取失败');
+        }
+      })
+      .finally(() => {
+        if (active) setCryptoWalletsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [section, selectedCustomer?.id, userId]);
+
   const displayAccounts = selectedCustomer?.accounts || [];
   const availableAccounts = customerDetail?.accounts || [];
   const beneficiaries = customerDetail?.beneficiaries || [];
@@ -863,6 +900,9 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
         selectedCustomerId={selectedCustomer?.id || ''}
         onCustomerChange={setSelectedCustomerId}
         accounts={displayAccounts}
+        cryptoWallets={cryptoWallets}
+        cryptoWalletsLoading={cryptoWalletsLoading}
+        cryptoWalletsError={cryptoWalletsError}
         loading={loading}
         marketQuotes={marketQuotes}
         marketLoading={marketLoading}
@@ -2304,6 +2344,9 @@ function AccountWorkspace({
   selectedCustomerId,
   onCustomerChange,
   accounts,
+  cryptoWallets,
+  cryptoWalletsLoading,
+  cryptoWalletsError,
   loading,
   marketQuotes,
   marketLoading,
@@ -2316,6 +2359,9 @@ function AccountWorkspace({
   selectedCustomerId: string;
   onCustomerChange: (id: string) => void;
   accounts: MoneyAccount[];
+  cryptoWallets: CryptoWallet[];
+  cryptoWalletsLoading: boolean;
+  cryptoWalletsError: string;
   loading: boolean;
   marketQuotes: MarketQuote[];
   marketLoading: boolean;
@@ -2388,7 +2434,18 @@ function AccountWorkspace({
             />
           ))}
           {digitalWallets.map((account) => (
-            <DigitalWalletCard key={account.id} account={account} />
+            <DigitalWalletCard
+              key={account.id}
+              account={account}
+              wallet={cryptoWallets.find(
+                (item) =>
+                  item.customerId === account.customerId &&
+                  item.asset === account.currency &&
+                  item.network === (account.network || 'TRON')
+              )}
+              loading={cryptoWalletsLoading}
+              error={Boolean(cryptoWalletsError)}
+            />
           ))}
         </Box>
       )}
@@ -2767,7 +2824,18 @@ function formatRate(value: number) {
   }).format(value);
 }
 
-function DigitalWalletCard({ account }: { account: MoneyAccount }) {
+function DigitalWalletCard({
+  account,
+  wallet,
+  loading,
+  error,
+}: {
+  account: MoneyAccount;
+  wallet?: CryptoWallet;
+  loading: boolean;
+  error: boolean;
+}) {
+  const presentation = digitalWalletPresentation(account, wallet, { loading, error });
   return (
     <Card>
       <CardContent>
@@ -2778,7 +2846,7 @@ function DigitalWalletCard({ account }: { account: MoneyAccount }) {
               {account.currency} 余额{account.accountNumber ? ` · ${account.accountNumber}` : ''}
             </Typography>
           </Box>
-          <Label color="default">等待 Cregis</Label>
+          <Label color={presentation.color}>{presentation.label}</Label>
         </Stack>
         <Typography variant="h4" sx={{ mt: 2 }}>
           {formatMoney(account.availableBalance, account.currency)}
@@ -2787,7 +2855,7 @@ function DigitalWalletCard({ account }: { account: MoneyAccount }) {
           冻结：{formatMoney(account.frozenBalance, account.currency)}
         </Typography>
         <Divider sx={{ my: 2 }} />
-        <Typography variant="body2">{accountDescription(account)}</Typography>
+        <Typography variant="body2">{presentation.description}</Typography>
       </CardContent>
     </Card>
   );
@@ -3500,10 +3568,6 @@ function StatusLabel({ status }: { status: Operation['status'] }) {
     CANCELLED: '已取消',
   };
   return <Label color={color}>{labels[status]}</Label>;
-}
-function accountDescription(account: MoneyAccount) {
-  if (account.kind === 'CRYPTO_WALLET') return `${account.network || 'TRON'} · 操作已禁用`;
-  return accountProductName(account);
 }
 function fiatBalanceDescription(account: MoneyAccount) {
   if (account.kind === 'VIRTUAL_ACCOUNT') {

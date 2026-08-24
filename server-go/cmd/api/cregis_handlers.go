@@ -88,9 +88,17 @@ const (
 	      WHERE id=? AND status='executing'
 	        AND EXISTS (SELECT 1 FROM cregis_withdrawal_accounting a
 	          WHERE a.withdrawal_id=cregis_withdrawals.id AND a.status='approved')`
-	activateVerifiedWalletSQL = `UPDATE cregis_wallets
+	resetWalletOwnershipVerificationSQL = `WITH reset AS (
+      UPDATE cregis_wallets SET status='creating', updated_at=?
+      WHERE id=? AND tenant_id=? AND status IN ('error', 'active')
+      RETURNING id
+    ) SELECT id FROM reset`
+	activateVerifiedWalletSQL = `WITH activated AS (
+      UPDATE cregis_wallets
       SET address=?, custody_provider='cregis', ownership_verified_at=?, status='active', updated_at=?
-      WHERE id=? AND tenant_id=? AND status='creating'`
+      WHERE id=? AND tenant_id=? AND status='creating'
+      RETURNING id
+    ) SELECT id FROM activated`
 	failWalletOwnershipVerificationSQL = `UPDATE cregis_wallets
       SET address=?, status='error', updated_at=? WHERE id=? AND tenant_id=? AND status='creating'`
 	reserveWithdrawalSQL = `INSERT OR IGNORE INTO cregis_withdrawals
@@ -263,8 +271,8 @@ func (app *application) provisionCregisWallet(ctx context.Context, customerID, a
 		if !walletReservationCanRetryOwnership(text(reserved["status"])) {
 			return nil, 0, &walletProvisionError{status: http.StatusConflict, code: "wallet_creation_in_progress"}
 		}
-		reset, resetErr := app.db.Query(ctx, `UPDATE cregis_wallets SET status='creating', updated_at=?
-      WHERE id=? AND tenant_id=? AND status IN ('error', 'active') RETURNING id`, now, text(reserved["id"]), app.tenantID)
+		reset, resetErr := app.db.Query(ctx, resetWalletOwnershipVerificationSQL,
+			now, text(reserved["id"]), app.tenantID)
 		if resetErr != nil || len(reset) != 1 {
 			if resetErr == nil {
 				resetErr = errors.New("wallet retry reservation failed")
@@ -317,7 +325,7 @@ func (app *application) provisionCregisWallet(ctx context.Context, customerID, a
 			code:  "cregis_address_ownership_verification_failed",
 			cause: fmt.Errorf("wallet_id=%s code=%s: %w", id, responseCode(ownershipResponse), ownershipErr)}
 	}
-	stored, err := app.db.Query(ctx, activateVerifiedWalletSQL+` RETURNING id`,
+	stored, err := app.db.Query(ctx, activateVerifiedWalletSQL,
 		address, verifiedAt, verifiedAt, id, app.tenantID)
 	if err != nil {
 		return nil, 0, &walletProvisionError{status: http.StatusInternalServerError, code: "wallet_persistence_failed", cause: err}

@@ -118,6 +118,10 @@ func TestDepositWalletActivationRequiresCregisOwnershipEvidence(t *testing.T) {
 			t.Fatalf("verified wallet activation SQL must contain %q: %s", required, activateVerifiedWalletSQL)
 		}
 	}
+	if !strings.HasPrefix(strings.TrimSpace(activateVerifiedWalletSQL), "WITH activated AS") ||
+		!strings.Contains(activateVerifiedWalletSQL, "SELECT id FROM activated") {
+		t.Fatalf("verified wallet activation must return its PostgreSQL result through a query CTE: %s", activateVerifiedWalletSQL)
+	}
 	if strings.Contains(failWalletOwnershipVerificationSQL, "status='active'") ||
 		strings.Contains(failWalletOwnershipVerificationSQL, "ownership_verified_at") {
 		t.Fatalf("failed ownership verification must not enable deposits: %s", failWalletOwnershipVerificationSQL)
@@ -125,6 +129,10 @@ func TestDepositWalletActivationRequiresCregisOwnershipEvidence(t *testing.T) {
 }
 
 func TestWalletOwnershipRepairAcceptsUnverifiedActiveReservation(t *testing.T) {
+	if !strings.HasPrefix(strings.TrimSpace(resetWalletOwnershipVerificationSQL), "WITH reset AS") ||
+		!strings.Contains(resetWalletOwnershipVerificationSQL, "SELECT id FROM reset") {
+		t.Fatalf("wallet ownership retry must return its PostgreSQL result through a query CTE: %s", resetWalletOwnershipVerificationSQL)
+	}
 	tests := map[string]bool{
 		"error":    true,
 		"active":   true,
