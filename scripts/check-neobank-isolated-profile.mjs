@@ -35,6 +35,8 @@ const [
   portalCustomerContext,
   portalLayout,
   customerCryptoWallet,
+  customerActionPage,
+  authApi,
   virtualAccountsPage,
   financeWorkspace,
   coreApi,
@@ -76,6 +78,8 @@ const [
   read('src/features/finance/portal-customer-context.tsx'),
   read('src/layouts/portal/layout.tsx'),
   read('src/pages/portal/crypto-wallet.tsx'),
+  read('src/pages/portal/customer-action.tsx'),
+  read('src/auth/context/jwt/auth-api.ts'),
   read('src/pages/portal/virtual-accounts.tsx'),
   read('src/pages/dashboard/finance-workspace.tsx'),
   read('src/features/finance/core-api.ts'),
@@ -335,6 +339,19 @@ assert.match(
 );
 assert.match(worker, /customer_fx_scope_mismatch/);
 assert.match(worker, /quote_not_confirmable|operations.*confirm/s);
+assert.match(
+  customerActionPage,
+  /const operationPath = action === 'otc' \? '\/operations\/quote' : '\/operations'/
+);
+assert.match(customerActionPage, /`\/operations\/\$\{pendingQuote\.id\}\/confirm`/);
+assert.match(
+  router,
+  /action="payout"[\s\S]*?submissionDisabledReason="银行转出服务当前暂未开放。"/
+);
+assert.match(
+  authApi,
+  /response\.status === 401 &&[\s\S]*?authentication_required[\s\S]*?session_expired[\s\S]*?notifySessionExpired\(\)/
+);
 assert.match(worker, /api\/core\/crypto-wallets\/transfers/);
 assert.match(worker, /redactCustomerCorePayload/);
 assert.match(worker, /customer_lifecycle_requires_go_kyc/);

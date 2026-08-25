@@ -12,6 +12,7 @@ import {
   VerifyTotpInput,
 } from 'src/auth/types';
 import { isSessionPermission } from 'src/auth/permissions';
+import { notifySessionExpired } from 'src/auth/csrf-token';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
 import {
   browserSupportsWebAuthn,
@@ -266,6 +267,12 @@ async function authRequest(path: string, init: RequestInit = {}) {
       readString(error, ['message']) ||
       readString(root, ['message']) ||
       `Authentication request failed (${response.status})`;
+    if (
+      response.status === 401 &&
+      (code === 'authentication_required' || code === 'session_expired')
+    ) {
+      notifySessionExpired();
+    }
     throw new AuthApiError(response.status, code, message, error.details || root.details);
   }
 
