@@ -505,7 +505,10 @@ async function requestApi<T>(baseUrl: string, path: string, init?: ApiRequestIni
   if (!response.ok) {
     const message = Array.isArray(payload?.message) ? payload.message.join('，') : payload?.message;
     const code = payload?.error?.code;
-    if (response.status === 401 && code === 'session_expired') {
+    if (
+      response.status === 401 &&
+      (code === 'session_expired' || code === 'authentication_required')
+    ) {
       notifySessionExpired();
     }
     throw new Error(apiErrorMessage(message, code, response.status));

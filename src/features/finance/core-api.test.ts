@@ -100,20 +100,26 @@ describe('coreApi response validation', () => {
     );
   });
 
-  it('notifies the auth guard when an authenticated API session expires', async () => {
-    const listener = jest.fn();
-    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, listener);
-    jest.spyOn(global, 'fetch').mockResolvedValue(
-      response({
-        ok: false,
-        status: 401,
-        payload: { error: { code: 'session_expired' } },
-      })
-    );
+  it.each([
+    { code: 'session_expired', expectedMessage: 'session_expired' },
+    { code: 'authentication_required', expectedMessage: '登录状态已失效，请重新登录。' },
+  ])(
+    'notifies the auth guard for the authentication boundary error $code',
+    async ({ code, expectedMessage }) => {
+      const listener = jest.fn();
+      window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, listener);
+      jest.spyOn(global, 'fetch').mockResolvedValue(
+        response({
+          ok: false,
+          status: 401,
+          payload: { error: { code } },
+        })
+      );
 
-    await expect(neobankApi('/admin/customers')).rejects.toThrow('session_expired');
-    expect(listener).toHaveBeenCalledTimes(1);
+      await expect(neobankApi('/admin/customers')).rejects.toThrow(expectedMessage);
+      expect(listener).toHaveBeenCalledTimes(1);
 
-    window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, listener);
-  });
+      window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, listener);
+    }
+  );
 });
