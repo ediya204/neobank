@@ -9,11 +9,14 @@ customer balance directly.
 ```text
 customer request
   -> PostgreSQL custody row + accounting intent
-  -> Core serializable reservation (Account + CryptoWallet frozen together)
+  -> authenticated synchronous Core serializable reservation
+       (Account + CryptoWallet frozen together)
   -> Admin approval recorded in custody
   -> Core Operation + CryptoTransfer move to PROCESSING
   -> Cregis submission
-  -> signed final callback
+  -> signed final callback + exact Cregis payout-order query
+       (destination + net amount + currency + status + reference + txid)
+  -> synchronous Core hand-off after callback evidence is conflict-free
        completed -> Core consumes frozen funds and posts principal + fee journals
        failed/rejected/cancelled -> Core releases both frozen balances
   -> customer and Admin read the Core result
@@ -22,7 +25,18 @@ customer request
 `WITHDRAWAL_ACCOUNTING_ENABLED` defaults to `false`. Enabling it without migration
 `0011_cregis_withdrawal_accounting` is a startup error. A request cannot be approved
 until its accounting intent is `reserved`; it cannot be executed until the Core
-approval hand-off is `approved`. A final callback only queues settlement or release.
+approval hand-off is `approved`. With direct accounting enabled, the request does
+not return business success until the relevant Core result is committed. Queue
+statuses remain durable state and idempotency evidence; the polling worker is not
+required for new requests.
+
+Before any release or settlement, Go queries `POST /api/v1/payout/query` by the Cregis
+CID and compares the provider order with both the signed callback and the immutable
+PostgreSQL withdrawal. A mismatch is stored as callback evidence, moves the custody
+row to `exception`, returns literal `success`, and leaves the Core freeze unchanged.
+Core independently rejects release or settlement when stored payout callback families
+conflict. This extra check is deliberate even though Cregis documents final callback
+statuses `2`, `4`, `6`, and `7` as mutually exclusive and emitted only once.
 
 ## Release order
 
@@ -33,23 +47,26 @@ These are separate, manually approved changes:
    isolated PostgreSQL 17 instance, and verify financial row counts and balances.
 3. Review and apply migrations `0010` and `0011` in order. Confirm both new queues
    contain no historical rows.
-4. Deploy `neobank-financial-accounting-worker` with withdrawal accounting still
-   disabled in the Go service and `FINANCIAL_ACCOUNTING_PROCESSING_ENABLED=false`
-   on the worker. The fail-closed worker must log
-   `financial_accounting_worker_paused` before creating the Nest/Prisma application
-   context, so it cannot query, claim, or update existing queues. Verify queue state
-   and Core USDT clearing and fee accounts separately through read-only checks;
-   enabling processing is a later, separately approved environment change.
-5. Deploy Core and Go code with `WITHDRAWAL_ACCOUNTING_ENABLED=false`. Verify the
+4. Deploy Core and Go from the same reviewed commit with
+   `WITHDRAWAL_ACCOUNTING_ENABLED=false` and
+   `CREGIS_DIRECT_ACCOUNTING_ENABLED=false`. Keep the old worker paused with
+   `FINANCIAL_ACCOUNTING_PROCESSING_ENABLED=false`.
+5. Configure the dedicated Core accounting URL and secret. Verify queue state and
+   Core USDT clearing and fee accounts separately through read-only PostgreSQL
+   checks. Verify the
    customer endpoint remains closed and the USDT reconciliation endpoint is green.
 6. Reconcile historical deposits and withdrawals one item at a time under a separate
    approval. Never infer customer money from aggregate custody history.
-7. Set `WITHDRAWAL_ACCOUNTING_ENABLED=true` only after an explicitly approved,
-   no-payout reservation/rejection UAT proves freeze and release in both materialized
-   balances and the Core records.
+7. After an approved authenticated deposit test, set
+   `CREGIS_DIRECT_ACCOUNTING_ENABLED=true` on Core first and Go second. Then set
+   `WITHDRAWAL_ACCOUNTING_ENABLED=true` only after an explicitly approved no-payout
+   reservation/rejection UAT proves freeze and release in both materialized balances
+   and the Core records.
 8. Perform any real-payout UAT only under a new explicit approval. Assert the signed
    final callback, one settlement, balanced principal and fee journals, transaction
    hash uniqueness, and matching customer/Admin views.
+9. Remove the old accounting worker only after all historical rows are resolved and
+   the direct path has no reconciliation issues. Retain audit tables initially.
 
 GitHub publication, PostgreSQL migration, each Render deployment, flag activation,
 and real-money UAT are separate evidence items.
@@ -98,7 +115,8 @@ npm --prefix server run withdrawal:reconcile -- release --withdrawal-id WITHDRAW
 Do not paste approval values, backup checksums, database URLs, or customer evidence
 into chat, source, shell history, or tickets. After `release`, the command only changes
 the custody row to its signed terminal result and queues `pending_release`. The
-financial worker performs the serializable balance change. Verify the accounting row
+separately approved Core accounting execution performs the serializable balance
+change. Verify the accounting row
 reaches `released`, both frozen balances decrease by the exact total, both available
 balances increase by the same total, linked Core records become `REJECTED` or `FAILED`,
 and `/ledger/reconciliation/usdt` no longer reports the item.
@@ -117,16 +135,16 @@ that funds are frozen, released, or debited.
 
 The history API exposes `funds_status` using this closed vocabulary:
 
-| `funds_status`        | Operator meaning                                         | Permitted action                                     |
-| --------------------- | -------------------------------------------------------- | ---------------------------------------------------- |
-| `not_reserved`        | This instruction did not create a Core funds reservation | No refund, release, or CID association               |
-| `reservation_pending` | Core reservation has not finished                        | Wait for the accounting worker                       |
-| `frozen`              | The instruction has a verified Core reservation          | Follow the instruction and callback state gate       |
-| `release_pending`     | A verified reservation is being released                 | Wait for the accounting worker; do not edit balances |
-| `released`            | The verified reservation was released                    | No further funds action                              |
-| `settlement_pending`  | A signed completion is awaiting Core settlement          | Wait for the accounting worker                       |
-| `settled`             | Core settlement completed                                | No further funds action                              |
-| `review_required`     | Evidence is incomplete or contradictory                  | Read-only investigation; do not infer a funds state  |
+| `funds_status`        | Operator meaning                                         | Permitted action                                    |
+| --------------------- | -------------------------------------------------------- | --------------------------------------------------- |
+| `not_reserved`        | This instruction did not create a Core funds reservation | No refund, release, or CID association              |
+| `reservation_pending` | Core reservation has not finished                        | Retry the authenticated Core hand-off               |
+| `frozen`              | The instruction has a verified Core reservation          | Follow the instruction and callback state gate      |
+| `release_pending`     | A verified reservation is being released                 | Retry Core; do not edit balances                    |
+| `released`            | The verified reservation was released                    | No further funds action                             |
+| `settlement_pending`  | A signed completion is awaiting Core settlement          | Retry the authenticated Core hand-off               |
+| `settled`             | Core settlement completed                                | No further funds action                             |
+| `review_required`     | Evidence is incomplete or contradictory                  | Read-only investigation; do not infer a funds state |
 
 `can_reconcile_cregis_cid` is `true` only for an `exception` row whose accounting
 record is `approved` and has both a Core operation and Core transfer. The UI must fail

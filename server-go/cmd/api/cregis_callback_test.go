@@ -12,12 +12,33 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ediya204/neobank/server-go/internal/coreaccounting"
 	"github.com/ediya204/neobank/server-go/internal/cregis"
 	"github.com/ediya204/neobank/server-go/internal/d1"
 )
 
+type fakeCoreAccounting struct {
+	depositResult    coreaccounting.Result
+	withdrawalResult coreaccounting.Result
+	err              error
+	action           string
+	recordID         string
+}
+
+func (fake *fakeCoreAccounting) PostDeposit(context.Context, string) (coreaccounting.Result, error) {
+	return fake.depositResult, fake.err
+}
+
+func (fake *fakeCoreAccounting) AdvanceWithdrawal(_ context.Context, recordID, action string) (coreaccounting.Result, error) {
+	fake.recordID = recordID
+	fake.action = action
+	return fake.withdrawalResult, fake.err
+}
+
 type callbackDatabase struct {
 	rows         []map[string]any
+	queries      [][]map[string]any
+	queryIndex   int
 	batchResults []d1.Result
 	batches      [][]d1.Statement
 }
@@ -52,14 +73,22 @@ func (db *callbackDatabase) Batch(_ context.Context, statements ...d1.Statement)
 	if db.batchResults != nil {
 		return db.batchResults, nil
 	}
-	return []d1.Result{
-		{Meta: map[string]any{"changes": float64(1)}},
-		{Meta: map[string]any{"changes": float64(1)}},
-		{Meta: map[string]any{"changes": float64(0)}},
-	}, nil
+	results := make([]d1.Result, len(statements))
+	for index := range results {
+		results[index] = d1.Result{Meta: map[string]any{"changes": float64(1)}}
+	}
+	return results, nil
 }
 
 func (db *callbackDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
+	if db.queries != nil {
+		index := db.queryIndex
+		db.queryIndex++
+		if index >= len(db.queries) {
+			return nil, nil
+		}
+		return db.queries[index], nil
+	}
 	return db.rows, nil
 }
 
@@ -80,6 +109,9 @@ func TestPayoutRejectionAcknowledgesHistoricalExceptionForReconciliation(t *test
 		"third_party_id": "historical-withdrawal",
 		"chain_id":       usdtTRC20ChainID,
 		"token_id":       usdtTRC20TokenID,
+		"currency":       "USDT",
+		"amount":         "1.20",
+		"address":        "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
 		"status":         4,
 		"timestamp":      int64(1_800_000_000_000),
 		"nonce":          "abc123",
@@ -89,11 +121,19 @@ func TestPayoutRejectionAcknowledgesHistoricalExceptionForReconciliation(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	db := &callbackDatabase{rows: []map[string]any{{
+	expected := []map[string]any{{
+		"id": "historical-withdrawal", "currency": usdtTRC20Currency,
+		"net_amount_text": "1.20", "to_address": payload["address"], "cregis_cid": "1463535767997999",
+	}}
+	db := &callbackDatabase{queries: [][]map[string]any{expected, {{
 		"status": "exception", "cregis_cid": "1463535767997999", "accounting_status": "missing",
-	}}}
+	}}}}
 	app := &application{
-		db: db, cregis: client, cregisLive: true, tenantID: "tenant_test",
+		db: db, cregis: &callbackCregisClient{Client: client, payout: cregis.PayoutOrder{
+			ChainID: usdtTRC20ChainID, TokenID: usdtTRC20TokenID, Currency: "USDT",
+			Address: text(payload["address"]), Amount: "1.20", Status: 4,
+			ThirdPartyID: "historical-withdrawal",
+		}}, cregisLive: true, tenantID: "tenant_test",
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/callbacks/cregis/payout", bytes.NewReader(body))
@@ -114,15 +154,21 @@ func TestPayoutRejectionAcknowledgesHistoricalExceptionForReconciliation(t *test
 
 type callbackCregisClient struct {
 	*cregis.Client
-	trade    cregis.Trade
-	tradeErr error
+	trade     cregis.Trade
+	tradeErr  error
+	payout    cregis.PayoutOrder
+	payoutErr error
 }
 
 func (client *callbackCregisClient) DepositTrade(context.Context, int64, string, string, string) (cregis.Trade, error) {
 	return client.trade, client.tradeErr
 }
 
-func TestPayoutCallbackDoesNotAcknowledgeUnknownOrConflictingState(t *testing.T) {
+func (client *callbackCregisClient) PayoutOrder(context.Context, int64) (cregis.PayoutOrder, error) {
+	return client.payout, client.payoutErr
+}
+
+func TestPayoutCallbackRetriesUnknownStateAndAcknowledgesDurableConflictEvidence(t *testing.T) {
 	client, err := cregis.New(cregis.Config{
 		BaseURL:     "https://t-wsmbuuhb.cregis.io",
 		ProjectID:   "1463535767997152",
@@ -139,6 +185,9 @@ func TestPayoutCallbackDoesNotAcknowledgeUnknownOrConflictingState(t *testing.T)
 		"third_party_id": "third-party-test",
 		"chain_id":       usdtTRC20ChainID,
 		"token_id":       usdtTRC20TokenID,
+		"currency":       "USDT",
+		"amount":         "1.20",
+		"address":        "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
 		"status":         6,
 		"txid":           strings.Repeat("a", 64),
 		"timestamp":      int64(1_800_000_000_000),
@@ -156,13 +205,31 @@ func TestPayoutCallbackDoesNotAcknowledgeUnknownOrConflictingState(t *testing.T)
 		wantStatus int
 	}{
 		{name: "unknown payout", wantStatus: http.StatusUnprocessableEntity},
-		{name: "conflicting payout", rows: []map[string]any{{"status": "exception", "cregis_cid": "", "accounting_status": "approved"}}, wantStatus: http.StatusConflict},
+		{name: "provider order mismatch is held", wantStatus: http.StatusOK},
+		{name: "conflicting payout", rows: []map[string]any{{"status": "exception", "cregis_cid": "", "accounting_status": "approved"}}, wantStatus: http.StatusOK},
 		{name: "exact idempotent callback", rows: []map[string]any{{"status": "completed", "cregis_cid": "1463535767997999", "accounting_status": "settled"}}, wantStatus: http.StatusOK},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			expected := []map[string]any{{
+				"id": "withdrawal_test", "currency": usdtTRC20Currency,
+				"net_amount_text": "1.20", "to_address": payload["address"], "cregis_cid": "1463535767997999",
+			}}
+			queries := [][]map[string]any{expected, test.rows}
+			if test.name == "unknown payout" {
+				queries = [][]map[string]any{{}}
+			}
+			payoutStatus := 6
+			if test.name == "provider order mismatch is held" {
+				payoutStatus = 4
+			}
+			db := &callbackDatabase{queries: queries}
 			app := &application{
-				db:         &callbackDatabase{rows: test.rows},
-				cregis:     client,
+				db: db,
+				cregis: &callbackCregisClient{Client: client, payout: cregis.PayoutOrder{
+					ChainID: usdtTRC20ChainID, TokenID: usdtTRC20TokenID, Currency: "USDT",
+					Address: text(payload["address"]), Amount: "1.20", Status: payoutStatus,
+					ThirdPartyID: "third-party-test", TXID: strings.Repeat("a", 64),
+				}},
 				cregisLive: true,
 				tenantID:   "tenant_test",
 				logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -173,14 +240,49 @@ func TestPayoutCallbackDoesNotAcknowledgeUnknownOrConflictingState(t *testing.T)
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, body=%q; want %d", response.Code, response.Body.String(), test.wantStatus)
 			}
-			if test.wantStatus != http.StatusOK && response.Body.String() == "success" {
-				t.Fatal("invalid callback state must never be acknowledged as success")
+			if test.wantStatus == http.StatusOK && response.Body.String() != "success" {
+				t.Fatal("durably recorded final callback must be acknowledged as success")
+			}
+			if test.name == "provider order mismatch is held" &&
+				(len(db.batches) != 1 || len(db.batches[0]) != 2 || !strings.Contains(db.batches[0][1].SQL, "status='exception'")) {
+				t.Fatalf("provider mismatch must be recorded and held: %#v", db.batches)
 			}
 		})
 	}
 }
 
-func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) {
+func TestDirectPayoutAccountingRetriesTransientFailureAndAcknowledgesException(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		result     coreaccounting.Result
+		err        error
+		wantStatus int
+		wantBody   string
+	}{
+		{name: "transient", err: errors.New("Core unavailable"), wantStatus: http.StatusServiceUnavailable, wantBody: "retry\n"},
+		{name: "permanent exception", result: coreaccounting.Result{ID: "withdrawal_test", Status: "exception"}, wantStatus: http.StatusOK, wantBody: "success"},
+		{name: "settled", result: coreaccounting.Result{ID: "withdrawal_test", Status: "settled"}, wantStatus: http.StatusOK, wantBody: "success"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			core := &fakeCoreAccounting{withdrawalResult: test.result, err: test.err}
+			app := &application{
+				coreAccounting: core, directAccounting: true,
+				logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+			}
+			request := httptest.NewRequest(http.MethodPost, "/callback", nil)
+			response := httptest.NewRecorder()
+			app.finishPayoutAccounting(response, request, "withdrawal_test", "completed", "cid_test")
+			if response.Code != test.wantStatus || response.Body.String() != test.wantBody {
+				t.Fatalf("status=%d body=%q; want %d %q", response.Code, response.Body.String(), test.wantStatus, test.wantBody)
+			}
+			if core.recordID != "withdrawal_test" || core.action != "settle" {
+				t.Fatalf("Core call = %q %q", core.recordID, core.action)
+			}
+		})
+	}
+}
+
+func TestDepositCallbackRetriesTransientFailureAndAcknowledgesDurableConflictEvidence(t *testing.T) {
 	client, err := cregis.New(cregis.Config{
 		BaseURL:     "https://t-wsmbuuhb.cregis.io",
 		ProjectID:   "1463535767997152",
@@ -243,8 +345,8 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 		{name: "new deposit", batchChanges: 1, queryErrorAt: -1, wantStatus: http.StatusOK},
 		{name: "new deposit without accounting intent", batchChanges: 1, missingIntent: true, queryErrorAt: -1, wantStatus: http.StatusServiceUnavailable},
 		{name: "exact duplicate", existing: []map[string]any{exact}, queryErrorAt: -1, wantStatus: http.StatusOK},
-		{name: "unknown duplicate", queryErrorAt: -1, wantStatus: http.StatusUnprocessableEntity},
-		{name: "conflicting duplicate", existing: []map[string]any{conflicting}, queryErrorAt: -1, wantStatus: http.StatusConflict},
+		{name: "unknown duplicate", queryErrorAt: -1, wantStatus: http.StatusOK},
+		{name: "conflicting duplicate", existing: []map[string]any{conflicting}, queryErrorAt: -1, wantStatus: http.StatusOK},
 		{name: "lookup failure", queryErrorAt: 1, wantStatus: http.StatusServiceUnavailable},
 		{name: "trade lookup failure", tradeErr: errors.New("trade unavailable"), queryErrorAt: -1, wantStatus: http.StatusServiceUnavailable},
 		{name: "trade mismatch", invalidTrade: true, queryErrorAt: -1, wantStatus: http.StatusServiceUnavailable},
@@ -280,8 +382,8 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, body=%q; want %d", response.Code, response.Body.String(), test.wantStatus)
 			}
-			if test.wantStatus != http.StatusOK && response.Body.String() == "success" {
-				t.Fatal("invalid deposit callback must never be acknowledged as success")
+			if test.wantStatus == http.StatusOK && response.Body.String() != "success" {
+				t.Fatal("durably recorded final callback must be acknowledged as success")
 			}
 			if test.name == "new deposit" {
 				if len(db.batches) != 1 || len(db.batches[0]) != 3 || len(db.batches[0][1].Params) != 17 {
@@ -300,11 +402,38 @@ func TestDepositCallbackOnlyAcknowledgesNewOrExactIdempotentEvent(t *testing.T) 
 
 func TestCustomerWalletFundsUseOnlyCoreMaterializedBalances(t *testing.T) {
 	for name, sql := range map[string]string{"balance": walletBalancesSQL, "reservation": reserveWithdrawalSQL} {
-		if !strings.Contains(sql, `"CryptoWallet"`) || !strings.Contains(sql, `"availableBalance"`) {
-			t.Fatalf("%s SQL must read the Core wallet balance", name)
+		if !strings.Contains(sql, `"Account"`) || !strings.Contains(sql, `"availableBalance"`) {
+			t.Fatalf("%s SQL must read the primary Core account balance", name)
 		}
 		if strings.Contains(sql, "SUM(d.amount_minor)") {
 			t.Fatalf("%s SQL must not infer money from custody deposits", name)
 		}
+	}
+	if !strings.Contains(walletBalancesSQL, `"CryptoWallet"`) ||
+		!strings.Contains(walletBalancesSQL, "mirror_available_minor") {
+		t.Fatal("wallet balance reads must validate the compatibility mirror")
+	}
+}
+
+func TestCustomerWalletBalanceUsesAccountAndFailsClosedOnMirrorMismatch(t *testing.T) {
+	matching := map[string]any{
+		"account_id": "account_usdt", "mirror_wallet_id": "wallet_usdt",
+		"available_minor": "1250000", "frozen_minor": "50000",
+		"mirror_available_minor": "1250000", "mirror_frozen_minor": "50000",
+	}
+	app := &application{db: &callbackDatabase{rows: []map[string]any{matching}}, tenantID: "tenant_test"}
+	request := httptest.NewRequest(http.MethodGet, "/wallet", nil)
+	available, frozen, err := app.customerWalletBalances(request, "wallet_usdt", "customer_test")
+	if err != nil || available != "1.25" || frozen != "0.05" {
+		t.Fatalf("balances = %q %q, %v", available, frozen, err)
+	}
+	mismatched := map[string]any{}
+	for key, value := range matching {
+		mismatched[key] = value
+	}
+	mismatched["mirror_available_minor"] = "1249999"
+	app.db = &callbackDatabase{rows: []map[string]any{mismatched}}
+	if _, _, err := app.customerWalletBalances(request, "wallet_usdt", "customer_test"); err == nil {
+		t.Fatal("Account and CryptoWallet mismatch must fail closed")
 	}
 }

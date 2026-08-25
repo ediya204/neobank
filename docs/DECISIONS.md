@@ -18,11 +18,13 @@ that the assumption no longer applies.
   destroy old data merely because new creation is disabled.
 - Cregis custody facts and customer money have different authority. The Go service
   verifies and durably stores the external deposit plus an accounting intent in one
-  PostgreSQL transaction. A dedicated Core worker then atomically creates the
-  completed Operation, CryptoTransfer, balanced JournalEntry, and both USDT
-  materialized balances. Only the Core journal is the final accounting authority.
-  Until that transaction commits, both customer and Admin histories show the
-  deposit as processing and the amount is unavailable.
+  PostgreSQL transaction, then calls an authenticated Core endpoint synchronously.
+  Core atomically creates the completed Operation, CryptoTransfer, balanced
+  JournalEntry, and both USDT materialized balances. The accounting tables remain
+  durable audit and idempotency records, not a reason to require a polling worker.
+  Only the Core journal is the final accounting authority. Until that transaction
+  commits, both customer and Admin histories show processing and the amount is
+  unavailable.
 - Cregis callback delivery is at least once; the financial result is exactly once.
   Tenant + Cregis CID, completed transaction hash, Core operation reference, and
   customer idempotency key are independently unique. Duplicate delivery may retry
@@ -34,11 +36,15 @@ that the assumption no longer applies.
   named approval, and reason. Applying a migration or deploying a worker must not
   move historical customer money.
 - New Cregis withdrawals use the same Core authority boundary. The customer request
-  creates a custody row plus accounting intent; a Core serializable transaction must
-  freeze the matching Account and CryptoWallet before Admin approval or Cregis
-  execution is possible. A signed final callback queues either Core settlement or
-  release. Only the Core transaction may consume frozen funds, post principal and fee
-  journals, or expose a final customer balance.
+  creates a custody row plus accounting intent; the Go service synchronously invokes
+  a Core serializable transaction to freeze the matching Account and CryptoWallet
+  before Admin approval or Cregis execution is possible. Approval, release, and a
+  signed final callback synchronously advance the same stored accounting record only
+  after an exact Cregis payout-order lookup matches the stored destination, net amount,
+  currency, status, business reference, and transaction hash. A mismatch is durably
+  recorded and held in exception without moving customer money.
+  Only the Core transaction may consume frozen funds, post principal and fee journals,
+  or expose a final customer balance.
 - `WITHDRAWAL_ACCOUNTING_ENABLED` is fail-closed and PostgreSQL migration
   `0011_cregis_withdrawal_accounting` never enqueues historical withdrawals. Customer
   OTC now uses the Core state machine and balanced journal: the first request creates
@@ -114,6 +120,7 @@ that the assumption no longer applies.
   customer accounting.
 
 ## Virtual account operations
+
 - VA 开户必须绑定后台已启用的 `VIRTUAL_ACCOUNT` 银行渠道。客户先选择银行，
   再从该银行声明的支持币种中选择开户币种；服务端重复校验渠道、币种和客户归属。
 - 银行名称、国家/地区、地址与 SWIFT/BIC 是渠道固定资料；通道不配置分行或

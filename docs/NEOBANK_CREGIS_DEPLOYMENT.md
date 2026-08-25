@@ -110,39 +110,44 @@ secret, recovery codes, or bootstrap secret in source control or chat.
 Set values in the Render dashboard. Never commit or paste secret values into a
 ticket, chat, log, or repository.
 
-| Name                       | Secret    | Initial value or source                                  |
-| -------------------------- | --------- | -------------------------------------------------------- |
-| `DATABASE_BACKEND`         | No        | Must be `postgres`; every other value fails startup      |
-| `DATABASE_URL`             | Yes       | Render PostgreSQL internal connection                    |
-| `EDGE_SHARED_SECRET`       | Yes       | Same random value as the web Worker secret               |
-| `PUBLIC_BASE_URL`          | No        | Render service origin, without a trailing slash          |
-| `CUSTOMER_PORTAL_BASE_URL` | No        | Public customer Portal origin, without a trailing slash  |
-| `TENANT_ID`                | No        | `neobank`                                                |
-| `CUSTOMER_PASSWORD_PEPPER` | Yes       | Separate random value of at least 32 bytes               |
-| `CUSTOMER_TOTP_KEY`        | Yes       | Random 32-byte AES key encoded as hex or Base64          |
-| `CUSTOMER_RECOVERY_PEPPER` | Yes       | Separate random value of at least 32 bytes               |
-| `ADMIN_PASSWORD_PEPPER`    | Yes       | Separate random value of at least 32 bytes               |
-| `ADMIN_TOTP_KEY`           | Yes       | Random 32-byte AES key encoded as hex or Base64          |
-| `ADMIN_BOOTSTRAP_SECRET`   | Yes       | Setup-token bearer secret of at least 32 bytes           |
-| `FASTFOREX_API_KEY`        | Yes       | Rotated FastForex key; configure directly in Render      |
-| `CREGIS_BASE_URL`          | No        | Test gateway while commissioning                         |
-| `CREGIS_ENABLED`           | No        | `false` until the acceptance gate passes                 |
-| `CREGIS_PROJECT_ID`        | Sensitive | Cregis project configuration                             |
-| `CREGIS_PROJECT_SECRET`    | Yes       | Newly rotated Cregis secret                              |
-| `CREGIS_RELAY_URL`         | No        | Dedicated HTTPS origin for the Neobank-only egress relay |
-| `CREGIS_RELAY_SECRET`      | Yes       | Separate random HMAC secret shared only with the relay   |
+| Name                               | Secret    | Initial value or source                                  |
+| ---------------------------------- | --------- | -------------------------------------------------------- |
+| `DATABASE_BACKEND`                 | No        | Must be `postgres`; every other value fails startup      |
+| `DATABASE_URL`                     | Yes       | Render PostgreSQL internal connection                    |
+| `EDGE_SHARED_SECRET`               | Yes       | Same random value as the web Worker secret               |
+| `PUBLIC_BASE_URL`                  | No        | Render service origin, without a trailing slash          |
+| `CUSTOMER_PORTAL_BASE_URL`         | No        | Public customer Portal origin, without a trailing slash  |
+| `TENANT_ID`                        | No        | `neobank`                                                |
+| `CUSTOMER_PASSWORD_PEPPER`         | Yes       | Separate random value of at least 32 bytes               |
+| `CUSTOMER_TOTP_KEY`                | Yes       | Random 32-byte AES key encoded as hex or Base64          |
+| `CUSTOMER_RECOVERY_PEPPER`         | Yes       | Separate random value of at least 32 bytes               |
+| `ADMIN_PASSWORD_PEPPER`            | Yes       | Separate random value of at least 32 bytes               |
+| `ADMIN_TOTP_KEY`                   | Yes       | Random 32-byte AES key encoded as hex or Base64          |
+| `ADMIN_BOOTSTRAP_SECRET`           | Yes       | Setup-token bearer secret of at least 32 bytes           |
+| `FASTFOREX_API_KEY`                | Yes       | Rotated FastForex key; configure directly in Render      |
+| `CREGIS_BASE_URL`                  | No        | Test gateway while commissioning                         |
+| `CREGIS_ENABLED`                   | No        | `false` until the acceptance gate passes                 |
+| `CREGIS_PROJECT_ID`                | Sensitive | Cregis project configuration                             |
+| `CREGIS_PROJECT_SECRET`            | Yes       | Newly rotated Cregis secret                              |
+| `CREGIS_RELAY_URL`                 | No        | Dedicated HTTPS origin for the Neobank-only egress relay |
+| `CREGIS_RELAY_SECRET`              | Yes       | Separate random HMAC secret shared only with the relay   |
+| `CREGIS_DIRECT_ACCOUNTING_ENABLED` | No        | Keep `false` until the reviewed direct-accounting gate   |
+| `CORE_ACCOUNTING_URL`              | No        | Core HTTPS or Render private origin, without a path      |
+| `CORE_ACCOUNTING_SHARED_SECRET`    | Yes       | New dedicated 32-byte minimum Go-to-Core HMAC secret     |
 
 The `neobank-core` service additionally requires:
 
-| Name                       | Secret | Initial value or source                          |
-| -------------------------- | ------ | ------------------------------------------------ |
-| `DATABASE_URL`             | Yes    | Same Render PostgreSQL internal connection       |
-| `CORE_EDGE_SHARED_SECRET`  | Yes    | Separate random value shared with the web Worker |
-| `CORE_EDGE_AUTH_REQUIRED`  | No     | Must be `true` in production                     |
-| `CORE_ADMIN_USER_ID`       | No     | `usr_neobank_admin`                              |
-| `CORE_ORGANIZATION_ID`     | No     | `org_neobank`                                    |
-| `NEOBANK_SOURCE_TENANT_ID` | No     | `neobank`                                        |
-| `WEB_ORIGIN`               | No     | `https://portal.sscdigitalbank.com`              |
+| Name                               | Secret | Initial value or source                                |
+| ---------------------------------- | ------ | ------------------------------------------------------ |
+| `DATABASE_URL`                     | Yes    | Same Render PostgreSQL internal connection             |
+| `CORE_EDGE_SHARED_SECRET`          | Yes    | Separate random value shared with the web Worker       |
+| `CORE_EDGE_AUTH_REQUIRED`          | No     | Must be `true` in production                           |
+| `CORE_ADMIN_USER_ID`               | No     | `usr_neobank_admin`                                    |
+| `CORE_ORGANIZATION_ID`             | No     | `org_neobank`                                          |
+| `NEOBANK_SOURCE_TENANT_ID`         | No     | `neobank`                                              |
+| `WEB_ORIGIN`                       | No     | `https://portal.sscdigitalbank.com`                    |
+| `CREGIS_DIRECT_ACCOUNTING_ENABLED` | No     | Keep `false` until the reviewed direct-accounting gate |
+| `CORE_ACCOUNTING_SHARED_SECRET`    | Yes    | Same dedicated value configured on the Go service      |
 
 ## Required web Worker bindings
 
@@ -167,7 +172,7 @@ credential-version checks.
 `CREGIS_RELAY_URL` affects only the Cregis client. Do not configure a global
 `HTTP_PROXY` or `HTTPS_PROXY`.
 The relay accepts only the Cregis address-create, address-ownership,
-address-legality, transaction-query, and sub-address-withdrawal
+address-legality, transaction-query, payout-query, and wallet-payout
 paths, authenticates the complete request body, rejects replayed nonces, and
 pins its upstream to the configured Cregis test gateway.
 
@@ -181,6 +186,16 @@ Release this path in dependency order: update the relay allowlist, apply reviewe
 PostgreSQL migration `0009_deposit_source_address.sql` through the backup and
 approval gate, release the Go service, then release the web Worker. Only after
 those checks may an operator re-push an existing Cregis callback.
+
+For a final payout callback, the Go service also queries
+`POST /api/v1/payout/query` through the authenticated relay. The provider order
+must exactly match the signed callback and immutable PostgreSQL withdrawal for
+CID, business reference, chain, token, destination, net amount, currency,
+status, and transaction hash. A query failure asks Cregis to retry. A durable
+mismatch is acknowledged, recorded as `exception`, and leaves the Core freeze
+unchanged for manual review. Deploy the relay allowlist change before the Go
+callback code; otherwise the safe result is repeated callback retry with no
+ledger movement.
 
 `GET /api/v1/admin/market-rate?base=USD&quote=HKD` and the customer-session
 equivalent `GET /api/v1/customer/market-rate` read FastForex midpoint spot
@@ -235,11 +250,12 @@ Keep retry notifications enabled in Cregis.
 
 For a completed deposit, "accepted" means that the verified custody row and its
 `cregis_deposit_accounting` intent committed in the same PostgreSQL transaction.
-It does not yet mean that customer funds are available. The dedicated
-`neobank-financial-accounting-worker` posts the Core Operation, CryptoTransfer,
-balanced JournalEntry, and USDT materialized balances atomically. Customer and
-Admin history report `processing` until that Core transaction changes the intent
-to `posted`; wallet balances count only posted intents. Follow
+It does not yet mean that customer funds are available. When direct accounting is
+enabled, Go synchronously invokes the dedicated authenticated Core endpoint. Core
+posts the Operation, CryptoTransfer, balanced JournalEntry, and USDT materialized
+balances atomically. Customer and Admin history report `processing` until that Core
+transaction changes the intent to `posted`; wallet balances count only posted
+intents. Follow
 [`CREGIS_DEPOSIT_ACCOUNTING.md`](./CREGIS_DEPOSIT_ACCOUNTING.md) for migration,
 reconciliation, and acceptance gates.
 
@@ -284,8 +300,9 @@ and acceptance gates.
 `WITHDRAWAL_ACCOUNTING_ENABLED` is `false` by default. Approval requires a completed
 Core reservation, execution requires the Core approval hand-off, and a signed Cregis
 callback changes only the custody result plus a durable `pending_settlement` or
-`pending_release` request. The financial worker then atomically consumes or releases
-both Core balances and updates the linked records. See
+`pending_release` request. With `CREGIS_DIRECT_ACCOUNTING_ENABLED=true`, Go
+synchronously asks Core to consume or release both balances and update the linked
+records. The old accounting worker remains paused during the staged migration. See
 [`CREGIS_WITHDRAWAL_ACCOUNTING.md`](./CREGIS_WITHDRAWAL_ACCOUNTING.md) for release,
 historical reconciliation, and acceptance gates.
 

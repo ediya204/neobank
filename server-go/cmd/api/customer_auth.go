@@ -1178,7 +1178,8 @@ func (app *application) listCustomerHistory(w http.ResponseWriter, r *http.Reque
 	CASE
 	  WHEN a.withdrawal_id IS NULL THEN 'exception'
 	  WHEN a.status='settled' THEN 'completed'
-	  WHEN a.status='released' THEN x.status
+	  WHEN a.status='released' AND x.status='rejected' THEN 'rejected'
+	  WHEN a.status='released' AND x.status IN ('failed', 'cancelled') THEN 'failed'
 	  WHEN a.status='exception' THEN 'exception'
 	  ELSE 'processing'
 	END AS status,
@@ -1223,7 +1224,10 @@ func (app *application) customerWalletBalances(r *http.Request, walletID, custom
 	}
 	available, availableErr := strconv.ParseInt(text(rows[0]["available_minor"]), 10, 64)
 	frozen, frozenErr := strconv.ParseInt(text(rows[0]["frozen_minor"]), 10, 64)
-	if availableErr != nil || frozenErr != nil || available < 0 || frozen < 0 {
+	mirrorAvailable, mirrorAvailableErr := strconv.ParseInt(text(rows[0]["mirror_available_minor"]), 10, 64)
+	mirrorFrozen, mirrorFrozenErr := strconv.ParseInt(text(rows[0]["mirror_frozen_minor"]), 10, 64)
+	if availableErr != nil || frozenErr != nil || mirrorAvailableErr != nil || mirrorFrozenErr != nil ||
+		available < 0 || frozen < 0 || available != mirrorAvailable || frozen != mirrorFrozen {
 		return "", "", errors.New("invalid stored wallet balance")
 	}
 	return formatUSDTMicroUnits(available), formatUSDTMicroUnits(frozen), nil

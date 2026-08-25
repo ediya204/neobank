@@ -13,6 +13,7 @@ import { LedgerModule } from './ledger/ledger.module';
 import { EmailModule } from './email/email.module';
 import { WithdrawalFeesModule } from './withdrawal-fees/withdrawal-fees.module';
 import { UsdtInboundModule } from './usdt-inbound/usdt-inbound.module';
+import { CregisAccountingModule } from './deposit-accounting/cregis-accounting.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { UsdtInboundModule } from './usdt-inbound/usdt-inbound.module';
     OperationsModule,
     WithdrawalFeesModule,
     UsdtInboundModule,
+    CregisAccountingModule,
   ],
   controllers: [HealthController],
 })

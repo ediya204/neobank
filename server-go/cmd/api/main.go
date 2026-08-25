@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ediya204/neobank/server-go/internal/coreaccounting"
 	"github.com/ediya204/neobank/server-go/internal/cregis"
 	"github.com/ediya204/neobank/server-go/internal/d1"
 	"github.com/ediya204/neobank/server-go/internal/fastforex"
@@ -28,6 +29,8 @@ type application struct {
 	db                          databaseClient
 	cregis                      cregisClient
 	cregisLive                  bool
+	coreAccounting              coreAccountingClient
+	directAccounting            bool
 	edgeSecret                  []byte
 	customerPasswordPepper      []byte
 	customerPasswordResetSecret []byte
@@ -54,8 +57,14 @@ type application struct {
 type cregisClient interface {
 	Call(context.Context, string, map[string]any) (*cregis.Response, error)
 	DepositTrade(context.Context, int64, string, string, string) (cregis.Trade, error)
+	PayoutOrder(context.Context, int64) (cregis.PayoutOrder, error)
 	ProjectID() int64
 	Verify(map[string]any) bool
+}
+
+type coreAccountingClient interface {
+	PostDeposit(context.Context, string) (coreaccounting.Result, error)
+	AdvanceWithdrawal(context.Context, string, string) (coreaccounting.Result, error)
 }
 
 type databaseClient interface {
@@ -186,6 +195,18 @@ func main() {
 		logger.Error("invalid withdrawal accounting configuration", "error", "PostgreSQL migration 0011_cregis_withdrawal_accounting is required")
 		os.Exit(1)
 	}
+	directAccounting := strings.EqualFold(os.Getenv("CREGIS_DIRECT_ACCOUNTING_ENABLED"), "true")
+	var coreAccountingClient *coreaccounting.Client
+	if directAccounting {
+		coreAccountingClient, err = coreaccounting.New(coreaccounting.Config{
+			BaseURL: os.Getenv("CORE_ACCOUNTING_URL"),
+			Secret:  os.Getenv("CORE_ACCOUNTING_SHARED_SECRET"),
+		})
+		if err != nil {
+			logger.Error("invalid Core accounting configuration", "error", err)
+			os.Exit(1)
+		}
+	}
 	sumsubEnvironment := strings.ToLower(strings.TrimSpace(envOr("SUMSUB_MODE", "sandbox")))
 	if sumsubEnvironment != "sandbox" && sumsubEnvironment != "production" {
 		logger.Error("invalid Sumsub configuration", "error", "SUMSUB_MODE must be sandbox or production")
@@ -212,6 +233,7 @@ func main() {
 	}
 	app := &application{
 		db: db, cregis: cregisClient, cregisLive: cregisLive, edgeSecret: []byte(edgeSecret),
+		coreAccounting: coreAccountingClient, directAccounting: directAccounting,
 		customerPasswordPepper: passwordPepper, customerPasswordResetSecret: passwordResetSecret,
 		customerTOTPKey: totpKey, customerRecoveryPepper: recoveryPepper, emailNotifications: emailNotifications,
 		adminPasswordPepper: adminPasswordPepper, adminTOTPKey: adminTOTPKey, adminBootstrapSecret: adminBootstrapSecret,
@@ -283,8 +305,9 @@ func (app *application) health(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "ok", "service": "neobank-go-api", "database": app.databaseBackend,
-		"cregis": map[bool]string{true: "enabled", false: "disabled"}[app.cregisLive],
-		"sumsub": map[bool]string{true: "enabled", false: "disabled"}[app.sumsub != nil],
+		"cregis":            map[bool]string{true: "enabled", false: "disabled"}[app.cregisLive],
+		"direct_accounting": map[bool]string{true: "enabled", false: "disabled"}[app.directAccounting],
+		"sumsub":            map[bool]string{true: "enabled", false: "disabled"}[app.sumsub != nil],
 	})
 }
 

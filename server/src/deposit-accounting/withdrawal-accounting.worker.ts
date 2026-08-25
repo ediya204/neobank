@@ -31,6 +31,10 @@ type WithdrawalRow = {
   core_operation_id: string | null;
   core_transfer_id: string | null;
   withdrawal_status: string;
+  cregis_cid: string | null;
+  callback_rejected: boolean;
+  callback_failed: boolean;
+  callback_completed: boolean;
   currency: string;
   amount_text: string;
   amount_minor: bigint | number | string;
@@ -59,6 +63,14 @@ type WithdrawalRow = {
 };
 
 type AccountingError = Error & { code?: string; retryable?: boolean };
+
+export type DirectWithdrawalAccountingAction = 'reserve' | 'approve' | 'release' | 'settle';
+
+export type DirectWithdrawalAccountingResult = {
+  status: 'pending' | 'reserved' | 'approved' | 'released' | 'settled' | 'exception';
+  retryable: boolean;
+  idempotent: boolean;
+};
 
 function accountingError(code: string, retryable: boolean): AccountingError {
   return Object.assign(new Error(code), { code, retryable });
@@ -132,6 +144,46 @@ export class WithdrawalAccountingWorker {
         })
       );
     }
+  }
+
+  async processDirect(
+    withdrawalId: string,
+    action: DirectWithdrawalAccountingAction
+  ): Promise<DirectWithdrawalAccountingResult> {
+    const states = {
+      reserve: ['pending_reservation', 'reserving', 'reserved'],
+      approve: ['pending_approval', 'approving', 'approved'],
+      release: ['pending_release', 'releasing', 'released'],
+      settle: ['pending_settlement', 'settling', 'settled'],
+    } as const;
+    const [pending, processing, completed] = states[action];
+    const staleBefore = new Date(Date.now() - STALE_LOCK_MS);
+    const claimed = await this.db.$executeRaw`
+      UPDATE cregis_withdrawal_accounting
+      SET status=${processing}, locked_at=NOW(), updated_at=NOW()
+      WHERE withdrawal_id=${withdrawalId} AND tenant_id=${this.tenantId()}
+        AND (
+          (status=${pending} AND next_attempt_at <= NOW())
+          OR (status=${processing} AND locked_at < ${staleBefore})
+        )
+    `;
+    if (claimed === 1) await this.processWithdrawal(withdrawalId, processing);
+    const rows = await this.db.$queryRaw<Array<{ status: string }>>`
+      SELECT status FROM cregis_withdrawal_accounting
+      WHERE withdrawal_id=${withdrawalId} AND tenant_id=${this.tenantId()}
+    `;
+    if (rows.length !== 1) throw accountingError('withdrawal_direct_state_conflict', false);
+    const current = rows[0].status;
+    if (current === completed) {
+      return { status: completed, retryable: false, idempotent: claimed === 0 };
+    }
+    if (current === 'exception') {
+      return { status: 'exception', retryable: false, idempotent: false };
+    }
+    if (current === pending || current === processing) {
+      return { status: 'pending', retryable: true, idempotent: false };
+    }
+    throw accountingError('withdrawal_direct_state_conflict', false);
   }
 
   private async claimBatch() {
@@ -414,6 +466,7 @@ export class WithdrawalAccountingWorker {
       async (tx) => {
         const row = await this.load(tx, withdrawalId, 'releasing');
         this.validateCustody(row, ['rejected', 'failed', 'cancelled'], false);
+        this.validateFinalCallbackEvidence(row, 'release');
         if (!row.core_operation_id && !row.core_transfer_id) {
           const changed = await tx.$executeRaw`
             UPDATE cregis_withdrawal_accounting
@@ -511,6 +564,7 @@ export class WithdrawalAccountingWorker {
       async (tx) => {
         const row = await this.load(tx, withdrawalId, 'settling');
         this.validateCustody(row, ['completed'], false);
+        this.validateFinalCallbackEvidence(row, 'settle');
         if (!row.core_operation_id || !row.core_transfer_id || !row.operator_id) {
           throw accountingError('withdrawal_settlement_link_missing', false);
         }
@@ -645,6 +699,22 @@ export class WithdrawalAccountingWorker {
         a.core_operation_id,
         a.core_transfer_id,
         x.status AS withdrawal_status,
+        x.cregis_cid,
+        EXISTS (
+          SELECT 1 FROM cregis_callback_events callback
+          WHERE callback.event_type='payout' AND callback.cregis_cid=x.cregis_cid
+            AND callback.status IN ('2', '4')
+        ) AS callback_rejected,
+        EXISTS (
+          SELECT 1 FROM cregis_callback_events callback
+          WHERE callback.event_type='payout' AND callback.cregis_cid=x.cregis_cid
+            AND callback.status='7'
+        ) AS callback_failed,
+        EXISTS (
+          SELECT 1 FROM cregis_callback_events callback
+          WHERE callback.event_type='payout' AND callback.cregis_cid=x.cregis_cid
+            AND callback.status='6'
+        ) AS callback_completed,
         x.currency,
         x.amount_text,
         x.amount_minor,
@@ -746,6 +816,30 @@ export class WithdrawalAccountingWorker {
       return { total, fee, net };
     } catch {
       throw accountingError('withdrawal_amount_invalid', false);
+    }
+  }
+
+  private validateFinalCallbackEvidence(
+    row: WithdrawalRow,
+    action: 'release' | 'settle'
+  ) {
+    if (!row.cregis_cid) {
+      if (action === 'settle') {
+        throw accountingError('withdrawal_final_callback_missing', false);
+      }
+      return;
+    }
+    if (action === 'settle') {
+      if (!row.callback_completed || row.callback_rejected || row.callback_failed) {
+        throw accountingError('withdrawal_final_callback_conflict', false);
+      }
+      return;
+    }
+    if (
+      row.callback_completed ||
+      row.callback_rejected === row.callback_failed
+    ) {
+      throw accountingError('withdrawal_final_callback_conflict', false);
     }
   }
 

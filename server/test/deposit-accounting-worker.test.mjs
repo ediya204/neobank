@@ -216,3 +216,35 @@ test('cross-tenant accounting intent never enters the Core transaction', async (
   assert.equal(transactionCalls, 0);
   assert.equal(observed.failures.length, 1);
 });
+
+test('direct duplicate delivery returns the already-posted result without another transaction', async () => {
+  let transactionCalls = 0;
+  const db = {
+    $executeRaw: async () => 0,
+    $queryRaw: async () => [{ status: 'posted' }],
+    $transaction: async () => {
+      transactionCalls += 1;
+      throw new Error('posted accounting must not run again');
+    },
+  };
+  const result = await new DepositAccountingWorker(db).processDirect(deposit.deposit_id);
+  assert.deepEqual(result, { status: 'posted', retryable: false, idempotent: true });
+  assert.equal(transactionCalls, 0);
+});
+
+test('direct deposit delivery carries a stale-lock boundary for crash recovery', async () => {
+  let claimValues = [];
+  const db = {
+    $executeRaw: async (strings, ...values) => {
+      claimValues = values;
+      return 0;
+    },
+    $queryRaw: async () => [{ status: 'processing' }],
+  };
+  const result = await new DepositAccountingWorker(db).processDirect(deposit.deposit_id);
+  assert.equal(result.retryable, true);
+  assert.equal(
+    claimValues.some((value) => value instanceof Date),
+    true
+  );
+});

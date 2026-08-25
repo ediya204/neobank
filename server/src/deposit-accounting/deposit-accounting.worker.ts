@@ -39,6 +39,12 @@ type DepositRow = {
 
 type AccountingError = Error & { code?: string; retryable?: boolean };
 
+export type DirectDepositAccountingResult = {
+  status: 'pending' | 'processing' | 'posted' | 'exception';
+  retryable: boolean;
+  idempotent: boolean;
+};
+
 function accountingError(code: string, retryable: boolean): AccountingError {
   return Object.assign(new Error(code), { code, retryable });
 }
@@ -97,6 +103,36 @@ export class DepositAccountingWorker {
         })
       );
     }
+  }
+
+  async processDirect(depositId: string): Promise<DirectDepositAccountingResult> {
+    const staleBefore = new Date(Date.now() - STALE_LOCK_MS);
+    const claimed = await this.db.$executeRaw`
+      UPDATE cregis_deposit_accounting
+      SET status='processing', locked_at=NOW(), updated_at=NOW()
+      WHERE deposit_id=${depositId} AND tenant_id=${this.tenantId()}
+        AND (
+          (status='pending' AND next_attempt_at <= NOW())
+          OR (status='processing' AND locked_at < ${staleBefore})
+        )
+    `;
+    if (claimed === 1) await this.processDeposit(depositId);
+    const rows = await this.db.$queryRaw<Array<{ status: string }>>`
+      SELECT status FROM cregis_deposit_accounting
+      WHERE deposit_id=${depositId} AND tenant_id=${this.tenantId()}
+    `;
+    if (
+      rows.length !== 1 ||
+      !['pending', 'processing', 'posted', 'exception'].includes(rows[0].status)
+    ) {
+      throw accountingError('deposit_direct_state_conflict', false);
+    }
+    const status = rows[0].status as DirectDepositAccountingResult['status'];
+    return {
+      status,
+      retryable: status === 'pending' || status === 'processing',
+      idempotent: claimed === 0 && status === 'posted',
+    };
   }
 
   private async claimBatch() {
