@@ -324,6 +324,16 @@ assert.match(worker, /if \(method !== 'GET'\) return false/);
 assert.match(worker, /api\/core\/accounts\/summary/);
 assert.match(worker, /api\/core\/operations/);
 assert.match(worker, /api\/core\/operations\/quote/);
+assert.match(
+  worker,
+  /method === 'POST' && url\.pathname === '\/api\/core\/operations'/
+);
+assert.match(worker, /isCustomerFXSubmission/);
+assert.match(
+  worker,
+  /isCustomerFXSubmission && \(operation\.type !== 'FX' \|\| operation\.customerId !== userId\)/
+);
+assert.match(worker, /customer_fx_scope_mismatch/);
 assert.match(worker, /quote_not_confirmable|operations.*confirm/s);
 assert.match(worker, /api\/core\/crypto-wallets\/transfers/);
 assert.match(worker, /redactCustomerCorePayload/);

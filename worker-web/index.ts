@@ -396,6 +396,9 @@ function customerCoreRouteAllowed(
   if (method === 'POST' && url.pathname === '/api/core/operations/quote') {
     return hasOnlySearchParams(url, new Set());
   }
+  if (method === 'POST' && url.pathname === '/api/core/operations') {
+    return hasOnlySearchParams(url, new Set());
+  }
   if (method === 'POST' && /^\/api\/core\/operations\/[^/]+\/confirm$/.test(url.pathname)) {
     return hasOnlySearchParams(url, new Set());
   }
@@ -627,7 +630,11 @@ async function proxyCoreAPI(
     role === 'customer' &&
     request.method === 'POST' &&
     incoming.pathname === '/api/core/operations/quote';
-  if (isAdminConversionSubmission || isCustomerQuoteRequest) {
+  const isCustomerFXSubmission =
+    role === 'customer' &&
+    request.method === 'POST' &&
+    incoming.pathname === '/api/core/operations';
+  if (isAdminConversionSubmission || isCustomerQuoteRequest || isCustomerFXSubmission) {
     let operation: Record<string, unknown>;
     try {
       operation = JSON.parse(new TextDecoder().decode(body)) as Record<string, unknown>;
@@ -636,6 +643,9 @@ async function proxyCoreAPI(
     }
     if (isCustomerQuoteRequest && (operation.type !== 'OTC' || operation.customerId !== userId)) {
       return json({ error: { code: 'customer_quote_scope_mismatch' } }, 403);
+    }
+    if (isCustomerFXSubmission && (operation.type !== 'FX' || operation.customerId !== userId)) {
+      return json({ error: { code: 'customer_fx_scope_mismatch' } }, 403);
     }
     if (operation.type === 'FX' || operation.type === 'OTC') {
       if (typeof operation.currency !== 'string' || typeof operation.quoteCurrency !== 'string') {
