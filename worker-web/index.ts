@@ -199,7 +199,6 @@ type ApplicationSessionPayload = {
     role?: unknown;
     access_role?: unknown;
     permissions?: unknown;
-    totp_enabled?: unknown;
   };
 };
 
@@ -559,14 +558,6 @@ async function proxyCoreAPI(
     ) {
       return json({ error: { code: 'admin_permission_required' } }, 403);
     }
-  }
-  if (
-    role === 'customer' &&
-    request.method === 'POST' &&
-    /^\/api\/core\/operations\/[^/]+\/confirm$/.test(incoming.pathname) &&
-    session?.user?.totp_enabled !== true
-  ) {
-    return json({ error: { code: 'customer_totp_required' } }, 403);
   }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
     const expected = typeof session?.csrf_token === 'string' ? session.csrf_token : '';
