@@ -42,7 +42,7 @@ output, database exports, production data, and `.learnings` must not be committe
 - USD/HKD system wallets, virtual accounts, and USDT-TRON wallets.
 - Explicit pending, cleared, exception, submitted, completed, and cancelled
   financial states with balanced Core accounting.
-- Customer-confirmed five-second OTC quotes and Admin-controlled external payout
+- Customer-confirmed fifteen-second OTC quotes and Admin-controlled external payout
   execution.
 - Cregis callback verification and exactly-once accounting intent processing.
 - Admin KYC, customer/account management, funding channels, fees, operations,

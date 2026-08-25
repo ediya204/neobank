@@ -221,7 +221,7 @@ ignores browser quote fields, fetches FastForex again, and injects the authentic
 Core then resolves the active fee policy, computes
 `customerRate = marketRate * (1 - feeBps / 10000)`, and stores the provider
 midpoint, fee, final rate, quote amount, and timestamps on the operation before
-funds are reserved. An OTC quote remains `DRAFT` and non-reserving for five seconds;
+funds are reserved. An OTC quote remains `DRAFT` and non-reserving for fifteen seconds;
 the authenticated customer confirmation atomically posts that immutable snapshot and
 completes without approval. An expired quote cannot reserve or move funds. This keeps
 the displayed price dynamic while preserving an auditable point-in-time transaction price.

@@ -15,7 +15,7 @@ proof of live state; inspect the repository and deployments again.
   Portal routes always require the `customer` role.
 - KYC approval is the final account-opening gate, but never approves or settles a
   withdrawal.
-- Customer OTC requires a fresh server quote and explicit confirmation within five
+- Customer OTC requires a fresh server quote and explicit confirmation within fifteen
   seconds. Expiry moves no money.
 - Cregis custody state is not the accounting authority. Core journal posting is
   authoritative, idempotent, and auditable.

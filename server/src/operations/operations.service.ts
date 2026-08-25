@@ -62,7 +62,7 @@ type CustomerQuoteActor = {
   email?: string;
 };
 
-const QUOTE_CONFIRM_WINDOW_MS = 5_000;
+const QUOTE_CONFIRM_WINDOW_MS = 15_000;
 
 const operationInclude = {
   customer: true,

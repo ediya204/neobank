@@ -48,7 +48,7 @@ that the assumption no longer applies.
 - `WITHDRAWAL_ACCOUNTING_ENABLED` is fail-closed and PostgreSQL migration
   `0011_cregis_withdrawal_accounting` never enqueues historical withdrawals. Customer
   OTC now uses the Core state machine and balanced journal: the first request creates
-  a non-reserving `DRAFT` quote for five seconds, and authenticated confirmation
+  a non-reserving `DRAFT` quote for fifteen seconds, and authenticated confirmation
   atomically completes the conversion without administrator approval. Direct OTC
   operation creation remains blocked so clients cannot bypass confirmation.
 - Automatic and customer-confirmed conversion records remain visible and auditable.
@@ -73,7 +73,7 @@ that the assumption no longer applies.
   fee on every display and refreshed again when the server creates a transaction
   quote. The operation stores the provider midpoint, fee, final rate, amount, and
   timestamps. OTC posts that immutable snapshot only when the customer confirms
-  within five seconds; expiration never reserves or moves funds. A rate version's
+  within fifteen seconds; expiration never reserves or moves funds. A rate version's
   creation-time midpoint is audit evidence only and must never become the runtime
   pricing baseline.
 - USD portfolio valuations use current FastForex quotes for every non-USD asset,

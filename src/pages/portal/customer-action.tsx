@@ -566,7 +566,7 @@ export default function CustomerActionPage({
     submissionInfoText = portalText('当前仅提供账户与报价查询，不会创建或执行资金交易。');
   } else if (action === 'otc') {
     submissionInfoText = portalText(
-      '成交报价有效期为 5 秒。确认后将立即完成兑换并更新余额，交易不可撤销。'
+      '成交报价有效期为 15 秒。确认后将立即完成兑换并更新余额，交易不可撤销。'
     );
   }
   let quoteConfirmButtonText = portalText('报价已失效');
@@ -1076,7 +1076,7 @@ export default function CustomerActionPage({
                     {!submissionDisabledReason &&
                       !submitting &&
                       action === 'otc' &&
-                      portalText('获取 5 秒确认报价')}
+                      portalText('获取 15 秒确认报价')}
                     {!submissionDisabledReason &&
                       !submitting &&
                       action === 'payout' &&

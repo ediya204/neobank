@@ -65,7 +65,8 @@ const quote = await request('/operations/quote', 'usr_admin', {
   }),
 });
 assert(quote.status === 'DRAFT', 'OTC quote is draft before customer confirmation');
-assert(Date.parse(quote.quoteExpiresAt) > Date.now(), 'OTC quote has a live five-second deadline');
+assert(quote.quoteConfirmWindowMs === 15_000, 'OTC quote has a fifteen-second confirmation window');
+assert(Date.parse(quote.quoteExpiresAt) > Date.now(), 'OTC quote has a live deadline');
 
 const detailQuoted = await request(`/customers/${customerId}`, 'usr_admin');
 const quotedSource = detailQuoted.accounts.find((row) => row.id === source.id);
@@ -133,7 +134,9 @@ const expiringQuote = await request('/operations/quote', 'usr_admin', {
   }),
 });
 const balanceBeforeExpiry = await request(`/customers/${customerId}`, 'usr_admin');
-await new Promise((resolve) => setTimeout(resolve, 5_100));
+await new Promise((resolve) =>
+  setTimeout(resolve, Math.max(0, Date.parse(expiringQuote.quoteExpiresAt) - Date.now()) + 100)
+);
 const expiredResponse = await fetch(`${baseUrl}/operations/${expiringQuote.id}/confirm`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', 'x-user-id': 'usr_admin', ...customerHeaders },
@@ -142,7 +145,7 @@ const expiredResponse = await fetch(`${baseUrl}/operations/${expiringQuote.id}/c
 const expiredBody = await expiredResponse.json().catch(() => null);
 assert(
   expiredResponse.status === 409 && expiredBody?.message === 'quote_expired',
-  'OTC confirmation is rejected after the five-second deadline'
+  'OTC confirmation is rejected after the fifteen-second deadline'
 );
 const balanceAfterExpiry = await request(`/customers/${customerId}`, 'usr_admin');
 for (const accountId of [source.id, target.id]) {

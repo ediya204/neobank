@@ -63,7 +63,7 @@ test('OTC bypass creation and approval stay closed in favor of quote confirmatio
   await assert.rejects(service.approve('legacy_otc', maker.id), /otc_does_not_require_approval/);
 });
 
-test('customer OTC quote stays draft for five seconds without reserving funds', async () => {
+test('customer OTC quote stays draft for fifteen seconds without reserving funds', async () => {
   const source = {
     id: 'source_usd',
     customerId: customer.id,
@@ -140,11 +140,12 @@ test('customer OTC quote stays draft for five seconds without reserving funds', 
   assert.equal(createdData.rate.toString(), '0.998998');
   assert.equal(createdData.quoteAmount.toString(), '99.8998');
   assert.equal(balanceWrites, 0);
-  assert.ok(expiresAt >= before + 4_900 && expiresAt <= Date.now() + 5_100);
+  assert.equal(quote.quoteConfirmWindowMs, 15_000);
+  assert.ok(expiresAt >= before + 14_900 && expiresAt <= Date.now() + 15_100);
 });
 
 test('OTC quote confirmation posts only Core ledger balances without approval or custody transfer', async () => {
-  const expiresAt = new Date(Date.now() + 5_000).toISOString();
+  const expiresAt = new Date(Date.now() + 15_000).toISOString();
   const operation = {
     id: 'quote_confirm_test',
     reference: 'OP-QUOTE',
