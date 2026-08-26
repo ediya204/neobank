@@ -107,6 +107,18 @@ func TestSingleAdministratorWithdrawalStateTransitions(t *testing.T) {
 	}
 }
 
+func TestAdminWithdrawalHistoryKeepsReservedSubmissionApprovable(t *testing.T) {
+	for _, required := range []string{
+		"WHEN a.status='reserved' AND x.status='submitted' THEN 'submitted'",
+		"WHEN a.status='settled' THEN 'completed'",
+		"ELSE 'processing'",
+	} {
+		if !strings.Contains(adminWithdrawalHistoryStatusSQL, required) {
+			t.Fatalf("admin withdrawal history status SQL must contain %q: %s", required, adminWithdrawalHistoryStatusSQL)
+		}
+	}
+}
+
 func TestDepositWalletActivationRequiresCregisOwnershipEvidence(t *testing.T) {
 	for _, required := range []string{
 		"custody_provider='cregis'",

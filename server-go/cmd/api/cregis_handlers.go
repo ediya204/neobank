@@ -42,10 +42,26 @@ func (err *walletProvisionError) Error() string {
 }
 
 const (
-	usdtTRC20ChainID  = "195"
-	usdtTRC20TokenID  = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
-	usdtTRC20Currency = usdtTRC20ChainID + "@" + usdtTRC20TokenID
-	cregisPayoutPath  = "/api/v2/payout"
+	usdtTRC20ChainID                = "195"
+	usdtTRC20TokenID                = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+	usdtTRC20Currency               = usdtTRC20ChainID + "@" + usdtTRC20TokenID
+	cregisPayoutPath                = "/api/v2/payout"
+	adminWithdrawalHistoryStatusSQL = `CASE
+	  WHEN a.withdrawal_id IS NULL AND EXISTS (
+	    SELECT 1 FROM cregis_callback_events e
+	    WHERE e.event_type='payout' AND e.cregis_cid=x.cregis_cid AND e.status IN ('2', '4')
+	  ) THEN 'rejected'
+	  WHEN a.withdrawal_id IS NULL AND core_operation.id IS NULL
+	    AND x.status IN ('failed', 'rejected', 'cancelled')
+	    AND x.cregis_cid IS NULL AND x.txid IS NULL THEN x.status
+	  WHEN a.withdrawal_id IS NULL THEN 'exception'
+	  WHEN a.status='reserved' AND x.status='submitted' THEN 'submitted'
+	  WHEN a.status='settled' THEN 'completed'
+	  WHEN a.status='released' AND x.status='rejected' THEN 'rejected'
+	  WHEN a.status='released' AND x.status IN ('failed', 'cancelled') THEN 'failed'
+	  WHEN a.status='exception' THEN 'exception'
+	  ELSE 'processing'
+	END`
 
 	approveWithdrawalSQL = `WITH accounting AS (
 	    SELECT withdrawal_id FROM cregis_withdrawal_accounting
@@ -886,21 +902,7 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 	'withdrawal' AS direction, x.currency, x.amount_text AS amount,
     x.fee_amount_text AS fee_amount, x.net_amount_text AS net_amount,
 	CAST(x.fee_rule_version AS TEXT) AS fee_rule_version,
-	CASE
-	  WHEN a.withdrawal_id IS NULL AND EXISTS (
-	    SELECT 1 FROM cregis_callback_events e
-	    WHERE e.event_type='payout' AND e.cregis_cid=x.cregis_cid AND e.status IN ('2', '4')
-	  ) THEN 'rejected'
-	  WHEN a.withdrawal_id IS NULL AND core_operation.id IS NULL
-	    AND x.status IN ('failed', 'rejected', 'cancelled')
-	    AND x.cregis_cid IS NULL AND x.txid IS NULL THEN x.status
-	  WHEN a.withdrawal_id IS NULL THEN 'exception'
-	  WHEN a.status='settled' THEN 'completed'
-	  WHEN a.status='released' AND x.status='rejected' THEN 'rejected'
-	  WHEN a.status='released' AND x.status IN ('failed', 'cancelled') THEN 'failed'
-	  WHEN a.status='exception' THEN 'exception'
-	  ELSE 'processing'
-	END AS status,
+	`+adminWithdrawalHistoryStatusSQL+` AS status,
 	x.status AS custody_status, COALESCE(a.status, 'not_accounted') AS accounting_status,
 	CASE
 	  WHEN a.status IN ('pending_reservation', 'reserving') THEN 'reservation_pending'
