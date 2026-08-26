@@ -1326,14 +1326,29 @@ func (app *application) verifyPayoutOrder(ctx context.Context, payload map[strin
 	callbackCurrency := text(payload["currency"])
 	callbackFromAddress := text(payload["from_address"])
 	callbackTXID := strings.ToLower(text(payload["txid"]))
+	orderAddress := order.Address
+	if orderAddress == "" {
+		orderAddress = order.ToAddress
+	} else if order.ToAddress != "" && order.ToAddress != orderAddress {
+		return text(row["id"]), false, nil
+	}
 	orderTXID := strings.ToLower(order.TXID)
 	exact := callbackStatusErr == nil && orderAmountOK && orderAmountMinor == callbackAmountMinor &&
 		order.ThirdPartyID == thirdPartyID && order.ChainID == usdtTRC20ChainID &&
-		order.TokenID == usdtTRC20TokenID && callbackCurrency == "USDT" && order.Currency == callbackCurrency &&
-		order.Address == callbackAddress && order.Status == callbackStatus &&
+		order.TokenID == usdtTRC20TokenID && isUSDTTRC20Identifier(callbackCurrency) &&
+		isUSDTTRC20Identifier(order.Currency) && orderAddress == callbackAddress && order.Status == callbackStatus &&
 		(callbackFromAddress == "" || callbackFromAddress == order.FromAddress) &&
 		callbackTXID == orderTXID
 	return text(row["id"]), exact, nil
+}
+
+func isUSDTTRC20Identifier(value string) bool {
+	switch value {
+	case "USDT", "USDT-TRC20", usdtTRC20Currency:
+		return true
+	default:
+		return false
+	}
 }
 
 func (app *application) finishPayoutAccounting(w http.ResponseWriter, r *http.Request, withdrawalID, target, cregisCID string) bool {

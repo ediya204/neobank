@@ -60,6 +60,7 @@ type PayoutOrder struct {
 	Currency     string `json:"currency"`
 	FromAddress  string `json:"from_address"`
 	Address      string `json:"address"`
+	ToAddress    string `json:"to_address"`
 	Amount       string `json:"amount"`
 	Status       int    `json:"status"`
 	ThirdPartyID string `json:"third_party_id"`

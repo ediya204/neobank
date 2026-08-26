@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -248,6 +249,49 @@ func TestPayoutCallbackRetriesUnknownStateAndAcknowledgesDurableConflictEvidence
 				t.Fatalf("provider mismatch must be recorded and held: %#v", db.batches)
 			}
 		})
+	}
+}
+
+func TestUSDTTRC20IdentifierAliases(t *testing.T) {
+	for _, value := range []string{"USDT", "USDT-TRC20", usdtTRC20Currency} {
+		if !isUSDTTRC20Identifier(value) {
+			t.Fatalf("expected %q to be accepted", value)
+		}
+	}
+	for _, value := range []string{"", "TRX", "USDT-ERC20", "60@token"} {
+		if isUSDTTRC20Identifier(value) {
+			t.Fatalf("expected %q to be rejected", value)
+		}
+	}
+}
+
+func TestVerifyPayoutOrderAcceptsV2EquivalentFields(t *testing.T) {
+	const destination = "TFbXZoaXDCWq318W2HghRmrXktCvCzoX9K"
+	const thirdPartyID = "withdrawal-v2-test"
+	const cid = int64(1463535767997999)
+	const txid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	db := &callbackDatabase{rows: []map[string]any{{
+		"id": "withdrawal_test", "currency": usdtTRC20Currency,
+		"net_amount_text": "1.20", "to_address": destination, "cregis_cid": strconv.FormatInt(cid, 10),
+	}}}
+	app := &application{
+		db: db,
+		cregis: &callbackCregisClient{payout: cregis.PayoutOrder{
+			ChainID: usdtTRC20ChainID, TokenID: usdtTRC20TokenID, Currency: usdtTRC20Currency,
+			ToAddress: destination, Amount: "1.2", Status: 6, ThirdPartyID: thirdPartyID, TXID: txid,
+		}},
+		tenantID: "tenant_test",
+	}
+	payload := map[string]any{
+		"third_party_id": thirdPartyID, "amount": "1.20", "address": destination,
+		"currency": "USDT-TRC20", "status": 6, "txid": txid,
+	}
+	withdrawalID, exact, err := app.verifyPayoutOrder(context.Background(), payload, cid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withdrawalID != "withdrawal_test" || !exact {
+		t.Fatalf("withdrawalID=%q exact=%v; want v2-equivalent payout evidence accepted", withdrawalID, exact)
 	}
 }
 

@@ -53,6 +53,12 @@ the Core accounting state, not callback transport status.
 8. Amount, currency, destination, status, business reference, transaction hash, or
    conflicting terminal evidence mismatch enters exception and moves no money.
 
+For step 6 and step 7, Cregis' equivalent wallet-payout field forms are normalized
+before comparison: `address` and V2 `to_address`, plus `USDT`, `USDT-TRC20`, and the
+exact USDT-TRC20 `chain_id@token_id` identifier. This does not relax the chain, token,
+amount, destination value, CID, business reference, status, or transaction-hash
+checks.
+
 The SQL admission check that subtracts very short-lived `pending_reservation` rows is
 retained as a fail-closed concurrency guard across the Go-to-Core HTTP boundary. It
 does not post or freeze money; Core remains the only balance authority.

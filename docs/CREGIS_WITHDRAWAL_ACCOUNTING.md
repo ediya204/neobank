@@ -34,6 +34,11 @@ Before any release or settlement, Go queries `POST /api/v1/payout/query` by the 
 CID and compares the provider order with both the signed callback and the immutable
 PostgreSQL withdrawal. A mismatch is stored as callback evidence, moves the custody
 row to `exception`, returns literal `success`, and leaves the Core freeze unchanged.
+The comparison treats Cregis' documented wallet-payout aliases as equivalent only
+after the chain and token IDs match exactly: V2 `to_address` may replace legacy
+`address`, and USDT-TRC20 may be represented as `USDT`, `USDT-TRC20`, or its
+`chain_id@token_id` identifier. Amount, destination value, CID, business reference,
+status, and transaction hash must still match exactly.
 Core independently rejects release or settlement when stored payout callback families
 conflict. This extra check is deliberate even though Cregis documents final callback
 statuses `2`, `4`, `6`, and `7` as mutually exclusive and emitted only once.
