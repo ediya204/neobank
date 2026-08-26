@@ -314,7 +314,7 @@ func TestProviderQuerySettlementRequiresExactEvidenceAndSettlesCore(t *testing.T
 		cregis: &callbackCregisClient{payout: cregis.PayoutOrder{
 			ChainID: usdtTRC20ChainID, TokenID: usdtTRC20TokenID, Currency: "USDT-TRC20",
 			ToAddress: destination, Amount: "1.000000", Status: 6, ThirdPartyID: thirdPartyID,
-			TXID: txid, BlockHeight: "123456", BlockTime: 1_800_000_000_000,
+			TXID: txid, BlockHeight: "123456", BlockTime: cregis.ScalarText("1800000000000"),
 		}},
 		coreAccounting: core, directAccounting: true, tenantID: "tenant_test",
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),

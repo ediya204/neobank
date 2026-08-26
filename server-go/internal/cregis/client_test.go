@@ -197,6 +197,21 @@ func TestPayoutOrderDecodesV2DestinationAddress(t *testing.T) {
 	}
 }
 
+func TestPayoutOrderAcceptsStringAndNumericBlockTime(t *testing.T) {
+	for _, raw := range []string{
+		`{"block_time":"1800000000000"}`,
+		`{"block_time":1800000000000}`,
+	} {
+		var order PayoutOrder
+		if err := json.Unmarshal([]byte(raw), &order); err != nil {
+			t.Fatal(err)
+		}
+		if string(order.BlockTime) != "1800000000000" {
+			t.Fatalf("block_time=%q", order.BlockTime)
+		}
+	}
+}
+
 func TestNewRequiresAuthenticatedRelay(t *testing.T) {
 	base := Config{
 		BaseURL:   "https://t-wsmbuuhb.cregis.io",

@@ -55,18 +55,37 @@ type Trade struct {
 }
 
 type PayoutOrder struct {
-	ChainID      string `json:"chain_id"`
-	TokenID      string `json:"token_id"`
-	Currency     string `json:"currency"`
-	FromAddress  string `json:"from_address"`
-	Address      string `json:"address"`
-	ToAddress    string `json:"to_address"`
-	Amount       string `json:"amount"`
-	Status       int    `json:"status"`
-	ThirdPartyID string `json:"third_party_id"`
-	TXID         string `json:"txid"`
-	BlockHeight  string `json:"block_height"`
-	BlockTime    int64  `json:"block_time"`
+	ChainID      string     `json:"chain_id"`
+	TokenID      string     `json:"token_id"`
+	Currency     string     `json:"currency"`
+	FromAddress  string     `json:"from_address"`
+	Address      string     `json:"address"`
+	ToAddress    string     `json:"to_address"`
+	Amount       string     `json:"amount"`
+	Status       int        `json:"status"`
+	ThirdPartyID string     `json:"third_party_id"`
+	TXID         string     `json:"txid"`
+	BlockHeight  string     `json:"block_height"`
+	BlockTime    ScalarText `json:"block_time"`
+}
+
+type ScalarText string
+
+func (value *ScalarText) UnmarshalJSON(raw []byte) error {
+	var textValue string
+	if len(raw) > 0 && raw[0] == '"' {
+		if err := json.Unmarshal(raw, &textValue); err != nil {
+			return err
+		}
+		*value = ScalarText(textValue)
+		return nil
+	}
+	var numberValue json.Number
+	if err := json.Unmarshal(raw, &numberValue); err != nil {
+		return err
+	}
+	*value = ScalarText(numberValue.String())
+	return nil
 }
 
 func (r *Response) GetCode() string {

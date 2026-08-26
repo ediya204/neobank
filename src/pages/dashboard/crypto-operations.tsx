@@ -676,6 +676,11 @@ export default function CryptoOperationsAdmin() {
             此操作会查询 Cregis 原订单并严格核对 CID、链、Token、到账金额、地址、业务单号、状态和
             TxHash。全部一致后，Core 将消耗冻结资金并生成账务分录；不会再次发起链上转账。
           </Alert>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
           <TextField fullWidth label="Cregis CID" value={selected?.cregisCID || ''} disabled sx={{ mb: 2 }} />
           <TextField
             autoFocus

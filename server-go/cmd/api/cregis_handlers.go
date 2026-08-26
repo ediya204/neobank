@@ -707,12 +707,8 @@ func (app *application) settleCregisWithdrawalFromProvider(w http.ResponseWriter
 		return
 	}
 	if text(row["status"]) == "exception" && text(row["accounting_status"]) == "approved" {
-		var blockTime any
-		if order.BlockTime > 0 {
-			blockTime = strconv.FormatInt(order.BlockTime, 10)
-		}
 		results, updateErr := app.db.Batch(r.Context(), d1.Statement{SQL: reconcileWithdrawalCompletedSQL, Params: []any{
-			strings.ToLower(order.TXID), nullIfEmpty(order.BlockHeight), blockTime, now,
+			strings.ToLower(order.TXID), nullIfEmpty(order.BlockHeight), nullIfEmpty(string(order.BlockTime)), now,
 			note, actor, now, now, id, app.tenantID, cregisCID,
 		}})
 		if updateErr != nil {
