@@ -202,3 +202,24 @@ or post-release invariant checks.
 
 Any invariant failure remains `exception` and blocks further execution until an
 audited reconciliation is approved.
+
+## Successful callback already acknowledged
+
+If an older Go version returned literal `success` after storing a final status `6`
+callback as conflicting evidence, Cregis treats delivery as complete and may not
+offer a re-push action. Do not edit the custody or Core rows manually. The Admin
+provider-query settlement action is allowed only when all of the following hold:
+
+- the withdrawal is `exception`, its accounting state is `approved`, and both Core
+  reservation references still exist;
+- the same Cregis CID has stored signed status `6` callback evidence and no stored
+  `2`, `4`, or `7` callback evidence;
+- an authenticated `/api/v1/payout/query` result exactly matches the immutable
+  business reference, USDT-TRC20 chain and token, net amount, destination, status
+  `6`, and the operator-supplied 64-hex transaction hash;
+- the database transition first queues `pending_settlement`, after which Core
+  synchronously consumes the existing freeze and returns `settled`.
+
+This recovery never creates or resubmits a Cregis payout. It only recognizes a
+provider-confirmed transaction that is already on-chain. The operator note, identity,
+CID, and transaction hash remain auditable on the withdrawal and Core records.

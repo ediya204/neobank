@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ediya204/neobank/server-go/internal/cregis"
 	"github.com/ediya204/neobank/server-go/internal/d1"
 )
 
@@ -189,6 +190,31 @@ const (
               AND transfer."customerId"=cregis_withdrawals.customer_id
           )
       )`
+	reconcileWithdrawalCompletedSQL = `WITH completed AS (
+	  UPDATE cregis_withdrawals
+	  SET status='completed', txid=?, block_height=?, block_time=?, completed_at=COALESCE(completed_at, ?),
+	      reconciliation_note=?, reconciled_by=?, reconciled_at=?, updated_at=?
+	  WHERE id=? AND tenant_id=? AND status='exception' AND cregis_cid=?
+	    AND EXISTS (
+	      SELECT 1 FROM cregis_withdrawal_accounting a
+	      WHERE a.withdrawal_id=cregis_withdrawals.id
+	        AND a.tenant_id=cregis_withdrawals.tenant_id AND a.status='approved'
+	    )
+	    AND EXISTS (
+	      SELECT 1 FROM cregis_callback_events e
+	      WHERE e.event_type='payout' AND e.cregis_cid=cregis_withdrawals.cregis_cid AND e.status='6'
+	    )
+	    AND NOT EXISTS (
+	      SELECT 1 FROM cregis_callback_events e
+	      WHERE e.event_type='payout' AND e.cregis_cid=cregis_withdrawals.cregis_cid AND e.status IN ('2','4','7')
+	    )
+	  RETURNING id, tenant_id
+	)
+	UPDATE cregis_withdrawal_accounting a
+	SET status='pending_settlement', next_attempt_at=NOW(), locked_at=NULL, updated_at=NOW()
+	FROM completed
+	WHERE a.withdrawal_id=completed.id AND a.tenant_id=completed.tenant_id AND a.status='approved'
+	RETURNING a.withdrawal_id`
 	failWithdrawalForReleaseSQL = `WITH failed AS (
 	  UPDATE cregis_withdrawals SET status='failed', updated_at=?
 	  WHERE id=? AND tenant_id=? AND status='executing'
@@ -598,6 +624,7 @@ func (app *application) reconcileCregisWithdrawal(w http.ResponseWriter, r *http
 		Resolution string `json:"resolution"`
 		Note       string `json:"note"`
 		CregisCID  string `json:"cregis_cid"`
+		TXID       string `json:"txid"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
@@ -609,6 +636,10 @@ func (app *application) reconcileCregisWithdrawal(w http.ResponseWriter, r *http
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	actor := edgeUser(r)
+	if input.Resolution == "completed_from_provider" {
+		app.settleCregisWithdrawalFromProvider(w, r, id, strings.TrimSpace(input.CregisCID), strings.TrimSpace(input.TXID), note, actor, now)
+		return
+	}
 	if input.Resolution != "submitted_to_cregis" || !safeIdentifier.MatchString(input.CregisCID) {
 		validationError(w)
 		return
@@ -624,6 +655,101 @@ func (app *application) reconcileCregisWithdrawal(w http.ResponseWriter, r *http
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": input.Resolution, "reconciled_by": actor, "reconciled_at": now})
+}
+
+func (app *application) settleCregisWithdrawalFromProvider(w http.ResponseWriter, r *http.Request, id, cregisCID, expectedTXID, note, actor, now string) {
+	cid, err := strconv.ParseInt(cregisCID, 10, 64)
+	if err != nil || !tronTxID.MatchString(expectedTXID) {
+		validationError(w)
+		return
+	}
+	rows, err := app.db.Query(r.Context(), `SELECT x.id, x.third_party_id, x.currency, x.net_amount_text,
+		x.to_address, x.cregis_cid, x.status, a.status AS accounting_status
+		FROM cregis_withdrawals x
+		JOIN cregis_withdrawal_accounting a ON a.withdrawal_id=x.id AND a.tenant_id=x.tenant_id
+		JOIN "Operation" operation ON operation.id=a.core_operation_id AND operation."customerId"=x.customer_id
+		JOIN "CryptoTransfer" transfer ON transfer.id=a.core_transfer_id AND transfer."customerId"=x.customer_id
+		WHERE x.id=? AND x.tenant_id=? AND x.cregis_cid=?
+		  AND x.status IN ('exception','completed')
+		  AND a.status IN ('approved','pending_settlement','settling','settled')
+		  AND (
+		    operation.metadata->>'custodyWithdrawalId'=x.id
+		    OR operation.reference='CREGIS-WD-' || x.tenant_id || '-' || x.id
+		    OR operation."idempotencyKey"='cregis-withdrawal:' || x.tenant_id || ':' || x.id
+		  )
+		  AND EXISTS (
+		    SELECT 1 FROM cregis_callback_events e
+		    WHERE e.event_type='payout' AND e.cregis_cid=x.cregis_cid AND e.status='6'
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM cregis_callback_events e
+		    WHERE e.event_type='payout' AND e.cregis_cid=x.cregis_cid AND e.status IN ('2','4','7')
+		  )`, id, app.tenantID, cregisCID)
+	if err != nil {
+		databaseError(app, w, err)
+		return
+	}
+	if len(rows) != 1 {
+		conflict(w, "withdrawal_provider_settlement_not_reconcilable")
+		return
+	}
+	row := rows[0]
+	order, err := app.cregis.PayoutOrder(r.Context(), cid)
+	if err != nil {
+		app.logger.Error("query Cregis payout for reconciliation failed", "withdrawal_id", id, "cregis_cid", cregisCID, "error", err)
+		http.Error(w, "retry", http.StatusServiceUnavailable)
+		return
+	}
+	if !providerPayoutMatchesWithdrawal(order, row, expectedTXID) {
+		app.logger.Warn("Cregis payout reconciliation evidence mismatch", "withdrawal_id", id, "cregis_cid", cregisCID)
+		conflict(w, "withdrawal_provider_evidence_mismatch")
+		return
+	}
+	if text(row["status"]) == "exception" && text(row["accounting_status"]) == "approved" {
+		var blockTime any
+		if order.BlockTime > 0 {
+			blockTime = strconv.FormatInt(order.BlockTime, 10)
+		}
+		results, updateErr := app.db.Batch(r.Context(), d1.Statement{SQL: reconcileWithdrawalCompletedSQL, Params: []any{
+			strings.ToLower(order.TXID), nullIfEmpty(order.BlockHeight), blockTime, now,
+			note, actor, now, now, id, app.tenantID, cregisCID,
+		}})
+		if updateErr != nil {
+			databaseError(app, w, updateErr)
+			return
+		}
+		if len(results) != 1 || len(results[0].Results) != 1 {
+			conflict(w, "withdrawal_provider_settlement_raced")
+			return
+		}
+	}
+	status, advanceErr := app.advanceWithdrawalAccounting(r.Context(), id, "settle")
+	if advanceErr != nil {
+		app.logger.Error("Core provider-query settlement failed", "withdrawal_id", id, "cregis_cid", cregisCID, "error", advanceErr)
+		http.Error(w, "retry", http.StatusServiceUnavailable)
+		return
+	}
+	if status != "settled" {
+		conflict(w, "withdrawal_provider_settlement_incomplete")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": "completed", "accounting_status": status, "txid": strings.ToLower(order.TXID)})
+}
+
+func providerPayoutMatchesWithdrawal(order cregis.PayoutOrder, row map[string]any, expectedTXID string) bool {
+	orderAddress := order.Address
+	if orderAddress == "" {
+		orderAddress = order.ToAddress
+	} else if order.ToAddress != "" && order.ToAddress != orderAddress {
+		return false
+	}
+	orderAmountMinor, orderAmountOK := parseUSDTMicroUnits(order.Amount)
+	storedAmountMinor, storedAmountOK := parseUSDTMicroUnits(text(row["net_amount_text"]))
+	return orderAmountOK && storedAmountOK && orderAmountMinor == storedAmountMinor &&
+		order.ThirdPartyID == text(row["third_party_id"]) && order.ChainID == usdtTRC20ChainID &&
+		order.TokenID == usdtTRC20TokenID && isUSDTTRC20Identifier(order.Currency) &&
+		orderAddress == text(row["to_address"]) && order.Status == 6 &&
+		tronTxID.MatchString(order.TXID) && strings.EqualFold(order.TXID, expectedTXID)
 }
 
 func (app *application) approveCregisWithdrawal(w http.ResponseWriter, r *http.Request, id string) {
@@ -928,6 +1054,21 @@ func (app *application) listCregisHistory(w http.ResponseWriter, r *http.Request
 	    AND core_operation.id IS NOT NULL AND core_transfer.id IS NOT NULL
 	  THEN TRUE ELSE FALSE
 	END AS can_reconcile_cregis_cid,
+	CASE
+	  WHEN x.status='exception' AND x.cregis_cid IS NOT NULL
+	    AND a.status='approved'
+	    AND a.core_operation_id IS NOT NULL AND a.core_transfer_id IS NOT NULL
+	    AND core_operation.id IS NOT NULL AND core_transfer.id IS NOT NULL
+	    AND EXISTS (
+	      SELECT 1 FROM cregis_callback_events e
+	      WHERE e.event_type='payout' AND e.cregis_cid=x.cregis_cid AND e.status='6'
+	    )
+	    AND NOT EXISTS (
+	      SELECT 1 FROM cregis_callback_events e
+	      WHERE e.event_type='payout' AND e.cregis_cid=x.cregis_cid AND e.status IN ('2','4','7')
+	    )
+	  THEN TRUE ELSE FALSE
+	END AS can_settle_from_provider,
 	a.core_operation_id, a.core_transfer_id,
 	x.to_address AS address, x.txid, x.cregis_cid, x.maker_id, x.checker_id, x.operator_id,
 	x.approved_at, x.submitted_at, x.completed_at, x.created_at

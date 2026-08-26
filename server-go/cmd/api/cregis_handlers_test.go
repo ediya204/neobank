@@ -226,6 +226,28 @@ func TestExceptionReconciliationRejectsManualTerminalRelease(t *testing.T) {
 	}
 }
 
+func TestProviderQuerySettlementSQLIsFailClosed(t *testing.T) {
+	for _, required := range []string{
+		"status='completed'",
+		"status='exception'",
+		"e.event_type='payout'",
+		"e.status='6'",
+		"e.status IN ('2','4','7')",
+		"a.status='approved'",
+		"status='pending_settlement'",
+		"RETURNING a.withdrawal_id",
+	} {
+		if !strings.Contains(reconcileWithdrawalCompletedSQL, required) {
+			t.Fatalf("provider settlement SQL must contain %q", required)
+		}
+	}
+	for _, forbidden := range []string{"pending_release", "status='failed'", "status='cancelled'"} {
+		if strings.Contains(reconcileWithdrawalCompletedSQL, forbidden) {
+			t.Fatalf("provider settlement SQL must not contain %q", forbidden)
+		}
+	}
+}
+
 func TestUSDTFeeCanBeZeroButWithdrawalCannot(t *testing.T) {
 	if amount, ok := parseUSDTMicroUnitsAllowZero("0"); !ok || amount != 0 {
 		t.Fatalf("zero fee must be accepted exactly, got %d, %v", amount, ok)

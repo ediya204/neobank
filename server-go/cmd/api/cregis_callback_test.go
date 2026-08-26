@@ -295,6 +295,72 @@ func TestVerifyPayoutOrderAcceptsV2EquivalentFields(t *testing.T) {
 	}
 }
 
+func TestProviderQuerySettlementRequiresExactEvidenceAndSettlesCore(t *testing.T) {
+	const destination = "TXf2Rf731cNW44SBLCXUWvRJAKuTLjMnRR"
+	const thirdPartyID = "nbbb363014355b53589dbcfcbcb7065a29"
+	const cid = "1464508746800128"
+	const txid = "9f70741956ed2d27e459285cb92025d1cffc2874c9ded13f09103bc372ff8302"
+	db := &callbackDatabase{
+		rows: []map[string]any{{
+			"id": "withdrawal_test", "third_party_id": thirdPartyID, "currency": usdtTRC20Currency,
+			"net_amount_text": "1", "to_address": destination, "cregis_cid": cid,
+			"status": "exception", "accounting_status": "approved",
+		}},
+		batchResults: []d1.Result{{Results: []map[string]any{{"withdrawal_id": "withdrawal_test"}}}},
+	}
+	core := &fakeCoreAccounting{withdrawalResult: coreaccounting.Result{ID: "withdrawal_test", Status: "settled"}}
+	app := &application{
+		db: db,
+		cregis: &callbackCregisClient{payout: cregis.PayoutOrder{
+			ChainID: usdtTRC20ChainID, TokenID: usdtTRC20TokenID, Currency: "USDT-TRC20",
+			ToAddress: destination, Amount: "1.000000", Status: 6, ThirdPartyID: thirdPartyID,
+			TXID: txid, BlockHeight: "123456", BlockTime: 1_800_000_000_000,
+		}},
+		coreAccounting: core, directAccounting: true, tenantID: "tenant_test",
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	body := `{"resolution":"completed_from_provider","note":"matched Cregis transaction evidence","cregis_cid":"` + cid + `","txid":"` + txid + `"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/crypto/withdrawals/withdrawal_test/reconcile", strings.NewReader(body))
+	response := httptest.NewRecorder()
+	app.reconcileCregisWithdrawal(response, request, "withdrawal_test")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	if core.action != "settle" || core.recordID != "withdrawal_test" {
+		t.Fatalf("Core action=%q record=%q; want exact settlement", core.action, core.recordID)
+	}
+	if len(db.batches) != 1 || len(db.batches[0]) != 1 || db.batches[0][0].SQL != reconcileWithdrawalCompletedSQL {
+		t.Fatalf("unexpected settlement statements: %#v", db.batches)
+	}
+}
+
+func TestProviderQuerySettlementRejectsTransactionHashMismatch(t *testing.T) {
+	const expectedTXID = "9f70741956ed2d27e459285cb92025d1cffc2874c9ded13f09103bc372ff8302"
+	db := &callbackDatabase{rows: []map[string]any{{
+		"id": "withdrawal_test", "third_party_id": "third-party", "currency": usdtTRC20Currency,
+		"net_amount_text": "1", "to_address": "destination", "cregis_cid": "1464508746800128",
+		"status": "exception", "accounting_status": "approved",
+	}}}
+	core := &fakeCoreAccounting{}
+	app := &application{
+		db: db,
+		cregis: &callbackCregisClient{payout: cregis.PayoutOrder{
+			ChainID: usdtTRC20ChainID, TokenID: usdtTRC20TokenID, Currency: "USDT",
+			Address: "destination", Amount: "1", Status: 6, ThirdPartyID: "third-party",
+			TXID: strings.Repeat("a", 64),
+		}},
+		coreAccounting: core, directAccounting: true, tenantID: "tenant_test",
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	body := `{"resolution":"completed_from_provider","note":"manual evidence","cregis_cid":"1464508746800128","txid":"` + expectedTXID + `"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/crypto/withdrawals/withdrawal_test/reconcile", strings.NewReader(body))
+	response := httptest.NewRecorder()
+	app.reconcileCregisWithdrawal(response, request, "withdrawal_test")
+	if response.Code != http.StatusConflict || len(db.batches) != 0 || core.action != "" {
+		t.Fatalf("status=%d batches=%d core_action=%q", response.Code, len(db.batches), core.action)
+	}
+}
+
 func TestDirectPayoutAccountingRetriesTransientFailureAndAcknowledgesException(t *testing.T) {
 	for _, test := range []struct {
 		name       string

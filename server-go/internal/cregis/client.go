@@ -65,6 +65,8 @@ type PayoutOrder struct {
 	Status       int    `json:"status"`
 	ThirdPartyID string `json:"third_party_id"`
 	TXID         string `json:"txid"`
+	BlockHeight  string `json:"block_height"`
+	BlockTime    int64  `json:"block_time"`
 }
 
 func (r *Response) GetCode() string {

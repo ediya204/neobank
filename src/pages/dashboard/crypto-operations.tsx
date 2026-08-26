@@ -48,6 +48,7 @@ type CregisHistoryRow = {
   accounting_status?: string;
   funds_status?: string;
   can_reconcile_cregis_cid?: boolean;
+  can_settle_from_provider?: boolean;
   cregis_cid?: string;
   core_operation_id?: string;
   core_transfer_id?: string;
@@ -71,6 +72,7 @@ type AdminCryptoTransfer = CryptoTransfer & {
   coreOperationId?: string;
   coreTransferId?: string;
   canReconcileCregisCID?: boolean;
+  canSettleFromProvider?: boolean;
   customerName?: string;
 };
 
@@ -183,6 +185,7 @@ function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
     coreOperationId: row.core_operation_id,
     coreTransferId: row.core_transfer_id,
     canReconcileCregisCID: row.can_reconcile_cregis_cid,
+    canSettleFromProvider: row.can_settle_from_provider,
     amount: row.amount,
     feeAmount: row.fee_amount || '0',
     netAmount: row.net_amount || row.amount,
@@ -212,6 +215,9 @@ export default function CryptoOperationsAdmin() {
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileNote, setReconcileNote] = useState('');
   const [reconcileCID, setReconcileCID] = useState('');
+  const [providerSettleOpen, setProviderSettleOpen] = useState(false);
+  const [providerSettleTXID, setProviderSettleTXID] = useState('');
+  const [providerSettleNote, setProviderSettleNote] = useState('');
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -370,6 +376,38 @@ export default function CryptoOperationsAdmin() {
       setSelected(null);
       await load();
       setSuccess('异常指令已关联 Cregis CID；资金继续冻结，等待签名终态回调。');
+    } catch (value) {
+      setError(operationErrorMessage(value));
+    } finally {
+      setPerformingAction(null);
+    }
+  };
+
+  const settleWithdrawalFromProvider = async () => {
+    if (!selected?.canSettleFromProvider || !selected.cregisCID || performingAction) return;
+    const note = providerSettleNote.trim();
+    const txid = providerSettleTXID.trim();
+    if (!note || !/^[A-Fa-f0-9]{64}$/.test(txid)) return;
+    setPerformingAction('reconcile');
+    setError('');
+    setSuccess('');
+    try {
+      await neobankApi(`/crypto/withdrawals/${selected.id}/reconcile`, {
+        method: 'POST',
+        body: JSON.stringify({
+          resolution: 'completed_from_provider',
+          note,
+          cregis_cid: selected.cregisCID,
+          txid,
+        }),
+        userId,
+      });
+      setProviderSettleOpen(false);
+      setProviderSettleTXID('');
+      setProviderSettleNote('');
+      setSelected(null);
+      await load();
+      setSuccess('已按 Cregis 查询结果完成结算；请继续核对客户余额与 Core 账务。');
     } catch (value) {
       setError(operationErrorMessage(value));
     } finally {
@@ -549,6 +587,16 @@ export default function CryptoOperationsAdmin() {
                     关联已确认的 Cregis CID
                   </Button>
                 )}
+                {selected.canSettleFromProvider && (
+                  <Button
+                    color="warning"
+                    variant="contained"
+                    disabled={Boolean(performingAction)}
+                    onClick={() => setProviderSettleOpen(true)}
+                  >
+                    按 Cregis 查询结果结算
+                  </Button>
+                )}
               </Stack>
             )}
             {selected.status === 'SUBMITTED' && (
@@ -611,6 +659,58 @@ export default function CryptoOperationsAdmin() {
             onClick={() => perform('reject').catch(() => undefined)}
           >
             确认拒绝
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={providerSettleOpen}
+        onClose={() => {
+          if (!performingAction) setProviderSettleOpen(false);
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>按 Cregis 查询结果完成结算</DialogTitle>
+        <DialogContent>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            此操作会查询 Cregis 原订单并严格核对 CID、链、Token、到账金额、地址、业务单号、状态和
+            TxHash。全部一致后，Core 将消耗冻结资金并生成账务分录；不会再次发起链上转账。
+          </Alert>
+          <TextField fullWidth label="Cregis CID" value={selected?.cregisCID || ''} disabled sx={{ mb: 2 }} />
+          <TextField
+            autoFocus
+            fullWidth
+            label="Cregis 交易哈希"
+            value={providerSettleTXID}
+            onChange={(event) => setProviderSettleTXID(event.target.value)}
+            inputProps={{ maxLength: 64 }}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            multiline
+            minRows={3}
+            label="人工核对备注"
+            value={providerSettleNote}
+            onChange={(event) => setProviderSettleNote(event.target.value)}
+            inputProps={{ maxLength: 1000 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={Boolean(performingAction)} onClick={() => setProviderSettleOpen(false)}>
+            取消
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            disabled={
+              !providerSettleNote.trim() ||
+              !/^[A-Fa-f0-9]{64}$/.test(providerSettleTXID.trim()) ||
+              Boolean(performingAction)
+            }
+            onClick={() => settleWithdrawalFromProvider().catch(() => undefined)}
+          >
+            {performingAction === 'reconcile' ? '核对并结算中…' : '确认查询并结算'}
           </Button>
         </DialogActions>
       </Dialog>

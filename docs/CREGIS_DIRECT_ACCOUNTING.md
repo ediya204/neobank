@@ -63,6 +63,13 @@ The SQL admission check that subtracts very short-lived `pending_reservation` ro
 retained as a fail-closed concurrency guard across the Go-to-Core HTTP boundary. It
 does not post or freeze money; Core remains the only balance authority.
 
+When Cregis has already accepted a successful callback delivery and cannot re-push
+it, Admin may use the provider-query settlement action only for a frozen `exception`
+row with stored signed status `6` evidence and no conflicting terminal callback.
+The action requires an operator-supplied transaction hash, re-queries Cregis, repeats
+the exact order checks, queues `pending_settlement`, and calls Core synchronously.
+It never submits a new payout.
+
 ## Rollout and rollback
 
 1. Back up the complete production PostgreSQL database, record SHA-256, restore it
