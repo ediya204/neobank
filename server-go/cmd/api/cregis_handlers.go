@@ -61,6 +61,7 @@ const (
 	  WHEN a.status='settled' THEN 'completed'
 	  WHEN a.status='released' AND x.status='rejected' THEN 'rejected'
 	  WHEN a.status='released' AND x.status IN ('failed', 'cancelled') THEN 'failed'
+	  WHEN x.status='exception' THEN 'exception'
 	  WHEN a.status='exception' THEN 'exception'
 	  ELSE 'processing'
 	END`

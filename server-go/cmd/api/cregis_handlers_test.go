@@ -112,6 +112,7 @@ func TestAdminWithdrawalHistoryKeepsApprovalActionsReachable(t *testing.T) {
 		"WHEN a.status='reserved' AND x.status='submitted' THEN 'submitted'",
 		"WHEN a.status='approved' AND x.status='approved' THEN 'approved'",
 		"WHEN a.status='settled' THEN 'completed'",
+		"WHEN x.status='exception' THEN 'exception'",
 		"ELSE 'processing'",
 	} {
 		if !strings.Contains(adminWithdrawalHistoryStatusSQL, required) {

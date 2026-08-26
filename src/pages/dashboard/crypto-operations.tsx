@@ -177,7 +177,7 @@ function mapCregisWithdrawal(row: CregisHistoryRow): AdminCryptoTransfer {
     network: 'TRON',
     direction: 'WITHDRAWAL',
     status,
-    rawStatus: row.status,
+    rawStatus: row.custody_status || row.status,
     custodyStatus: row.custody_status,
     accountingStatus: row.accounting_status,
     fundsStatus: row.funds_status,
