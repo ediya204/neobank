@@ -845,6 +845,8 @@ function AccountDialog({
             value={account.bankName || portalText('SSC数字银行服务银行')}
           />
 
+          {isVa && <Detail label={portalText('银行地址')} value={account.bankAddress || '-'} />}
+
           <Detail label={portalText('账户号码')} value={account.accountNumber || '-'} mono />
 
           <Detail label="SWIFT / BIC" value={account.swiftBic || '-'} mono />

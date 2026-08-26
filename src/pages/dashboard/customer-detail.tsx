@@ -2180,6 +2180,7 @@ function FiatAccountAsset({ account }: { account: MoneyAccount }) {
       >
         {isVa && <AccountFact label="开户银行" value={account.bankName || '银行资料待同步'} />}
         {isVa && <AccountFact label="银行国家/地区" value={account.bankCountry || '-'} />}
+        {isVa && <AccountFact label="银行地址" value={account.bankAddress || '-'} wide />}
         <AccountFact
           label={isVa ? '收款账号' : `${SYSTEM_WALLET_PRODUCT_NAME}编号`}
           value={account.accountNumber || '账户编号待分配'}

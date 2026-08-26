@@ -329,6 +329,13 @@ function BankInstructionCard({
 
                   <InstructionRow label={portalText('收款银行')} value={bankName || '—'} />
 
+                  {!platform && (
+                    <InstructionRow
+                      label={portalText('银行地址')}
+                      value={account?.bankAddress || '—'}
+                    />
+                  )}
+
                   <InstructionRow label={portalText('收款账号')} value={bankAccount || '—'} />
 
                   <InstructionRow label="SWIFT / BIC" value={swiftBic || '—'} />
@@ -445,6 +452,7 @@ function depositInstructionText(
     portalText('银行: {{value0}}', {
       value0: platform ? channel?.settlementBankName || '—' : account.bankName || '—',
     }),
+    ...(!platform ? [`${portalText('银行地址')}: ${account.bankAddress || '—'}`] : []),
     portalText('账号: {{value0}}', {
       value0: platform ? channel?.settlementAccount || '—' : account.accountNumber || '—',
     }),
