@@ -1095,7 +1095,7 @@
   "可选 {{value0}}": "Available: {{value0}}",
   "收款账号": "Receiving Account Number",
   "当前客户尚未开通 VA": "The customer does not have an active VA",
-  "当前币种的银行收款资料尚未配置完整。": "Bank deposit instructions are incomplete for this currency.",
+  "请联系客服获取收款方式。": "Please contact customer support for deposit instructions.",
   "选择 VA": "Select a VA",
   "或客户 VA 账户。每笔入账均关联对应的 OTC 订单和成交报价。": "or customer VA account. Each entry is associated with the corresponding OTC order and transaction quote.",
   "专属转账附言": "Required Payment Reference",

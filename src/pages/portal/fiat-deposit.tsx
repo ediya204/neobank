@@ -345,7 +345,7 @@ function BankInstructionCard({
           ) : (
             <Alert severity="warning">
               {accounts.length
-                ? portalText('当前币种的银行收款资料尚未配置完整。')
+                ? portalText('请联系客服获取收款方式。')
                 : portalText('当前客户尚未开通可用于收款的账户。')}
             </Alert>
           )}
