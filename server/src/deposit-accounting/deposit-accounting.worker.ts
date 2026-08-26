@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { syncNeobankCustomers } from '../customers/neobank-customer-sync';
+import { CREGIS_USDT_TRC20_CURRENCY } from './withdrawal-reconciliation-policy';
 
 const BATCH_SIZE = 10;
 const MAX_ATTEMPTS = 8;
@@ -471,7 +472,7 @@ export class DepositAccountingWorker {
       throw accountingError('deposit_custody_evidence_incomplete', false);
     }
     if (
-      row.currency !== 'USDT' ||
+      row.currency !== CREGIS_USDT_TRC20_CURRENCY ||
       row.chain_id !== '195' ||
       row.token_id !== 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
     ) {

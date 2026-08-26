@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { CREGIS_USDT_TRC20_CURRENCY } from './withdrawal-reconciliation-policy';
 
 const db = new PrismaClient();
 
@@ -116,7 +117,7 @@ function requireSafeCandidate(rows: Candidate[], depositId: string) {
   if (
     !row.txid ||
     !row.from_address ||
-    row.currency !== 'USDT' ||
+    row.currency !== CREGIS_USDT_TRC20_CURRENCY ||
     row.chain_id !== '195' ||
     row.token_id !== 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' ||
     row.wallet_status !== 'active' ||

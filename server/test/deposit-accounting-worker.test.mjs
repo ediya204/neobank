@@ -47,7 +47,7 @@ const deposit = {
   cregis_cid: '1463535767997001',
   chain_id: '195',
   token_id: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-  currency: 'USDT',
+  currency: '195@TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
   address: wallet.walletAddress,
   from_address: 'TXsmKpEuW7qWnXzJLGP9eDLvWPR2GRn1FS',
   amount_text: '1.25',
@@ -65,7 +65,12 @@ const deposit = {
   operations_status: 'active',
 };
 
-function database({ duplicate = null, sourceRow = source, account = targetAccount } = {}) {
+function database({
+  duplicate = null,
+  sourceRow = source,
+  account = targetAccount,
+  depositRow = deposit,
+} = {}) {
   const observed = {
     accountUpdates: [],
     walletUpdates: [],
@@ -77,7 +82,7 @@ function database({ duplicate = null, sourceRow = source, account = targetAccoun
   };
   let rawQueryCount = 0;
   const transaction = {
-    $queryRaw: async () => [deposit],
+    $queryRaw: async () => [depositRow],
     $executeRaw: async () => {
       observed.posted += 1;
       return 1;
@@ -192,6 +197,17 @@ test('a different existing Core wallet binding is never overwritten', async () =
   const { db, observed } = database({
     account: { ...targetAccount, walletAddress: 'TExistingDifferentWallet11111111111111' },
   });
+  const worker = new DepositAccountingWorker(db);
+  await worker.processDeposit(deposit.deposit_id);
+
+  assert.equal(observed.operations.length, 0);
+  assert.equal(observed.accountUpdates.length, 0);
+  assert.equal(observed.walletUpdates.length, 0);
+  assert.equal(observed.failures.length, 1);
+});
+
+test('a display symbol cannot replace the exact Cregis custody currency identifier', async () => {
+  const { db, observed } = database({ depositRow: { ...deposit, currency: 'USDT' } });
   const worker = new DepositAccountingWorker(db);
   await worker.processDeposit(deposit.deposit_id);
 
