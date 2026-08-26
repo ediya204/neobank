@@ -56,6 +56,7 @@ const (
 	    AND x.cregis_cid IS NULL AND x.txid IS NULL THEN x.status
 	  WHEN a.withdrawal_id IS NULL THEN 'exception'
 	  WHEN a.status='reserved' AND x.status='submitted' THEN 'submitted'
+	  WHEN a.status='approved' AND x.status='approved' THEN 'approved'
 	  WHEN a.status='settled' THEN 'completed'
 	  WHEN a.status='released' AND x.status='rejected' THEN 'rejected'
 	  WHEN a.status='released' AND x.status IN ('failed', 'cancelled') THEN 'failed'

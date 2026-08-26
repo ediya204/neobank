@@ -107,9 +107,10 @@ func TestSingleAdministratorWithdrawalStateTransitions(t *testing.T) {
 	}
 }
 
-func TestAdminWithdrawalHistoryKeepsReservedSubmissionApprovable(t *testing.T) {
+func TestAdminWithdrawalHistoryKeepsApprovalActionsReachable(t *testing.T) {
 	for _, required := range []string{
 		"WHEN a.status='reserved' AND x.status='submitted' THEN 'submitted'",
+		"WHEN a.status='approved' AND x.status='approved' THEN 'approved'",
 		"WHEN a.status='settled' THEN 'completed'",
 		"ELSE 'processing'",
 	} {
