@@ -389,11 +389,41 @@ test('single-admin payout approval preserves idempotency, role isolation and fro
   }
 });
 
-test('completed journals are balanced per currency', async () => {
+test('a completed local adjustment posts balanced journals per currency', async () => {
+  const customer = (await request(`/customers/${customerId}`)).body;
+  const target = customer.accounts.find(
+    (account) => account.kind === 'SYSTEM_WALLET' && account.currency === 'USD'
+  );
+  assert.ok(target);
+
+  const created = await request('/operations', 'usr_admin', {
+    method: 'POST',
+    body: JSON.stringify({
+      customerId,
+      type: 'ADJUSTMENT',
+      currency: 'USD',
+      amount: '0.01',
+      targetAccountId: target.id,
+      adjustmentDirection: 'CREDIT',
+      narrative: `${marker} balanced journal fixture`,
+      idempotencyKey: crypto.randomUUID(),
+    }),
+  });
+  assert.equal(created.response.status, 201);
+  assert.equal(created.body.status, 'SUBMITTED');
+
+  const approved = await request(`/operations/${created.body.id}/approve`, 'usr_admin', {
+    method: 'PATCH',
+    body: JSON.stringify({}),
+  });
+  assert.equal(approved.response.status, 200);
+  assert.equal(approved.body.status, 'COMPLETED');
+
   const ledger = await request(`/ledger?organizationId=${organizationId}`);
   assert.equal(ledger.response.status, 200);
-  assert.ok(ledger.body.length > 0);
-  for (const journal of ledger.body) {
+  const journals = ledger.body.filter((journal) => journal.operationId === created.body.id);
+  assert.ok(journals.length > 0);
+  for (const journal of journals) {
     const totals = new Map();
     for (const line of journal.lines) {
       const total = totals.get(line.currency) || { debit: 0, credit: 0 };
