@@ -192,7 +192,7 @@ export default function CustomerActionPage({
 
   const loadDetail = async () => {
     if (!customer) return;
-    const loadPayoutConfiguration = action === 'payout' && !submissionDisabledReason;
+    const loadPayoutConfiguration = action === 'payout';
     const payoutChannelTypes: FundingChannel['type'][] = [
       'VIRTUAL_ACCOUNT',
       'POBO_PAYOUT',

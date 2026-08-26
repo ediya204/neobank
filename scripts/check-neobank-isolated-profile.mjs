@@ -350,6 +350,7 @@ assert.match(
   router,
   /action="payout"[\s\S]*?submissionDisabledReason="银行转出服务当前暂未开放。"/
 );
+assert.match(customerActionPage, /const loadPayoutConfiguration = action === 'payout'/);
 assert.match(
   authApi,
   /response\.status === 401 &&[\s\S]*?authentication_required[\s\S]*?session_expired[\s\S]*?notifySessionExpired\(\)/
