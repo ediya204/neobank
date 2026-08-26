@@ -29,6 +29,28 @@ describe('VA 银行地址展示', () => {
     expect(block).toContain("value={account.bankAddress || '-'}");
   });
 
+  it('客户账户资料弹窗的详情标签保持单行', () => {
+    const block = section(
+      source('src/pages/portal/customer-accounts.tsx'),
+      'function Detail(',
+      '\n}'
+    );
+
+    expect(block).toContain("whiteSpace: 'nowrap'");
+    expect(block).toContain('flexShrink: 0');
+  });
+
+  it('客户账户资料弹窗的长值可在剩余宽度内换行', () => {
+    const block = section(
+      source('src/pages/portal/customer-accounts.tsx'),
+      'function Detail(',
+      '\n}'
+    );
+
+    expect(block).toContain('minWidth: 0');
+    expect(block).toContain("overflowWrap: 'anywhere'");
+  });
+
   it('VA 转入页面展示银行地址', () => {
     const block = section(
       source('src/pages/portal/fiat-deposit.tsx'),

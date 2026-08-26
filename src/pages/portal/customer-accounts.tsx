@@ -868,11 +868,18 @@ function AccountDialog({
 
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <Stack direction="row" justifyContent="space-between" sx={{ py: 1.5 }}>
-      <Typography color="text.secondary">{label}</Typography>
+    <Stack direction="row" justifyContent="space-between" spacing={2} sx={{ py: 1.5 }}>
+      <Typography color="text.secondary" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+        {label}
+      </Typography>
       <Typography
         variant="subtitle2"
-        sx={{ fontFamily: mono ? 'monospace' : undefined, textAlign: 'right' }}
+        sx={{
+          minWidth: 0,
+          fontFamily: mono ? 'monospace' : undefined,
+          textAlign: 'right',
+          overflowWrap: 'anywhere',
+        }}
       >
         {value}
       </Typography>
