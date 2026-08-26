@@ -216,4 +216,14 @@ test('customer channel reads expose active inbound instructions but keep VA acco
   );
   assert.equal(selectedType, 'VIRTUAL_ACCOUNT');
   assert.equal('settlementAccount' in virtualAccount[0], false);
+
+  const platformPayout = await controller.list(
+    'org_test',
+    customerRequest,
+    'PLATFORM_PAYOUT',
+    'true'
+  );
+  assert.equal(selectedType, 'PLATFORM_PAYOUT');
+  assert.equal(platformPayout[0].code, 'CHANNEL-01');
+  assert.equal('settlementAccount' in platformPayout[0], false);
 });

@@ -81,7 +81,13 @@ export class ChannelsController {
   ) {
     await requireOrganizationAccess(this.db, currentUserId(request), organizationId);
     const customerId = request.header('x-authenticated-customer-id')?.trim();
-    if (customerId && type !== ChannelType.VIRTUAL_ACCOUNT && type !== ChannelType.FIAT_INBOUND) {
+    const customerReadableTypes: ChannelType[] = [
+      ChannelType.VIRTUAL_ACCOUNT,
+      ChannelType.FIAT_INBOUND,
+      ChannelType.POBO_PAYOUT,
+      ChannelType.PLATFORM_PAYOUT,
+    ];
+    if (customerId && (!type || !customerReadableTypes.includes(type))) {
       throw new ForbiddenException('customer_readable_channels_only');
     }
     if (active !== undefined && active !== 'true' && active !== 'false') {

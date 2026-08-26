@@ -15,6 +15,7 @@ const [
   roleAccess,
   adminPage,
   worker,
+  customerCoreRoutePolicy,
   renderConfig,
   goMain,
   deploymentMode,
@@ -58,6 +59,7 @@ const [
   read('src/auth/role-access.ts'),
   read('src/pages/dashboard/crypto-operations.tsx'),
   read('worker-web/index.ts'),
+  read('worker-web/customer-core-route-policy.ts'),
   read('render.yaml'),
   read('server-go/cmd/api/main.go'),
   read('src/config/deployment-mode.ts'),
@@ -209,10 +211,7 @@ assert.match(roleAccess, /\? isCustomerFullPortalPath\(pathname\)/);
 assert.match(roleAccess, /!canAccessPortalPath\(sessionUser, canonicalUrl\.pathname\)/);
 assert.match(provider, /IS_NEOBANK_DEPLOYMENT \|\|/);
 assert.doesNotMatch(provider, /getAccessAdminSession/);
-assert.match(
-  provider,
-  /startsWith\('\/customer'\)[\s\S]*startsWith\('\/portal'\)/
-);
+assert.match(provider, /startsWith\('\/customer'\)[\s\S]*startsWith\('\/portal'\)/);
 assert.match(provider, /error instanceof AuthApiError && error\.status === 401/);
 assert.match(deploymentMode, /IS_FULL_ADMIN_WALLET_DEPLOYMENT/);
 assert.match(deploymentMode, /IS_NEOBANK_DEPLOYMENT/);
@@ -320,16 +319,19 @@ assert.match(worker, /customerHomeAPI\(request, env\)/);
 assert.match(worker, /internalGetRequest\(request, '\/api\/v1\/customer\/profile'\)/);
 assert.match(worker, /customerId=\$\{encodedCustomerId\}&limit=5/);
 assert.match(worker, /customerCoreRouteAllowed\(incoming, request\.method, userId/);
-assert.match(worker, /type === 'VIRTUAL_ACCOUNT'/);
-assert.match(worker, /type === 'FIAT_INBOUND'/);
-assert.match(worker, /active'\) === 'true'/);
-assert.match(worker, /customers\/\$\{customerId\}\/virtual-account-requests/);
-assert.match(worker, /if \(method !== 'GET'\) return false/);
-assert.match(worker, /api\/core\/accounts\/summary/);
-assert.match(worker, /api\/core\/operations/);
-assert.match(worker, /api\/core\/operations\/quote/);
+assert.match(customerCoreRoutePolicy, /'VIRTUAL_ACCOUNT'/);
+assert.match(customerCoreRoutePolicy, /'FIAT_INBOUND'/);
+assert.match(customerCoreRoutePolicy, /'POBO_PAYOUT'/);
+assert.match(customerCoreRoutePolicy, /'PLATFORM_PAYOUT'/);
+assert.match(customerCoreRoutePolicy, /api\/core\/withdrawal-fees/);
+assert.match(customerCoreRoutePolicy, /active'\) === 'true'/);
+assert.match(customerCoreRoutePolicy, /customers\/\$\{customerId\}\/virtual-account-requests/);
+assert.match(customerCoreRoutePolicy, /if \(method !== 'GET'\) return false/);
+assert.match(customerCoreRoutePolicy, /api\/core\/accounts\/summary/);
+assert.match(customerCoreRoutePolicy, /api\/core\/operations/);
+assert.match(customerCoreRoutePolicy, /api\/core\/operations\/quote/);
 assert.match(
-  worker,
+  customerCoreRoutePolicy,
   /method === 'POST' && url\.pathname === '\/api\/core\/operations'/
 );
 assert.match(worker, /isCustomerFXSubmission/);
@@ -338,7 +340,7 @@ assert.match(
   /isCustomerFXSubmission && \(operation\.type !== 'FX' \|\| operation\.customerId !== userId\)/
 );
 assert.match(worker, /customer_fx_scope_mismatch/);
-assert.match(worker, /quote_not_confirmable|operations.*confirm/s);
+assert.match(customerCoreRoutePolicy, /operations.*confirm/s);
 assert.match(
   customerActionPage,
   /const operationPath = action === 'otc' \? '\/operations\/quote' : '\/operations'/
@@ -352,7 +354,7 @@ assert.match(
   authApi,
   /response\.status === 401 &&[\s\S]*?authentication_required[\s\S]*?session_expired[\s\S]*?notifySessionExpired\(\)/
 );
-assert.match(worker, /api\/core\/crypto-wallets\/transfers/);
+assert.match(customerCoreRoutePolicy, /api\/core\/crypto-wallets\/transfers/);
 assert.match(worker, /redactCustomerCorePayload/);
 assert.match(worker, /customer_lifecycle_requires_go_kyc/);
 assert.match(worker, /isDisabledAdminCustomerLifecycleMutation/);

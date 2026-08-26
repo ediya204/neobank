@@ -27,6 +27,7 @@ import {
   supportedCryptoNetwork,
   supportedFiatCurrencies,
 } from './core-api';
+import { isValidOptionalSwiftBic, normalizeSwiftBic } from './beneficiary-validation';
 
 type BeneficiaryType = 'BANK' | 'CRYPTO';
 
@@ -113,6 +114,7 @@ export default function BeneficiaryDialog({
     const normalizedCountryCode = countryCode.trim().toUpperCase();
     const normalizedBankName = bankName.trim();
     const normalizedAccountNumber = accountNumber.trim();
+    const normalizedSwiftBic = normalizeSwiftBic(swiftBic);
     const normalizedWalletAddress = walletAddress.trim();
     if (!customerId) {
       setError('请选择客户后再新增收款人');
@@ -127,6 +129,10 @@ export default function BeneficiaryDialog({
       (!/^[A-Z]{2}$/.test(normalizedCountryCode) || !normalizedBankName || !normalizedAccountNumber)
     ) {
       setError('请填写两位国家/地区代码、收款银行和银行账号');
+      return;
+    }
+    if (type === 'BANK' && !isValidOptionalSwiftBic(normalizedSwiftBic)) {
+      setError('SWIFT / BIC 格式无效，请输入银行提供的 8 位或 11 位代码');
       return;
     }
     if (type === 'CRYPTO' && !normalizedWalletAddress) {
@@ -164,7 +170,7 @@ export default function BeneficiaryDialog({
               currency,
               bank_name: normalizedBankName,
               account_number: normalizedAccountNumber,
-              swift_bic: swiftBic.trim().toUpperCase(),
+              swift_bic: normalizedSwiftBic,
               iban: iban.trim().toUpperCase(),
               bank_address: bankAddress.trim(),
               country_code: normalizedCountryCode,
@@ -196,7 +202,7 @@ export default function BeneficiaryDialog({
                   currency,
                   bankName: normalizedBankName,
                   accountNumber: normalizedAccountNumber,
-                  swiftBic: swiftBic.trim().toUpperCase() || undefined,
+                  swiftBic: normalizedSwiftBic || undefined,
                   iban: iban.trim().toUpperCase() || undefined,
                   bankAddress: bankAddress.trim() || undefined,
                   countryCode: normalizedCountryCode,
@@ -354,7 +360,16 @@ export default function BeneficiaryDialog({
                 <TextField
                   label="SWIFT / BIC"
                   value={swiftBic}
-                  onChange={(event) => setSwiftBic(event.target.value.toUpperCase())}
+                  onChange={(event) => {
+                    setSwiftBic(event.target.value.toUpperCase());
+                    setError('');
+                  }}
+                  error={!isValidOptionalSwiftBic(swiftBic)}
+                  helperText={
+                    !isValidOptionalSwiftBic(swiftBic)
+                      ? '请输入银行提供的 8 位或 11 位 SWIFT/BIC'
+                      : '选填；如填写，必须与银行资料完全一致'
+                  }
                 />
                 <TextField
                   label="IBAN（选填）"

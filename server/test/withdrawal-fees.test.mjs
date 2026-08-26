@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { WithdrawalFeesController } from '../dist/src/withdrawal-fees/withdrawal-fees.controller.js';
 import { WithdrawalFeesService } from '../dist/src/withdrawal-fees/withdrawal-fees.service.js';
 
 const admin = {
@@ -8,6 +9,34 @@ const admin = {
   active: true,
   role: 'ADMIN',
 };
+
+test('customer fee reads are limited to active organization defaults', async () => {
+  const calls = [];
+  const controller = new WithdrawalFeesController({
+    list: async (...args) => {
+      calls.push(args);
+      return [];
+    },
+  });
+  const customerRequest = {
+    header: (name) => {
+      if (name === 'x-user-id') return 'admin_test';
+      if (name === 'x-authenticated-customer-id') return 'customer_test';
+      return undefined;
+    },
+  };
+
+  await controller.list('org_test', customerRequest, 'true');
+  assert.deepEqual(calls, [['org_test', 'admin_test', true, undefined]]);
+  assert.throws(
+    () => controller.list('org_test', customerRequest, 'false'),
+    /customer_active_withdrawal_fees_only/
+  );
+  assert.throws(
+    () => controller.list('org_test', customerRequest, 'true', 'customer_other'),
+    /customer_active_withdrawal_fees_only/
+  );
+});
 
 test('organization listing excludes customer overrides unless a customer is requested', async () => {
   let where;

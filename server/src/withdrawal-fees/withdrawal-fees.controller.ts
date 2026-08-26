@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -52,6 +53,9 @@ export class WithdrawalFeesController {
   ) {
     if (active !== undefined && active !== 'true' && active !== 'false') {
       throw new BadRequestException('invalid_active_filter');
+    }
+    if (request.header('x-authenticated-customer-id') && (active !== 'true' || customerId)) {
+      throw new ForbiddenException('customer_active_withdrawal_fees_only');
     }
     return this.fees.list(
       organizationId,

@@ -192,10 +192,21 @@ export default function CustomerActionPage({
   const loadDetail = async () => {
     if (!customer) return;
     const loadPayoutConfiguration = action === 'payout' && !submissionDisabledReason;
+    const payoutChannelTypes: FundingChannel['type'][] = [
+      'VIRTUAL_ACCOUNT',
+      'POBO_PAYOUT',
+      'PLATFORM_PAYOUT',
+    ];
     const [customerDetail, channelRows, feeRows, withdrawalAddressPayload] = await Promise.all([
       coreApi<Customer>(`/customers/${customer.id}`),
       loadPayoutConfiguration
-        ? coreApi<FundingChannel[]>(`/funding-channels?organizationId=${customer.organizationId}`)
+        ? Promise.all(
+            payoutChannelTypes.map((type) =>
+              coreApi<FundingChannel[]>(
+                `/funding-channels?organizationId=${customer.organizationId}&type=${type}&active=true`
+              )
+            )
+          ).then((rows) => rows.flat())
         : Promise.resolve([] as FundingChannel[]),
       loadPayoutConfiguration
         ? coreApi<WithdrawalFeeRule[]>(
@@ -203,9 +214,7 @@ export default function CustomerActionPage({
           )
         : Promise.resolve([] as WithdrawalFeeRule[]),
       action === 'beneficiaries' && customerSession
-        ? neobankApi<{ data: CustomerWithdrawalAddressRow[] }>(
-            '/customer/withdrawal-addresses'
-          )
+        ? neobankApi<{ data: CustomerWithdrawalAddressRow[] }>('/customer/withdrawal-addresses')
         : Promise.resolve(null),
     ]);
     setDetail(customerDetail);
