@@ -497,13 +497,21 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
   const availableAccounts = customerDetail?.accounts || [];
   const beneficiaries = customerDetail?.beneficiaries || [];
 
+  const visibleOperations = useMemo(
+    () =>
+      section === 'deposits'
+        ? operations.filter((operation) => supportedFiatCurrencies.includes(operation.currency))
+        : operations,
+    [operations, section]
+  );
+
   const summary = useMemo(
     () => ({
-      submitted: operations.filter((item) => item.status === 'SUBMITTED').length,
-      processing: operations.filter((item) => item.status === 'PROCESSING').length,
-      completed: operations.filter((item) => item.status === 'COMPLETED').length,
+      submitted: visibleOperations.filter((item) => item.status === 'SUBMITTED').length,
+      processing: visibleOperations.filter((item) => item.status === 'PROCESSING').length,
+      completed: visibleOperations.filter((item) => item.status === 'COMPLETED').length,
     }),
-    [operations]
+    [visibleOperations]
   );
 
   const setOperationStatus = (nextStatus: string) => {
@@ -876,7 +884,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
           </FormControl>
         </Stack>
         <OperationTable
-          rows={operations}
+          rows={visibleOperations}
           loading={loading}
           onOpen={(operation) => {
             setActionError('');
