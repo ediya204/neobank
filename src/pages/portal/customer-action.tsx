@@ -60,6 +60,7 @@ import {
   otcSourceAccounts,
   otcTargetAccounts,
 } from 'src/features/finance/otc-account-selection';
+import { resolveConfiguredPayout } from 'src/features/finance/payout-fee-resolution';
 import { portalLocale, portalText } from 'src/locales/portal-text';
 import { accountLabel, money } from './customer-shared';
 
@@ -306,26 +307,18 @@ export default function CustomerActionPage({
     action === 'otc' && otcDirection === 'BUY_USDT'
       ? portalText('到账 USDT 账户')
       : portalText('到账账户');
-  const payoutChannel =
+  const configuredPayout =
     action === 'payout' && source
-      ? channels.find(
-          (row) =>
-            row.type === payoutChannelType(payoutMethod) &&
-            row.active &&
-            row.supportedCurrencies.includes(source.currency) &&
-            (payoutMethod !== 'VA' || row.id === source.fundingChannelId)
-        )
+      ? resolveConfiguredPayout({
+          channels,
+          fees: withdrawalFees,
+          method: payoutMethod,
+          currency: source.currency,
+          fundingChannelId: source.fundingChannelId,
+        })
       : undefined;
-  const payoutFee = payoutChannel
-    ? withdrawalFees.find(
-        (row) =>
-          row.assetClass === 'FIAT' &&
-          row.currency === source?.currency &&
-          row.method === payoutMethod &&
-          row.channelCode === payoutChannel.code &&
-          row.active
-      )
-    : undefined;
+  const payoutChannel = configuredPayout?.channel;
+  const payoutFee = configuredPayout?.fee;
   const target = accounts.find((row) => row.id === targetId);
   const quote = useMemo(
     () =>
@@ -1169,12 +1162,6 @@ export default function CustomerActionPage({
       />
     </>
   );
-}
-
-function payoutChannelType(method: PayoutMethod): FundingChannel['type'] {
-  if (method === 'VA') return 'VIRTUAL_ACCOUNT';
-  if (method === 'POBO') return 'POBO_PAYOUT';
-  return 'PLATFORM_PAYOUT';
 }
 
 function BeneficiaryPage({
