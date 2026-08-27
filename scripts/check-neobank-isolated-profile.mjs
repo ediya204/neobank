@@ -147,7 +147,7 @@ assert.match(router, /path: 'money\/otc'/);
 assert.match(router, /path: 'money\/payouts'/);
 assert.doesNotMatch(router, /客户主动换汇暂未开放/);
 assert.doesNotMatch(router, /submissionDisabledReason="当前版本的 OTC/);
-assert.match(router, /submissionDisabledReason="银行转出服务当前暂未开放/);
+assert.doesNotMatch(router, /submissionDisabledReason="银行转出服务当前暂未开放/);
 assert.match(router, /path: 'transactions', element: <CustomerActivity \/>/);
 assert.match(router, /<Navigate to="\/portal\/home" replace \/>/);
 assert.match(router, /<Navigate to="\/admin" replace \/>/);
@@ -346,11 +346,12 @@ assert.match(
   /const operationPath = action === 'otc' \? '\/operations\/quote' : '\/operations'/
 );
 assert.match(customerActionPage, /`\/operations\/\$\{pendingQuote\.id\}\/confirm`/);
-assert.match(
-  router,
-  /action="payout"[\s\S]*?submissionDisabledReason="银行转出服务当前暂未开放。"/
-);
+assert.match(router, /<CustomerActionPage action="payout" \/>/);
 assert.match(customerActionPage, /const loadPayoutConfiguration = action === 'payout'/);
+assert.match(customerActionPage, /neobankApi<[^>]+>\('\/customer\/fiat-payouts'/);
+assert.match(customerActionPage, /current_password/);
+assert.match(customerActionPage, /totp_code/);
+assert.match(worker, /pathname === '\/api\/v1\/customer\/fiat-payouts'/);
 assert.match(
   authApi,
   /response\.status === 401 &&[\s\S]*?authentication_required[\s\S]*?session_expired[\s\S]*?notifySessionExpired\(\)/

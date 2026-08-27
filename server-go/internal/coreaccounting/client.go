@@ -1,6 +1,7 @@
 package coreaccounting
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -31,6 +33,31 @@ type Result struct {
 	Action     string `json:"action,omitempty"`
 	Status     string `json:"status"`
 	Idempotent bool   `json:"idempotent"`
+}
+
+type CustomerPayoutRequest struct {
+	CustomerID             string `json:"customerId"`
+	CustomerEmail          string `json:"customerEmail"`
+	Currency               string `json:"currency"`
+	Amount                 string `json:"amount"`
+	SourceAccountID        string `json:"sourceAccountId"`
+	BeneficiaryID          string `json:"beneficiaryId"`
+	ChannelID              string `json:"channelId"`
+	PayoutMethod           string `json:"payoutMethod"`
+	ExpectedFeeAmount      string `json:"expectedFeeAmount"`
+	ExpectedFeeRuleVersion string `json:"expectedFeeRuleVersion"`
+	IdempotencyKey         string `json:"idempotencyKey"`
+	Narrative              string `json:"narrative,omitempty"`
+}
+
+type CustomerPayoutResult struct {
+	ID         string `json:"id"`
+	Reference  string `json:"reference"`
+	CustomerID string `json:"customerId"`
+	Status     string `json:"status"`
+	Currency   string `json:"currency"`
+	Amount     string `json:"amount"`
+	FeeAmount  string `json:"feeAmount"`
 }
 
 type Client struct {
@@ -100,9 +127,47 @@ func (client *Client) AdvanceWithdrawal(ctx context.Context, withdrawalID, actio
 	return result, nil
 }
 
+func (client *Client) CreateCustomerPayout(ctx context.Context, input CustomerPayoutRequest) (CustomerPayoutResult, error) {
+	var result CustomerPayoutResult
+	if err := client.postJSON(ctx, "/api/v1/internal/customer-payouts", input, &result); err != nil {
+		return CustomerPayoutResult{}, err
+	}
+	requestedAmount, requestedOK := new(big.Rat).SetString(input.Amount)
+	returnedAmount, returnedOK := new(big.Rat).SetString(result.Amount)
+	validStatus := map[string]bool{
+		"SUBMITTED": true, "APPROVED": true, "REJECTED": true, "PROCESSING": true,
+		"COMPLETED": true, "FAILED": true, "CANCELLED": true,
+	}[result.Status]
+	if result.ID == "" || result.Reference == "" || result.CustomerID != input.CustomerID ||
+		!validStatus || result.Currency != input.Currency || !requestedOK ||
+		!returnedOK || requestedAmount.Cmp(returnedAmount) != 0 {
+		return CustomerPayoutResult{}, errors.New("Core customer payout returned an invalid business result")
+	}
+	return result, nil
+}
+
 func (client *Client) post(ctx context.Context, requestTarget string) (Result, error) {
+	var result Result
+	if err := client.postJSON(ctx, requestTarget, nil, &result); err != nil {
+		return Result{}, err
+	}
+	if result.ID == "" || result.Status == "" {
+		return Result{}, errors.New("Core accounting returned an invalid response")
+	}
+	return result, nil
+}
+
+func (client *Client) postJSON(ctx context.Context, requestTarget string, payload any, result any) error {
+	var body []byte
+	var err error
+	if payload != nil {
+		body, err = json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("encode Core accounting request: %w", err)
+		}
+	}
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	bodyHash := sha256.Sum256(nil)
+	bodyHash := sha256.Sum256(body)
 	canonical := strings.Join([]string{
 		timestamp,
 		http.MethodPost,
@@ -113,30 +178,32 @@ func (client *Client) post(ctx context.Context, requestTarget string) (Result, e
 	mac := hmac.New(sha256.New, client.secret)
 	_, _ = mac.Write([]byte(canonical))
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.baseURL+requestTarget, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.baseURL+requestTarget, bytes.NewReader(body))
 	if err != nil {
-		return Result{}, fmt.Errorf("create Core accounting request: %w", err)
+		return fmt.Errorf("create Core accounting request: %w", err)
+	}
+	if payload != nil {
+		request.Header.Set("Content-Type", "application/json")
 	}
 	request.Header.Set("X-Neobank-User", serviceIdentity)
 	request.Header.Set("X-Core-Edge-Timestamp", timestamp)
 	request.Header.Set("X-Core-Edge-Signature", hex.EncodeToString(mac.Sum(nil)))
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		return Result{}, fmt.Errorf("call Core accounting: %w", err)
+		return fmt.Errorf("call Core accounting: %w", err)
 	}
 	defer response.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 64*1024+1))
 	if err != nil || len(raw) > 64*1024 {
-		return Result{}, errors.New("read Core accounting response failed")
+		return errors.New("read Core accounting response failed")
 	}
 	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {
-		return Result{}, fmt.Errorf("Core accounting returned HTTP %d", response.StatusCode)
+		return fmt.Errorf("Core accounting returned HTTP %d", response.StatusCode)
 	}
-	var result Result
-	if json.Unmarshal(raw, &result) != nil || result.ID == "" || result.Status == "" {
-		return Result{}, errors.New("Core accounting returned an invalid response")
+	if json.Unmarshal(raw, result) != nil {
+		return errors.New("Core accounting returned an invalid response")
 	}
-	return result, nil
+	return nil
 }
 
 func recordID(value string) (string, error) {

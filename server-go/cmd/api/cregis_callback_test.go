@@ -36,6 +36,10 @@ func (fake *fakeCoreAccounting) AdvanceWithdrawal(_ context.Context, recordID, a
 	return fake.withdrawalResult, fake.err
 }
 
+func (fake *fakeCoreAccounting) CreateCustomerPayout(context.Context, coreaccounting.CustomerPayoutRequest) (coreaccounting.CustomerPayoutResult, error) {
+	return coreaccounting.CustomerPayoutResult{}, fake.err
+}
+
 type callbackDatabase struct {
 	rows         []map[string]any
 	queries      [][]map[string]any

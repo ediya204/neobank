@@ -33,7 +33,9 @@ async function enforceAuthRateLimit(
   pathname: string,
   body: ArrayBuffer
 ): Promise<Response | null> {
-  if (request.method !== 'POST' || !pathname.startsWith('/api/auth/')) return null;
+  const customerPayout = pathname === '/api/v1/customer/fiat-payouts';
+  if (request.method !== 'POST' || (!pathname.startsWith('/api/auth/') && !customerPayout))
+    return null;
   const limiter =
     pathname.startsWith('/api/auth/admin/') || pathname === '/api/auth/setup-token'
       ? env.ADMIN_AUTH_RATE_LIMITER

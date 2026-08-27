@@ -65,6 +65,7 @@ type cregisClient interface {
 type coreAccountingClient interface {
 	PostDeposit(context.Context, string) (coreaccounting.Result, error)
 	AdvanceWithdrawal(context.Context, string, string) (coreaccounting.Result, error)
+	CreateCustomerPayout(context.Context, coreaccounting.CustomerPayoutRequest) (coreaccounting.CustomerPayoutResult, error)
 }
 
 type databaseClient interface {
@@ -196,16 +197,13 @@ func main() {
 		os.Exit(1)
 	}
 	directAccounting := strings.EqualFold(os.Getenv("CREGIS_DIRECT_ACCOUNTING_ENABLED"), "true")
-	var coreAccountingClient *coreaccounting.Client
-	if directAccounting {
-		coreAccountingClient, err = coreaccounting.New(coreaccounting.Config{
-			BaseURL: os.Getenv("CORE_ACCOUNTING_URL"),
-			Secret:  os.Getenv("CORE_ACCOUNTING_SHARED_SECRET"),
-		})
-		if err != nil {
-			logger.Error("invalid Core accounting configuration", "error", err)
-			os.Exit(1)
-		}
+	coreAccountingClient, err := coreaccounting.New(coreaccounting.Config{
+		BaseURL: os.Getenv("CORE_ACCOUNTING_URL"),
+		Secret:  os.Getenv("CORE_ACCOUNTING_SHARED_SECRET"),
+	})
+	if err != nil {
+		logger.Error("invalid Core accounting configuration", "error", err)
+		os.Exit(1)
 	}
 	sumsubEnvironment := strings.ToLower(strings.TrimSpace(envOr("SUMSUB_MODE", "sandbox")))
 	if sumsubEnvironment != "sandbox" && sumsubEnvironment != "production" {

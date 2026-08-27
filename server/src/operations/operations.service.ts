@@ -57,7 +57,7 @@ type CreateOperationInput = {
   marketFetchedAt?: string;
 };
 
-type CustomerQuoteActor = {
+type CustomerOperationActor = {
   customerId: string;
   email?: string;
 };
@@ -149,7 +149,7 @@ export class OperationsService {
     return this.createOperation(input, makerId);
   }
 
-  async createQuote(input: CreateOperationInput, makerId: string, actor: CustomerQuoteActor) {
+  async createQuote(input: CreateOperationInput, makerId: string, actor: CustomerOperationActor) {
     if (input.type !== 'OTC') throw new BadRequestException('otc_quote_required');
     if (!actor.customerId || actor.customerId !== input.customerId) {
       throw new ForbiddenException('customer_quote_scope_mismatch');
@@ -158,10 +158,23 @@ export class OperationsService {
     return this.quoteResponse(operation);
   }
 
+  async createCustomerPayout(
+    input: CreateOperationInput,
+    makerId: string,
+    actor: CustomerOperationActor
+  ) {
+    if (input.type !== 'PAYOUT') throw new BadRequestException('customer_payout_required');
+    if (!actor.customerId || actor.customerId !== input.customerId) {
+      throw new ForbiddenException('customer_payout_scope_mismatch');
+    }
+    return this.createOperation(input, makerId, undefined, actor);
+  }
+
   private async createOperation(
     input: CreateOperationInput,
     makerId: string,
-    quoteActor?: CustomerQuoteActor
+    quoteActor?: CustomerOperationActor,
+    customerSubmissionActor?: CustomerOperationActor
   ) {
     if (input.type === 'INTERNAL_TRANSFER') {
       throw new BadRequestException('internal_transfer_not_supported');
@@ -240,10 +253,92 @@ export class OperationsService {
               include: operationInclude,
             });
             if (existing) {
+              if (customerSubmissionActor) {
+                const metadata = existing.metadata as Record<string, unknown> | null;
+                const withdrawalFee = metadata?.withdrawalFee as
+                  | Record<string, unknown>
+                  | undefined;
+                const customerSubmission = metadata?.customerSubmission as
+                  | Record<string, unknown>
+                  | undefined;
+                const samePayout =
+                  existing.type === 'PAYOUT' &&
+                  existing.customerId === input.customerId &&
+                  existing.currency === input.currency &&
+                  existing.amount.equals(amount) &&
+                  existing.sourceAccountId === input.sourceAccountId &&
+                  existing.beneficiaryId === input.beneficiaryId &&
+                  existing.channelId === input.channelId &&
+                  existing.payoutMethod === input.payoutMethod &&
+                  (existing.narrative || '') === (input.narrative || '') &&
+                  input.expectedFeeAmount !== undefined &&
+                  existing.feeAmount.equals(new Prisma.Decimal(input.expectedFeeAmount)) &&
+                  withdrawalFee?.version === input.expectedFeeRuleVersion &&
+                  customerSubmission?.customerId === customerSubmissionActor.customerId;
+                if (samePayout) return existing;
+                throw new ConflictException('idempotency_key_reused');
+              }
               if (quoteActor && existing.type === 'OTC') return existing;
               if (!quoteActor && existing.type !== 'OTC') return existing;
               throw new ConflictException('idempotency_key_reused');
             }
+          }
+          let payoutCustomer = customer;
+          let payoutSource = source;
+          let payoutChannel = channel;
+          if (customerSubmissionActor) {
+            const tenantId = process.env.NEOBANK_SOURCE_TENANT_ID?.trim() || 'neobank';
+            const eligible = await tx.$queryRaw<
+              { id: string; withdrawals_locked: boolean }[]
+            >(Prisma.sql`
+              SELECT id, withdrawals_locked
+              FROM customers
+              WHERE tenant_id = ${tenantId}
+                AND id = ${input.customerId}
+                AND status = 'active'
+                AND kyc_status = 'approved'
+                AND operations_status = 'active'
+              FOR SHARE
+            `);
+            if (!eligible[0]) throw new ForbiddenException('customer_payout_not_allowed');
+            if (eligible[0].withdrawals_locked) throw new ForbiddenException('withdrawals_locked');
+
+            await tx.$queryRaw(
+              Prisma.sql`SELECT id FROM "Customer" WHERE id = ${input.customerId} FOR SHARE`
+            );
+            await tx.$queryRaw(
+              Prisma.sql`SELECT id FROM "Account" WHERE id = ${input.sourceAccountId} FOR UPDATE`
+            );
+            await tx.$queryRaw(
+              Prisma.sql`SELECT id FROM "Beneficiary" WHERE id = ${input.beneficiaryId} FOR SHARE`
+            );
+            await tx.$queryRaw(
+              Prisma.sql`SELECT id FROM "FundingChannel" WHERE id = ${input.channelId} FOR SHARE`
+            );
+            const [currentCustomer, currentSource, currentBeneficiary, currentChannel] =
+              await Promise.all([
+                tx.customer.findUnique({ where: { id: input.customerId } }),
+                tx.account.findUnique({ where: { id: input.sourceAccountId } }),
+                tx.beneficiary.findUnique({ where: { id: input.beneficiaryId } }),
+                tx.fundingChannel.findUnique({ where: { id: input.channelId } }),
+              ]);
+            if (
+              !currentCustomer ||
+              currentCustomer.status !== 'ACTIVE' ||
+              currentCustomer.kycStatus !== 'APPROVED'
+            ) {
+              throw new ForbiddenException('customer_payout_not_allowed');
+            }
+            if (
+              currentChannel &&
+              currentChannel.organizationId !== currentCustomer.organizationId
+            ) {
+              throw new ForbiddenException('cross_tenant_channel');
+            }
+            this.validateShape(input, currentSource, null, currentChannel, currentBeneficiary);
+            payoutCustomer = currentCustomer;
+            payoutSource = currentSource;
+            payoutChannel = currentChannel;
           }
           if (input.type === 'DEPOSIT' && input.channelId && input.remittanceReference) {
             const existingReceipt = await tx.operation.findFirst({
@@ -275,16 +370,16 @@ export class OperationsService {
               }
             | undefined;
           if (input.type === 'PAYOUT') {
-            if (!channel || !input.payoutMethod) {
+            if (!payoutChannel || !input.payoutMethod) {
               throw new BadRequestException('payout_details_required');
             }
             const resolvedFee = await this.withdrawalFees.resolve(tx, {
-              scopeId: customer.organizationId,
+              scopeId: payoutCustomer.organizationId,
               customerId: input.customerId,
               assetClass: 'FIAT',
               currency: input.currency,
               method: input.payoutMethod,
-              channelCode: channel.code,
+              channelCode: payoutChannel.code,
               expectedVersion: input.expectedFeeRuleVersion,
             });
             feeAmount = resolvedFee.amount;
@@ -354,8 +449,8 @@ export class OperationsService {
             };
           }
           const reserve = amount.add(feeAmount);
-          if (frozen && source) {
-            await this.freeze(tx, source.id, reserve);
+          if (frozen && payoutSource) {
+            await this.freeze(tx, payoutSource.id, reserve);
             if (input.type === 'OTC' && input.currency === 'USDT') {
               await this.freezeCryptoWallet(tx, input.customerId, reserve);
             }
@@ -392,7 +487,7 @@ export class OperationsService {
               receivedAt: input.receivedAt ? new Date(input.receivedAt) : undefined,
               proofUrl: input.proofUrl,
               metadata:
-                withdrawalFeeSnapshot || conversionSnapshot || quoteActor
+                withdrawalFeeSnapshot || conversionSnapshot || quoteActor || customerSubmissionActor
                   ? {
                       ...(withdrawalFeeSnapshot ? { withdrawalFee: withdrawalFeeSnapshot } : {}),
                       ...(conversionSnapshot ? { marketQuote: conversionSnapshot.metadata } : {}),
@@ -402,6 +497,16 @@ export class OperationsService {
                               customerId: quoteActor.customerId,
                               ...(quoteActor.email ? { email: quoteActor.email } : {}),
                               expiresAt: quoteExpiresAt.toISOString(),
+                            },
+                          }
+                        : {}),
+                      ...(customerSubmissionActor
+                        ? {
+                            customerSubmission: {
+                              customerId: customerSubmissionActor.customerId,
+                              ...(customerSubmissionActor.email
+                                ? { email: customerSubmissionActor.email }
+                                : {}),
                             },
                           }
                         : {}),
@@ -428,7 +533,7 @@ export class OperationsService {
     }
   }
 
-  async confirmQuote(id: string, actor: CustomerQuoteActor) {
+  async confirmQuote(id: string, actor: CustomerOperationActor) {
     let result: {
       expired: boolean;
       operation: Prisma.OperationGetPayload<{

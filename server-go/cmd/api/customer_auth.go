@@ -228,6 +228,8 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 		app.customerMarketRate(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/customer/withdrawals":
 		app.createCustomerWithdrawal(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/customer/fiat-payouts":
+		app.createCustomerFiatPayout(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/customer/withdrawal-addresses":
 		app.listCustomerWithdrawalAddresses(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/customer/withdrawal-addresses":

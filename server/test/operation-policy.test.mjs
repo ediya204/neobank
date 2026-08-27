@@ -3,7 +3,12 @@ import test from 'node:test';
 import { Prisma } from '@prisma/client';
 import { OperationsService } from '../dist/src/operations/operations.service.js';
 
-const customer = { id: 'customer_test', organizationId: 'org_test' };
+const customer = {
+  id: 'customer_test',
+  organizationId: 'org_test',
+  status: 'ACTIVE',
+  kycStatus: 'APPROVED',
+};
 const maker = { id: 'admin_test', active: true, organizationId: 'org_test', role: 'ADMIN' };
 const channel = {
   id: 'channel_test',
@@ -272,10 +277,7 @@ test('deposit approval fails closed with an actionable error when clearing is mi
       }),
   });
 
-  await assert.rejects(
-    service.approve(operation.id, maker.id),
-    /clearing_account_not_configured/
-  );
+  await assert.rejects(service.approve(operation.id, maker.id), /clearing_account_not_configured/);
   assert.equal(credited, false);
 });
 
@@ -390,6 +392,249 @@ test('POBO payout accepts an active VA wallet for the same customer and currency
       beneficiary
     )
   );
+});
+
+test('customer payout freezes principal plus server-resolved fee and records the customer actor', async () => {
+  const source = {
+    id: 'source_customer_payout',
+    customerId: customer.id,
+    kind: 'SYSTEM_WALLET',
+    status: 'ACTIVE',
+    currency: 'USD',
+    network: null,
+  };
+  const payoutChannel = {
+    ...channel,
+    id: 'channel_customer_payout',
+    code: 'SCC-PAY',
+    type: 'PLATFORM_PAYOUT',
+  };
+  const beneficiary = {
+    id: 'beneficiary_customer_payout',
+    customerId: customer.id,
+    type: 'BANK',
+    currency: 'USD',
+    active: true,
+  };
+  let frozenAmount;
+  let createdData;
+  let accountWriteLocked = false;
+  const tx = {
+    $queryRaw: async (query) => {
+      const sql = query.strings.join('');
+      if (sql.includes('FROM "Account"')) {
+        assert.match(sql, /FOR UPDATE/);
+        accountWriteLocked = true;
+      }
+      return [{ id: customer.id, withdrawals_locked: false }];
+    },
+    operation: {
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        createdData = data;
+        return { id: 'operation_customer_payout', ...data };
+      },
+    },
+    account: {
+      findUnique: async () => source,
+      updateMany: async ({ where }) => {
+        frozenAmount = where.availableBalance.gte;
+        return { count: 1 };
+      },
+    },
+    customer: { findUnique: async () => customer },
+    fundingChannel: { findUnique: async () => payoutChannel },
+    beneficiary: { findUnique: async () => beneficiary },
+  };
+  const service = new OperationsService(
+    {
+      user: { findUnique: async () => maker },
+      customer: { findUnique: async () => customer },
+      account: { findUnique: async () => source },
+      fundingChannel: { findUnique: async () => payoutChannel },
+      beneficiary: { findUnique: async () => beneficiary },
+      $transaction: async (callback) => callback(tx),
+    },
+    {
+      resolve: async () => ({
+        amount: new Prisma.Decimal('20'),
+        snapshot: { id: 'fee_test', version: '7', amount: '20' },
+      }),
+    }
+  );
+
+  const operation = await service.createCustomerPayout(
+    {
+      customerId: customer.id,
+      type: 'PAYOUT',
+      currency: 'USD',
+      amount: '100',
+      sourceAccountId: source.id,
+      beneficiaryId: beneficiary.id,
+      channelId: payoutChannel.id,
+      payoutMethod: 'PLATFORM',
+      expectedFeeAmount: '20',
+      expectedFeeRuleVersion: '7',
+      idempotencyKey: 'customer-payout-key',
+    },
+    maker.id,
+    { customerId: customer.id, email: 'customer@example.com' }
+  );
+
+  assert.equal(frozenAmount.toString(), '120');
+  assert.equal(accountWriteLocked, true);
+  assert.equal(operation.status, 'SUBMITTED');
+  assert.deepEqual(createdData.metadata.customerSubmission, {
+    customerId: customer.id,
+    email: 'customer@example.com',
+  });
+});
+
+test('customer payout idempotency key rejects a different financial payload', async () => {
+  const source = {
+    id: 'source_idempotent_payout',
+    customerId: customer.id,
+    kind: 'SYSTEM_WALLET',
+    status: 'ACTIVE',
+    currency: 'USD',
+    network: null,
+  };
+  const payoutChannel = {
+    ...channel,
+    id: 'channel_idempotent_payout',
+    code: 'SCC-PAY',
+    type: 'PLATFORM_PAYOUT',
+  };
+  const beneficiary = {
+    id: 'beneficiary_idempotent_payout',
+    customerId: customer.id,
+    type: 'BANK',
+    currency: 'USD',
+    active: true,
+  };
+  const existing = {
+    id: 'operation_existing_payout',
+    customerId: customer.id,
+    type: 'PAYOUT',
+    status: 'PROCESSING',
+    currency: 'USD',
+    amount: new Prisma.Decimal('100'),
+    feeAmount: new Prisma.Decimal('20'),
+    sourceAccountId: source.id,
+    beneficiaryId: beneficiary.id,
+    channelId: payoutChannel.id,
+    payoutMethod: 'PLATFORM',
+    narrative: null,
+    metadata: {
+      withdrawalFee: { version: '7' },
+      customerSubmission: { customerId: customer.id, email: 'customer@example.com' },
+    },
+  };
+  const service = new OperationsService(
+    {
+      user: { findUnique: async () => maker },
+      customer: { findUnique: async () => customer },
+      account: { findUnique: async () => source },
+      fundingChannel: { findUnique: async () => payoutChannel },
+      beneficiary: { findUnique: async () => beneficiary },
+      $transaction: async (callback) =>
+        callback({ operation: { findFirst: async () => existing } }),
+    },
+    { resolve: async () => assert.fail('an idempotent retry must return before fee resolution') }
+  );
+  const payout = {
+    customerId: customer.id,
+    type: 'PAYOUT',
+    currency: 'USD',
+    amount: '100',
+    sourceAccountId: source.id,
+    beneficiaryId: beneficiary.id,
+    channelId: payoutChannel.id,
+    payoutMethod: 'PLATFORM',
+    expectedFeeAmount: '20',
+    expectedFeeRuleVersion: '7',
+    idempotencyKey: 'customer-payout-key',
+  };
+  const actor = { customerId: customer.id, email: 'customer@example.com' };
+
+  assert.equal(await service.createCustomerPayout(payout, maker.id, actor), existing);
+
+  await assert.rejects(
+    service.createCustomerPayout({ ...payout, amount: '101' }, maker.id, actor),
+    /idempotency_key_reused/
+  );
+});
+
+test('customer payout rechecks a revoked beneficiary inside the freezing transaction', async () => {
+  const source = {
+    id: 'source_recheck_payout',
+    customerId: customer.id,
+    kind: 'SYSTEM_WALLET',
+    status: 'ACTIVE',
+    currency: 'USD',
+    network: null,
+  };
+  const payoutChannel = {
+    ...channel,
+    id: 'channel_recheck_payout',
+    code: 'SCC-PAY',
+    type: 'PLATFORM_PAYOUT',
+  };
+  const beneficiary = {
+    id: 'beneficiary_recheck_payout',
+    customerId: customer.id,
+    type: 'BANK',
+    currency: 'USD',
+    active: true,
+  };
+  let frozen = false;
+  const tx = {
+    $queryRaw: async () => [{ id: customer.id, withdrawals_locked: false }],
+    operation: { findFirst: async () => null },
+    customer: { findUnique: async () => customer },
+    account: {
+      findUnique: async () => source,
+      updateMany: async () => {
+        frozen = true;
+        return { count: 1 };
+      },
+    },
+    fundingChannel: { findUnique: async () => payoutChannel },
+    beneficiary: { findUnique: async () => ({ ...beneficiary, active: false }) },
+  };
+  const service = new OperationsService(
+    {
+      user: { findUnique: async () => maker },
+      customer: { findUnique: async () => customer },
+      account: { findUnique: async () => source },
+      fundingChannel: { findUnique: async () => payoutChannel },
+      beneficiary: { findUnique: async () => beneficiary },
+      $transaction: async (callback) => callback(tx),
+    },
+    { resolve: async () => ({ amount: new Prisma.Decimal('20'), snapshot: { version: '7' } }) }
+  );
+
+  await assert.rejects(
+    service.createCustomerPayout(
+      {
+        customerId: customer.id,
+        type: 'PAYOUT',
+        currency: 'USD',
+        amount: '100',
+        sourceAccountId: source.id,
+        beneficiaryId: beneficiary.id,
+        channelId: payoutChannel.id,
+        payoutMethod: 'PLATFORM',
+        expectedFeeAmount: '20',
+        expectedFeeRuleVersion: '7',
+        idempotencyKey: 'customer-payout-recheck-key',
+      },
+      maker.id,
+      { customerId: customer.id, email: 'customer@example.com' }
+    ),
+    /payout_customer_or_beneficiary_mismatch/
+  );
+  assert.equal(frozen, false);
 });
 
 test('VA payout reuses the VIRTUAL_ACCOUNT bank channel bound at account opening', () => {

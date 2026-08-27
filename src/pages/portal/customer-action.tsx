@@ -68,6 +68,19 @@ export type CustomerAction = 'transfer' | 'fx' | 'otc' | 'payout' | 'beneficiari
 
 type PayoutMethod = 'PLATFORM' | 'POBO' | 'VA';
 
+type PendingCustomerPayout = {
+  currency: string;
+  amount: string;
+  source_account_id: string;
+  beneficiary_id: string;
+  channel_id: string;
+  payout_method: PayoutMethod;
+  expected_fee_amount: string;
+  expected_fee_rule_version: string;
+  idempotency_key: string;
+  narrative: string;
+};
+
 type CustomerWithdrawalAddressRow = {
   id: string;
   label: string;
@@ -164,6 +177,10 @@ export default function CustomerActionPage({
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [pendingQuote, setPendingQuote] = useState<Operation | null>(null);
+  const [pendingPayout, setPendingPayout] = useState<PendingCustomerPayout | null>(null);
+  const [payoutPassword, setPayoutPassword] = useState('');
+  const [payoutTotpCode, setPayoutTotpCode] = useState('');
+  const [payoutConfirmError, setPayoutConfirmError] = useState('');
   const [quoteCountdownMs, setQuoteCountdownMs] = useState(0);
   let conversionType: RateVersion['type'] | null = null;
   if (action === 'fx') conversionType = 'FX';
@@ -484,6 +501,22 @@ export default function CustomerActionPage({
           expectedFeeAmount: payoutFee.amount,
           expectedFeeRuleVersion: payoutFee.version,
         });
+        setPendingPayout({
+          currency: sourceAccount.currency,
+          amount,
+          source_account_id: sourceAccount.id,
+          beneficiary_id: selectedBeneficiary.id,
+          channel_id: channel.id,
+          payout_method: payoutMethod,
+          expected_fee_amount: payoutFee.amount,
+          expected_fee_rule_version: payoutFee.version,
+          idempotency_key: payload.idempotencyKey as string,
+          narrative: note,
+        });
+        setPayoutPassword('');
+        setPayoutTotpCode('');
+        setPayoutConfirmError('');
+        return;
       }
       payload.type = type;
       const operationPath = action === 'otc' ? '/operations/quote' : '/operations';
@@ -500,9 +533,7 @@ export default function CustomerActionPage({
         return;
       }
       let successMessage = portalText('申请已提交审核。处理完成后，账户余额将自动更新。');
-      if (action === 'payout') {
-        successMessage = portalText('付款申请已提交。审核通过后将由银行或支付通道执行。');
-      } else if (action === 'fx' && created.rate && created.quoteAmount && created.quoteCurrency) {
+      if (action === 'fx' && created.rate && created.quoteAmount && created.quoteCurrency) {
         successMessage = portalText(
           '成交报价已锁定：1 {{value0}} = {{value1}} {{value2}}，预计到账 {{value3}}。',
           {
@@ -521,6 +552,61 @@ export default function CustomerActionPage({
       setError(
         value instanceof Error ? value.message : portalText('申请暂时无法提交，请稍后重试。')
       );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const closePayoutConfirmation = () => {
+    if (submitting) return;
+    setPendingPayout(null);
+    setPayoutPassword('');
+    setPayoutTotpCode('');
+    setPayoutConfirmError('');
+  };
+
+  const confirmPayout = async () => {
+    if (!pendingPayout) return;
+    if (!payoutPassword || !/^\d{6}$/.test(payoutTotpCode)) {
+      setPayoutConfirmError(portalText('请输入当前密码和 6 位动态码。'));
+      return;
+    }
+    setSubmitting(true);
+    setPayoutConfirmError('');
+    try {
+      const created = await neobankApi<{ id: string; status: string }>('/customer/fiat-payouts', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...pendingPayout,
+          current_password: payoutPassword,
+          totp_code: payoutTotpCode,
+        }),
+      });
+      closePayoutConfirmation();
+      const statusMessage = {
+        SUBMITTED: portalText('付款申请已提交。审核通过后将由银行或支付通道执行。'),
+        APPROVED: portalText('付款申请已通过审核，正在等待处理。'),
+        PROCESSING: portalText('付款申请正在处理中。'),
+        COMPLETED: portalText('付款申请已完成。'),
+        REJECTED: portalText('付款申请已被拒绝。'),
+        FAILED: portalText('付款申请处理失败。'),
+        CANCELLED: portalText('付款申请已取消。'),
+      }[created.status];
+      setSuccess(statusMessage || portalText('付款申请状态已更新。'));
+      setAmount('');
+      setNote('');
+      await Promise.all([loadDetail(), refresh()]);
+    } catch (value) {
+      const message = value instanceof Error ? value.message : 'payout_submission_failed';
+      if (message === 'invalid_current_password') {
+        setPayoutConfirmError(portalText('当前密码不正确。'));
+      } else if (message === 'invalid_totp_code') {
+        setPayoutConfirmError(portalText('动态码无效、已过期或已使用，请输入当前动态码。'));
+      } else if (message === 'withdrawals_locked') {
+        setPayoutConfirmError(portalText('转出保护已锁定'));
+      } else {
+        setPayoutConfirmError(portalText('申请暂时无法提交，请稍后重试。'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1146,6 +1232,45 @@ export default function CustomerActionPage({
             onClick={confirmPendingQuote}
           >
             {quoteConfirmButtonText}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={Boolean(pendingPayout)}
+        onClose={submitting ? undefined : closePayoutConfirmation}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>{portalText('确认并提交付款')}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.25} sx={{ pt: 1 }}>
+            <Alert severity="warning">{submissionInfoText}</Alert>
+            {payoutConfirmError && <Alert severity="error">{payoutConfirmError}</Alert>}
+            <TextField
+              required
+              type="password"
+              label={portalText('当前登录密码')}
+              value={payoutPassword}
+              onChange={(event) => setPayoutPassword(event.target.value)}
+              autoComplete="current-password"
+            />
+            <TextField
+              required
+              label={portalText('当前 6 位动态码')}
+              value={payoutTotpCode}
+              onChange={(event) =>
+                setPayoutTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+              }
+              autoComplete="one-time-code"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={submitting} onClick={closePayoutConfirmation}>
+            {portalText('取消')}
+          </Button>
+          <Button variant="contained" disabled={submitting} onClick={confirmPayout}>
+            {submitting ? portalText('正在提交…') : portalText('确认并提交付款')}
           </Button>
         </DialogActions>
       </Dialog>

@@ -89,15 +89,7 @@ const fullAdminWalletRoutes = [
       { path: 'money/deposit', element: <FiatDepositPage /> },
       { path: 'money/fx', element: <CustomerActionPage action="fx" /> },
       { path: 'money/otc', element: <CustomerActionPage action="otc" /> },
-      {
-        path: 'money/payouts',
-        element: (
-          <CustomerActionPage
-            action="payout"
-            submissionDisabledReason="银行转出服务当前暂未开放。"
-          />
-        ),
-      },
+      { path: 'money/payouts', element: <CustomerActionPage action="payout" /> },
       { path: 'settings/allowlist', element: <CustomerActionPage action="beneficiaries" /> },
       {
         path: 'money/beneficiaries',

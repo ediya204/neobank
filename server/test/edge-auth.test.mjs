@@ -230,6 +230,49 @@ test('internal Cregis accounting requires the dedicated secret and service ident
   assert.equal(request.headers['x-user-id'], 'shared-admin');
 });
 
+test('internal customer payouts require the dedicated accounting secret and service identity', () => {
+  const accountingSecret = 'accounting-secret-0123456789-abcdef';
+  const requestTarget = '/api/v1/internal/customer-payouts';
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const body = Buffer.from('{"customerId":"customer_test"}');
+  const input = {
+    body,
+    identity: 'service:neobank-go',
+    method: 'POST',
+    requestTarget,
+    secret: accountingSecret,
+    timestamp,
+  };
+  const request = {
+    body: JSON.parse(body.toString()),
+    headers: {
+      'x-neobank-user': input.identity,
+      'x-core-edge-timestamp': timestamp,
+      'x-core-edge-signature': edgeSignature(input),
+    },
+    method: 'POST',
+    originalUrl: requestTarget,
+    rawBody: body,
+    header(name) {
+      return this.headers[name.toLowerCase()];
+    },
+  };
+  let nextCalled = false;
+  const response = {
+    status() {
+      assert.fail('dedicated accounting signature should be accepted');
+    },
+  };
+  edgeAuthMiddleware({ adminUserId: 'shared-admin', secret, accountingSecret })(
+    request,
+    response,
+    () => {
+      nextCalled = true;
+    }
+  );
+  assert.equal(nextCalled, true);
+});
+
 test('internal Cregis accounting rejects an empty dedicated secret even with a matching HMAC', () => {
   const requestTarget = '/api/v1/internal/cregis/deposits/deposit_test/post';
   const timestamp = String(Math.floor(Date.now() / 1000));

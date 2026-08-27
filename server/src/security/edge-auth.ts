@@ -74,7 +74,9 @@ export function edgeAuthMiddleware(options: {
     const identity = request.header('x-neobank-user')?.trim() || '';
     const timestamp = request.header('x-core-edge-timestamp')?.trim() || '';
     const signature = request.header('x-core-edge-signature')?.trim() || '';
-    const accountingRequest = request.originalUrl.startsWith('/api/v1/internal/cregis/');
+    const accountingRequest =
+      request.originalUrl.startsWith('/api/v1/internal/cregis/') ||
+      request.originalUrl.startsWith('/api/v1/internal/customer-payouts');
     const secret = accountingRequest ? options.accountingSecret || '' : options.secret;
     // Reverse proxies can preserve a differently formatted non-empty raw JSON
     // body than the canonical bytes signed and forwarded by the Worker. Verify
