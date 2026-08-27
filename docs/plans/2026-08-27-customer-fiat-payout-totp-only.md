@@ -37,3 +37,10 @@
 
 1. Run Go tests, profile check, typecheck, i18n check, lint, Core tests, production build, whitespace, and secret checks.
 2. Commit directly on `main`; do not push or deploy.
+
+### Task 4: Make the submitted state unmistakable
+
+1. Add a failing source-contract check requiring a submitted-result state, review-step progress, and transaction-history action.
+2. After a successful payout submission, replace the form with a compact result card showing the reference, frozen total, beneficiary, and current review status.
+3. Keep “完成” inactive until the payout is actually completed; allow “查看交易明细” or “再发起一笔”.
+4. Run the focused check, typecheck, i18n check, lint, and production build; commit without pushing or deploying.
