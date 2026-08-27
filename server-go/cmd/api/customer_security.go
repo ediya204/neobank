@@ -62,6 +62,37 @@ func (app *application) verifyCustomerSecurityStepUp(
 	return customerSecurityStepUp{CredentialVersion: version, TOTPCounter: counter}, ""
 }
 
+func (app *application) verifyCustomerTOTPOnly(
+	r *http.Request,
+	session *customerSession,
+	totpCode string,
+) (customerSecurityStepUp, string) {
+	if len(totpCode) != 6 {
+		return customerSecurityStepUp{}, "validation_error"
+	}
+	rows, err := app.db.Query(r.Context(), `SELECT totp_secret_ciphertext, totp_last_counter,
+	    credential_version FROM customer_credentials WHERE customer_id=?`, session.CustomerID)
+	if err != nil || len(rows) != 1 {
+		return customerSecurityStepUp{}, "security_step_up_unavailable"
+	}
+	if text(rows[0]["totp_secret_ciphertext"]) == "" {
+		return customerSecurityStepUp{}, "totp_required"
+	}
+	secret, err := app.decryptCustomerTOTP(text(rows[0]["totp_secret_ciphertext"]))
+	if err != nil {
+		return customerSecurityStepUp{}, "security_step_up_unavailable"
+	}
+	counter, valid := verifyTOTPCode(secret, totpCode, time.Now().UTC(), integer(rows[0]["totp_last_counter"]))
+	if !valid {
+		return customerSecurityStepUp{}, "invalid_totp_code"
+	}
+	version := integer(rows[0]["credential_version"])
+	if version != session.CredentialVersion {
+		return customerSecurityStepUp{}, "authentication_state_changed"
+	}
+	return customerSecurityStepUp{CredentialVersion: version, TOTPCounter: counter}, ""
+}
+
 func writeCustomerSecurityError(w http.ResponseWriter, code string) {
 	status := http.StatusConflict
 	switch code {

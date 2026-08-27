@@ -16,7 +16,6 @@ var customerFiatPayoutVersion = regexp.MustCompile(`^[0-9]{1,20}$`)
 var customerFiatPayoutTOTP = regexp.MustCompile(`^[0-9]{6}$`)
 
 type customerFiatPayoutInput struct {
-	CurrentPassword        string `json:"current_password"`
 	TOTPCode               string `json:"totp_code"`
 	Currency               string `json:"currency"`
 	Amount                 string `json:"amount"`
@@ -45,8 +44,7 @@ func normalizeCustomerFiatPayoutInput(input customerFiatPayoutInput) (customerFi
 	amount, amountOK := new(big.Rat).SetString(input.Amount)
 	fee, feeOK := new(big.Rat).SetString(input.ExpectedFeeAmount)
 	methodOK := input.PayoutMethod == "PLATFORM" || input.PayoutMethod == "POBO" || input.PayoutMethod == "VA"
-	ok := len(input.CurrentPassword) >= 1 && len(input.CurrentPassword) <= 128 &&
-		customerFiatPayoutTOTP.MatchString(input.TOTPCode) &&
+	ok := customerFiatPayoutTOTP.MatchString(input.TOTPCode) &&
 		(input.Currency == "USD" || input.Currency == "HKD") &&
 		customerFiatPayoutMoney.MatchString(input.Amount) && amountOK && amount.Sign() > 0 &&
 		customerFiatPayoutMoney.MatchString(input.ExpectedFeeAmount) && feeOK && fee.Sign() >= 0 &&
@@ -83,7 +81,7 @@ func (app *application) createCustomerFiatPayout(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusLocked, map[string]any{"error": map[string]string{"code": "withdrawals_locked"}})
 		return
 	}
-	stepUp, code := app.verifyCustomerSecurityStepUp(r, session, input.CurrentPassword, input.TOTPCode)
+	stepUp, code := app.verifyCustomerTOTPOnly(r, session, input.TOTPCode)
 	if code != "" {
 		writeCustomerSecurityError(w, code)
 		return

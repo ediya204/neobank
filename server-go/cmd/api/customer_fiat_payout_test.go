@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,8 +15,9 @@ import (
 )
 
 type customerPayoutDatabase struct {
-	queries []map[string]any
-	batches [][]d1.Statement
+	queries      []map[string]any
+	batches      [][]d1.Statement
+	batchChanges *int
 }
 
 func (db *customerPayoutDatabase) Query(context.Context, string, ...any) ([]map[string]any, error) {
@@ -32,14 +32,19 @@ func (db *customerPayoutDatabase) Query(context.Context, string, ...any) ([]map[
 func (db *customerPayoutDatabase) Batch(_ context.Context, statements ...d1.Statement) ([]d1.Result, error) {
 	db.batches = append(db.batches, statements)
 	results := make([]d1.Result, len(statements))
+	changes := 1
+	if db.batchChanges != nil {
+		changes = *db.batchChanges
+	}
 	for index := range results {
-		results[index] = d1.Result{Meta: map[string]any{"changes": float64(1)}}
+		results[index] = d1.Result{Meta: map[string]any{"changes": float64(changes)}}
 	}
 	return results, nil
 }
 
 type customerPayoutCore struct {
 	input coreaccounting.CustomerPayoutRequest
+	calls int
 }
 
 func (core *customerPayoutCore) PostDeposit(context.Context, string) (coreaccounting.Result, error) {
@@ -51,6 +56,7 @@ func (core *customerPayoutCore) AdvanceWithdrawal(context.Context, string, strin
 }
 
 func (core *customerPayoutCore) CreateCustomerPayout(_ context.Context, input coreaccounting.CustomerPayoutRequest) (coreaccounting.CustomerPayoutResult, error) {
+	core.calls++
 	core.input = input
 	return coreaccounting.CustomerPayoutResult{
 		ID: "operation_test", Reference: "OP-TEST", Status: "SUBMITTED",
@@ -58,55 +64,58 @@ func (core *customerPayoutCore) CreateCustomerPayout(_ context.Context, input co
 	}, nil
 }
 
-func TestCustomerFiatPayoutRequiresSecurityStepUpAndUsesSessionCustomer(t *testing.T) {
+func customerPayoutSessionRow(now time.Time, csrfToken string) map[string]any {
+	return map[string]any{
+		"id": "session_test", "customer_id": "customer_test", "csrf_hash": tokenHash(csrfToken),
+		"credential_version": int64(1), "current_credential_version": int64(1),
+		"expires_at":      now.Add(time.Hour).Format(time.RFC3339Nano),
+		"idle_expires_at": now.Add(time.Hour).Format(time.RFC3339Nano),
+		"last_seen_at":    now.Format(time.RFC3339Nano), "email": "customer@example.com",
+		"display_name": "Customer", "status": "active", "totp_enabled": true,
+	}
+}
+
+func customerPayoutRequest(app *application, sessionToken, csrfToken, totpCode string, includeCSRF bool) *http.Request {
+	payload, _ := json.Marshal(map[string]string{
+		"totp_code": totpCode, "currency": "USD", "amount": "100",
+		"source_account_id": "account_test", "beneficiary_id": "beneficiary_test",
+		"channel_id": "channel_test", "payout_method": "PLATFORM", "expected_fee_amount": "20",
+		"expected_fee_rule_version": "7", "idempotency_key": "request_test",
+	})
+	request := httptest.NewRequest(http.MethodPost, "https://api.example.test/api/v1/customer/fiat-payouts", bytes.NewReader(payload))
+	request.Header.Set("Origin", app.portalURL)
+	if includeCSRF {
+		request.Header.Set("X-CSRF-Token", csrfToken)
+	}
+	request.AddCookie(&http.Cookie{Name: app.customerCookieName(), Value: sessionToken})
+	request.AddCookie(&http.Cookie{Name: app.customerCSRFCookieName(), Value: csrfToken})
+	return request
+}
+
+func TestCustomerFiatPayoutRequiresTOTPAndUsesSessionCustomer(t *testing.T) {
 	now := time.Now().UTC()
-	password := "Customer-Secure-Password-8!"
 	secret := "JBSWY3DPEHPK3PXP"
 	sessionToken := strings.Repeat("s", 40)
 	csrfToken := strings.Repeat("c", 40)
-	salt := []byte("0123456789abcdef")
 	app := &application{
 		tenantID: "tenant_test", coreOrganizationID: "org_test", portalURL: "https://portal.example.test",
-		customerPasswordPepper: []byte(strings.Repeat("p", 32)),
-		customerTOTPKey:        []byte("0123456789abcdef0123456789abcdef"),
+		customerTOTPKey: []byte("0123456789abcdef0123456789abcdef"),
 	}
 	encryptedTOTP, err := app.encryptCustomerTOTP(secret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	passwordHash := app.deriveCustomerArgon2id(password, salt)
 	db := &customerPayoutDatabase{queries: []map[string]any{
-		{
-			"id": "session_test", "customer_id": "customer_test", "csrf_hash": tokenHash(csrfToken),
-			"credential_version": int64(1), "current_credential_version": int64(1),
-			"expires_at":      now.Add(time.Hour).Format(time.RFC3339Nano),
-			"idle_expires_at": now.Add(time.Hour).Format(time.RFC3339Nano),
-			"last_seen_at":    now.Format(time.RFC3339Nano), "email": "customer@example.com",
-			"display_name": "Customer", "status": "active", "totp_enabled": true,
-		},
+		customerPayoutSessionRow(now, csrfToken),
 		{"withdrawals_locked": false},
 		{
-			"password_salt": hex.EncodeToString(salt), "password_hash": hex.EncodeToString(passwordHash),
-			"password_algorithm": customerPasswordAlgorithm, "password_memory_kib": int64(customerArgonMemoryKiB),
-			"password_time_cost": int64(customerArgonTimeCost), "password_parallelism": int64(customerArgonParallelism),
 			"totp_secret_ciphertext": encryptedTOTP, "totp_last_counter": int64(-1), "credential_version": int64(1),
 		},
 	}}
 	core := &customerPayoutCore{}
 	app.db = db
 	app.coreAccounting = core
-	payload, _ := json.Marshal(map[string]string{
-		"current_password": password, "totp_code": totpCodeForTest(t, secret, now),
-		"currency": "USD", "amount": "100", "source_account_id": "account_test",
-		"beneficiary_id": "beneficiary_test", "channel_id": "channel_test",
-		"payout_method": "PLATFORM", "expected_fee_amount": "20",
-		"expected_fee_rule_version": "7", "idempotency_key": "request_test",
-	})
-	request := httptest.NewRequest(http.MethodPost, "https://api.example.test/api/v1/customer/fiat-payouts", bytes.NewReader(payload))
-	request.Header.Set("Origin", app.portalURL)
-	request.Header.Set("X-CSRF-Token", csrfToken)
-	request.AddCookie(&http.Cookie{Name: app.customerCookieName(), Value: sessionToken})
-	request.AddCookie(&http.Cookie{Name: app.customerCSRFCookieName(), Value: csrfToken})
+	request := customerPayoutRequest(app, sessionToken, csrfToken, totpCodeForTest(t, secret, now), true)
 	response := httptest.NewRecorder()
 
 	app.createCustomerFiatPayout(response, request)
@@ -122,12 +131,84 @@ func TestCustomerFiatPayoutRequiresSecurityStepUpAndUsesSessionCustomer(t *testi
 	}
 }
 
+func TestCustomerFiatPayoutRejectsSecurityFailuresBeforeCore(t *testing.T) {
+	now := time.Now().UTC()
+	secret := "JBSWY3DPEHPK3PXP"
+	sessionToken := strings.Repeat("s", 40)
+	csrfToken := strings.Repeat("c", 40)
+	appForEncryption := &application{
+		tenantID: "tenant_test", customerTOTPKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+	encryptedTOTP, err := appForEncryption.encryptCustomerTOTP(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validCode := totpCodeForTest(t, secret, now)
+	invalidCode := "0" + validCode[1:]
+	if invalidCode == validCode {
+		invalidCode = "1" + validCode[1:]
+	}
+	credentials := map[string]any{
+		"totp_secret_ciphertext": encryptedTOTP, "totp_last_counter": int64(-1), "credential_version": int64(1),
+	}
+	zero := 0
+	tests := []struct {
+		name         string
+		status       int
+		includeCSRF  bool
+		totpCode     string
+		queries      []map[string]any
+		batchChanges *int
+	}{
+		{
+			name: "missing csrf", status: http.StatusForbidden, totpCode: validCode,
+			queries: []map[string]any{customerPayoutSessionRow(now, csrfToken)},
+		},
+		{
+			name: "withdrawals locked", status: http.StatusLocked, includeCSRF: true, totpCode: validCode,
+			queries: []map[string]any{customerPayoutSessionRow(now, csrfToken), {"withdrawals_locked": true}},
+		},
+		{
+			name: "invalid totp", status: http.StatusUnauthorized, includeCSRF: true, totpCode: invalidCode,
+			queries: []map[string]any{customerPayoutSessionRow(now, csrfToken), {"withdrawals_locked": false}, credentials},
+		},
+		{
+			name: "replayed totp", status: http.StatusConflict, includeCSRF: true, totpCode: validCode,
+			queries:      []map[string]any{customerPayoutSessionRow(now, csrfToken), {"withdrawals_locked": false}, credentials},
+			batchChanges: &zero,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			app := &application{
+				tenantID: "tenant_test", portalURL: "https://portal.example.test",
+				customerTOTPKey: []byte("0123456789abcdef0123456789abcdef"),
+			}
+			db := &customerPayoutDatabase{queries: test.queries, batchChanges: test.batchChanges}
+			core := &customerPayoutCore{}
+			app.db = db
+			app.coreAccounting = core
+			response := httptest.NewRecorder()
+
+			app.createCustomerFiatPayout(
+				response,
+				customerPayoutRequest(app, sessionToken, csrfToken, test.totpCode, test.includeCSRF),
+			)
+
+			if response.Code != test.status || core.calls != 0 {
+				t.Fatalf("status=%d core_calls=%d body=%s", response.Code, core.calls, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestNormalizeCustomerFiatPayoutRejectsUnsupportedRail(t *testing.T) {
 	input := customerFiatPayoutInput{
 		Currency: "EUR", Amount: "100", SourceAccountID: "account_test",
 		BeneficiaryID: "beneficiary_test", ChannelID: "channel_test", PayoutMethod: "PLATFORM",
 		ExpectedFeeAmount: "20", ExpectedFeeRuleVersion: "7", IdempotencyKey: "request_test",
-		CurrentPassword: "password", TOTPCode: "123456",
+		TOTPCode: "123456",
 	}
 	if _, ok := normalizeCustomerFiatPayoutInput(input); ok {
 		t.Fatal("unsupported customer fiat payout currency accepted")

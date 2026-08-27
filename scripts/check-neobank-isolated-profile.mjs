@@ -349,9 +349,16 @@ assert.match(customerActionPage, /`\/operations\/\$\{pendingQuote\.id\}\/confirm
 assert.match(router, /<CustomerActionPage action="payout" \/>/);
 assert.match(customerActionPage, /const loadPayoutConfiguration = action === 'payout'/);
 assert.match(customerActionPage, /neobankApi<[^>]+>\('\/customer\/fiat-payouts'/);
-assert.match(customerActionPage, /current_password/);
+assert.doesNotMatch(customerActionPage, /current_password|payoutPassword/);
 assert.match(customerActionPage, /totp_code/);
 assert.match(worker, /pathname === '\/api\/v1\/customer\/fiat-payouts'/);
+assert.match(worker, /__Host-neobank_customer/);
+assert.match(worker, /session\\0\$\{sessionToken\}\\0\$\{pathname\}/);
+const productionSessionCookie = worker.indexOf(
+  'match(/(?:^|;\\s*)__Host-neobank_customer=([^;]+)/)?.[1]'
+);
+const localSessionCookie = worker.indexOf('match(/(?:^|;\\s*)neobank_customer=([^;]+)/)?.[1]');
+assert.ok(productionSessionCookie >= 0 && localSessionCookie > productionSessionCookie);
 assert.match(
   authApi,
   /response\.status === 401 &&[\s\S]*?authentication_required[\s\S]*?session_expired[\s\S]*?notifySessionExpired\(\)/

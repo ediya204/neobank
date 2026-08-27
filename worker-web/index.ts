@@ -46,6 +46,19 @@ async function enforceAuthRateLimit(
   });
   if (!sourceResult.success) return json({ error: { code: 'auth_rate_limited' } }, 429);
 
+  if (customerPayout) {
+    const cookieHeader = request.headers.get('cookie') || '';
+    const sessionToken =
+      cookieHeader.match(/(?:^|;\s*)__Host-neobank_customer=([^;]+)/)?.[1] ||
+      cookieHeader.match(/(?:^|;\s*)neobank_customer=([^;]+)/)?.[1];
+    if (sessionToken) {
+      const sessionResult = await limiter.limit({
+        key: await rateLimitKey(`session\0${sessionToken}\0${pathname}`),
+      });
+      if (!sessionResult.success) return json({ error: { code: 'auth_rate_limited' } }, 429);
+    }
+  }
+
   if (
     pathname.endsWith('/login') ||
     pathname === '/api/auth/customer/register' ||

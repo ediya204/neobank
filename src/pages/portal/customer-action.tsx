@@ -178,7 +178,6 @@ export default function CustomerActionPage({
   const [submitting, setSubmitting] = useState(false);
   const [pendingQuote, setPendingQuote] = useState<Operation | null>(null);
   const [pendingPayout, setPendingPayout] = useState<PendingCustomerPayout | null>(null);
-  const [payoutPassword, setPayoutPassword] = useState('');
   const [payoutTotpCode, setPayoutTotpCode] = useState('');
   const [payoutConfirmError, setPayoutConfirmError] = useState('');
   const [quoteCountdownMs, setQuoteCountdownMs] = useState(0);
@@ -513,7 +512,6 @@ export default function CustomerActionPage({
           idempotency_key: payload.idempotencyKey as string,
           narrative: note,
         });
-        setPayoutPassword('');
         setPayoutTotpCode('');
         setPayoutConfirmError('');
         return;
@@ -560,15 +558,14 @@ export default function CustomerActionPage({
   const closePayoutConfirmation = () => {
     if (submitting) return;
     setPendingPayout(null);
-    setPayoutPassword('');
     setPayoutTotpCode('');
     setPayoutConfirmError('');
   };
 
   const confirmPayout = async () => {
     if (!pendingPayout) return;
-    if (!payoutPassword || !/^\d{6}$/.test(payoutTotpCode)) {
-      setPayoutConfirmError(portalText('请输入当前密码和 6 位动态码。'));
+    if (!/^\d{6}$/.test(payoutTotpCode)) {
+      setPayoutConfirmError(portalText('请输入验证器当前显示的 6 位动态码。'));
       return;
     }
     setSubmitting(true);
@@ -578,7 +575,6 @@ export default function CustomerActionPage({
         method: 'POST',
         body: JSON.stringify({
           ...pendingPayout,
-          current_password: payoutPassword,
           totp_code: payoutTotpCode,
         }),
       });
@@ -598,9 +594,7 @@ export default function CustomerActionPage({
       await Promise.all([loadDetail(), refresh()]);
     } catch (value) {
       const message = value instanceof Error ? value.message : 'payout_submission_failed';
-      if (message === 'invalid_current_password') {
-        setPayoutConfirmError(portalText('当前密码不正确。'));
-      } else if (message === 'invalid_totp_code') {
+      if (message === 'invalid_totp_code') {
         setPayoutConfirmError(portalText('动态码无效、已过期或已使用，请输入当前动态码。'));
       } else if (message === 'withdrawals_locked') {
         setPayoutConfirmError(portalText('转出保护已锁定'));
@@ -1246,14 +1240,6 @@ export default function CustomerActionPage({
           <Stack spacing={2.25} sx={{ pt: 1 }}>
             <Alert severity="warning">{submissionInfoText}</Alert>
             {payoutConfirmError && <Alert severity="error">{payoutConfirmError}</Alert>}
-            <TextField
-              required
-              type="password"
-              label={portalText('当前登录密码')}
-              value={payoutPassword}
-              onChange={(event) => setPayoutPassword(event.target.value)}
-              autoComplete="current-password"
-            />
             <TextField
               required
               label={portalText('当前 6 位动态码')}
