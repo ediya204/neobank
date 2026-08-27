@@ -348,9 +348,14 @@ assert.match(
 assert.match(customerActionPage, /`\/operations\/\$\{pendingQuote\.id\}\/confirm`/);
 assert.match(router, /<CustomerActionPage action="payout" \/>/);
 assert.match(customerActionPage, /const loadPayoutConfiguration = action === 'payout'/);
-assert.match(customerActionPage, /neobankApi<[^>]+>\('\/customer\/fiat-payouts'/);
+assert.match(customerActionPage, /neobankApi<[^>]+>\(\s*'\/customer\/fiat-payouts'/);
 assert.doesNotMatch(customerActionPage, /current_password|payoutPassword/);
 assert.match(customerActionPage, /totp_code/);
+assert.match(customerActionPage, /type SubmittedCustomerPayout =/);
+assert.match(customerActionPage, /let payoutStep = 0/);
+assert.match(customerActionPage, /activeStep=\{payoutStep\}/);
+assert.match(customerActionPage, /\/portal\/transactions/);
+assert.match(customerActionPage, /再发起一笔/);
 assert.match(worker, /pathname === '\/api\/v1\/customer\/fiat-payouts'/);
 assert.match(worker, /__Host-neobank_customer/);
 assert.match(worker, /session\\0\$\{sessionToken\}\\0\$\{pathname\}/);

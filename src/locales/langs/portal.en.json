@@ -1177,6 +1177,7 @@
   "{{value0}} 笔审核中": "{{value0}} Under Review",
   "{{value0}} 笔未通过": "{{value0}} Not Approved",
   "付款申请已提交": "Payout request submitted",
+  "再发起一笔": "Make another payout",
   "余额调整": "Balance Adjustment",
   "兑换": "Exchange",
   "冻结 {{value0}}": "Frozen {{value0}}",

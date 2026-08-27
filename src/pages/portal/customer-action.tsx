@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -69,7 +69,7 @@ export type CustomerAction = 'transfer' | 'fx' | 'otc' | 'payout' | 'beneficiari
 type PayoutMethod = 'PLATFORM' | 'POBO' | 'VA';
 
 type PendingCustomerPayout = {
-  currency: string;
+  currency: Beneficiary['currency'];
   amount: string;
   source_account_id: string;
   beneficiary_id: string;
@@ -79,6 +79,12 @@ type PendingCustomerPayout = {
   expected_fee_rule_version: string;
   idempotency_key: string;
   narrative: string;
+};
+
+type SubmittedCustomerPayout = PendingCustomerPayout & {
+  id: string;
+  status: Operation['status'];
+  beneficiary_name: string;
 };
 
 type CustomerWithdrawalAddressRow = {
@@ -152,6 +158,7 @@ export default function CustomerActionPage({
   action: CustomerAction;
   submissionDisabledReason?: string;
 }) {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuthContext();
   const { customer, refresh } = usePortalCustomer();
@@ -178,12 +185,15 @@ export default function CustomerActionPage({
   const [submitting, setSubmitting] = useState(false);
   const [pendingQuote, setPendingQuote] = useState<Operation | null>(null);
   const [pendingPayout, setPendingPayout] = useState<PendingCustomerPayout | null>(null);
+  const [submittedPayout, setSubmittedPayout] = useState<SubmittedCustomerPayout | null>(null);
   const [payoutTotpCode, setPayoutTotpCode] = useState('');
   const [payoutConfirmError, setPayoutConfirmError] = useState('');
   const [quoteCountdownMs, setQuoteCountdownMs] = useState(0);
   let conversionType: RateVersion['type'] | null = null;
   if (action === 'fx') conversionType = 'FX';
   if (action === 'otc') conversionType = 'OTC';
+  let payoutStep = 0;
+  if (submittedPayout) payoutStep = submittedPayout.status === 'COMPLETED' ? 2 : 1;
 
   const loadRates = useCallback(async () => {
     if (!conversionType) {
@@ -571,24 +581,25 @@ export default function CustomerActionPage({
     setSubmitting(true);
     setPayoutConfirmError('');
     try {
-      const created = await neobankApi<{ id: string; status: string }>('/customer/fiat-payouts', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...pendingPayout,
-          totp_code: payoutTotpCode,
-        }),
+      const created = await neobankApi<{ id: string; status: Operation['status'] }>(
+        '/customer/fiat-payouts',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            ...pendingPayout,
+            totp_code: payoutTotpCode,
+          }),
+        }
+      );
+      setSubmittedPayout({
+        ...pendingPayout,
+        id: created.id,
+        status: created.status,
+        beneficiary_name:
+          beneficiaries.find((row) => row.id === pendingPayout.beneficiary_id)?.name || '—',
       });
       closePayoutConfirmation();
-      const statusMessage = {
-        SUBMITTED: portalText('付款申请已提交。审核通过后将由银行或支付通道执行。'),
-        APPROVED: portalText('付款申请已通过审核，正在等待处理。'),
-        PROCESSING: portalText('付款申请正在处理中。'),
-        COMPLETED: portalText('付款申请已完成。'),
-        REJECTED: portalText('付款申请已被拒绝。'),
-        FAILED: portalText('付款申请处理失败。'),
-        CANCELLED: portalText('付款申请已取消。'),
-      }[created.status];
-      setSuccess(statusMessage || portalText('付款申请状态已更新。'));
+      setSuccess('');
       setAmount('');
       setNote('');
       await Promise.all([loadDetail(), refresh()]);
@@ -730,7 +741,7 @@ export default function CustomerActionPage({
           )}
           <Card>
             <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
-              <Stepper activeStep={0} sx={{ mb: 4, display: { xs: 'none', sm: 'flex' } }}>
+              <Stepper activeStep={payoutStep} sx={{ mb: 4, display: { xs: 'none', sm: 'flex' } }}>
                 <Step>
                   <StepLabel>{portalText('填写交易信息')}</StepLabel>
                 </Step>
@@ -743,6 +754,101 @@ export default function CustomerActionPage({
                   <StepLabel>{portalText('完成')}</StepLabel>
                 </Step>
               </Stepper>
+              {action === 'payout' && submittedPayout ? (
+                <Stack spacing={3} role="status" aria-live="polite">
+                  <Stack spacing={1.25} alignItems="center" textAlign="center">
+                    <Box
+                      sx={{
+                        width: 72,
+                        height: 72,
+                        borderRadius: '50%',
+                        bgcolor: 'success.lighter',
+                        color: 'success.main',
+                        display: 'grid',
+                        placeItems: 'center',
+                      }}
+                    >
+                      <Iconify icon="solar:check-circle-bold-duotone" width={44} />
+                    </Box>
+                    <Typography variant="h4">
+                      {portalText(
+                        submittedPayout.status === 'COMPLETED'
+                          ? '付款申请已完成。'
+                          : '付款申请已提交'
+                      )}
+                    </Typography>
+                    <Typography color="text.secondary">
+                      {portalText(
+                        submittedPayout.status === 'COMPLETED'
+                          ? '付款申请已完成。'
+                          : '转出申请正在等待审核，审核完成前相应金额保持冻结。'
+                      )}
+                    </Typography>
+                    <Label color={submittedPayout.status === 'COMPLETED' ? 'success' : 'warning'}>
+                      {portalText(submittedPayout.status === 'COMPLETED' ? '已完成' : '待审核')}
+                    </Label>
+                  </Stack>
+
+                  <Card variant="outlined" sx={{ bgcolor: 'background.neutral' }}>
+                    <CardContent sx={{ p: 2.5 }}>
+                      <Stack divider={<Divider flexItem />}>
+                        {[
+                          { label: portalText('申请编号'), value: submittedPayout.id },
+                          {
+                            label: portalText('转出金额'),
+                            value: money(submittedPayout.amount, submittedPayout.currency),
+                          },
+                          {
+                            label: portalText('转出手续费'),
+                            value: money(
+                              submittedPayout.expected_fee_amount,
+                              submittedPayout.currency
+                            ),
+                          },
+                          {
+                            label: portalText('账户总扣款'),
+                            value: money(
+                              Number(submittedPayout.amount) +
+                                Number(submittedPayout.expected_fee_amount),
+                              submittedPayout.currency
+                            ),
+                          },
+                          {
+                            label: portalText('收款人'),
+                            value: submittedPayout.beneficiary_name,
+                          },
+                        ].map((row) => (
+                          <Stack
+                            key={row.label}
+                            direction="row"
+                            justifyContent="space-between"
+                            gap={2}
+                            sx={{ py: 1.5 }}
+                          >
+                            <Typography color="text.secondary">{row.label}</Typography>
+                            <Typography variant="subtitle2" textAlign="right">
+                              {row.value}
+                            </Typography>
+                          </Stack>
+                        ))}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1.5}
+                    justifyContent="center"
+                  >
+                    <Button variant="contained" onClick={() => navigate('/portal/transactions')}>
+                      {portalText('交易明细')}
+                    </Button>
+                    <Button variant="outlined" onClick={() => setSubmittedPayout(null)}>
+                      {portalText('再发起一笔')}
+                    </Button>
+                  </Stack>
+                </Stack>
+              ) : (
               <Box component="form" onSubmit={submit}>
                 <Stack spacing={2.5}>
                   {action === 'payout' && (
@@ -1171,6 +1277,7 @@ export default function CustomerActionPage({
                   </Button>
                 </Stack>
               </Box>
+              )}
             </CardContent>
           </Card>
         </Stack>
