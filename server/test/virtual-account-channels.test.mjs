@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { CustomersService } from '../dist/src/customers/customers.service.js';
 
@@ -23,6 +24,15 @@ const customer = {
   organizationId: 'org_neobank',
   status: 'ACTIVE',
 };
+
+test('VA opening fee schema keeps one request snapshot and one optional operation', async () => {
+  const schema = await readFile(new URL('../prisma/schema.prisma', import.meta.url), 'utf8');
+  assert.match(schema, /VA_OPENING_FEE/);
+  assert.match(schema, /CANCELLED/);
+  assert.match(schema, /openingFeeUsdMinor\s+BigInt\?/);
+  assert.match(schema, /feeOperationId\s+String\?\s+@unique/);
+  assert.match(schema, /@@unique\(\[customerId, idempotencyKey\]\)/);
+});
 
 test('customer selects a VA bank and the service enforces its supported currencies', async () => {
   let created;

@@ -65,6 +65,7 @@ enum AccountRequestStatus {
   SUBMITTED
   APPROVED
   REJECTED
+  CANCELLED
 }
 
 enum OperationType {
@@ -74,6 +75,7 @@ enum OperationType {
   INTERNAL_TRANSFER
   FX
   OTC
+  VA_OPENING_FEE
 }
 
 enum OperationStatus {
@@ -215,6 +217,10 @@ model FundingChannel {
   bankCountry            String?
   bankAddress            String?
   branchName             String?
+  openingFeeUsdMinor     BigInt?
+  openingFeeVersion      BigInt                  @default(0)
+  openingFeeUpdatedBy    String?
+  openingFeeUpdatedAt    DateTime?               @db.Timestamptz(6)
   instructions           Json?
   operations             Operation[]
   virtualAccountRequests VirtualAccountRequest[]
@@ -358,28 +364,34 @@ model CryptoTransfer {
 }
 
 model VirtualAccountRequest {
-  id                String               @id @default(uuid())
-  customerId        String
-  customer          Customer             @relation(fields: [customerId], references: [id])
-  currency          Currency
-  status            AccountRequestStatus @default(SUBMITTED)
-  preferredCountry  String
-  purpose           String
-  channelId         String?
-  channel           FundingChannel?      @relation(fields: [channelId], references: [id])
-  requestSource     VaRequestSource      @default(ADMIN)
-  requesterEmail    String?
-  makerId           String
-  maker             User                 @relation("VaRequestMaker", fields: [makerId], references: [id])
-  checkerId         String?
-  checker           User?                @relation("VaRequestChecker", fields: [checkerId], references: [id])
-  rejectionReason   String?
-  assignedAccountId String?              @unique
-  assignedAccount   Account?             @relation(fields: [assignedAccountId], references: [id])
-  reviewedAt        DateTime?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  id                 String               @id @default(uuid())
+  customerId         String
+  customer           Customer             @relation(fields: [customerId], references: [id])
+  currency           Currency
+  status             AccountRequestStatus @default(SUBMITTED)
+  preferredCountry   String
+  purpose            String
+  channelId          String?
+  channel            FundingChannel?      @relation(fields: [channelId], references: [id])
+  requestSource      VaRequestSource      @default(ADMIN)
+  requesterEmail     String?
+  makerId            String
+  maker              User                 @relation("VaRequestMaker", fields: [makerId], references: [id])
+  checkerId          String?
+  checker            User?                @relation("VaRequestChecker", fields: [checkerId], references: [id])
+  rejectionReason    String?
+  assignedAccountId  String?              @unique
+  assignedAccount    Account?             @relation(fields: [assignedAccountId], references: [id])
+  idempotencyKey     String?
+  openingFeeUsdMinor BigInt               @default(0)
+  openingFeeVersion  BigInt               @default(0)
+  feeOperationId     String?              @unique
+  feeOperation       Operation?           @relation("VaOpeningFeeOperation", fields: [feeOperationId], references: [id])
+  reviewedAt         DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
+  @@unique([customerId, idempotencyKey])
   @@index([customerId, status])
   @@index([channelId, status])
 }
@@ -442,37 +454,37 @@ model Beneficiary {
 }
 
 model Operation {
-  id                  String               @id @default(uuid())
-  reference           String               @unique
+  id                  String                 @id @default(uuid())
+  reference           String                 @unique
   idempotencyKey      String?
   customerId          String
-  customer            Customer             @relation(fields: [customerId], references: [id])
+  customer            Customer               @relation(fields: [customerId], references: [id])
   channelId           String?
-  channel             FundingChannel?      @relation(fields: [channelId], references: [id])
+  channel             FundingChannel?        @relation(fields: [channelId], references: [id])
   type                OperationType
-  status              OperationStatus      @default(DRAFT)
+  status              OperationStatus        @default(DRAFT)
   currency            Currency
-  amount              Decimal              @db.Decimal(36, 8)
-  feeAmount           Decimal              @default(0) @db.Decimal(36, 8)
+  amount              Decimal                @db.Decimal(36, 8)
+  feeAmount           Decimal                @default(0) @db.Decimal(36, 8)
   sourceAccountId     String?
-  sourceAccount       Account?             @relation("OperationSource", fields: [sourceAccountId], references: [id])
+  sourceAccount       Account?               @relation("OperationSource", fields: [sourceAccountId], references: [id])
   targetAccountId     String?
-  targetAccount       Account?             @relation("OperationTarget", fields: [targetAccountId], references: [id])
+  targetAccount       Account?               @relation("OperationTarget", fields: [targetAccountId], references: [id])
   beneficiaryId       String?
-  beneficiary         Beneficiary?         @relation(fields: [beneficiaryId], references: [id])
+  beneficiary         Beneficiary?           @relation(fields: [beneficiaryId], references: [id])
   payoutMethod        PayoutMethod?
   adjustmentDirection AdjustmentDirection?
   quoteCurrency       Currency?
-  quoteAmount         Decimal?             @db.Decimal(36, 8)
-  rate                Decimal?             @db.Decimal(24, 12)
+  quoteAmount         Decimal?               @db.Decimal(36, 8)
+  rate                Decimal?               @db.Decimal(24, 12)
   rateVersionId       String?
-  rateVersion         RateVersion?         @relation(fields: [rateVersionId], references: [id])
+  rateVersion         RateVersion?           @relation(fields: [rateVersionId], references: [id])
   makerId             String
-  maker               User                 @relation("OperationMaker", fields: [makerId], references: [id])
+  maker               User                   @relation("OperationMaker", fields: [makerId], references: [id])
   checkerId           String?
-  checker             User?                @relation("OperationChecker", fields: [checkerId], references: [id])
+  checker             User?                  @relation("OperationChecker", fields: [checkerId], references: [id])
   operatorId          String?
-  operator            User?                @relation("OperationOperator", fields: [operatorId], references: [id])
+  operator            User?                  @relation("OperationOperator", fields: [operatorId], references: [id])
   rejectionReason     String?
   externalReference   String?
   remitterName        String?
@@ -486,8 +498,9 @@ model Operation {
   approvedAt          DateTime?
   executedAt          DateTime?
   journals            JournalEntry[]
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  vaOpeningFeeRequest VirtualAccountRequest? @relation("VaOpeningFeeOperation")
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
   @@unique([customerId, idempotencyKey])
   @@unique([channelId, remittanceReference])
