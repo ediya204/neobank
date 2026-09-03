@@ -29,8 +29,12 @@ import {
   demoOrganizationId,
   JournalEntry,
   Operation,
+  VirtualAccountRequest,
 } from 'src/features/finance/core-api';
-import { buildCoreReconciliationSnapshot } from 'src/features/finance/core-reconciliation';
+import {
+  buildCoreReconciliationSnapshot,
+  type VaOpeningFeeIssue,
+} from 'src/features/finance/core-reconciliation';
 import { ACTION_ICONS } from 'src/theme/iconography';
 
 const OPERATION_LABELS: Record<Operation['type'], string> = {
@@ -208,6 +212,7 @@ export default function CoreReconciliationPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [journals, setJournals] = useState<JournalEntry[]>([]);
+  const [virtualAccountRequests, setVirtualAccountRequests] = useState<VirtualAccountRequest[]>([]);
   const [usdtReconciliation, setUsdtReconciliation] = useState<UsdtReconciliation | null>(null);
   const [status, setStatus] = useState<'all' | Operation['status']>('all');
   const [page, setPage] = useState(0);
@@ -219,24 +224,31 @@ export default function CoreReconciliationPage() {
     setLoading(true);
     setError('');
     try {
-      const [customerRows, operationRows, journalRows, usdtRows] = await Promise.all([
-        coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`, {
-          userId: 'usr_admin',
-        }),
-        coreApi<Operation[]>(`/operations?organizationId=${demoOrganizationId}`, {
-          userId: 'usr_admin',
-        }),
-        coreApi<JournalEntry[]>(`/ledger?organizationId=${demoOrganizationId}`, {
-          userId: 'usr_admin',
-        }),
-        coreApi<UsdtReconciliation>(
-          `/ledger/reconciliation/usdt?organizationId=${demoOrganizationId}`,
-          { userId: 'usr_admin' }
-        ),
-      ]);
+      const [customerRows, operationRows, journalRows, vaRequestRows, usdtRows] = await Promise.all(
+        [
+          coreApi<Customer[]>(`/customers?organizationId=${demoOrganizationId}`, {
+            userId: 'usr_admin',
+          }),
+          coreApi<Operation[]>(`/operations?organizationId=${demoOrganizationId}`, {
+            userId: 'usr_admin',
+          }),
+          coreApi<JournalEntry[]>(`/ledger?organizationId=${demoOrganizationId}`, {
+            userId: 'usr_admin',
+          }),
+          coreApi<VirtualAccountRequest[]>(
+            `/virtual-account-requests?organizationId=${demoOrganizationId}`,
+            { userId: 'usr_admin' }
+          ),
+          coreApi<UsdtReconciliation>(
+            `/ledger/reconciliation/usdt?organizationId=${demoOrganizationId}`,
+            { userId: 'usr_admin' }
+          ),
+        ]
+      );
       setCustomers(customerRows);
       setOperations(operationRows);
       setJournals(journalRows);
+      setVirtualAccountRequests(vaRequestRows);
       setUsdtReconciliation(usdtRows);
       setSnapshotAt(new Date());
     } catch (value) {
@@ -251,8 +263,15 @@ export default function CoreReconciliationPage() {
   }, [load]);
 
   const snapshot = useMemo(
-    () => buildCoreReconciliationSnapshot({ date, customers, operations, journals }),
-    [customers, date, journals, operations]
+    () =>
+      buildCoreReconciliationSnapshot({
+        date,
+        customers,
+        operations,
+        journals,
+        virtualAccountRequests,
+      }),
+    [customers, date, journals, operations, virtualAccountRequests]
   );
   const filteredMovements = snapshot.movements.filter(
     (operation) => status === 'all' || operation.status === status
@@ -263,11 +282,13 @@ export default function CoreReconciliationPage() {
   const checksPass =
     ledgerChecksPass &&
     snapshot.completedWithoutJournal.length === 0 &&
+    snapshot.vaOpeningFeeIssues.length === 0 &&
     custodyChecksComplete &&
     usdtReconciliation?.issueCount === 0;
   const consistencyIssueCount =
     snapshot.unbalancedJournalCount +
     snapshot.completedWithoutJournal.length +
+    snapshot.vaOpeningFeeIssues.length +
     (usdtReconciliation?.issueCount || 0);
   const consistencyIssues = useMemo(
     () => [
@@ -302,6 +323,18 @@ export default function CoreReconciliationPage() {
         resolutionPriority: 'critical' as ResolutionPriority,
         financialEffect: 'separately_approved_correction' as FinancialEffect,
       })),
+      ...snapshot.vaOpeningFeeIssues.map((issue) => ({
+        key: `va-fee-${issue.requestId}-${issue.reason}`,
+        category: 'VA 开户手续费',
+        item: issue.reference || issue.requestId,
+        businessStatus: issue.requestId === 'all' ? '汇总核对' : issue.requestId,
+        accountingStatus: '手续费链路异常',
+        reason: vaFeeIssueReason(issue.reason),
+        coreOperationId: issue.operationId || '—',
+        resolutionCode: 'core_integrity_review' as ResolutionCode,
+        resolutionPriority: 'critical' as ResolutionPriority,
+        financialEffect: 'separately_approved_correction' as FinancialEffect,
+      })),
       ...(usdtReconciliation?.issues || []).map((issue) => {
         const resolutionCode = issue.resolution_code || 'state_mismatch_review';
         return {
@@ -318,7 +351,12 @@ export default function CoreReconciliationPage() {
         };
       }),
     ],
-    [snapshot.completedWithoutJournal, snapshot.unbalancedJournals, usdtReconciliation]
+    [
+      snapshot.completedWithoutJournal,
+      snapshot.unbalancedJournals,
+      snapshot.vaOpeningFeeIssues,
+      usdtReconciliation,
+    ]
   );
 
   let reconciliationAlertSeverity: 'success' | 'error' | 'warning' = 'success';
@@ -335,7 +373,7 @@ export default function CoreReconciliationPage() {
     reconciliationAlertSeverity = 'error';
     reconciliationAlertMessage = `发现 ${snapshot.unbalancedJournalCount} 张借贷不平衡凭证、${
       snapshot.completedWithoutJournal.length
-    } 笔已完成但缺少凭证的业务、${
+    } 笔已完成但缺少凭证的业务、${snapshot.vaOpeningFeeIssues.length} 项 VA 开户费异常、${
       usdtReconciliation?.issueCount || 0
     } 笔 Cregis 与 Core 状态不一致，请立即核对。`;
     consistencyStatusColor = 'error';
@@ -429,7 +467,9 @@ export default function CoreReconciliationPage() {
             <MetricCard
               title="当日转出"
               value={formatAmounts(snapshot.outflows)}
-              helper="仅统计已完成业务"
+              helper={`仅统计已完成业务 · VA 开户费 USD ${formatAmount(
+                snapshot.completedVaOpeningFeeUsd
+              )}`}
               icon="solar:upload-minimalistic-bold-duotone"
               tone="warning"
             />
@@ -720,6 +760,20 @@ export default function CoreReconciliationPage() {
       </Container>
     </>
   );
+}
+
+function vaFeeIssueReason(reason: VaOpeningFeeIssue['reason']) {
+  const labels: Record<VaOpeningFeeIssue['reason'], string> = {
+    fee_operation_missing: '非零手续费申请缺少费用流水',
+    operation_status_mismatch: '申请状态与费用流水状态不一致',
+    completed_journal_missing: '已扣除手续费但缺少账本凭证',
+    terminal_journal_unexpected: '已拒绝或取消的手续费出现了账本凭证',
+    duplicate_journals: '同一手续费流水存在重复账本凭证',
+    submitted_source_wallet_missing: '待处理手续费缺少来源 USD 钱包',
+    submitted_reservation_undercovered: '来源 USD 钱包冻结余额不足以覆盖待处理手续费',
+    fee_revenue_total_mismatch: '已完成手续费与 USD 手续费收入贷方合计不一致',
+  };
+  return labels[reason];
 }
 
 function MetricCard({

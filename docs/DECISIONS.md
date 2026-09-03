@@ -136,6 +136,13 @@ that the assumption no longer applies.
   实际分配的账户名称、账号和可选 IBAN，不能改变客户所选银行、币种或用途；拒绝
   必须记录客户可见原因。KYC 开户队列、通用资金记录页和客户详情均不得提供
   VA 快捷批准动作。
+- VA 开户费直接配置在各 `VIRTUAL_ACCOUNT` 银行渠道，使用固定 USD 金额和乐观锁版本。
+  申请保存不可变金额/版本快照；`NULL` 是阻断新申请的未配置状态，`0.00` 是明确免费。
+- 不新增手续费日志表。非零费用复用 `Operation` 记录客户和管理员可见的生命周期，复用
+  `JournalEntry` / `JournalLine` 作为平台资金账本：提交冻结，批准时借记客户 USD 钱包并
+  贷记 `FEE_REVENUE / USD`，拒绝或客户取消时只释放冻结，不创建凭证。
+- 通用 Operation 创建、审批、拒绝和执行接口不得处理 `VA_OPENING_FEE`；所有资金和申请
+  状态变更必须由 VA 服务在同一 Render PostgreSQL 串行化事务中完成。
 
 ## Security and operations
 
