@@ -525,7 +525,7 @@ export class CustomersService {
       async (tx) => {
         const request = await tx.virtualAccountRequest.findUnique({
           where: { id },
-          include: { customer: true, channel: true },
+          include: { customer: true, ...vaRequestInclude },
         });
         if (!request) throw new NotFoundException('virtual_account_request_not_found');
         const checker = await this.requireChecker(tx, checkerId);
@@ -548,6 +548,7 @@ export class CustomersService {
         ) {
           throw new ConflictException('virtual_account_channel_not_ready');
         }
+        await this.settleVaOpeningFee(tx, request, checkerId);
         let account;
         try {
           account = await tx.account.create({
@@ -580,7 +581,7 @@ export class CustomersService {
             reviewedAt: new Date(),
             assignedAccountId: account.id,
           },
-          include: { assignedAccount: true, channel: true },
+          include: vaRequestInclude,
         });
         await this.enqueueCustomerEmail(
           tx,
@@ -589,10 +590,20 @@ export class CustomersService {
           `virtual-account-request:${request.id}:approved`,
           { currency: request.currency }
         );
-        return updated;
+        return this.serializeVirtualAccountRequest(updated);
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
+  }
+
+  async listVirtualAccountRequestsForOrganization(organizationId: string, userId: string) {
+    await requireOrganizationAccess(this.db, userId, organizationId);
+    const requests = await this.db.virtualAccountRequest.findMany({
+      where: { customer: { organizationId } },
+      include: { customer: true, ...vaRequestInclude },
+      orderBy: { createdAt: 'desc' },
+    });
+    return requests.map((request) => this.serializeVirtualAccountRequest(request));
   }
 
   private async requireVaCustomerAccess(
@@ -633,7 +644,7 @@ export class CustomersService {
       async (tx) => {
         const request = await tx.virtualAccountRequest.findUnique({
           where: { id },
-          include: { customer: true },
+          include: { customer: true, ...vaRequestInclude },
         });
         if (!request) throw new NotFoundException('virtual_account_request_not_found');
         const checker = await this.requireChecker(tx, checkerId);
@@ -644,6 +655,7 @@ export class CustomersService {
         if (request.makerId === checkerId && checker.role !== 'ADMIN') {
           throw new ForbiddenException('admin_required_for_self_approval');
         }
+        await this.releaseVaOpeningFee(tx, request, 'REJECTED', checkerId, normalizedReason);
         const updated = await tx.virtualAccountRequest.update({
           where: { id },
           data: {
@@ -652,6 +664,7 @@ export class CustomersService {
             reviewedAt: new Date(),
             rejectionReason: normalizedReason,
           },
+          include: vaRequestInclude,
         });
         await this.enqueueCustomerEmail(
           tx,
@@ -660,10 +673,182 @@ export class CustomersService {
           `virtual-account-request:${request.id}:rejected`,
           { currency: request.currency }
         );
-        return updated;
+        return this.serializeVirtualAccountRequest(updated);
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
+  }
+
+  async cancelVirtualAccountRequest(customerId: string, id: string, actor: VaRequestActor) {
+    if (!actor.customerId || actor.customerId !== customerId) {
+      throw new NotFoundException('virtual_account_request_not_found');
+    }
+    const customer = await this.requireVaCustomerAccess(customerId, undefined, actor);
+    return this.db.$transaction(
+      async (tx) => {
+        const request = await tx.virtualAccountRequest.findUnique({
+          where: { id },
+          include: { customer: true, ...vaRequestInclude },
+        });
+        if (
+          !request ||
+          request.customerId !== customerId ||
+          request.customer.organizationId !== customer.organizationId
+        ) {
+          throw new NotFoundException('virtual_account_request_not_found');
+        }
+        if (request.requestSource !== 'CUSTOMER') {
+          throw new ConflictException('customer_cancellation_not_allowed');
+        }
+        if (request.status !== 'SUBMITTED') throw new ConflictException('request_not_pending');
+        await this.releaseVaOpeningFee(tx, request, 'CANCELLED');
+        const updated = await tx.virtualAccountRequest.update({
+          where: { id },
+          data: { status: 'CANCELLED', reviewedAt: new Date() },
+          include: vaRequestInclude,
+        });
+        return this.serializeVirtualAccountRequest(updated);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  }
+
+  private async settleVaOpeningFee(
+    tx: Prisma.TransactionClient,
+    request: Prisma.VirtualAccountRequestGetPayload<{
+      include: {
+        customer: true;
+        assignedAccount: true;
+        channel: true;
+        feeOperation: { include: { sourceAccount: true; targetAccount: true } };
+        maker: true;
+        checker: true;
+      };
+    }>,
+    checkerId: string
+  ) {
+    if (request.openingFeeUsdMinor === 0n) return;
+    const operation = request.feeOperation;
+    const amount = new Prisma.Decimal(request.openingFeeUsdMinor.toString()).div(100);
+    if (
+      !operation ||
+      operation.type !== 'VA_OPENING_FEE' ||
+      operation.status !== 'SUBMITTED' ||
+      operation.currency !== 'USD' ||
+      !operation.amount.equals(amount) ||
+      !operation.sourceAccount ||
+      operation.sourceAccount.customerId !== request.customerId ||
+      operation.sourceAccount.kind !== 'SYSTEM_WALLET' ||
+      operation.sourceAccount.currency !== 'USD' ||
+      !operation.targetAccount ||
+      operation.targetAccount.customerId !== null ||
+      operation.targetAccount.kind !== 'FEE_REVENUE' ||
+      operation.targetAccount.status !== 'ACTIVE' ||
+      operation.targetAccount.currency !== 'USD'
+    ) {
+      throw new ConflictException('va_opening_fee_reservation_invalid');
+    }
+    const consumed = await tx.account.updateMany({
+      where: {
+        id: operation.sourceAccount.id,
+        customerId: request.customerId,
+        kind: 'SYSTEM_WALLET',
+        status: 'ACTIVE',
+        currency: 'USD',
+        frozenBalance: { gte: amount },
+      },
+      data: { frozenBalance: { decrement: amount }, version: { increment: 1 } },
+    });
+    if (consumed.count !== 1) throw new ConflictException('va_opening_fee_reservation_missing');
+    await tx.journalEntry.create({
+      data: {
+        reference: `${operation.reference}-principal`,
+        operationId: operation.id,
+        description: operation.narrative || `VA opening fee ${operation.reference}`,
+        lines: {
+          create: [
+            {
+              accountId: operation.sourceAccount.id,
+              side: 'DEBIT',
+              currency: 'USD',
+              amount,
+            },
+            {
+              accountId: operation.targetAccount.id,
+              side: 'CREDIT',
+              currency: 'USD',
+              amount,
+            },
+          ],
+        },
+      },
+    });
+    const now = new Date();
+    await tx.operation.update({
+      where: { id: operation.id },
+      data: {
+        status: 'COMPLETED',
+        checkerId,
+        operatorId: checkerId,
+        approvedAt: now,
+        executedAt: now,
+      },
+    });
+  }
+
+  private async releaseVaOpeningFee(
+    tx: Prisma.TransactionClient,
+    request: Prisma.VirtualAccountRequestGetPayload<{
+      include: {
+        customer: true;
+        assignedAccount: true;
+        channel: true;
+        feeOperation: { include: { sourceAccount: true; targetAccount: true } };
+        maker: true;
+        checker: true;
+      };
+    }>,
+    status: 'REJECTED' | 'CANCELLED',
+    checkerId?: string,
+    reason?: string
+  ) {
+    if (request.openingFeeUsdMinor === 0n) return;
+    const operation = request.feeOperation;
+    const amount = new Prisma.Decimal(request.openingFeeUsdMinor.toString()).div(100);
+    if (
+      !operation ||
+      operation.type !== 'VA_OPENING_FEE' ||
+      operation.status !== 'SUBMITTED' ||
+      operation.currency !== 'USD' ||
+      !operation.amount.equals(amount) ||
+      !operation.sourceAccountId
+    ) {
+      throw new ConflictException('va_opening_fee_reservation_invalid');
+    }
+    const released = await tx.account.updateMany({
+      where: {
+        id: operation.sourceAccountId,
+        customerId: request.customerId,
+        kind: 'SYSTEM_WALLET',
+        status: 'ACTIVE',
+        currency: 'USD',
+        frozenBalance: { gte: amount },
+      },
+      data: {
+        availableBalance: { increment: amount },
+        frozenBalance: { decrement: amount },
+        version: { increment: 1 },
+      },
+    });
+    if (released.count !== 1) throw new ConflictException('va_opening_fee_reservation_missing');
+    await tx.operation.update({
+      where: { id: operation.id },
+      data: {
+        status,
+        checkerId,
+        rejectionReason: reason || (status === 'CANCELLED' ? 'Cancelled by customer' : undefined),
+      },
+    });
   }
 
   private async enqueueCustomerEmail(

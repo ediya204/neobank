@@ -148,6 +148,15 @@ export class CustomersController {
   listVaRequests(@Param('id') id: string, @Req() request: Request) {
     return this.customers.listVirtualAccountRequests(id, requestActor(request));
   }
+
+  @Patch(':id/virtual-account-requests/:requestId/cancel')
+  cancelVaRequest(
+    @Param('id') id: string,
+    @Param('requestId') requestId: string,
+    @Req() request: Request
+  ) {
+    return this.customers.cancelVirtualAccountRequest(id, requestId, requestActor(request));
+  }
 }
 
 function requestActor(request: Request) {

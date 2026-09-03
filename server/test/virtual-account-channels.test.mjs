@@ -371,6 +371,10 @@ test('admin must enter the assigned account while bank details come from the cha
     status: 'SUBMITTED',
     makerId: 'usr_neobank_admin',
     channel,
+    openingFeeUsdMinor: 0n,
+    openingFeeVersion: 0n,
+    feeOperationId: null,
+    feeOperation: null,
   };
   const transaction = {
     virtualAccountRequest: {
@@ -422,6 +426,11 @@ test('VA rejection trims a customer-visible reason and rejects whitespace-only i
     currency: 'USD',
     status: 'SUBMITTED',
     makerId: 'usr_neobank_admin',
+    channel: { ...channel, openingFeeUsdMinor: 0n },
+    openingFeeUsdMinor: 0n,
+    openingFeeVersion: 0n,
+    feeOperationId: null,
+    feeOperation: null,
   };
   const transaction = {
     virtualAccountRequest: {
@@ -455,4 +464,330 @@ test('VA rejection trims a customer-visible reason and rejects whitespace-only i
   );
 
   assert.equal(rejectionData.rejectionReason, 'The requested purpose is not supported.');
+});
+
+test('VA approval consumes the USD fee and posts one balanced fee-revenue journal', async () => {
+  const sourceAccount = {
+    id: 'wallet_usd',
+    customerId: customer.id,
+    kind: 'SYSTEM_WALLET',
+    status: 'ACTIVE',
+    currency: 'USD',
+  };
+  const targetAccount = {
+    id: 'fees_usd',
+    customerId: null,
+    kind: 'FEE_REVENUE',
+    status: 'ACTIVE',
+    currency: 'USD',
+  };
+  const feeOperation = {
+    id: 'fee_operation_approved',
+    reference: 'VA-FEE-APPROVE',
+    type: 'VA_OPENING_FEE',
+    status: 'SUBMITTED',
+    currency: 'USD',
+    amount: new Prisma.Decimal('25'),
+    sourceAccountId: sourceAccount.id,
+    targetAccountId: targetAccount.id,
+    sourceAccount,
+    targetAccount,
+  };
+  const request = {
+    id: 'va_request_approve_fee',
+    customerId: customer.id,
+    customer: { ...customer, email: 'client@example.com', displayName: 'Client Ltd' },
+    currency: 'HKD',
+    status: 'SUBMITTED',
+    makerId: 'maker_001',
+    channel,
+    openingFeeUsdMinor: 2500n,
+    openingFeeVersion: 2n,
+    feeOperationId: feeOperation.id,
+    feeOperation,
+  };
+  let balanceUpdate;
+  let journalData;
+  let operationUpdate;
+  let requestUpdate;
+  const transaction = {
+    virtualAccountRequest: {
+      findUnique: async () => request,
+      update: async ({ data }) => {
+        requestUpdate = data;
+        return { ...request, ...data };
+      },
+    },
+    user: {
+      findUnique: async () => ({
+        id: 'checker_001',
+        organizationId: 'org_neobank',
+        active: true,
+        role: 'ADMIN',
+      }),
+    },
+    account: {
+      create: async ({ data }) => ({ id: 'account_approved', ...data }),
+      updateMany: async (input) => {
+        balanceUpdate = input;
+        return { count: 1 };
+      },
+    },
+    journalEntry: {
+      create: async ({ data }) => {
+        journalData = data;
+        return data;
+      },
+    },
+    operation: {
+      update: async ({ data }) => {
+        operationUpdate = data;
+        return { ...feeOperation, ...data };
+      },
+    },
+  };
+  const service = new CustomersService({
+    $transaction: async (operation) => operation(transaction),
+  });
+
+  const result = await service.approveVirtualAccountRequest(
+    request.id,
+    { accountName: 'Client Ltd', accountNumber: '00123456789' },
+    'checker_001'
+  );
+
+  assert.deepEqual(balanceUpdate.where, {
+    id: sourceAccount.id,
+    customerId: customer.id,
+    kind: 'SYSTEM_WALLET',
+    status: 'ACTIVE',
+    currency: 'USD',
+    frozenBalance: { gte: new Prisma.Decimal('25') },
+  });
+  assert.equal(balanceUpdate.data.frozenBalance.decrement.toString(), '25');
+  assert.equal(journalData.reference, 'VA-FEE-APPROVE-principal');
+  assert.deepEqual(
+    journalData.lines.create.map((line) => [
+      line.accountId,
+      line.side,
+      line.currency,
+      line.amount.toString(),
+    ]),
+    [
+      [sourceAccount.id, 'DEBIT', 'USD', '25'],
+      [targetAccount.id, 'CREDIT', 'USD', '25'],
+    ]
+  );
+  assert.equal(operationUpdate.status, 'COMPLETED');
+  assert.equal(operationUpdate.checkerId, 'checker_001');
+  assert.equal(operationUpdate.operatorId, 'checker_001');
+  assert.ok(operationUpdate.executedAt instanceof Date);
+  assert.equal(requestUpdate.status, 'APPROVED');
+  assert.equal(result.openingFeeUsd, '25.00');
+});
+
+test('VA rejection releases the frozen fee without creating a journal', async () => {
+  const feeOperation = {
+    id: 'fee_operation_rejected',
+    reference: 'VA-FEE-REJECT',
+    type: 'VA_OPENING_FEE',
+    status: 'SUBMITTED',
+    currency: 'USD',
+    amount: new Prisma.Decimal('25'),
+    sourceAccountId: 'wallet_usd',
+    targetAccountId: 'fees_usd',
+  };
+  const request = {
+    id: 'va_request_reject_fee',
+    customerId: customer.id,
+    customer: { ...customer, email: 'client@example.com', displayName: 'Client Ltd' },
+    currency: 'USD',
+    status: 'SUBMITTED',
+    makerId: 'maker_001',
+    channel,
+    openingFeeUsdMinor: 2500n,
+    openingFeeVersion: 2n,
+    feeOperationId: feeOperation.id,
+    feeOperation,
+  };
+  let balanceUpdate;
+  let operationUpdate;
+  let journalWrites = 0;
+  const transaction = {
+    virtualAccountRequest: {
+      findUnique: async () => request,
+      update: async ({ data }) => ({ ...request, ...data }),
+    },
+    user: {
+      findUnique: async () => ({
+        id: 'checker_001',
+        organizationId: 'org_neobank',
+        active: true,
+        role: 'ADMIN',
+      }),
+    },
+    account: {
+      updateMany: async (input) => {
+        balanceUpdate = input;
+        return { count: 1 };
+      },
+    },
+    operation: {
+      update: async ({ data }) => {
+        operationUpdate = data;
+        return { ...feeOperation, ...data };
+      },
+    },
+    journalEntry: { create: async () => (journalWrites += 1) },
+  };
+  const service = new CustomersService({
+    $transaction: async (operation) => operation(transaction),
+  });
+
+  const result = await service.rejectVirtualAccountRequest(
+    request.id,
+    'checker_001',
+    'Application details are incomplete.'
+  );
+
+  assert.equal(balanceUpdate.data.availableBalance.increment.toString(), '25');
+  assert.equal(balanceUpdate.data.frozenBalance.decrement.toString(), '25');
+  assert.equal(operationUpdate.status, 'REJECTED');
+  assert.equal(operationUpdate.rejectionReason, 'Application details are incomplete.');
+  assert.equal(journalWrites, 0);
+  assert.equal(result.openingFeeUsd, '25.00');
+});
+
+test('customer cancellation releases only the owned submitted customer request', async () => {
+  const feeOperation = {
+    id: 'fee_operation_cancelled',
+    reference: 'VA-FEE-CANCEL',
+    type: 'VA_OPENING_FEE',
+    status: 'SUBMITTED',
+    currency: 'USD',
+    amount: new Prisma.Decimal('25'),
+    sourceAccountId: 'wallet_usd',
+    targetAccountId: 'fees_usd',
+  };
+  let activeRequest = {
+    id: 'va_request_cancel_fee',
+    customerId: customer.id,
+    customer,
+    currency: 'USD',
+    status: 'SUBMITTED',
+    requestSource: 'CUSTOMER',
+    channel,
+    openingFeeUsdMinor: 2500n,
+    openingFeeVersion: 2n,
+    feeOperationId: feeOperation.id,
+    feeOperation,
+  };
+  let balanceWrites = 0;
+  let operationUpdate;
+  const transaction = {
+    virtualAccountRequest: {
+      findUnique: async () => activeRequest,
+      update: async ({ data }) => ({ ...activeRequest, ...data }),
+    },
+    account: {
+      updateMany: async () => {
+        balanceWrites += 1;
+        return { count: 1 };
+      },
+    },
+    operation: {
+      update: async ({ data }) => {
+        operationUpdate = data;
+        return { ...feeOperation, ...data };
+      },
+    },
+  };
+  const service = new CustomersService({
+    customer: { findUnique: async () => customer },
+    $transaction: async (operation) => operation(transaction),
+  });
+
+  const result = await service.cancelVirtualAccountRequest(customer.id, activeRequest.id, {
+    userId: 'customer_user',
+    customerId: customer.id,
+  });
+
+  assert.equal(balanceWrites, 1);
+  assert.equal(operationUpdate.status, 'CANCELLED');
+  assert.equal(result.status, 'CANCELLED');
+
+  activeRequest = { ...activeRequest, status: 'APPROVED' };
+  await assert.rejects(
+    service.cancelVirtualAccountRequest(customer.id, activeRequest.id, {
+      userId: 'customer_user',
+      customerId: customer.id,
+    }),
+    /request_not_pending/
+  );
+  activeRequest = { ...activeRequest, status: 'SUBMITTED', customerId: 'customer_other' };
+  await assert.rejects(
+    service.cancelVirtualAccountRequest(customer.id, activeRequest.id, {
+      userId: 'customer_user',
+      customerId: customer.id,
+    }),
+    /virtual_account_request_not_found/
+  );
+  assert.equal(balanceWrites, 1);
+});
+
+test('zero-fee VA terminal transitions do not read or mutate an operation', async () => {
+  const request = {
+    id: 'va_request_free_terminal',
+    customerId: customer.id,
+    customer: { ...customer, email: 'client@example.com', displayName: 'Client Ltd' },
+    currency: 'USD',
+    status: 'SUBMITTED',
+    makerId: 'maker_001',
+    requestSource: 'CUSTOMER',
+    channel: { ...channel, openingFeeUsdMinor: 0n },
+    openingFeeUsdMinor: 0n,
+    openingFeeVersion: 2n,
+    feeOperationId: null,
+    feeOperation: null,
+  };
+  let operationCalls = 0;
+  let balanceCalls = 0;
+  const transaction = {
+    virtualAccountRequest: {
+      findUnique: async () => request,
+      update: async ({ data }) => ({ ...request, ...data }),
+    },
+    user: {
+      findUnique: async () => ({
+        id: 'checker_001',
+        organizationId: 'org_neobank',
+        active: true,
+        role: 'ADMIN',
+      }),
+    },
+    account: {
+      create: async ({ data }) => ({ id: 'free_va_account', ...data }),
+      updateMany: async () => {
+        balanceCalls += 1;
+        return { count: 1 };
+      },
+    },
+    operation: {
+      findUnique: async () => (operationCalls += 1),
+      update: async () => (operationCalls += 1),
+    },
+  };
+  const service = new CustomersService({
+    customer: { findUnique: async () => customer },
+    $transaction: async (operation) => operation(transaction),
+  });
+
+  const approved = await service.approveVirtualAccountRequest(
+    request.id,
+    { accountName: 'Client Ltd', accountNumber: '00123456789' },
+    'checker_001'
+  );
+  assert.equal(approved.openingFeeUsd, '0.00');
+  assert.equal(operationCalls, 0);
+  assert.equal(balanceCalls, 0);
 });

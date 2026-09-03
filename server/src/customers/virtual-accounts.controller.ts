@@ -2,8 +2,6 @@ import { Body, Controller, Get, Param, Patch, Query, Req } from '@nestjs/common'
 import { IsOptional, IsString, Length } from 'class-validator';
 import type { Request } from 'express';
 import { currentUserId } from '../common/current-user';
-import { requireOrganizationAccess } from '../common/tenant-access';
-import { PrismaService } from '../prisma/prisma.service';
 import { CustomersService } from './customers.service';
 
 class RejectVaRequestDto {
@@ -18,24 +16,18 @@ class ApproveVaRequestDto {
 
 @Controller('virtual-account-requests')
 export class VirtualAccountsController {
-  constructor(private readonly customers: CustomersService, private readonly db: PrismaService) {}
+  constructor(private readonly customers: CustomersService) {}
 
   @Get()
   async list(@Query('organizationId') organizationId: string, @Req() request: Request) {
-    await requireOrganizationAccess(this.db, currentUserId(request), organizationId);
-    return this.db.virtualAccountRequest.findMany({
-      where: { customer: { organizationId } },
-      include: { customer: true, channel: true, assignedAccount: true, maker: true, checker: true },
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.customers.listVirtualAccountRequestsForOrganization(
+      organizationId,
+      currentUserId(request)
+    );
   }
 
   @Patch(':id/approve')
-  approve(
-    @Param('id') id: string,
-    @Body() dto: ApproveVaRequestDto,
-    @Req() request: Request
-  ) {
+  approve(@Param('id') id: string, @Body() dto: ApproveVaRequestDto, @Req() request: Request) {
     return this.customers.approveVirtualAccountRequest(id, dto, currentUserId(request));
   }
 
