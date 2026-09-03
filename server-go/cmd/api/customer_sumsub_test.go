@@ -154,6 +154,30 @@ func TestVerifySumsubWebhookUsesRawPayloadAndDeclaredAlgorithm(t *testing.T) {
 	}
 }
 
+func TestSumsubWebhookIgnoresSignedEventsOutsideNeobankIntegration(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	app := &application{sumsub: &gatedSumsubProvider{}, sumsubWebhookSecret: secret, sumsubEnvironment: "production"}
+	for name, payload := range map[string]string{
+		"other level":   `{"applicantId":"0123456789abcdef01234567","externalUserId":"neobank:customer_test","levelName":"other_level","sandboxMode":false}`,
+		"other user id": `{"applicantId":"0123456789abcdef01234567","externalUserId":"test_user_900040008","levelName":"neobank_individual_v1","sandboxMode":false}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/api/webhooks/sumsub", strings.NewReader(payload))
+			mac := hmac.New(sha256.New, secret)
+			_, _ = mac.Write([]byte(payload))
+			request.Header.Set("X-Payload-Digest-Alg", "HMAC_SHA256_HEX")
+			request.Header.Set("X-Payload-Digest", hex.EncodeToString(mac.Sum(nil)))
+			response := httptest.NewRecorder()
+
+			app.sumsubWebhook(response, request)
+
+			if response.Code != http.StatusNoContent {
+				t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestSumsubProviderStatusRequiresAllIndividualChecks(t *testing.T) {
 	greenReview := sumsubapi.ReviewStatus{
 		ReviewStatus: "completed",

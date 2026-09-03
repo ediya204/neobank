@@ -486,8 +486,15 @@ func (app *application) sumsubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var payload sumsubWebhookPayload
-	if json.Unmarshal(raw, &payload) != nil || !sumsubApplicantIDPattern.MatchString(payload.ApplicantID) ||
-		!strings.HasPrefix(payload.ExternalID, "neobank:customer_") || payload.LevelName != app.sumsub.LevelName() {
+	if json.Unmarshal(raw, &payload) != nil {
+		validationError(w)
+		return
+	}
+	if payload.LevelName != app.sumsub.LevelName() || !strings.HasPrefix(payload.ExternalID, "neobank:customer_") {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if !sumsubApplicantIDPattern.MatchString(payload.ApplicantID) {
 		validationError(w)
 		return
 	}

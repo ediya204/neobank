@@ -1183,6 +1183,7 @@
   "资金服务": "Financial Services",
   "审核完成并取得银行分配的账号后，账户资料会显示在这里。": "Account details will appear here after approval and bank account assignment.",
   "该银行和币种已有一笔审核中的申请。": "There is already an application under review for this bank and currency.",
+  "该银行和币种已有一笔申请正在审核，请勿重复提交。": "An application for this bank and currency is already under review. Please wait for the review to finish before submitting another request.",
   "打开账户菜单": "Open Account Menu",
   "退出登录": "Sign Out",
   "进入运营管理后台": "Open Operations Admin",

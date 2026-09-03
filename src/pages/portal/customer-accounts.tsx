@@ -629,8 +629,11 @@ function VaRequestDialog({
       idempotencyKey.current = null;
       onCreated();
     } catch (value) {
+      const message = value instanceof Error ? value.message : '';
       setError(
-        value instanceof Error ? value.message : portalText('VA 账户申请暂时无法提交，请稍后重试。')
+        message === 'virtual_account_request_already_pending'
+          ? portalText('该银行和币种已有一笔申请正在审核，请勿重复提交。')
+          : message || portalText('VA 账户申请暂时无法提交，请稍后重试。')
       );
     } finally {
       setSubmitting(false);

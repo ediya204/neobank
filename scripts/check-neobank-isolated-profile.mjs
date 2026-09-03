@@ -39,6 +39,7 @@ const [
   customerActionPage,
   authApi,
   virtualAccountsPage,
+  customerAccountsPage,
   financeWorkspace,
   coreApi,
   accountsService,
@@ -83,6 +84,7 @@ const [
   read('src/pages/portal/customer-action.tsx'),
   read('src/auth/context/jwt/auth-api.ts'),
   read('src/pages/portal/virtual-accounts.tsx'),
+  read('src/pages/portal/customer-accounts.tsx'),
   read('src/pages/dashboard/finance-workspace.tsx'),
   read('src/features/finance/core-api.ts'),
   read('server/src/accounts/accounts.service.ts'),
@@ -450,5 +452,7 @@ assert.match(virtualAccountsPage, /supportedCurrencies/);
 assert.doesNotMatch(virtualAccountsPage, /window\.(?:alert|confirm)\s*\(/);
 assert.match(virtualAccountsPage, /<Dialog[\s\S]*?open=\{Boolean\(cancelRequest\)\}/);
 assert.match(virtualAccountsPage, /确认取消申请并释放已冻结的 USD 开户手续费/);
+assert.match(customerAccountsPage, /virtual_account_request_already_pending/);
+assert.match(customerAccountsPage, /该银行和币种已有一笔申请正在审核，请勿重复提交/);
 
 console.log('Neobank full-admin-wallet profile checks passed.');
