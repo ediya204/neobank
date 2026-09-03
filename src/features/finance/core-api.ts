@@ -17,7 +17,8 @@ export type OperationType =
   | 'ADJUSTMENT'
   | 'INTERNAL_TRANSFER'
   | 'FX'
-  | 'OTC';
+  | 'OTC'
+  | 'VA_OPENING_FEE';
 
 export type MoneyAccount = {
   id: string;
@@ -128,18 +129,22 @@ export type VirtualAccountRequest = {
   id: string;
   customerId: string;
   currency: Currency;
-  status: 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+  status: 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
   preferredCountry: string;
   purpose: string;
   channelId?: string;
   channel?: FundingChannel;
   requestSource?: 'ADMIN' | 'CUSTOMER';
   requesterEmail?: string;
-  makerId: string;
+  openingFeeUsd: string;
+  openingFeeVersion: string;
+  feeOperationId?: string | null;
+  feeOperation?: Operation | null;
+  makerId?: string;
   checkerId?: string;
   rejectionReason?: string;
   assignedAccount?: MoneyAccount;
-  customer: Customer;
+  customer?: Customer;
   maker?: { id: string; displayName: string };
   checker?: { id: string; displayName: string };
   createdAt: string;
@@ -212,6 +217,15 @@ export type Operation = {
   rejectionReason?: string;
   externalReference?: string;
   narrative?: string;
+  metadata?: {
+    vaOpeningFee?: {
+      requestId?: string;
+      channelCode?: string;
+      bankName?: string;
+      version?: string;
+      reservedAt?: string;
+    };
+  };
   customer: Customer;
   sourceAccount?: MoneyAccount;
   targetAccount?: MoneyAccount;

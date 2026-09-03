@@ -1,4 +1,4 @@
-import { customerCoreRouteAllowed } from './customer-core-route-policy';
+import { customerCoreRouteAllowed, redactCustomerCorePayload } from './customer-core-route-policy';
 
 const MAX_BODY_BYTES = 128 * 1024;
 
@@ -394,46 +394,6 @@ async function fetchLiveMarketQuote(
     throw new Error('invalid_market_rate_response');
   }
   return quote as LiveMarketQuote;
-}
-
-const CUSTOMER_CORE_INTERNAL_FIELDS = new Set([
-  'creatorId',
-  'reviewerId',
-  'checkerId',
-  'operatorId',
-  'makerId',
-  'kycReviewerId',
-  'kycReviewNote',
-  'reviewNote',
-  'operatorNote',
-  'metadata',
-  'maker',
-  'checker',
-  'operator',
-]);
-
-function redactCustomerCorePayload(value: unknown, customerId: string): unknown {
-  if (Array.isArray(value)) return value.map((item) => redactCustomerCorePayload(item, customerId));
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !CUSTOMER_CORE_INTERNAL_FIELDS.has(key))
-      .map(([key, item]) => {
-        if (key === 'targetAccount' && item && typeof item === 'object') {
-          const account = item as Record<string, unknown>;
-          if (account.customerId !== customerId) {
-            return [
-              key,
-              {
-                kind: account.kind,
-                currency: account.currency,
-              },
-            ];
-          }
-        }
-        return [key, redactCustomerCorePayload(item, customerId)];
-      })
-  );
 }
 
 async function proxyCoreAPI(

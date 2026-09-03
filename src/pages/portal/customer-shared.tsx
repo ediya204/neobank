@@ -36,6 +36,7 @@ const typeNames: Record<Operation['type'], string> = {
   INTERNAL_TRANSFER: '账户间划转',
   FX: '换汇',
   OTC: 'OTC 兑换',
+  VA_OPENING_FEE: 'VA 开户手续费',
 };
 
 const statusNames: Record<Operation['status'], string> = {

@@ -112,7 +112,9 @@ export default function VirtualAccountsPage() {
   return (
     <>
       <Helmet>
-        <title>{portalText('VA 账户')} | {APP_DISPLAY_NAME}</title>
+        <title>
+          {portalText('VA 账户')} | {APP_DISPLAY_NAME}
+        </title>
       </Helmet>
       <Container maxWidth="lg">
         <Stack spacing={3}>
@@ -315,6 +317,7 @@ function RequestRow({ request }: { request: VirtualAccountRequest }) {
     SUBMITTED: { label: portalText('审核中'), color: 'warning' as const },
     APPROVED: { label: portalText('已开通'), color: 'success' as const },
     REJECTED: { label: portalText('未通过'), color: 'error' as const },
+    CANCELLED: { label: portalText('已取消'), color: 'default' as const },
   }[request.status];
   return (
     <Box

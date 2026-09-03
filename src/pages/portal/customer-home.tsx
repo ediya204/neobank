@@ -833,6 +833,7 @@ function operationTypeLabel(type: Operation['type']) {
     INTERNAL_TRANSFER: portalText('账户划转'),
     FX: portalText('换汇'),
     OTC: portalText('OTC 兑换'),
+    VA_OPENING_FEE: portalText('VA 开户手续费'),
   };
   return labels[type];
 }

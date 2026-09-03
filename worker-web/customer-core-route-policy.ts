@@ -13,6 +13,59 @@ const customerReadableChannelTypes = new Set([
   'PLATFORM_PAYOUT',
 ]);
 
+const CUSTOMER_CORE_INTERNAL_FIELDS = new Set([
+  'creatorId',
+  'reviewerId',
+  'checkerId',
+  'operatorId',
+  'makerId',
+  'kycReviewerId',
+  'kycReviewNote',
+  'reviewNote',
+  'operatorNote',
+  'openingFeeUpdatedBy',
+  'idempotencyKey',
+  'maker',
+  'checker',
+  'operator',
+]);
+
+function safeVaOpeningFeeMetadata(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const fee = (value as Record<string, unknown>).vaOpeningFee;
+  if (!fee || typeof fee !== 'object' || Array.isArray(fee)) return undefined;
+  const source = fee as Record<string, unknown>;
+  const safe = Object.fromEntries(
+    ['requestId', 'channelCode', 'bankName', 'version', 'reservedAt']
+      .filter((key) => typeof source[key] === 'string')
+      .map((key) => [key, source[key]])
+  );
+  return Object.keys(safe).length ? { vaOpeningFee: safe } : undefined;
+}
+
+export function redactCustomerCorePayload(value: unknown, customerId: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => redactCustomerCorePayload(item, customerId));
+  if (!value || typeof value !== 'object') return value;
+  const redacted: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (CUSTOMER_CORE_INTERNAL_FIELDS.has(key)) continue;
+    if (key === 'metadata') {
+      const metadata = safeVaOpeningFeeMetadata(item);
+      if (metadata) redacted[key] = metadata;
+      continue;
+    }
+    if (key === 'targetAccount' && item && typeof item === 'object') {
+      const account = item as Record<string, unknown>;
+      if (account.customerId !== customerId) {
+        redacted[key] = { kind: account.kind, currency: account.currency };
+        continue;
+      }
+    }
+    redacted[key] = redactCustomerCorePayload(item, customerId);
+  }
+  return redacted;
+}
+
 export function customerCoreRouteAllowed(
   url: URL,
   method: string,
@@ -47,6 +100,14 @@ export function customerCoreRouteAllowed(
   }
   const ownRequests = `/api/core/customers/${customerId}/virtual-account-requests`;
   if (url.pathname === ownRequests) return method === 'GET' || method === 'POST';
+  const cancellation = url.pathname.match(
+    /^\/api\/core\/customers\/([^/]+)\/virtual-account-requests\/[^/]+\/cancel$/
+  );
+  if (cancellation) {
+    return (
+      method === 'PATCH' && cancellation[1] === customerId && hasOnlySearchParams(url, new Set())
+    );
+  }
   if (method !== 'GET') return false;
   if (url.pathname === `/api/core/customers/${customerId}`) {
     return hasOnlySearchParams(url, new Set());

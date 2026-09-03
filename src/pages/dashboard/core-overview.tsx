@@ -66,6 +66,7 @@ const OPERATION_LABELS: Record<Operation['type'], string> = {
   INTERNAL_TRANSFER: '内部划转',
   FX: '法币换汇',
   OTC: '自动兑换',
+  VA_OPENING_FEE: 'VA 开户手续费',
 };
 
 const STATUS_LABELS: Record<Operation['status'], string> = {
