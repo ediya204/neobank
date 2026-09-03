@@ -71,7 +71,15 @@ function Field({ label, value }: { label: string; value?: string | null }) {
 function statusPresentation(status: VirtualAccountRequest['status']) {
   if (status === 'APPROVED') return { label: '已开通', color: 'success' as const };
   if (status === 'REJECTED') return { label: '已拒绝', color: 'error' as const };
+  if (status === 'CANCELLED') return { label: '已取消', color: 'default' as const };
   return { label: '待处理', color: 'warning' as const };
+}
+
+function feeStatus(request: VirtualAccountRequest) {
+  if (Number(request.openingFeeUsd) === 0) return '免费';
+  if (request.status === 'APPROVED') return '已扣除并记账';
+  if (request.status === 'REJECTED' || request.status === 'CANCELLED') return '已释放';
+  return '已冻结，待处理';
 }
 
 export default function VaRequestReviewPage() {
@@ -181,7 +189,7 @@ export default function VaRequestReviewPage() {
           userId,
           body: JSON.stringify({ reason: rejectionText }),
         });
-        setSuccess('VA 申请已拒绝；客户可见原因已保存。');
+        setSuccess('VA 申请已拒绝；客户可见原因已保存，冻结的开户费已释放。');
       }
       await load();
     } catch (caught) {
@@ -222,12 +230,17 @@ export default function VaRequestReviewPage() {
   const presentation = statusPresentation(request.status);
   const customerDisplayName = customer?.displayName || request.customer?.displayName || '未知客户';
   const rejected = request.status === 'REJECTED';
-  const workflowSteps = [
-    '客户提交',
-    rejected ? '申请已拒绝' : '银行处理中',
-    '录入实际账号',
-    'VA 已开通',
-  ];
+  const cancelled = request.status === 'CANCELLED';
+  let workflowStatus = '银行处理中';
+  if (rejected) workflowStatus = '申请已拒绝';
+  if (cancelled) workflowStatus = '客户已取消';
+  const workflowSteps = ['客户提交', workflowStatus, '录入实际账号', 'VA 已开通'];
+  let feeSource: string | undefined;
+  if (request.feeOperation?.sourceAccount) {
+    feeSource = `${request.feeOperation.sourceAccount.name} · USD`;
+  } else if (Number(request.openingFeeUsd) === 0) {
+    feeSource = '无需扣款';
+  }
   let submitLabel = decision === 'approve' ? '确认开通 VA' : '拒绝 VA 申请';
   if (submitting) submitLabel = '正在提交…';
 
@@ -365,6 +378,51 @@ export default function VaRequestReviewPage() {
                   </Alert>
                 )}
               </Paper>
+
+              <Paper variant="outlined" sx={{ boxShadow: 'none', overflow: 'hidden' }}>
+                <Box sx={{ px: 2.5, py: 2, bgcolor: 'action.hover' }}>
+                  <Typography variant="overline" color="text.secondary">
+                    OPENING FEE AUDIT
+                  </Typography>
+                  <Typography variant="h6">开户手续费记录</Typography>
+                </Box>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                    columnGap: 3,
+                    px: 2.5,
+                    pb: 1.5,
+                  }}
+                >
+                  <Field label="开户手续费" value={`USD ${request.openingFeeUsd}`} />
+                  <Field label="费用状态" value={feeStatus(request)} />
+                  <Field label="规则版本" value={request.openingFeeVersion} />
+                  <Field label="扣款钱包" value={feeSource} />
+                  <Field label="费用流水" value={request.feeOperation?.reference} />
+                  <Field label="流水状态" value={request.feeOperation?.status} />
+                </Box>
+                {request.status === 'APPROVED' && request.feeOperation && (
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ p: 2.5, pt: 1 }}>
+                    <Button
+                      variant="outlined"
+                      onClick={() =>
+                        navigate(
+                          `${paths.dashboard.fundOperations.transactions}?customerId=${request.customerId}`
+                        )
+                      }
+                    >
+                      查看交易记录
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={() => navigate(paths.dashboard.fundOperations.ledger)}
+                    >
+                      查看平台账本
+                    </Button>
+                  </Stack>
+                )}
+              </Paper>
             </Stack>
 
             <Paper
@@ -446,7 +504,10 @@ export default function VaRequestReviewPage() {
                         inputProps={{ minLength: 4, maxLength: 80 }}
                         onChange={(event) => setIban(event.target.value.toUpperCase())}
                       />
-                      <Alert severity="info">开通 VA 不会增加余额、创建入账或产生账本分录。</Alert>
+                      <Alert severity="info">
+                        VA 账户初始余额为 0；如配置开户费，批准时将扣除已冻结的 USD
+                        手续费并产生账本分录。
+                      </Alert>
                     </Stack>
                   ) : (
                     <Stack spacing={1.5}>
@@ -476,6 +537,12 @@ export default function VaRequestReviewPage() {
                         onChange={(event) => setRejectionNote(event.target.value)}
                       />
                     </Stack>
+                  )}
+
+                  {decision === 'reject' && Number(request.openingFeeUsd) > 0 && (
+                    <Alert severity="info">
+                      拒绝申请后，已冻结的 USD {request.openingFeeUsd} 开户手续费将释放回客户钱包。
+                    </Alert>
                   )}
 
                   <Divider />

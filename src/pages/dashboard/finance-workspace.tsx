@@ -174,6 +174,7 @@ type ChannelForm = {
   swiftBic: string;
   bankCountry: string;
   bankAddress: string;
+  openingFeeUsd: string;
 };
 
 const initialForm: OperationForm = {
@@ -205,6 +206,7 @@ const initialChannelForm: ChannelForm = {
   swiftBic: '',
   bankCountry: '',
   bankAddress: '',
+  openingFeeUsd: '',
 };
 
 function payoutAccountKindAllowed(
@@ -711,6 +713,7 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
             swiftBic: channel.swiftBic || '',
             bankCountry: channel.bankCountry || '',
             bankAddress: channel.bankAddress || '',
+            openingFeeUsd: channel.openingFeeUsd ?? '',
           }
         : initialChannelForm
     );
@@ -734,21 +737,37 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
       setChannelFormError('请至少选择一种支持币种。');
       return;
     }
+    const openingFeeUsd = channelForm.openingFeeUsd.trim();
+    if (
+      channelForm.type === 'VIRTUAL_ACCOUNT' &&
+      openingFeeUsd &&
+      !/^\d+(?:\.\d{1,2})?$/.test(openingFeeUsd)
+    ) {
+      setChannelFormError('开户手续费必须是非负 USD 金额，最多保留两位小数。');
+      return;
+    }
     if (
       channelForm.type === 'VIRTUAL_ACCOUNT' &&
       channelForm.active &&
       (!channelForm.settlementBankName.trim() ||
         !channelForm.swiftBic.trim() ||
         !channelForm.bankCountry.trim() ||
-        !channelForm.bankAddress.trim())
+        !channelForm.bankAddress.trim() ||
+        !openingFeeUsd)
     ) {
-      setChannelFormError('启用 VA 开户通道前，请完整填写银行名称、国家、地址和 SWIFT / BIC。');
+      setChannelFormError(
+        '启用 VA 开户通道前，请完整填写银行资料并明确配置开户手续费（免费填 0.00）。'
+      );
       return;
     }
     setChannelSaving(true);
     setChannelFormError('');
     try {
       const isVirtualAccountChannel = channelForm.type === 'VIRTUAL_ACCOUNT';
+      const openingFeeChanged =
+        isVirtualAccountChannel &&
+        openingFeeUsd !== '' &&
+        openingFeeUsd !== (editingChannel?.openingFeeUsd ?? '');
       const body = {
         ...(!editingChannel
           ? {
@@ -766,6 +785,14 @@ export default function FinanceWorkspace({ section }: { section: FinanceSection 
               swiftBic: channelForm.swiftBic.trim().toUpperCase(),
               bankCountry: channelForm.bankCountry.trim().toUpperCase(),
               bankAddress: channelForm.bankAddress.trim(),
+              ...(openingFeeChanged
+                ? {
+                    openingFeeUsd,
+                    ...(editingChannel
+                      ? { expectedOpeningFeeVersion: editingChannel.openingFeeVersion }
+                      : {}),
+                  }
+                : {}),
             }
           : {}),
       };
@@ -1975,6 +2002,18 @@ function ChannelWorkspace({
                       {[channel.swiftBic, channel.bankCountry].filter(Boolean).join(' · ') ||
                         '未配置银行资料'}
                     </Typography>
+                    <Typography variant="body2" sx={{ mt: 0.75 }}>
+                      开户费：
+                      {channel.openingFeeUsd === null || channel.openingFeeUsd === undefined
+                        ? '未配置'
+                        : `USD ${channel.openingFeeUsd}`}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      版本 {channel.openingFeeVersion || '0'}
+                      {channel.openingFeeUpdatedAt
+                        ? ` · ${new Date(channel.openingFeeUpdatedAt).toLocaleString('zh-CN')}`
+                        : ''}
+                    </Typography>
                   </Box>
                 )}
                 <Button
@@ -2308,6 +2347,25 @@ function ChannelEditorDrawer({
                 value={form.bankAddress}
                 onChange={(event) => set('bankAddress', event.target.value)}
               />
+              <Divider>
+                <Typography variant="caption" color="text.secondary">
+                  开户费用
+                </Typography>
+              </Divider>
+              <TextField
+                label="开户手续费（USD）"
+                required={activeVa}
+                value={form.openingFeeUsd}
+                type="number"
+                inputProps={{ min: 0, step: 0.01 }}
+                InputProps={{
+                  endAdornment: <InputAdornment position="end">USD</InputAdornment>,
+                }}
+                helperText={`0.00 表示免费；未配置的渠道不能接受新申请。当前版本 ${
+                  channel?.openingFeeVersion || '0'
+                }`}
+                onChange={(event) => set('openingFeeUsd', event.target.value)}
+              />
             </>
           )}
 
@@ -2343,6 +2401,9 @@ function channelErrorMessage(value: unknown) {
     funding_channel_code_exists: '这个通道代码已经存在，请使用新的唯一代码。',
     virtual_account_channel_bank_details_required:
       '启用 VA 开户通道前，请完整填写银行名称、国家、地址和 SWIFT / BIC。',
+    virtual_account_opening_fee_not_configured:
+      '启用 VA 开户通道前，必须明确配置开户手续费；免费请填写 0.00。',
+    virtual_account_opening_fee_changed: '开户手续费已被其他管理员更新，请刷新后重试。',
     virtual_account_channel_customer_details_not_allowed:
       'VA 银行通道不配置分行或客户账号；请在具体客户的 VA 开通审批中录入账户资料。',
     va_payout_channel_merged: 'VA 出款已与 VA 银行通道合并，请直接配置对应的 VA 银行。',
@@ -3635,6 +3696,7 @@ function operationTypeText(type: OperationType) {
       INTERNAL_TRANSFER: '内部转账',
       FX: '法币换汇',
       OTC: 'OTC',
+      VA_OPENING_FEE: 'VA 开户手续费',
     } as Record<OperationType, string>
   )[type];
 }
