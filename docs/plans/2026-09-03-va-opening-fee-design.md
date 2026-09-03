@@ -116,6 +116,8 @@
 - 提交后的可用余额；
 - “提交后冻结，批准后扣除；拒绝或取消后释放”的说明。
 
+客户取消使用现有 MUI `Dialog` 做二次确认，明确显示将释放的 USD 冻结手续费，并在请求处理中禁用确认按钮。客户界面禁止使用原生 `window.alert` / `window.confirm`；页面内 MUI `Alert` 继续承担成功、失败和风险提示。
+
 提交时客户端发送 `expectedOpeningFeeUsd`、`expectedOpeningFeeVersion` 和 `Idempotency-Key`。服务端在事务内重新读取渠道和客户 USD 钱包：
 
 - 渠道未配置费用：`virtual_account_opening_fee_not_configured`；
