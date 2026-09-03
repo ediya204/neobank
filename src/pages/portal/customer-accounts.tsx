@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import {
   Alert,
@@ -42,6 +42,8 @@ import {
   FundingChannel,
   MoneyAccount,
   SYSTEM_WALLET_PRODUCT_NAME,
+  accountBalanceLabel,
+  vaOpeningFeeQuote,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
 import { portalLocale, portalText } from 'src/locales/portal-text';
@@ -134,7 +136,9 @@ export default function CustomerAccounts() {
   return (
     <>
       <Helmet>
-        <title>{portalText('账户与资产')} | {APP_DISPLAY_NAME}</title>
+        <title>
+          {portalText('账户与资产')} | {APP_DISPLAY_NAME}
+        </title>
       </Helmet>
       <Container maxWidth="xl">
         <Stack spacing={3}>
@@ -255,6 +259,7 @@ export default function CustomerAccounts() {
       <VaRequestDialog
         open={vaOpen}
         customerId={customer?.id || ''}
+        accounts={customer?.accounts || []}
         onClose={() => setVaOpen(false)}
         onCreated={() => {
           setVaOpen(false);
@@ -563,11 +568,13 @@ function DistributionRow({ item }: { item: AssetDistributionItem }) {
 function VaRequestDialog({
   open,
   customerId,
+  accounts,
   onClose,
   onCreated,
 }: {
   open: boolean;
   customerId: string;
+  accounts: MoneyAccount[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -576,10 +583,14 @@ function VaRequestDialog({
   const [channelId, setChannelId] = useState('');
   const [purpose, setPurpose] = useState(portalText('接收客户货款'));
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const idempotencyKey = useRef<string | null>(null);
   const selectedChannel = channels.find((channel) => channel.id === channelId);
+  const feeQuote = vaOpeningFeeQuote(selectedChannel, accounts);
 
   useEffect(() => {
     if (!open) return;
+    idempotencyKey.current = null;
     coreApi<FundingChannel[]>(
       `/funding-channels?organizationId=${demoOrganizationId}&type=VIRTUAL_ACCOUNT&active=true`
     )
@@ -598,17 +609,31 @@ function VaRequestDialog({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!selectedChannel || feeQuote.disabledReason || !feeQuote.feeUsd) return;
     setError('');
+    setSubmitting(true);
     try {
+      const key = idempotencyKey.current || crypto.randomUUID();
+      idempotencyKey.current = key;
       await coreApi<VirtualAccountRequest>(`/customers/${customerId}/virtual-account-requests`, {
         method: 'POST',
-        body: JSON.stringify({ channelId, currency, purpose }),
+        headers: { 'Idempotency-Key': key },
+        body: JSON.stringify({
+          channelId,
+          currency,
+          purpose,
+          expectedOpeningFeeUsd: feeQuote.feeUsd,
+          expectedOpeningFeeVersion: selectedChannel.openingFeeVersion,
+        }),
       });
+      idempotencyKey.current = null;
       onCreated();
     } catch (value) {
       setError(
         value instanceof Error ? value.message : portalText('VA 账户申请暂时无法提交，请稍后重试。')
       );
+    } finally {
+      setSubmitting(false);
     }
   };
   return (
@@ -627,6 +652,7 @@ function VaRequestDialog({
                   const nextId = event.target.value;
                   const channel = channels.find((item) => item.id === nextId);
                   setChannelId(nextId);
+                  idempotencyKey.current = null;
                   if (channel?.supportedCurrencies[0]) setCurrency(channel.supportedCurrencies[0]);
                 }}
               >
@@ -652,7 +678,10 @@ function VaRequestDialog({
               <Select
                 label={portalText('币种')}
                 value={currency}
-                onChange={(event) => setCurrency(event.target.value as Currency)}
+                onChange={(event) => {
+                  setCurrency(event.target.value as Currency);
+                  idempotencyKey.current = null;
+                }}
               >
                 {(selectedChannel?.supportedCurrencies || []).map((item) => (
                   <MenuItem key={item} value={item}>
@@ -665,10 +694,47 @@ function VaRequestDialog({
               required
               label={portalText('账户用途')}
               value={purpose}
-              onChange={(event) => setPurpose(event.target.value)}
+              onChange={(event) => {
+                setPurpose(event.target.value);
+                idempotencyKey.current = null;
+              }}
               multiline
               minRows={2}
             />
+
+            {selectedChannel && (
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                  gap: 1.25,
+                  p: 2,
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 1.5,
+                }}
+              >
+                <VaFeeItem
+                  label={portalText('开户手续费')}
+                  value={feeQuote.feeUsd ? `USD ${feeQuote.feeUsd}` : '—'}
+                />
+                <VaFeeItem
+                  label={portalText('扣款钱包')}
+                  value={feeQuote.wallet ? accountBalanceLabel(feeQuote.wallet) : '—'}
+                />
+                <VaFeeItem
+                  label={portalText('当前可用余额')}
+                  value={feeQuote.availableUsd ? `USD ${feeQuote.availableUsd}` : '—'}
+                />
+                <VaFeeItem
+                  label={portalText('提交后可用余额')}
+                  value={feeQuote.availableAfterUsd ? `USD ${feeQuote.availableAfterUsd}` : '—'}
+                />
+              </Box>
+            )}
+            {feeQuote.disabledReason && (
+              <Alert severity="warning">{vaFeeDisabledMessage(feeQuote.disabledReason)}</Alert>
+            )}
 
             <Alert severity="info">
               {portalText(
@@ -679,13 +745,38 @@ function VaRequestDialog({
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>{portalText('取消')}</Button>
-          <Button type="submit" variant="contained" disabled={!selectedChannel}>
-            {portalText('提交申请')}
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={!selectedChannel || Boolean(feeQuote.disabledReason) || submitting}
+          >
+            {submitting ? portalText('正在提交…') : portalText('提交申请')}
           </Button>
         </DialogActions>
       </Box>
     </Dialog>
   );
+}
+
+function VaFeeItem({ label, value }: { label: string; value: string }) {
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+      <Typography variant="body2" fontWeight={700} sx={{ mt: 0.25 }}>
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
+function vaFeeDisabledMessage(
+  reason: NonNullable<ReturnType<typeof vaOpeningFeeQuote>['disabledReason']>
+) {
+  if (reason === 'fee_not_configured') return portalText('所选银行暂未配置开户手续费。');
+  if (reason === 'usd_wallet_missing') return portalText('未找到可用的 USD 钱包。');
+  return portalText('USD 钱包可用余额不足，请充值后重试。');
 }
 
 function AccountListRow({

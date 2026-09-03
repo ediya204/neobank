@@ -801,6 +801,9 @@ function applyOperationMovement(movement: Record<DisplayCurrency, number>, opera
   if (operation.type === 'PAYOUT') {
     movement[currency] -= Number(operation.amount || 0) + Number(operation.feeAmount || 0);
   }
+  if (operation.type === 'VA_OPENING_FEE') {
+    movement[currency] -= Number(operation.amount || 0);
+  }
   if ((operation.type === 'FX' || operation.type === 'OTC') && operation.quoteCurrency) {
     movement[currency] -= Number(operation.amount || 0);
     const quoteCurrency = operation.quoteCurrency as DisplayCurrency;

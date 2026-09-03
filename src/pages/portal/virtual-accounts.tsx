@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import {
   Alert,
@@ -25,12 +25,14 @@ import {
   Currency,
   demoOrganizationId,
   FundingChannel,
+  accountBalanceLabel,
+  vaOpeningFeeQuote,
   VirtualAccountRequest,
 } from 'src/features/finance/core-api';
 import { portalLocale, portalText } from 'src/locales/portal-text';
 
 export default function VirtualAccountsPage() {
-  const { customer } = usePortalCustomer();
+  const { customer, refresh } = usePortalCustomer();
   const [channels, setChannels] = useState<FundingChannel[]>([]);
   const [requests, setRequests] = useState<VirtualAccountRequest[]>([]);
   const [channelId, setChannelId] = useState('');
@@ -41,6 +43,8 @@ export default function VirtualAccountsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [cancellingId, setCancellingId] = useState('');
+  const idempotencyKey = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (!customer?.id) return;
@@ -77,10 +81,19 @@ export default function VirtualAccountsPage() {
     () => channels.find((channel) => channel.id === channelId),
     [channelId, channels]
   );
+  const feeQuote = useMemo(
+    () => vaOpeningFeeQuote(selectedChannel, customer?.accounts || []),
+    [customer?.accounts, selectedChannel]
+  );
+
+  const resetSubmission = () => {
+    idempotencyKey.current = null;
+  };
 
   const selectChannel = (nextChannelId: string) => {
     const channel = channels.find((item) => item.id === nextChannelId);
     setChannelId(nextChannelId);
+    resetSubmission();
     if (channel && !channel.supportedCurrencies.includes(currency)) {
       setCurrency(channel.supportedCurrencies[0]);
     }
@@ -88,24 +101,60 @@ export default function VirtualAccountsPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!customer?.id || !selectedChannel) return;
+    if (!customer?.id || !selectedChannel || feeQuote.disabledReason || !feeQuote.feeUsd) return;
     setSubmitting(true);
     setError('');
     setSuccess('');
     try {
+      const key = idempotencyKey.current || crypto.randomUUID();
+      idempotencyKey.current = key;
       await coreApi(`/customers/${customer.id}/virtual-account-requests`, {
         method: 'POST',
-        body: JSON.stringify({ channelId: selectedChannel.id, currency, purpose }),
+        headers: { 'Idempotency-Key': key },
+        body: JSON.stringify({
+          channelId: selectedChannel.id,
+          currency,
+          purpose,
+          expectedOpeningFeeUsd: feeQuote.feeUsd,
+          expectedOpeningFeeVersion: selectedChannel.openingFeeVersion,
+        }),
       });
       setSuccess(
-        portalText('VA 账户申请已提交。审核完成并取得银行分配的账号后，账户资料会显示在本页。')
+        Number(feeQuote.feeUsd) > 0
+          ? portalText('VA 账户申请已提交，开户手续费已冻结。')
+          : portalText('VA 账户申请已提交，本次开户免费。')
       );
       setApplying(false);
-      await load();
+      resetSubmission();
+      await Promise.all([load(), refresh()]);
     } catch (value) {
       setError(vaErrorMessage(value));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const cancelRequest = async (request: VirtualAccountRequest) => {
+    if (!customer?.id || request.status !== 'SUBMITTED') return;
+    const confirmed = window.confirm(
+      Number(request.openingFeeUsd) > 0
+        ? portalText('确认取消申请并释放已冻结的 USD 开户手续费？')
+        : portalText('确认取消这笔免费 VA 申请？')
+    );
+    if (!confirmed) return;
+    setCancellingId(request.id);
+    setError('');
+    setSuccess('');
+    try {
+      await coreApi(`/customers/${customer.id}/virtual-account-requests/${request.id}/cancel`, {
+        method: 'PATCH',
+      });
+      setSuccess(portalText('VA 申请已取消，冻结的开户手续费已释放。'));
+      await Promise.all([load(), refresh()]);
+    } catch (value) {
+      setError(vaErrorMessage(value));
+    } finally {
+      setCancellingId('');
     }
   };
 
@@ -224,7 +273,10 @@ export default function VirtualAccountsPage() {
                       <Select
                         label={portalText('开户币种')}
                         value={currency}
-                        onChange={(event) => setCurrency(event.target.value as Currency)}
+                        onChange={(event) => {
+                          setCurrency(event.target.value as Currency);
+                          resetSubmission();
+                        }}
                       >
                         {selectedChannel.supportedCurrencies.map((item) => (
                           <MenuItem key={item} value={item}>
@@ -241,8 +293,47 @@ export default function VirtualAccountsPage() {
                     label={portalText('账户用途')}
                     value={purpose}
                     inputProps={{ maxLength: 500 }}
-                    onChange={(event) => setPurpose(event.target.value)}
+                    onChange={(event) => {
+                      setPurpose(event.target.value);
+                      resetSubmission();
+                    }}
                   />
+
+                  {selectedChannel && (
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                        gap: 1.25,
+                        p: 2.5,
+                        border: 1,
+                        borderColor: 'divider',
+                        borderRadius: 1.5,
+                      }}
+                    >
+                      <FeeItem
+                        label={portalText('开户手续费')}
+                        value={feeQuote.feeUsd ? `USD ${feeQuote.feeUsd}` : '—'}
+                      />
+                      <FeeItem
+                        label={portalText('扣款钱包')}
+                        value={feeQuote.wallet ? accountBalanceLabel(feeQuote.wallet) : '—'}
+                      />
+                      <FeeItem
+                        label={portalText('当前可用余额')}
+                        value={feeQuote.availableUsd ? `USD ${feeQuote.availableUsd}` : '—'}
+                      />
+                      <FeeItem
+                        label={portalText('提交后可用余额')}
+                        value={
+                          feeQuote.availableAfterUsd ? `USD ${feeQuote.availableAfterUsd}` : '—'
+                        }
+                      />
+                    </Box>
+                  )}
+                  {feeQuote.disabledReason && (
+                    <Alert severity="warning">{feeDisabledMessage(feeQuote.disabledReason)}</Alert>
+                  )}
 
                   <Stack direction="row" justifyContent="flex-end" spacing={1.5}>
                     <Button color="inherit" onClick={() => setApplying(false)}>
@@ -251,7 +342,7 @@ export default function VirtualAccountsPage() {
                     <Button
                       type="submit"
                       variant="contained"
-                      disabled={!selectedChannel || submitting}
+                      disabled={!selectedChannel || Boolean(feeQuote.disabledReason) || submitting}
                     >
                       {submitting ? portalText('正在提交…') : portalText('提交申请')}
                     </Button>
@@ -279,7 +370,12 @@ export default function VirtualAccountsPage() {
             <Card variant="outlined" sx={{ boxShadow: 'none' }}>
               <Stack divider={<Divider flexItem />}>
                 {requests.map((request) => (
-                  <RequestRow key={request.id} request={request} />
+                  <RequestRow
+                    key={request.id}
+                    request={request}
+                    cancelling={cancellingId === request.id}
+                    onCancel={() => cancelRequest(request).catch(() => undefined)}
+                  />
                 ))}
               </Stack>
             </Card>
@@ -311,7 +407,15 @@ export default function VirtualAccountsPage() {
   );
 }
 
-function RequestRow({ request }: { request: VirtualAccountRequest }) {
+function RequestRow({
+  request,
+  cancelling,
+  onCancel,
+}: {
+  request: VirtualAccountRequest;
+  cancelling: boolean;
+  onCancel: () => void;
+}) {
   const account = request.assignedAccount;
   const status = {
     SUBMITTED: { label: portalText('审核中'), color: 'warning' as const },
@@ -332,6 +436,9 @@ function RequestRow({ request }: { request: VirtualAccountRequest }) {
       }}
     >
       <Box>
+        <Typography variant="body2" fontWeight={650} sx={{ mb: 0.75 }}>
+          {feeLifecycleText(request)}
+        </Typography>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
           <Typography variant="subtitle1">
             {request.channel?.settlementBankName ||
@@ -378,9 +485,53 @@ function RequestRow({ request }: { request: VirtualAccountRequest }) {
             {portalText('审核完成并取得银行分配的账号后，账户资料会显示在这里。')}
           </Typography>
         )}
+        {request.status === 'SUBMITTED' && (
+          <Button
+            size="small"
+            color="inherit"
+            variant="outlined"
+            disabled={cancelling}
+            onClick={onCancel}
+            sx={{ mt: 1.25 }}
+          >
+            {cancelling ? portalText('正在取消…') : portalText('取消申请')}
+          </Button>
+        )}
       </Box>
     </Box>
   );
+}
+
+function FeeItem({ label, value }: { label: string; value: string }) {
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+      <Typography variant="body2" fontWeight={700} sx={{ mt: 0.25 }}>
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
+function feeLifecycleText(request: VirtualAccountRequest) {
+  if (Number(request.openingFeeUsd) === 0) return portalText('开户手续费：免费');
+  if (request.status === 'APPROVED') {
+    return portalText('开户手续费：USD {{value0}} · 已扣除', { value0: request.openingFeeUsd });
+  }
+  if (request.status === 'REJECTED' || request.status === 'CANCELLED') {
+    return portalText('开户手续费：USD {{value0}} · 已释放', { value0: request.openingFeeUsd });
+  }
+  return portalText('开户手续费：USD {{value0}} · 已冻结', { value0: request.openingFeeUsd });
+}
+
+function feeDisabledMessage(
+  reason: NonNullable<ReturnType<typeof vaOpeningFeeQuote>['disabledReason']>
+) {
+  if (reason === 'fee_not_configured') return portalText('所选银行暂未配置开户手续费。');
+  if (reason === 'usd_wallet_missing') return portalText('未找到可用的 USD 钱包。');
+  return portalText('USD 钱包可用余额不足，请充值后重试。');
 }
 
 function vaErrorMessage(value: unknown) {

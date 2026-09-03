@@ -144,6 +144,13 @@ export default function CustomerActivity() {
         rowType = 'EXCHANGE';
         direction = 'exchange';
       }
+      let detail = row.beneficiary?.name || row.sourceAccount?.name || portalText('SSC 余额账户');
+      if (row.type === 'FX' || row.type === 'OTC') {
+        detail = `${row.currency} → ${row.quoteCurrency || '—'}`;
+      }
+      if (row.type === 'VA_OPENING_FEE') {
+        detail = row.metadata?.vaOpeningFee?.bankName || portalText('VA 账户申请');
+      }
       return {
         id: `operation-${row.id}`,
         reference: row.reference,
@@ -154,10 +161,7 @@ export default function CustomerActivity() {
         amount: row.amount,
         direction,
         createdAt: row.createdAt,
-        detail:
-          row.type === 'FX' || row.type === 'OTC'
-            ? `${row.currency} → ${row.quoteCurrency || '—'}`
-            : row.beneficiary?.name || row.sourceAccount?.name || portalText('SSC 余额账户'),
+        detail,
         record: { kind: 'operation', value: row },
       };
     });
@@ -515,6 +519,15 @@ function activityDetailItems(row: ActivityRow): DetailItem[] {
     POBO: 'POBO',
     PLATFORM: portalText('平台代付'),
   };
+  const vaFee = operation.metadata?.vaOpeningFee;
+  let vaFeeStatus: string | null = null;
+  if (operation.type === 'VA_OPENING_FEE') {
+    vaFeeStatus = portalText('手续费已冻结');
+    if (operation.status === 'COMPLETED') vaFeeStatus = portalText('手续费已扣除');
+    if (operation.status === 'REJECTED' || operation.status === 'CANCELLED') {
+      vaFeeStatus = portalText('手续费已释放');
+    }
+  }
   return [
     { label: portalText('交易类型'), value: row.title },
     { label: portalText('参考号'), value: operation.reference, mono: true },
@@ -545,6 +558,11 @@ function activityDetailItems(row: ActivityRow): DetailItem[] {
     { label: portalText('汇款附言'), value: operation.remittanceReference },
     { label: portalText('外部参考号'), value: operation.externalReference, mono: true },
     { label: portalText('交易说明'), value: operation.narrative },
+    { label: portalText('服务银行'), value: vaFee?.bankName },
+    { label: portalText('VA 申请编号'), value: vaFee?.requestId, mono: true },
+    { label: portalText('手续费规则版本'), value: vaFee?.version },
+    { label: portalText('手续费状态'), value: vaFeeStatus },
+    { label: portalText('手续费冻结时间'), value: formatActivityDate(vaFee?.reservedAt) },
     { label: portalText('创建时间'), value: formatActivityDate(operation.createdAt) },
     { label: portalText('提交时间'), value: formatActivityDate(operation.submittedAt) },
     { label: portalText('审核通过时间'), value: formatActivityDate(operation.approvedAt) },

@@ -191,6 +191,44 @@ export type FundingChannel = {
   openingFeeUpdatedAt?: string;
 };
 
+export type VaOpeningFeeQuote = {
+  feeUsd: string | null;
+  wallet?: MoneyAccount;
+  availableUsd?: string;
+  availableAfterUsd?: string;
+  disabledReason: 'fee_not_configured' | 'usd_wallet_missing' | 'insufficient_balance' | null;
+};
+
+export function vaOpeningFeeQuote(
+  channel: FundingChannel | undefined,
+  accounts: MoneyAccount[]
+): VaOpeningFeeQuote {
+  const fee = Number(channel?.openingFeeUsd);
+  if (
+    channel?.openingFeeUsd === null ||
+    channel?.openingFeeUsd === undefined ||
+    !Number.isFinite(fee)
+  ) {
+    return { feeUsd: null, disabledReason: 'fee_not_configured' };
+  }
+  const feeUsd = fee.toFixed(2);
+  const wallet = accounts.find(
+    (account) =>
+      account.kind === 'SYSTEM_WALLET' && account.currency === 'USD' && account.status === 'ACTIVE'
+  );
+  if (!wallet) return { feeUsd, disabledReason: 'usd_wallet_missing' };
+  const available = Number(wallet.availableBalance);
+  const availableUsd = available.toFixed(2);
+  const availableAfterUsd = (available - fee).toFixed(2);
+  return {
+    feeUsd,
+    wallet,
+    availableUsd,
+    availableAfterUsd,
+    disabledReason: available < fee ? 'insufficient_balance' : null,
+  };
+}
+
 export type Operation = {
   id: string;
   reference: string;
@@ -402,6 +440,11 @@ const apiBoundaryErrorMessages: Record<string, string> = {
   admin_permission_required: '当前管理员账号没有执行此操作的权限。',
   service_unavailable: '服务暂时不可用，请稍后重试。',
   market_data_unavailable: '实时报价暂时不可用，请稍后重试。',
+  virtual_account_opening_fee_changed: '开户手续费已更新，请确认最新金额后重新提交。',
+  virtual_account_opening_fee_not_configured:
+    '所选银行暂未配置开户手续费，请选择其他银行或稍后重试。',
+  usd_wallet_not_found: '未找到可用的 USD 钱包，暂时无法支付开户手续费。',
+  insufficient_available_balance: 'USD 钱包可用余额不足，请充值后重试。',
 };
 
 type ApiRequestInit = RequestInit & {
@@ -418,6 +461,9 @@ export function apiErrorMessage(
 ) {
   if (typeof code === 'string' && apiBoundaryErrorMessages[code]) {
     return apiBoundaryErrorMessages[code];
+  }
+  if (typeof message === 'string' && apiBoundaryErrorMessages[message]) {
+    return apiBoundaryErrorMessages[message];
   }
   if (typeof message === 'string' && message.trim()) return message;
   if (typeof code === 'string' && code.trim()) return code;
