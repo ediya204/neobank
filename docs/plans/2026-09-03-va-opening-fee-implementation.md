@@ -389,7 +389,7 @@ Reject a different customer ID, extra path segments, query parameters, GET/POST,
 Run:
 
 ```bash
-node --test worker-web/customer-core-route-policy.test.ts
+node --experimental-strip-types --test worker-web/customer-core-route-policy.test.ts
 ```
 
 Expected: new allow case fails.
@@ -417,7 +417,7 @@ Add `VA_OPENING_FEE` to `OperationType` and a typed `metadata` subset sufficient
 Run:
 
 ```bash
-node --test worker-web/customer-core-route-policy.test.ts
+node --experimental-strip-types --test worker-web/customer-core-route-policy.test.ts
 npm run typecheck
 git diff --check
 ```
