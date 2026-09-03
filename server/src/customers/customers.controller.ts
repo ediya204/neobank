@@ -1,9 +1,20 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import {
   IsDateString,
   IsEmail,
   IsEnum,
   IsNumber,
+  IsNumberString,
   IsOptional,
   IsString,
   Length,
@@ -27,19 +38,33 @@ class CreateCustomerDto {
   @IsString() @Matches(/^[0-9 ()-]{6,24}$/) phone!: string;
   @IsString() @Matches(/^\+[1-9][0-9]{0,3}$/) phoneCountryCode!: string;
   @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
-  @IsString() @Length(1, 80) registrationNo?: string;
+  @IsString()
+  @Length(1, 80)
+  registrationNo?: string;
   @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.INDIVIDUAL)
-  @IsDateString() dateOfBirth?: string;
+  @IsDateString()
+  dateOfBirth?: string;
   @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.INDIVIDUAL)
-  @IsString() @Matches(/^[A-Za-z]{2}$/) nationality?: string;
+  @IsString()
+  @Matches(/^[A-Za-z]{2}$/)
+  nationality?: string;
   @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
-  @IsString() @Length(1, 120) contactName?: string;
+  @IsString()
+  @Length(1, 120)
+  contactName?: string;
   @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
-  @IsString() @Length(1, 100) contactRole?: string;
+  @IsString()
+  @Length(1, 100)
+  contactRole?: string;
   @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
-  @IsString() @Length(1, 120) beneficialOwnerName?: string;
+  @IsString()
+  @Length(1, 120)
+  beneficialOwnerName?: string;
   @ValidateIf((input: CreateCustomerDto) => input.type === CustomerType.BUSINESS)
-  @IsNumber() @Min(0.01) @Max(100) beneficialOwnerOwnership?: number;
+  @IsNumber()
+  @Min(0.01)
+  @Max(100)
+  beneficialOwnerOwnership?: number;
 }
 
 class ReviewCustomerDto {
@@ -64,6 +89,8 @@ class CreateVaRequestDto {
   @IsEnum(Currency) currency!: Currency;
   @IsString() channelId!: string;
   @IsString() @Length(2, 500) purpose!: string;
+  @IsOptional() @IsNumberString() expectedOpeningFeeUsd?: string;
+  @IsOptional() @IsString() expectedOpeningFeeVersion?: string;
 }
 
 @Controller('customers')
@@ -106,7 +133,15 @@ export class CustomersController {
 
   @Post(':id/virtual-account-requests')
   requestVa(@Param('id') id: string, @Body() dto: CreateVaRequestDto, @Req() request: Request) {
-    return this.customers.requestVirtualAccount(id, dto, requestActor(request));
+    const idempotencyKey = request.header('idempotency-key')?.trim();
+    if (idempotencyKey && idempotencyKey.length > 128) {
+      throw new BadRequestException('invalid_idempotency_key');
+    }
+    return this.customers.requestVirtualAccount(
+      id,
+      { ...dto, idempotencyKey },
+      requestActor(request)
+    );
   }
 
   @Get(':id/virtual-account-requests')

@@ -12,8 +12,10 @@ import {
   CustomerStatus,
   CustomerType,
   EmailTemplateKey,
+  FundingChannel,
   Prisma,
 } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { requireCustomerAccess, requireOrganizationAccess } from '../common/tenant-access';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailOutboxService } from '../email/email-outbox.service';
@@ -49,6 +51,14 @@ type VaRequestActor = {
   customerId?: string;
   email?: string;
 };
+
+const vaRequestInclude = {
+  assignedAccount: true,
+  channel: true,
+  feeOperation: { include: { sourceAccount: true, targetAccount: true } },
+  maker: true,
+  checker: true,
+} satisfies Prisma.VirtualAccountRequestInclude;
 
 @Injectable()
 export class CustomersService {
@@ -286,48 +296,194 @@ export class CustomersService {
 
   async requestVirtualAccount(
     customerId: string,
-    input: { currency: Currency; channelId: string; purpose: string },
+    input: {
+      currency: Currency;
+      channelId: string;
+      purpose: string;
+      expectedOpeningFeeUsd?: string;
+      expectedOpeningFeeVersion?: string;
+      idempotencyKey?: string;
+    },
     actor: VaRequestActor
   ) {
     if (!isSupportedFiatCurrency(input.currency)) {
       throw new ConflictException('unsupported_fiat_currency');
     }
-    const channel = await this.db.fundingChannel.findUnique({ where: { id: input.channelId } });
-    if (!channel || channel.type !== 'VIRTUAL_ACCOUNT' || !channel.active) {
-      throw new NotFoundException('virtual_account_channel_not_found');
-    }
-    if (!channel.supportedCurrencies.includes(input.currency)) {
-      throw new ConflictException('virtual_account_channel_currency_unsupported');
-    }
     const purpose = input.purpose.trim();
     if (purpose.length < 2) throw new BadRequestException('virtual_account_purpose_required');
-    const customer = await this.requireVaCustomerAccess(customerId, channel.organizationId, actor);
+    const customer = await this.requireVaCustomerAccess(customerId, undefined, actor);
     if (customer.status !== 'ACTIVE') throw new ConflictException('active_customer_required');
-    const existing = await this.db.virtualAccountRequest.findFirst({
-      where: {
-        customerId,
-        channelId: channel.id,
-        currency: input.currency,
-        status: 'SUBMITTED',
-      },
-    });
-    if (existing) throw new ConflictException('virtual_account_request_already_pending');
+    const idempotencyKey = input.idempotencyKey?.trim() || undefined;
+    if (actor.customerId && !idempotencyKey) {
+      throw new BadRequestException('idempotency_key_required');
+    }
     try {
-      return await this.db.virtualAccountRequest.create({
-        data: {
-          customerId,
-          channelId: channel.id,
-          currency: input.currency,
-          preferredCountry: channel.bankCountry || 'ZZ',
-          purpose,
-          makerId: actor.userId,
-          requestSource: actor.customerId ? 'CUSTOMER' : 'ADMIN',
-          requesterEmail: actor.email,
+      const created = await this.db.$transaction(
+        async (tx) => {
+          if (idempotencyKey) {
+            const existing = await tx.virtualAccountRequest.findFirst({
+              where: { customerId, idempotencyKey },
+              include: vaRequestInclude,
+            });
+            if (existing) {
+              if (
+                existing.channelId !== input.channelId ||
+                existing.currency !== input.currency ||
+                existing.purpose !== purpose
+              ) {
+                throw new ConflictException('idempotency_key_reused');
+              }
+              return existing;
+            }
+          }
+          const [channel, currentCustomer, pending] = await Promise.all([
+            tx.fundingChannel.findUnique({ where: { id: input.channelId } }),
+            tx.customer.findUnique({ where: { id: customerId } }),
+            tx.virtualAccountRequest.findFirst({
+              where: {
+                customerId,
+                channelId: input.channelId,
+                currency: input.currency,
+                status: 'SUBMITTED',
+              },
+            }),
+          ]);
+          if (
+            !channel ||
+            channel.type !== 'VIRTUAL_ACCOUNT' ||
+            !channel.active ||
+            channel.organizationId !== customer.organizationId
+          ) {
+            throw new NotFoundException('virtual_account_channel_not_found');
+          }
+          if (!channel.supportedCurrencies.includes(input.currency)) {
+            throw new ConflictException('virtual_account_channel_currency_unsupported');
+          }
+          if (
+            !currentCustomer ||
+            currentCustomer.organizationId !== channel.organizationId ||
+            currentCustomer.status !== 'ACTIVE'
+          ) {
+            throw new ConflictException('active_customer_required');
+          }
+          if (pending) throw new ConflictException('virtual_account_request_already_pending');
+          if (channel.openingFeeUsdMinor === null) {
+            throw new ConflictException('virtual_account_opening_fee_not_configured');
+          }
+          const fee = new Prisma.Decimal(channel.openingFeeUsdMinor.toString()).div(100);
+          if (actor.customerId) {
+            let expectedFee: Prisma.Decimal;
+            try {
+              expectedFee = new Prisma.Decimal(input.expectedOpeningFeeUsd || '');
+            } catch {
+              throw new BadRequestException('invalid_virtual_account_opening_fee_confirmation');
+            }
+            if (
+              !expectedFee.equals(fee) ||
+              input.expectedOpeningFeeVersion !== channel.openingFeeVersion.toString()
+            ) {
+              throw new ConflictException('virtual_account_opening_fee_changed');
+            }
+          }
+
+          const requestId = randomUUID();
+          let feeOperationId: string | null = null;
+          if (!fee.isZero()) {
+            const [wallets, feeAccounts] = await Promise.all([
+              tx.account.findMany({
+                where: {
+                  customerId,
+                  kind: 'SYSTEM_WALLET',
+                  status: 'ACTIVE',
+                  currency: 'USD',
+                },
+                take: 2,
+              }),
+              tx.account.findMany({
+                where: { customerId: null, kind: 'FEE_REVENUE', status: 'ACTIVE', currency: 'USD' },
+                take: 2,
+              }),
+            ]);
+            if (wallets.length !== 1) throw new ConflictException('usd_wallet_not_found');
+            if (feeAccounts.length !== 1) throw new ConflictException('fee_account_not_configured');
+            const wallet = wallets[0];
+            const feeAccount = feeAccounts[0];
+            const frozen = await tx.account.updateMany({
+              where: { id: wallet.id, status: 'ACTIVE', availableBalance: { gte: fee } },
+              data: {
+                availableBalance: { decrement: fee },
+                frozenBalance: { increment: fee },
+                version: { increment: 1 },
+              },
+            });
+            if (frozen.count !== 1) {
+              throw new ConflictException('insufficient_available_balance');
+            }
+            feeOperationId = randomUUID();
+            const submittedAt = new Date();
+            await tx.operation.create({
+              data: {
+                id: feeOperationId,
+                reference: `VA-FEE-${requestId.slice(0, 8).toUpperCase()}`,
+                idempotencyKey: idempotencyKey ? `va-opening-fee:${idempotencyKey}` : null,
+                customerId,
+                channelId: channel.id,
+                type: 'VA_OPENING_FEE',
+                status: 'SUBMITTED',
+                currency: 'USD',
+                amount: fee,
+                feeAmount: 0,
+                sourceAccountId: wallet.id,
+                targetAccountId: feeAccount.id,
+                makerId: actor.userId,
+                narrative: 'VA opening fee',
+                metadata: {
+                  vaOpeningFee: {
+                    requestId,
+                    channelCode: channel.code,
+                    bankName: channel.settlementBankName || channel.name,
+                    version: channel.openingFeeVersion.toString(),
+                    reservedAt: submittedAt.toISOString(),
+                  },
+                },
+                submittedAt,
+              },
+            });
+          }
+          return tx.virtualAccountRequest.create({
+            data: {
+              id: requestId,
+              customerId,
+              channelId: channel.id,
+              currency: input.currency,
+              preferredCountry: channel.bankCountry || 'ZZ',
+              purpose,
+              makerId: actor.userId,
+              requestSource: actor.customerId ? 'CUSTOMER' : 'ADMIN',
+              requesterEmail: actor.email,
+              idempotencyKey,
+              openingFeeUsdMinor: channel.openingFeeUsdMinor,
+              openingFeeVersion: channel.openingFeeVersion,
+              feeOperationId,
+            },
+            include: vaRequestInclude,
+          });
         },
-        include: { assignedAccount: true, channel: true },
-      });
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      );
+      return this.serializeVirtualAccountRequest(created);
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        (error.code === 'P2002' || error.code === 'P2034')
+      ) {
+        if (idempotencyKey) {
+          const existing = await this.db.virtualAccountRequest.findFirst({
+            where: { customerId, idempotencyKey },
+            include: vaRequestInclude,
+          });
+          if (existing) return this.serializeVirtualAccountRequest(existing);
+        }
         throw new ConflictException('virtual_account_request_already_pending');
       }
       throw error;
@@ -352,11 +508,12 @@ export class CustomersService {
     } else {
       await requireCustomerAccess(this.db, actor.userId, customerId);
     }
-    return this.db.virtualAccountRequest.findMany({
+    const requests = await this.db.virtualAccountRequest.findMany({
       where: { customerId },
-      include: { assignedAccount: true, channel: true, maker: true, checker: true },
+      include: vaRequestInclude,
       orderBy: { createdAt: 'desc' },
     });
+    return requests.map((request) => this.serializeVirtualAccountRequest(request));
   }
 
   async approveVirtualAccountRequest(
@@ -440,27 +597,28 @@ export class CustomersService {
 
   private async requireVaCustomerAccess(
     customerId: string,
-    organizationId: string,
+    organizationId: string | undefined,
     actor: VaRequestActor
   ) {
     if (!actor.customerId) {
       const { customer } = await requireCustomerAccess(this.db, actor.userId, customerId);
-      if (customer.organizationId !== organizationId) {
+      if (organizationId && customer.organizationId !== organizationId) {
         throw new NotFoundException('virtual_account_channel_not_found');
       }
       return customer;
     }
     if (actor.customerId !== customerId) throw new NotFoundException('customer_not_found');
     let customer = await this.db.customer.findUnique({ where: { id: customerId } });
-    if (!customer && process.env.NEOBANK_SOURCE_TENANT_ID?.trim()) {
+    const syncOrganizationId = organizationId || process.env.CORE_ORGANIZATION_ID?.trim();
+    if (!customer && syncOrganizationId && process.env.NEOBANK_SOURCE_TENANT_ID?.trim()) {
       await syncNeobankCustomers(this.db, {
         adminUserId: process.env.CORE_ADMIN_USER_ID?.trim() || actor.userId,
-        organizationId,
+        organizationId: syncOrganizationId,
         tenantId: process.env.NEOBANK_SOURCE_TENANT_ID.trim(),
       });
       customer = await this.db.customer.findUnique({ where: { id: customerId } });
     }
-    if (!customer || customer.organizationId !== organizationId) {
+    if (!customer || (organizationId && customer.organizationId !== organizationId)) {
       throw new NotFoundException('customer_not_found');
     }
     return customer;
@@ -531,5 +689,42 @@ export class CustomersService {
       throw new ForbiddenException('admin_role_required');
     }
     return user;
+  }
+
+  private fromUsdMinor(value: bigint) {
+    return new Prisma.Decimal(value.toString()).div(100).toFixed(2);
+  }
+
+  private serializeVaChannel(channel: FundingChannel) {
+    const {
+      openingFeeUsdMinor,
+      openingFeeVersion,
+      openingFeeUpdatedBy,
+      openingFeeUpdatedAt,
+      ...rest
+    } = channel;
+    return {
+      ...rest,
+      openingFeeUsd: openingFeeUsdMinor === null ? null : this.fromUsdMinor(openingFeeUsdMinor),
+      openingFeeVersion: openingFeeVersion.toString(),
+      openingFeeUpdatedBy,
+      openingFeeUpdatedAt,
+    };
+  }
+
+  private serializeVirtualAccountRequest<
+    T extends {
+      openingFeeUsdMinor: bigint;
+      openingFeeVersion: bigint;
+      channel?: FundingChannel | null;
+    },
+  >(request: T) {
+    const { openingFeeUsdMinor, openingFeeVersion, channel, ...rest } = request;
+    return {
+      ...rest,
+      openingFeeUsd: this.fromUsdMinor(openingFeeUsdMinor),
+      openingFeeVersion: openingFeeVersion.toString(),
+      channel: channel ? this.serializeVaChannel(channel) : channel,
+    };
   }
 }

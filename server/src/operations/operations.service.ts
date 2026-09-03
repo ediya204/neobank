@@ -119,6 +119,7 @@ export class OperationsService {
       where: {
         customer: { organizationId },
         status: 'SUBMITTED',
+        type: { not: OperationType.VA_OPENING_FEE },
         metadata: { path: ['cryptoTransferId'], equals: Prisma.AnyNull },
         ...(user.role === 'ADMIN' ? {} : { makerId: { not: userId } }),
       },
@@ -143,6 +144,7 @@ export class OperationsService {
   }
 
   async create(input: CreateOperationInput, makerId: string) {
+    this.requireGenericOperation(input.type);
     if (input.type === 'OTC') {
       throw new ConflictException('otc_quote_confirmation_required');
     }
@@ -623,6 +625,7 @@ export class OperationsService {
         });
         if (!operation) throw new NotFoundException('operation_not_found');
         this.requireNonCryptoWorkflow(operation);
+        this.requireGenericOperation(operation.type);
         if (operation.type === 'OTC') {
           throw new ConflictException('otc_does_not_require_approval');
         }
@@ -665,6 +668,7 @@ export class OperationsService {
         });
         if (!operation) throw new NotFoundException('operation_not_found');
         this.requireNonCryptoWorkflow(operation);
+        this.requireGenericOperation(operation.type);
         if (operation.status !== 'SUBMITTED')
           throw new ConflictException('operation_not_pending_approval');
         const checker = await this.requireRole(tx, checkerId, ['ADMIN']);
@@ -713,6 +717,7 @@ export class OperationsService {
         });
         if (!operation) throw new NotFoundException('operation_not_found');
         this.requireNonCryptoWorkflow(operation);
+        this.requireGenericOperation(operation.type);
         if (operation.type !== 'PAYOUT' || operation.status !== 'PROCESSING') {
           throw new ConflictException('payout_not_ready_for_execution');
         }
@@ -893,6 +898,12 @@ export class OperationsService {
       'cryptoTransferId' in metadata
     ) {
       throw new ConflictException('crypto_transfer_requires_crypto_workflow');
+    }
+  }
+
+  private requireGenericOperation(type: OperationType) {
+    if (type === OperationType.VA_OPENING_FEE) {
+      throw new ConflictException('va_opening_fee_managed_by_va_request');
     }
   }
 

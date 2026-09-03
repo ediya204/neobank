@@ -807,3 +807,48 @@ test('generic operation lists support a bounded recent view and exclude mirrored
     /invalid_operations_limit/
   );
 });
+
+test('VA opening fee operations are owned by the VA workflow, not generic mutations', async () => {
+  const feeOperation = {
+    id: 'va_fee_operation',
+    type: 'VA_OPENING_FEE',
+    status: 'SUBMITTED',
+    metadata: null,
+    customer,
+  };
+  const observed = [];
+  const service = new OperationsService({
+    user: { findUnique: async () => maker },
+    operation: {
+      findMany: async (query) => {
+        observed.push(query);
+        return [];
+      },
+    },
+    $transaction: async (callback) =>
+      callback({ operation: { findUnique: async () => feeOperation } }),
+  });
+
+  await assert.rejects(
+    service.create(
+      { customerId: customer.id, type: 'VA_OPENING_FEE', currency: 'USD', amount: '25' },
+      maker.id
+    ),
+    /va_opening_fee_managed_by_va_request/
+  );
+  await assert.rejects(
+    service.approve(feeOperation.id, maker.id),
+    /va_opening_fee_managed_by_va_request/
+  );
+  await assert.rejects(
+    service.reject(feeOperation.id, 'reject', maker.id),
+    /va_opening_fee_managed_by_va_request/
+  );
+  await assert.rejects(
+    service.execute(feeOperation.id, 'external-ref', maker.id),
+    /va_opening_fee_managed_by_va_request/
+  );
+
+  await service.approvals(customer.organizationId, maker.id);
+  assert.deepEqual(observed[0].where.type, { not: 'VA_OPENING_FEE' });
+});
