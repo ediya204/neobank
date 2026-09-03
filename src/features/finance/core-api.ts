@@ -180,6 +180,10 @@ export type FundingChannel = {
   bankCountry?: string;
   bankAddress?: string;
   branchName?: string;
+  openingFeeUsd?: string | null;
+  openingFeeVersion: string;
+  openingFeeUpdatedBy?: string;
+  openingFeeUpdatedAt?: string;
 };
 
 export type Operation = {

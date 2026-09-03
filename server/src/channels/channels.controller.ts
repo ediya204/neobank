@@ -12,7 +12,7 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
-import { ChannelType, Currency, Prisma, UserRole } from '@prisma/client';
+import { ChannelType, Currency, FundingChannel, Prisma, UserRole } from '@prisma/client';
 import type { Request } from 'express';
 import {
   ArrayNotEmpty,
@@ -20,6 +20,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsNumberString,
   IsOptional,
   IsString,
   Length,
@@ -49,6 +50,7 @@ class CreateChannelDto {
   @IsOptional() @IsString() @Matches(/^[A-Za-z]{2}$/) bankCountry?: string;
   @IsOptional() @IsString() @Length(2, 300) bankAddress?: string;
   @IsOptional() @IsString() @Length(2, 120) branchName?: string;
+  @IsOptional() @IsNumberString() openingFeeUsd?: string;
 }
 
 class UpdateChannelDto {
@@ -66,6 +68,8 @@ class UpdateChannelDto {
   @IsOptional() @IsString() @Matches(/^[A-Za-z]{2}$/) bankCountry?: string;
   @IsOptional() @IsString() @Length(2, 300) bankAddress?: string;
   @IsOptional() @IsString() @Length(2, 120) branchName?: string;
+  @IsOptional() @IsNumberString() openingFeeUsd?: string;
+  @IsOptional() @IsString() expectedOpeningFeeVersion?: string;
 }
 
 @Controller('funding-channels')
@@ -110,7 +114,7 @@ export class ChannelsController {
         const supportedCurrencies = channel.supportedCurrencies.filter((currency) =>
           supportedFiatCurrencies.includes(currency as (typeof supportedFiatCurrencies)[number])
         );
-        if (!customerId) return { ...channel, supportedCurrencies };
+        if (!customerId) return this.serializeChannel({ ...channel, supportedCurrencies });
         return {
           id: channel.id,
           code: channel.code,
@@ -125,6 +129,8 @@ export class ChannelsController {
           swiftBic: channel.swiftBic,
           bankCountry: channel.bankCountry,
           bankAddress: channel.bankAddress,
+          openingFeeUsd: this.fromUsdMinor(channel.openingFeeUsdMinor),
+          openingFeeVersion: (channel.openingFeeVersion ?? 0n).toString(),
         };
       })
       .filter((channel) => channel.supportedCurrencies.length > 0);
@@ -140,6 +146,9 @@ export class ChannelsController {
     if (dto.type === ChannelType.VA_PAYOUT) {
       throw new BadRequestException('va_payout_channel_merged');
     }
+    if (dto.openingFeeUsd !== undefined && dto.type !== ChannelType.VIRTUAL_ACCOUNT) {
+      throw new BadRequestException('virtual_account_opening_fee_va_only');
+    }
     if (
       dto.type === ChannelType.VIRTUAL_ACCOUNT &&
       (this.optionalText(dto.settlementAccount) || this.optionalText(dto.branchName))
@@ -149,8 +158,10 @@ export class ChannelsController {
     this.assertSupportedCurrencies(dto.supportedCurrencies);
     const name = dto.name.trim();
     if (!name) throw new BadRequestException('funding_channel_name_required');
+    const openingFeeUsdMinor =
+      dto.openingFeeUsd === undefined ? null : this.toUsdMinor(dto.openingFeeUsd);
     try {
-      return await this.db.fundingChannel.create({
+      const created = await this.db.fundingChannel.create({
         data: {
           organizationId: dto.organizationId,
           code: dto.code.trim().toUpperCase(),
@@ -164,8 +175,17 @@ export class ChannelsController {
           bankCountry: this.optionalText(dto.bankCountry)?.toUpperCase(),
           bankAddress: this.optionalText(dto.bankAddress),
           branchName: this.optionalText(dto.branchName),
+          openingFeeUsdMinor,
+          ...(openingFeeUsdMinor === null
+            ? {}
+            : {
+                openingFeeVersion: 1n,
+                openingFeeUpdatedBy: user.id,
+                openingFeeUpdatedAt: new Date(),
+              }),
         },
       });
+      return this.serializeChannel(created);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('funding_channel_code_exists');
@@ -190,6 +210,8 @@ export class ChannelsController {
         bankCountry: true,
         bankAddress: true,
         branchName: true,
+        openingFeeUsdMinor: true,
+        openingFeeVersion: true,
       },
     });
     if (!channel || channel.organizationId !== user.organizationId) {
@@ -198,6 +220,9 @@ export class ChannelsController {
     if (channel.type === ChannelType.VA_PAYOUT && dto.active === true) {
       throw new BadRequestException('va_payout_channel_merged');
     }
+    if (dto.openingFeeUsd !== undefined && channel.type !== ChannelType.VIRTUAL_ACCOUNT) {
+      throw new BadRequestException('virtual_account_opening_fee_va_only');
+    }
     if (
       channel.type === ChannelType.VIRTUAL_ACCOUNT &&
       (this.optionalText(dto.settlementAccount) || this.optionalText(dto.branchName))
@@ -205,7 +230,11 @@ export class ChannelsController {
       throw new BadRequestException('virtual_account_channel_customer_details_not_allowed');
     }
     if (dto.supportedCurrencies) this.assertSupportedCurrencies(dto.supportedCurrencies);
-    const data = {
+    const nextOpeningFeeUsdMinor =
+      dto.openingFeeUsd === undefined
+        ? channel.openingFeeUsdMinor
+        : this.toUsdMinor(dto.openingFeeUsd);
+    const data: Prisma.FundingChannelUpdateInput = {
       ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
       ...(dto.active !== undefined ? { active: dto.active } : {}),
       ...(dto.supportedCurrencies !== undefined
@@ -244,8 +273,35 @@ export class ChannelsController {
       if (!bankName || !swiftBic || !bankCountry || !bankAddress) {
         throw new BadRequestException('virtual_account_channel_bank_details_required');
       }
+      if (nextOpeningFeeUsdMinor === null) {
+        throw new BadRequestException('virtual_account_opening_fee_not_configured');
+      }
     }
-    return this.db.fundingChannel.update({ where: { id }, data });
+    if (dto.openingFeeUsd !== undefined) {
+      let expectedVersion: bigint;
+      try {
+        expectedVersion = BigInt(dto.expectedOpeningFeeVersion || '');
+      } catch {
+        throw new BadRequestException('invalid_virtual_account_opening_fee_version');
+      }
+      const result = await this.db.fundingChannel.updateMany({
+        where: { id, openingFeeVersion: expectedVersion },
+        data: {
+          ...data,
+          openingFeeUsdMinor: nextOpeningFeeUsdMinor,
+          openingFeeVersion: { increment: 1 },
+          openingFeeUpdatedBy: user.id,
+          openingFeeUpdatedAt: new Date(),
+        },
+      });
+      if (result.count !== 1) {
+        throw new ConflictException('virtual_account_opening_fee_changed');
+      }
+      const updated = await this.db.fundingChannel.findUniqueOrThrow({ where: { id } });
+      return this.serializeChannel(updated);
+    }
+    const updated = await this.db.fundingChannel.update({ where: { id }, data });
+    return this.serializeChannel(updated);
   }
 
   private assertSupportedCurrencies(currencies: Currency[]) {
@@ -262,5 +318,40 @@ export class ChannelsController {
   private optionalText(value?: string) {
     const normalized = value?.trim();
     return normalized || null;
+  }
+
+  private toUsdMinor(value: string) {
+    let amount: Prisma.Decimal;
+    try {
+      amount = new Prisma.Decimal(value);
+    } catch {
+      throw new BadRequestException('invalid_virtual_account_opening_fee');
+    }
+    if (!amount.isFinite() || amount.isNegative() || amount.decimalPlaces() > 2) {
+      throw new BadRequestException('invalid_virtual_account_opening_fee');
+    }
+    return BigInt(amount.mul(100).toFixed(0));
+  }
+
+  private fromUsdMinor(value: bigint | null | undefined) {
+    if (value === null || value === undefined) return null;
+    return new Prisma.Decimal(value.toString()).div(100).toFixed(2);
+  }
+
+  private serializeChannel(channel: FundingChannel) {
+    const {
+      openingFeeUsdMinor,
+      openingFeeVersion,
+      openingFeeUpdatedBy,
+      openingFeeUpdatedAt,
+      ...rest
+    } = channel;
+    return {
+      ...rest,
+      openingFeeUsd: this.fromUsdMinor(openingFeeUsdMinor),
+      openingFeeVersion: (openingFeeVersion ?? 0n).toString(),
+      openingFeeUpdatedBy,
+      openingFeeUpdatedAt,
+    };
   }
 }
