@@ -8,6 +8,10 @@ import {
   Chip,
   Container,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   InputLabel,
   MenuItem,
@@ -44,6 +48,7 @@ export default function VirtualAccountsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [cancellingId, setCancellingId] = useState('');
+  const [cancelRequest, setCancelRequest] = useState<VirtualAccountRequest | null>(null);
   const idempotencyKey = useRef<string | null>(null);
 
   const load = useCallback(async () => {
@@ -134,14 +139,8 @@ export default function VirtualAccountsPage() {
     }
   };
 
-  const cancelRequest = async (request: VirtualAccountRequest) => {
+  const confirmCancellation = async (request: VirtualAccountRequest) => {
     if (!customer?.id || request.status !== 'SUBMITTED') return;
-    const confirmed = window.confirm(
-      Number(request.openingFeeUsd) > 0
-        ? portalText('确认取消申请并释放已冻结的 USD 开户手续费？')
-        : portalText('确认取消这笔免费 VA 申请？')
-    );
-    if (!confirmed) return;
     setCancellingId(request.id);
     setError('');
     setSuccess('');
@@ -150,6 +149,7 @@ export default function VirtualAccountsPage() {
         method: 'PATCH',
       });
       setSuccess(portalText('VA 申请已取消，冻结的开户手续费已释放。'));
+      setCancelRequest(null);
       await Promise.all([load(), refresh()]);
     } catch (value) {
       setError(vaErrorMessage(value));
@@ -374,7 +374,7 @@ export default function VirtualAccountsPage() {
                     key={request.id}
                     request={request}
                     cancelling={cancellingId === request.id}
-                    onCancel={() => cancelRequest(request).catch(() => undefined)}
+                    onCancel={() => setCancelRequest(request)}
                   />
                 ))}
               </Stack>
@@ -403,6 +403,53 @@ export default function VirtualAccountsPage() {
           )}
         </Stack>
       </Container>
+      <Dialog
+        open={Boolean(cancelRequest)}
+        onClose={() => {
+          if (!cancellingId) setCancelRequest(null);
+        }}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>{portalText('取消申请')}</DialogTitle>
+        <DialogContent>
+          {cancelRequest && (
+            <Stack spacing={2} sx={{ pt: 0.5 }}>
+              <Typography variant="subtitle1">
+                {cancelRequest.channel?.settlementBankName ||
+                  cancelRequest.channel?.name ||
+                  portalText('历史 VA 申请')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {Number(cancelRequest.openingFeeUsd) > 0
+                  ? portalText('确认取消申请并释放已冻结的 USD 开户手续费？')
+                  : portalText('确认取消这笔免费 VA 申请？')}
+              </Typography>
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  {portalText('开户手续费')}
+                </Typography>
+                <Typography variant="h6">USD {cancelRequest.openingFeeUsd}</Typography>
+              </Box>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCancelRequest(null)} disabled={Boolean(cancellingId)}>
+            {portalText('取消')}
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={!cancelRequest || Boolean(cancellingId)}
+            onClick={() => {
+              if (cancelRequest) confirmCancellation(cancelRequest).catch(() => undefined);
+            }}
+          >
+            {cancellingId ? portalText('正在取消…') : portalText('取消申请')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }
