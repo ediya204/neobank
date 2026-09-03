@@ -799,6 +799,26 @@ test('generic operation lists support a bounded recent view and exclude mirrored
       path: ['cryptoTransferId'],
       equals: Prisma.AnyNull,
     });
+    assert.deepEqual(query.include.channel, {
+      select: {
+        id: true,
+        organizationId: true,
+        code: true,
+        name: true,
+        type: true,
+        supportedCurrencies: true,
+        active: true,
+        settlementBankName: true,
+        settlementAccount: true,
+        swiftBic: true,
+        bankCountry: true,
+        bankAddress: true,
+        branchName: true,
+        instructions: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
   assert.equal(observed[0].take, 5);
   assert.deepEqual(observed[1].orderBy, { submittedAt: 'desc' });
