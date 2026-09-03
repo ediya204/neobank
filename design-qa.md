@@ -1,3 +1,53 @@
+# VA opening fee and cancellation dialog — 2026-09-03
+
+**Visual truth and evidence**
+
+- Source visual truth: `/var/folders/73/vv6p0b912gxcwpq3rq674ffm0000gn/T/codex-clipboard-4e62bdd9-e08d-4263-a54d-ae3bde709af0.png`
+- Application implementation: `/private/tmp/va-opening-fee-implementation-open.png`
+- Full-view side-by-side comparison: `/private/tmp/va-opening-fee-comparison-normalized.png`
+- Cancellation dialog implementation: `/private/tmp/va-cancellation-dialog.png`
+- Route: `http://localhost:3002/portal/money/accounts` for application and `http://localhost:3002/portal/virtual-accounts` for cancellation.
+- State: business customer with USD 497.00 available, USD 181.00 frozen, two active VA banks with USD 25.00 and USD 40.00 opening fees, plus one submitted USD 25.00 request.
+- Viewport: 1280 x 827 CSS pixels, device scale factor 1.
+- Source pixels: 1280 x 826; implementation pixels: 1280 x 827. No density resampling was needed; the one-pixel height difference was retained.
+
+**Full-view comparison evidence**
+
+- The application keeps the supplied portal shell, centered white modal, dark scrim, bank dropdown, outlined currency/purpose fields, cyan information panel, and bottom-right actions.
+- The fee summary intentionally makes the modal taller and uses the existing two-column responsive grid to show the exact charge, source USD wallet, current available balance, and post-submit available balance without hiding any original control.
+- Switching from Green Link Digital Bank to Singapore Gulf Bank changed the displayed fee from USD 25.00 to USD 40.00 and the post-submit balance from USD 472.00 to USD 457.00.
+
+**Focused region comparison evidence**
+
+- Typography: existing portal font family, weights, line heights, label hierarchy, and wrapping are retained; fee amounts use the same bold body hierarchy as other account values.
+- Spacing/layout: form rhythm, field heights, modal radii, scrim, and action alignment match the existing source language; all controls remain visible at the target viewport.
+- Colors/tokens: neutral surfaces, dark primary action, cyan informational panel, and red destructive cancellation action use existing semantic tokens with readable contrast.
+- Image quality/assets: the existing SSC logo and project icon library remain unchanged; no new or placeholder asset was introduced.
+- Copy/content: the form names the USD fee source and resulting balance. The cancellation dialog names the bank, exact USD 25.00 frozen fee, and release consequence.
+
+**Findings**
+
+- No actionable P0, P1, or P2 visual or interaction findings remain.
+- [P3] The fee summary increases modal height compared with the pre-fee source. This is an intentional consequence of exposing the four required financial confirmation values; the target desktop viewport retains comfortable top and bottom margins.
+
+**Comparison history**
+
+1. Initial interaction pass found that customer cancellation used the browser-native `window.confirm`, which violated the confirmed product rule (P1). Replaced it with the existing MUI `Dialog` pattern and added a deployment-profile assertion banning native `window.alert` / `window.confirm` on this page.
+2. Post-fix browser pass verified that the secondary action closes the dialog, the destructive action calls the cancellation path, success feedback states that the frozen fee was released, and no console warnings or errors were emitted.
+3. Final application comparison at the matching desktop viewport found no remaining actionable P0/P1/P2 differences across typography, spacing, colors, assets, copy, or core affordances.
+
+**Primary interactions tested**
+
+- Bank selection updates the independent bank fee and projected USD wallet balance.
+- The submitted request shows `USD 25.00 · 已冻结` and exposes cancellation only while pending.
+- Cancellation opens an in-product MUI dialog without a browser alert/confirm prompt.
+- Secondary cancellation closes the dialog; destructive confirmation shows the fee-release success state.
+- Browser console checked after the final interactions: no warnings or errors.
+
+final result: passed
+
+---
+
 **Design QA**
 
 - Source visual truth: user-supplied receive-wallet reference screenshot (session-only, not committed)
