@@ -613,7 +613,51 @@ git add src/features/finance/core-reconciliation.ts src/features/finance/core-re
 git commit -m "docs: define VA fee reconciliation and operations"
 ```
 
-## Task 9: Full local verification and release evidence
+## Task 9: Replace native VA cancellation prompts
+
+**Files:**
+
+- Modify: `src/pages/portal/virtual-accounts.tsx`
+- Test: `scripts/check-neobank-isolated-profile.mjs`
+
+### Step 1: Add the failing UI-policy assertions
+
+Assert that the customer VA page contains no `window.alert` or `window.confirm`, and that it renders a MUI `Dialog` for a selected pending request with the exact USD fee-release copy.
+
+Run:
+
+```bash
+npm run neobank:profile:check
+```
+
+Expected: fail while `window.confirm` remains.
+
+### Step 2: Implement the minimal confirmation dialog
+
+Store only the selected request in component state. The existing “取消申请” action opens a MUI `Dialog`; its body names the bank and exact frozen USD opening fee. The secondary action closes it. The destructive confirmation reuses the existing cancellation API call, disables both actions while submitting, closes on success, and leaves the dialog open with the existing page-level error on failure.
+
+Do not use native `alert` or `confirm`. Keep page-level MUI `Alert` for status feedback.
+
+### Step 3: Verify and commit
+
+Run:
+
+```bash
+npm run neobank:profile:check
+npm run typecheck
+npm run i18n:check
+npm exec react-scripts test -- --watchAll=false --runTestsByPath src/features/finance/core-api-errors.test.ts
+git diff --check
+```
+
+Commit:
+
+```bash
+git add src/pages/portal/virtual-accounts.tsx scripts/check-neobank-isolated-profile.mjs src/locales/langs/portal.cn.json src/locales/langs/portal.en.json docs/plans/2026-09-03-va-opening-fee-implementation.md
+git commit -m "fix: replace native VA cancellation prompt"
+```
+
+## Task 10: Full local verification and release evidence
 
 **Files:**
 
