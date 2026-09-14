@@ -46,6 +46,8 @@ type CustomerForm = {
   type: 'INDIVIDUAL' | 'BUSINESS';
   displayName: string;
   legalName: string;
+  familyName: string;
+  givenName: string;
   email: string;
   phone: string;
   phoneCountryCode: string;
@@ -62,9 +64,11 @@ type CustomerForm = {
 const emptyCustomer: CustomerForm = {
   password: '',
   confirmPassword: '',
-  type: 'BUSINESS',
+  type: 'INDIVIDUAL',
   displayName: '',
   legalName: '',
+  familyName: '',
+  givenName: '',
   email: '',
   phone: '',
   phoneCountryCode: '+852',
@@ -139,7 +143,8 @@ export default function OnboardingWorkspace() {
               residence_country: customerForm.countryCode,
               ...(personal
                 ? {
-                    full_name: customerForm.legalName,
+                    family_name: customerForm.familyName.trim(),
+                    given_name: customerForm.givenName.trim(),
                     date_of_birth: customerForm.dateOfBirth,
                     nationality: customerForm.nationality,
                   }
@@ -248,11 +253,13 @@ export default function OnboardingWorkspace() {
                   : '支持个人和企业开户；先完成人工 KYC，再由运营批准开户。只有运营批准后才创建钱包。'}
               </Typography>
             </Box>
-            <Stack direction="row" spacing={1.5}>
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
               {(!IS_NEOBANK_DEPLOYMENT ||
                 hasAdminPermission(user, 'customer_credentials.manage')) && (
                 <Button
                   variant="contained"
+                  size="small"
+                  sx={{ height: 36, px: 1.5, whiteSpace: 'nowrap' }}
                   startIcon={<Iconify icon="solar:add-circle-linear" />}
                   onClick={() => {
                     setOpeningKey(crypto.randomUUID());
@@ -457,13 +464,24 @@ function CustomerDialog({
 }) {
   const set = (key: keyof CustomerForm, value: string) => setForm({ ...form, [key]: value });
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
-      <Box component="form" onSubmit={onSubmit}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="sm"
+      PaperProps={{ sx: { maxWidth: 760 } }}
+    >
+      <Box
+        component="form"
+        onSubmit={onSubmit}
+        sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}
+      >
         <DialogTitle>发起客户开户</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pb: 2 }}>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
-            <FormControl fullWidth>
+            <Typography variant="subtitle2">客户资料</Typography>
+            <FormControl fullWidth size="small">
               <InputLabel>客户类型</InputLabel>
               <Select
                 label="客户类型"
@@ -477,6 +495,7 @@ function CustomerDialog({
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               {!IS_NEOBANK_DEPLOYMENT && (
                 <TextField
+                  size="small"
                   required
                   fullWidth
                   label="显示名称"
@@ -484,41 +503,51 @@ function CustomerDialog({
                   onChange={(event) => set('displayName', event.target.value)}
                 />
               )}
-              <TextField
-                required
-                fullWidth
-                label={form.type === 'BUSINESS' ? '企业法定名称' : '个人法定姓名'}
-                value={form.legalName}
-                onChange={(event) => set('legalName', event.target.value)}
-              />
+              {IS_NEOBANK_DEPLOYMENT && form.type === 'INDIVIDUAL' ? (
+                <>
+                  <TextField
+                    size="small"
+                    required
+                    fullWidth
+                    label="姓（英文）"
+                    value={form.familyName}
+                    autoComplete="off"
+                    inputProps={{
+                      maxLength: 50,
+                      pattern: "[A-Za-z]+(?:[ '\\-][A-Za-z]+)*",
+                      title: '请填写英文姓名，与身份证件一致',
+                    }}
+                    onChange={(event) => set('familyName', event.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    required
+                    fullWidth
+                    label="名（英文）"
+                    value={form.givenName}
+                    autoComplete="off"
+                    inputProps={{
+                      maxLength: 50,
+                      pattern: "[A-Za-z]+(?:[ '\\-][A-Za-z]+)*",
+                      title: '请填写英文姓名，与身份证件一致',
+                    }}
+                    onChange={(event) => set('givenName', event.target.value)}
+                  />
+                </>
+              ) : (
+                <TextField
+                  size="small"
+                  required
+                  fullWidth
+                  label={form.type === 'BUSINESS' ? '企业法定名称' : '个人法定姓名'}
+                  value={form.legalName}
+                  onChange={(event) => set('legalName', event.target.value)}
+                />
+              )}
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField
-                required
-                fullWidth
-                type="email"
-                label="邮箱"
-                value={form.email}
-                onChange={(event) => set('email', event.target.value)}
-              />
-              <TextField
-                required
-                sx={{ width: { sm: 150 } }}
-                label="电话区号"
-                value={form.phoneCountryCode}
-                inputProps={{ pattern: '^\\+[1-9][0-9]{0,3}$', maxLength: 5 }}
-                onChange={(event) => set('phoneCountryCode', event.target.value)}
-              />
-              <TextField
-                required
-                fullWidth
-                label="电话"
-                value={form.phone}
-                onChange={(event) => set('phone', event.target.value)}
-              />
-            </Stack>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField
+                size="small"
                 required
                 fullWidth
                 label={form.type === 'BUSINESS' ? '注册国家/地区' : '常住国家/地区'}
@@ -528,6 +557,7 @@ function CustomerDialog({
               />
               {form.type === 'BUSINESS' ? (
                 <TextField
+                  size="small"
                   required
                   fullWidth
                   label="注册号"
@@ -536,6 +566,7 @@ function CustomerDialog({
                 />
               ) : (
                 <TextField
+                  size="small"
                   required
                   fullWidth
                   label="国籍代码"
@@ -547,6 +578,7 @@ function CustomerDialog({
             </Stack>
             {form.type === 'INDIVIDUAL' ? (
               <TextField
+                size="small"
                 required
                 fullWidth
                 type="date"
@@ -560,6 +592,7 @@ function CustomerDialog({
               <>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                   <TextField
+                    size="small"
                     required
                     fullWidth
                     label="授权联系人"
@@ -567,6 +600,7 @@ function CustomerDialog({
                     onChange={(event) => set('contactName', event.target.value)}
                   />
                   <TextField
+                    size="small"
                     required
                     fullWidth
                     label="联系人职务"
@@ -576,6 +610,7 @@ function CustomerDialog({
                 </Stack>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                   <TextField
+                    size="small"
                     required
                     fullWidth
                     label="最终受益人姓名"
@@ -583,6 +618,7 @@ function CustomerDialog({
                     onChange={(event) => set('beneficialOwnerName', event.target.value)}
                   />
                   <TextField
+                    size="small"
                     required
                     fullWidth
                     type="number"
@@ -594,44 +630,98 @@ function CustomerDialog({
                 </Stack>
               </>
             )}
+            <Typography variant="subtitle2" sx={{ pt: 1 }}>
+              联系方式
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                size="small"
+                required
+                fullWidth
+                sx={{ flex: { sm: 1 }, minWidth: 0, width: { xs: '100%', sm: 'auto' } }}
+                type="email"
+                label="客户登录邮箱"
+                value={form.email}
+                onChange={(event) => set('email', event.target.value)}
+              />
+              <Stack
+                direction="row"
+                spacing={1.5}
+                sx={{ flex: { sm: 1 }, minWidth: 0, width: { xs: '100%', sm: 'auto' } }}
+              >
+                <TextField
+                  size="small"
+                  required
+                  sx={{ width: 112, flexShrink: 0 }}
+                  label="电话区号"
+                  value={form.phoneCountryCode}
+                  inputProps={{ pattern: '^\\+[1-9][0-9]{0,3}$', maxLength: 5 }}
+                  onChange={(event) => set('phoneCountryCode', event.target.value)}
+                />
+                <TextField
+                  size="small"
+                  required
+                  fullWidth
+                  type="tel"
+                  label="电话号码"
+                  value={form.phone}
+                  onChange={(event) => set('phone', event.target.value)}
+                />
+              </Stack>
+            </Stack>
             {IS_NEOBANK_DEPLOYMENT && (
               <>
-                <TextField
-                  required
-                  type="password"
-                  label="登录密码"
-                  autoComplete="new-password"
-                  value={form.password}
-                  onChange={(event) => set('password', event.target.value)}
-                  inputProps={{
-                    minLength: 14,
-                    maxLength: 128,
-                    pattern: '(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{14,128}',
-                  }}
-                  helperText="14–128 个字符，包含大小写字母、数字和符号"
-                />
-                <TextField
-                  required
-                  type="password"
-                  label="确认密码"
-                  autoComplete="new-password"
-                  value={form.confirmPassword}
-                  onChange={(event) => set('confirmPassword', event.target.value)}
-                />
+                <Typography variant="subtitle2" sx={{ pt: 1 }}>
+                  登录安全
+                </Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+                  <TextField
+                    size="small"
+                    fullWidth
+                    required
+                    type="password"
+                    label="登录密码"
+                    autoComplete="new-password"
+                    value={form.password}
+                    onChange={(event) => set('password', event.target.value)}
+                    inputProps={{
+                      minLength: 14,
+                      maxLength: 128,
+                      pattern: '(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{14,128}',
+                    }}
+                    helperText="14–128 个字符，包含大小写字母、数字和符号"
+                  />
+                  <TextField
+                    size="small"
+                    fullWidth
+                    required
+                    type="password"
+                    label="确认密码"
+                    autoComplete="new-password"
+                    value={form.confirmPassword}
+                    onChange={(event) => set('confirmPassword', event.target.value)}
+                  />
+                </Stack>
               </>
             )}
-            <Alert severity="info">
+            <Alert severity="info" sx={{ typography: 'body2' }}>
               {IS_NEOBANK_DEPLOYMENT
                 ? '后台开户免 KYC，创建后客户可使用邮箱和设置的密码直接登录。此操作将记录操作人。'
                 : '提交后进入 KYC 待审核。KYC 通过仅进入运营审核，不会自动开通账户或钱包。'}
             </Alert>
           </Stack>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose} disabled={submitting}>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Button size="small" onClick={onClose} disabled={submitting}>
             取消
           </Button>
-          <Button type="submit" variant="contained" disabled={submitting}>
+          <Button
+            size="small"
+            sx={{ minWidth: 96, height: 36 }}
+            type="submit"
+            variant="contained"
+            disabled={submitting}
+          >
             {submitting ? '创建中…' : '提交开户'}
           </Button>
         </DialogActions>
