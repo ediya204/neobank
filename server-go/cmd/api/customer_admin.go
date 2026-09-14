@@ -20,6 +20,7 @@ const legacyCustomerEmailVerificationDuration = 6 * time.Hour
 
 const (
 	adminCustomerFields = `c.id AS id, c.email AS email, c.display_name AS display_name,
+	    CASE WHEN c.created_by='admin_direct_opening' THEN 'admin_direct_opening' ELSE 'standard' END AS opening_source,
 	    c.status AS status, c.kyc_status AS kyc_status, c.operations_status AS operations_status,
 	    c.kyc_reviewed_by AS kyc_reviewed_by, c.kyc_reviewed_at AS kyc_reviewed_at,
 	    c.kyc_review_note AS kyc_review_note, c.activated_by AS activated_by,

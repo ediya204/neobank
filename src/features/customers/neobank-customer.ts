@@ -1,6 +1,7 @@
 import { Customer, demoOrganizationId, neobankApi } from 'src/features/finance/core-api';
 
 export type NeobankCustomerRecord = {
+  opening_source?: 'admin_direct_opening' | 'standard';
   id: string;
   email: string;
   display_name: string;

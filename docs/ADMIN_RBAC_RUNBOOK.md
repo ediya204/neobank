@@ -30,6 +30,23 @@ Worker Core 代理的权限校验。未知 Core 路由对非超级管理员默�
 
 ## 3. 管理入口与接口
 
+### 后台直接开户（2026-09-14）
+
+- “开户与 KYC → 发起开户”仅向具有 `customer_credentials.manage` 的管理员显示。
+- `POST /api/v1/admin/customers` 接收个人/企业资料和密码，并要求 `Idempotency-Key`。
+  Go 服务强制验证权限、资料和密码；组织归属来自服务端会话链路，不能由请求指定。
+- 单条 PostgreSQL CTE 原子创建客户、Argon2id 密码凭据、资料及操作审计；重复邮箱拒绝，
+  同一请求键及相同内容可重试，内容不同返回冲突。响应和审计不保存或回传明文密码。
+- 后台创建的账号直接可登录，免 KYC。内部沿用 approved 放行值，独立来源与审计明确
+  记录豁免；邮箱验证和 KYC 审核时间保持空值，资料表既有非空授权/条款字段保存空字符串，
+  表示未收集本人授权，不能解释为同意。公开注册门禁不变。
+- 客户出现在客户管理，不进入待审核队列。Cregis 失败时客户仍可登录，返回钱包待重试；
+  客户管理/详情读取触发 Core 同步并分配 USD、HKD 标准账户。VA 仍按原有独立申请流程处理。
+- 本次无新数据库迁移。发布需要 Go API 与前端分别部署，先部署 Go；不能仅发布显示按钮的前端。
+- 回归：`cd server-go && go test ./cmd/api -run TestAdminOpening -count=1`。
+  设置 `ADMIN_OPENING_TEST_DATABASE_URL` 为隔离的本机 PostgreSQL（安装现有客户/安全表结构），
+  可执行真实创建与密码登录测试；测试数据不用于生产。
+
 - 页面：`/dashboard/admin-users`
 - 列表：`GET /api/v1/admin/users`
 - 创建：`POST /api/v1/admin/users`

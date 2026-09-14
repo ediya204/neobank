@@ -301,8 +301,12 @@ test('customer detail refreshes the PostgreSQL source customer before reading th
     operations: [],
   };
   const service = new CustomersService({
-    $queryRaw: async () => {
+    $queryRaw: async (query) => {
       sourceReads += 1;
+      if (query.sql.includes('AS "openingSource"')) {
+        assert.deepEqual(query.values, ['neobank', 'cus_live']);
+        return [{ openingSource: 'standard' }];
+      }
       return [];
     },
     user: {
@@ -324,7 +328,8 @@ test('customer detail refreshes the PostgreSQL source customer before reading th
   try {
     const result = await service.get('cus_live', 'usr_neobank_admin');
     assert.equal(result.id, 'cus_live');
-    assert.equal(sourceReads, 1);
+    assert.equal(result.openingSource, 'standard');
+    assert.equal(sourceReads, 2);
     assert.equal(customerReads, 2);
   } finally {
     if (previousTenant === undefined) delete process.env.NEOBANK_SOURCE_TENANT_ID;

@@ -203,7 +203,7 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/customers":
 		app.listAdminCustomers(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/customers":
-		app.createCustomer(w, r)
+		app.openAdminCustomer(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc-verification"):
 		app.writeAdminSumsubVerification(w, r, adminCustomerRouteID(r.URL.Path, "/kyc-verification"))
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/admin/customers/") && strings.HasSuffix(r.URL.Path, "/kyc/sync"):
@@ -246,55 +246,6 @@ func (app *application) routeCustomerAPI(w http.ResponseWriter, r *http.Request)
 		return false
 	}
 	return true
-}
-
-func (app *application) createCustomer(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Email       string `json:"email"`
-		DisplayName string `json:"display_name"`
-	}
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	email := normalizeCustomerEmail(input.Email)
-	displayName := strings.TrimSpace(input.DisplayName)
-	if email == "" || displayName == "" || len(displayName) > 100 {
-		validationError(w)
-		return
-	}
-	now := time.Now().UTC()
-	nowText := databaseTimestamp(now)
-	customerID := randomID("customer")
-	existing, err := app.db.Query(r.Context(), `SELECT id FROM customers WHERE tenant_id=? AND email=?`, app.tenantID, email)
-	if err != nil {
-		databaseError(app, w, err)
-		return
-	}
-	if len(existing) != 0 {
-		conflict(w, "customer_already_exists")
-		return
-	}
-	results, err := app.db.Batch(r.Context(),
-		d1.Statement{SQL: `INSERT OR IGNORE INTO customers
-	      (id, tenant_id, email, display_name, status, kyc_status, operations_status, created_by, created_at, updated_at)
-	      VALUES (?, ?, ?, ?, 'pending_setup', 'pending', 'pending', ?, ?, ?)`, Params: []any{customerID, app.tenantID, email, displayName, edgeUser(r), nowText, nowText}},
-		d1.Statement{SQL: `INSERT INTO customer_auth_audit_events
-	      (id, customer_id, event_type, actor, metadata_json, created_at)
-	      SELECT ?, ?, 'customer.created', ?, '{}', ?
-	      WHERE EXISTS (SELECT 1 FROM customers WHERE id=? AND tenant_id=? AND kyc_status='pending' AND operations_status='pending')`, Params: []any{randomID("audit"), customerID, edgeUser(r), nowText, customerID, app.tenantID}},
-	)
-	if err != nil {
-		databaseError(app, w, err)
-		return
-	}
-	if len(results) != 2 || resultChanges(results[:1]) != 1 || resultChanges(results[1:2]) != 1 {
-		conflict(w, "customer_already_exists")
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"id": customerID, "email": email, "display_name": displayName, "status": "pending_setup",
-		"kyc_status": "pending", "operations_status": "pending",
-	})
 }
 
 func (app *application) completeCustomerSetup(w http.ResponseWriter, r *http.Request) {

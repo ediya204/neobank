@@ -6,6 +6,14 @@ that the assumption no longer applies.
 
 ## Financial model
 
+- 2026-09-14：用户明确要求后台直接开户。具有 `customer_credentials.manage` 的
+  超级管理员录入个人/企业资料并设置密码后，客户直接激活，无需邮箱验证、Sumsub 或
+  KYC 审核即可登录。公开注册仍使用原有验证和审批流程。后台账号以
+  `created_by=admin_direct_opening` 标识，审计事件 `customer.admin_opened` 保存真实操作人。
+  `kyc_status=approved` 仅复用现有账户放行门禁，界面必须显示“后台开户 · 免 KYC”，
+  不声称进行了审核。不得填造邮箱验证、KYC 审核、客户授权或条款接受时间。
+  Cregis 钱包失败必须显示未就绪；标准法币账户沿用 Core 幂等同步。该决定不授权真实资金转移。
+
 - Current V1 business flow is: manually record fiat receipt, keep it pending until
   explicit clearing, automatically convert cleared fiat to USDT/TRON, then let an
   authorized administrator perform a controlled USDT sweep.

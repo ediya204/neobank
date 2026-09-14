@@ -287,7 +287,7 @@ export default function CustomerManagementPage() {
                   <TableRow>
                     <TableCell>客户</TableCell>
                     <TableCell>联系方式</TableCell>
-                    <TableCell>KYC 完成</TableCell>
+                    <TableCell>开户方式 / KYC</TableCell>
                     <TableCell>{SYSTEM_WALLET_PRODUCT_NAME}</TableCell>
                     <TableCell>数字钱包</TableCell>
                     <TableCell>可用余额</TableCell>
@@ -337,10 +337,14 @@ export default function CustomerManagementPage() {
                         </TableCell>
                         <TableCell>
                           <Typography variant="body2">
-                            {dateTime(customer.kycReviewedAt || customer.source?.kyc_reviewed_at)}
+                            {customer.source?.opening_source === 'admin_direct_opening'
+                              ? '后台开户 · 免 KYC'
+                              : dateTime(customer.kycReviewedAt || customer.source?.kyc_reviewed_at)}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {customer.kycReviewerId || customer.source?.kyc_reviewed_by || '系统记录'}
+                            {customer.source?.opening_source === 'admin_direct_opening'
+                              ? dateTime(customer.source?.activated_at)
+                              : customer.kycReviewerId || customer.source?.kyc_reviewed_by || '系统记录'}
                           </Typography>
                         </TableCell>
                         <TableCell>

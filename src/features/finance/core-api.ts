@@ -91,6 +91,7 @@ export type AssetSummary = {
 };
 
 export type Customer = {
+  openingSource?: 'admin_direct_opening' | 'standard';
   isInternal?: boolean;
   vaFeeExempt?: boolean;
   vaFeePolicyVersion?: number;

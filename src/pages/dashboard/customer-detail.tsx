@@ -491,6 +491,7 @@ export default function CustomerDetailPage() {
   const userId = 'usr_admin';
   const [tab, setTab] = useState<DetailTab>('overview');
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const adminOpened = customer?.openingSource === 'admin_direct_opening';
   const [operations, setOperations] = useState<Operation[]>([]);
   const [vaRequests, setVaRequests] = useState<VirtualAccountRequest[]>([]);
   const [wallets, setWallets] = useState<CryptoWallet[]>([]);
@@ -1202,7 +1203,10 @@ export default function CustomerDetailPage() {
                     风险与合规
                   </Typography>
                   <Stack spacing={1.6}>
-                    <StatusLine label="KYC 状态" value={kycStatusText(customer.kycStatus)} />
+                    <StatusLine
+                      label="KYC 状态"
+                      value={adminOpened ? '后台开户 · 免 KYC' : kycStatusText(customer.kycStatus)}
+                    />
                     <StatusLine label="客户状态" value={customerStatusText(customer.status)} />
                     <StatusLine label="账户数量" value={`${customer.accounts.length} 个`} />
                     <StatusLine
@@ -1280,21 +1284,31 @@ export default function CustomerDetailPage() {
               <Paper sx={{ ...panelSx, p: 2.25 }}>
                 <Typography variant="h6">KYC 审核</Typography>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={4} sx={{ mt: 2 }}>
-                  <StatusLine label="审核状态" value={kycStatusText(customer.kycStatus)} />
+                  <StatusLine
+                    label="审核状态"
+                    value={adminOpened ? '后台开户 · 免 KYC' : kycStatusText(customer.kycStatus)}
+                  />
                   <StatusLine label="审核时间" value={formatDate(customer.kycReviewedAt)} />
-                  <StatusLine label="审核人" value={customer.kycReviewerId || '-'} />
+                  <StatusLine
+                    label="审核人"
+                    value={adminOpened ? '不适用' : customer.kycReviewerId || '-'}
+                  />
                 </Stack>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                  {customer.kycReviewNote || '暂无审核备注'}
+                  {adminOpened
+                    ? '由管理员直接开户，无需 KYC 审核。'
+                    : customer.kycReviewNote || '暂无审核备注'}
                 </Typography>
-                <Button
-                  variant="outlined"
-                  sx={{ mt: 2 }}
-                  endIcon={<Iconify icon="solar:arrow-right-linear" />}
-                  onClick={() => navigate(paths.dashboard.onboardingReview(customer.id))}
-                >
-                  查看 KYC 审核记录
-                </Button>
+                {!adminOpened && (
+                  <Button
+                    variant="outlined"
+                    sx={{ mt: 2 }}
+                    endIcon={<Iconify icon="solar:arrow-right-linear" />}
+                    onClick={() => navigate(paths.dashboard.onboardingReview(customer.id))}
+                  >
+                    查看 KYC 审核记录
+                  </Button>
+                )}
               </Paper>
               {canManageCustomerCredentials && (
                 <Paper sx={{ ...panelSx, p: 2.25 }}>

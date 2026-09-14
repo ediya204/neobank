@@ -116,6 +116,17 @@ export class CustomersService {
       },
     });
     if (!customer) throw new NotFoundException('customer_not_found');
+    if (sourceTenantId) {
+      const source = await this.db.$queryRaw<
+        Array<{ openingSource: 'admin_direct_opening' | 'standard' }>
+      >(Prisma.sql`
+        SELECT CASE WHEN created_by = 'admin_direct_opening'
+          THEN 'admin_direct_opening' ELSE 'standard' END AS "openingSource"
+        FROM customers WHERE tenant_id = ${sourceTenantId} AND id = ${id}
+      `);
+      if (source.length !== 1) throw new NotFoundException('customer_not_found');
+      return { ...customer, openingSource: source[0].openingSource };
+    }
     return customer;
   }
 

@@ -30,15 +30,19 @@ import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
 import UiIconBadge from 'src/components/ui-icon-badge';
 import { IS_NEOBANK_DEPLOYMENT } from 'src/config/deployment-mode';
+import { useAuthContext } from 'src/auth/hooks';
+import { hasAdminPermission } from 'src/auth/permissions';
 import {
   loadNeobankCustomerRecords,
   mapNeobankCustomer,
 } from 'src/features/customers/neobank-customer';
 import { paths } from 'src/routes/paths';
 import { ACTION_ICONS } from 'src/theme/iconography';
-import { coreApi, Customer, demoOrganizationId } from 'src/features/finance/core-api';
+import { coreApi, neobankApi, Customer, demoOrganizationId } from 'src/features/finance/core-api';
 
 type CustomerForm = {
+  password: string;
+  confirmPassword: string;
   type: 'INDIVIDUAL' | 'BUSINESS';
   displayName: string;
   legalName: string;
@@ -56,6 +60,8 @@ type CustomerForm = {
 };
 
 const emptyCustomer: CustomerForm = {
+  password: '',
+  confirmPassword: '',
   type: 'BUSINESS',
   displayName: '',
   legalName: '',
@@ -73,6 +79,9 @@ const emptyCustomer: CustomerForm = {
 };
 
 export default function OnboardingWorkspace() {
+  const { user } = useAuthContext();
+  const [submitting, setSubmitting] = useState(false);
+  const [openingKey, setOpeningKey] = useState('');
   const navigate = useNavigate();
   const userId = 'usr_admin';
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -105,7 +114,57 @@ export default function OnboardingWorkspace() {
 
   const createCustomer = async (event: FormEvent) => {
     event.preventDefault();
+    if (submitting) return;
+    setError('');
+    if (IS_NEOBANK_DEPLOYMENT && customerForm.password !== customerForm.confirmPassword) {
+      setError('两次输入的密码不一致');
+      return;
+    }
+    setSubmitting(true);
     try {
+      if (IS_NEOBANK_DEPLOYMENT) {
+        const personal = customerForm.type === 'INDIVIDUAL';
+        const result = await neobankApi<{ id: string; wallet_provisioning?: { status: string } }>(
+          '/admin/customers',
+          {
+            method: 'POST',
+            timeoutMs: 60_000,
+            headers: { 'Idempotency-Key': openingKey },
+            body: JSON.stringify({
+              account_type: personal ? 'individual' : 'business',
+              email: customerForm.email,
+              password: customerForm.password,
+              phone_country_code: customerForm.phoneCountryCode,
+              phone: customerForm.phone,
+              residence_country: customerForm.countryCode,
+              ...(personal
+                ? {
+                    full_name: customerForm.legalName,
+                    date_of_birth: customerForm.dateOfBirth,
+                    nationality: customerForm.nationality,
+                  }
+                : {
+                    legal_name: customerForm.legalName,
+                    registration_number: customerForm.registrationNo,
+                    incorporation_country: customerForm.countryCode,
+                    contact_name: customerForm.contactName,
+                    contact_role: customerForm.contactRole,
+                    beneficial_owner_name: customerForm.beneficialOwnerName,
+                    beneficial_owner_ownership: customerForm.beneficialOwnerOwnership,
+                  }),
+            }),
+          }
+        );
+        setCustomerOpen(false);
+        setCustomerForm(emptyCustomer);
+        setSuccess(
+          result.wallet_provisioning
+            ? '客户已开户，可使用设置的密码登录；数字钱包尚未就绪，请在客户管理中查看状态。'
+            : '客户已开户，可使用设置的密码直接登录。请前往客户管理查看账户。'
+        );
+        await load();
+        return;
+      }
       const common = {
         organizationId: demoOrganizationId,
         type: customerForm.type,
@@ -139,7 +198,15 @@ export default function OnboardingWorkspace() {
       setSuccess('开户申请已提交，需先完成 KYC 人工审核，再由运营批准开户');
       await load();
     } catch (value) {
-      setError(value instanceof Error ? value.message : '提交失败');
+      const message = value instanceof Error ? value.message : '提交失败';
+      const messages: Record<string, string> = {
+        customer_already_exists: '该邮箱已存在客户账号，请到客户管理中查看。',
+        validation_error: '资料格式不正确，请检查姓名、日期、联系方式和密码要求。',
+        idempotency_key_conflict: '该次开户已提交且资料发生变化，请到客户管理确认结果。',
+      };
+      setError(messages[message] || message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -177,16 +244,21 @@ export default function OnboardingWorkspace() {
               <Typography variant="h4">开户与 KYC</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
                 {IS_NEOBANK_DEPLOYMENT
-                  ? '集中处理待审核和已拒绝的开户申请；KYC 人工审核通过后自动开户并进入客户管理。'
+                  ? '支持后台录入资料直接开户；客户自行提交的申请需完成 KYC 人工审核。'
                   : '支持个人和企业开户；先完成人工 KYC，再由运营批准开户。只有运营批准后才创建钱包。'}
               </Typography>
             </Box>
             <Stack direction="row" spacing={1.5}>
-              {!IS_NEOBANK_DEPLOYMENT && (
+              {(!IS_NEOBANK_DEPLOYMENT ||
+                hasAdminPermission(user, 'customer_credentials.manage')) && (
                 <Button
                   variant="contained"
                   startIcon={<Iconify icon="solar:add-circle-linear" />}
-                  onClick={() => setCustomerOpen(true)}
+                  onClick={() => {
+                    setOpeningKey(crypto.randomUUID());
+                    setError('');
+                    setCustomerOpen(true);
+                  }}
                 >
                   发起开户
                 </Button>
@@ -244,10 +316,17 @@ export default function OnboardingWorkspace() {
       </Container>
 
       <CustomerDialog
+        submitting={submitting}
+        error={error}
         open={customerOpen}
         form={customerForm}
         setForm={setCustomerForm}
-        onClose={() => setCustomerOpen(false)}
+        onClose={() => {
+          if (!submitting) {
+            setCustomerOpen(false);
+            setCustomerForm(emptyCustomer);
+          }
+        }}
         onSubmit={createCustomer}
       />
     </>
@@ -360,12 +439,16 @@ function formatDate(value?: string) {
 }
 
 function CustomerDialog({
+  submitting,
+  error,
   open,
   form,
   setForm,
   onClose,
   onSubmit,
 }: {
+  submitting: boolean;
+  error: string;
   open: boolean;
   form: CustomerForm;
   setForm: (form: CustomerForm) => void;
@@ -379,6 +462,7 @@ function CustomerDialog({
         <DialogTitle>发起客户开户</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {error && <Alert severity="error">{error}</Alert>}
             <FormControl fullWidth>
               <InputLabel>客户类型</InputLabel>
               <Select
@@ -391,13 +475,15 @@ function CustomerDialog({
               </Select>
             </FormControl>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField
-                required
-                fullWidth
-                label="显示名称"
-                value={form.displayName}
-                onChange={(event) => set('displayName', event.target.value)}
-              />
+              {!IS_NEOBANK_DEPLOYMENT && (
+                <TextField
+                  required
+                  fullWidth
+                  label="显示名称"
+                  value={form.displayName}
+                  onChange={(event) => set('displayName', event.target.value)}
+                />
+              )}
               <TextField
                 required
                 fullWidth
@@ -508,15 +594,45 @@ function CustomerDialog({
                 </Stack>
               </>
             )}
+            {IS_NEOBANK_DEPLOYMENT && (
+              <>
+                <TextField
+                  required
+                  type="password"
+                  label="登录密码"
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(event) => set('password', event.target.value)}
+                  inputProps={{
+                    minLength: 14,
+                    maxLength: 128,
+                    pattern: '(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{14,128}',
+                  }}
+                  helperText="14–128 个字符，包含大小写字母、数字和符号"
+                />
+                <TextField
+                  required
+                  type="password"
+                  label="确认密码"
+                  autoComplete="new-password"
+                  value={form.confirmPassword}
+                  onChange={(event) => set('confirmPassword', event.target.value)}
+                />
+              </>
+            )}
             <Alert severity="info">
-              提交后进入 KYC 待审核。KYC 通过仅进入运营审核，不会自动开通账户或钱包。
+              {IS_NEOBANK_DEPLOYMENT
+                ? '后台开户免 KYC，创建后客户可使用邮箱和设置的密码直接登录。此操作将记录操作人。'
+                : '提交后进入 KYC 待审核。KYC 通过仅进入运营审核，不会自动开通账户或钱包。'}
             </Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="submit" variant="contained">
-            提交开户
+          <Button onClick={onClose} disabled={submitting}>
+            取消
+          </Button>
+          <Button type="submit" variant="contained" disabled={submitting}>
+            {submitting ? '创建中…' : '提交开户'}
           </Button>
         </DialogActions>
       </Box>

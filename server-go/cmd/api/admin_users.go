@@ -79,6 +79,8 @@ func adminSessionUser(session *adminSession) map[string]any {
 func adminRequestPermitted(session *adminSession, method, path string) bool {
 	permission := ""
 	switch {
+	case method == http.MethodPost && path == "/api/v1/admin/customers":
+		permission = adminPermissionCustomerCredentials
 	case strings.HasPrefix(path, "/api/v1/admin/customers/") &&
 		(strings.HasSuffix(path, "/password") || strings.HasSuffix(path, "/setup-link")):
 		permission = adminPermissionCustomerCredentials
