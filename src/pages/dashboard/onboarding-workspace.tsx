@@ -177,7 +177,7 @@ export default function OnboardingWorkspace() {
               <Typography variant="h4">开户与 KYC</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.75 }}>
                 {IS_NEOBANK_DEPLOYMENT
-                  ? '集中处理 Render PostgreSQL 中待审核和已拒绝的申请；KYC 通过后自动开户并进入客户管理。'
+                  ? '集中处理待审核和已拒绝的开户申请；KYC 人工审核通过后自动开户并进入客户管理。'
                   : '支持个人和企业开户；先完成人工 KYC，再由运营批准开户。只有运营批准后才创建钱包。'}
               </Typography>
             </Box>
