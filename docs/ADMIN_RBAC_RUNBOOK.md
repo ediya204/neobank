@@ -43,6 +43,13 @@ Worker Core 代理的权限校验。未知 Core 路由对非超级管理员默�
 - 客户出现在客户管理，不进入待审核队列。Cregis 失败时客户仍可登录，返回钱包待重试；
   客户管理/详情读取触发 Core 同步并分配 USD、HKD 标准账户。VA 仍按原有独立申请流程处理。
 - 本次无新数据库迁移。发布需要 Go API 与前端分别部署，先部署 Go；不能仅发布显示按钮的前端。
+- 标记内部人员须校验同租户的后台创建审计：旧记录使用 `customer.created` 与
+  `created_by` 匹配；直接开户使用 `admin_direct_opening` 来源及 `customer.admin_opened`
+  事件，审计操作人与 `activated_by` 匹配。直接开户不会自动成为内部人员。
+- 来源校验回归：先执行 `npm run api:build`，再设置隔离本机 PostgreSQL 的
+  `INTERNAL_IDENTITY_TEST_DATABASE_URL`，运行
+  `node --test server/test/customer-internal-identity.test.mjs`；可用 `PSQL_BIN` 指定 psql。
+  测试仅使用连接内临时表，不修改生产客户。
 - 回归：`cd server-go && go test ./cmd/api -run TestAdminOpening -count=1`。
   设置 `ADMIN_OPENING_TEST_DATABASE_URL` 为隔离的本机 PostgreSQL（安装现有客户/安全表结构），
   可执行真实创建与密码登录测试；测试数据不用于生产。

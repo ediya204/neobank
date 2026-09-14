@@ -391,7 +391,12 @@ export class CustomersService {
           SELECT c.id FROM customers c WHERE c.id = ${customerId} AND c.tenant_id = ${tenantId}
           AND c.created_by <> 'public_registration' AND c.created_by <> ''
           AND EXISTS (SELECT 1 FROM customer_auth_audit_events e
-            WHERE e.customer_id = c.id AND e.event_type = 'customer.created' AND e.actor = c.created_by)
+            WHERE e.customer_id = c.id AND (
+              (e.event_type = 'customer.created' AND e.actor = c.created_by)
+              OR (c.created_by = 'admin_direct_opening'
+                AND e.event_type = 'customer.admin_opened'
+                AND e.actor = c.activated_by AND c.activated_by <> '')
+            ))
         `);
           if (source.length !== 1) throw new ConflictException('admin_created_customer_required');
         }

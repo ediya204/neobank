@@ -18,7 +18,7 @@ test(
     process.env.NEOBANK_SOURCE_TENANT_ID = 'waiver-test-tenant';
     try {
       await db.$executeRawUnsafe(
-        'CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, created_by TEXT NOT NULL)'
+        'CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, created_by TEXT NOT NULL, activated_by TEXT)'
       );
       await db.$executeRawUnsafe(
         'CREATE TABLE IF NOT EXISTS customer_auth_audit_events (customer_id TEXT NOT NULL, event_type TEXT NOT NULL, actor TEXT NOT NULL)'
