@@ -1,4 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { REGISTRATION_COUNTRIES } from 'src/data/registration-countries';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -462,6 +464,7 @@ function CustomerDialog({
   onClose: () => void;
   onSubmit: (event: FormEvent) => void;
 }) {
+  const { t } = useTranslation('common');
   const set = (key: keyof CustomerForm, value: string) => setForm({ ...form, [key]: value });
   return (
     <Dialog
@@ -552,9 +555,15 @@ function CustomerDialog({
                 fullWidth
                 label={form.type === 'BUSINESS' ? '注册国家/地区' : '常住国家/地区'}
                 value={form.countryCode}
-                inputProps={{ maxLength: 2 }}
-                onChange={(event) => set('countryCode', event.target.value.toUpperCase())}
-              />
+                select
+                onChange={(event) => set('countryCode', event.target.value)}
+              >
+                {REGISTRATION_COUNTRIES.map((country) => (
+                  <MenuItem key={country.value} value={country.value}>
+                    {t(country.labelKey)}
+                  </MenuItem>
+                ))}
+              </TextField>
               {form.type === 'BUSINESS' ? (
                 <TextField
                   size="small"
@@ -569,11 +578,17 @@ function CustomerDialog({
                   size="small"
                   required
                   fullWidth
-                  label="国籍代码"
+                  label="国籍"
                   value={form.nationality}
-                  inputProps={{ maxLength: 2 }}
-                  onChange={(event) => set('nationality', event.target.value.toUpperCase())}
-                />
+                  select
+                  onChange={(event) => set('nationality', event.target.value)}
+                >
+                  {REGISTRATION_COUNTRIES.map((country) => (
+                    <MenuItem key={country.value} value={country.value}>
+                      {t(country.labelKey)}
+                    </MenuItem>
+                  ))}
+                </TextField>
               )}
             </Stack>
             {form.type === 'INDIVIDUAL' ? (

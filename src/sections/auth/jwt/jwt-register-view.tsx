@@ -24,6 +24,7 @@ import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
 import { RouterLink } from 'src/routes/components';
 import { useAuthClassicContentMode } from 'src/layouts/auth/classic';
 import Iconify from 'src/components/iconify';
+import { REGISTRATION_COUNTRIES } from 'src/data/registration-countries';
 
 const SumsubWebSdk = lazy(() => import('@sumsub/websdk-react'));
 
@@ -77,14 +78,6 @@ const INITIAL_FORM: ApplicationForm = {
   kycConsent: false,
   termsAccepted: false,
 };
-
-const COUNTRIES = [
-  { value: 'HK', labelKey: 'auth.registration.countries.hk' },
-  { value: 'SG', labelKey: 'auth.registration.countries.sg' },
-  { value: 'CN', labelKey: 'auth.registration.countries.cn' },
-  { value: 'GB', labelKey: 'auth.registration.countries.gb' },
-  { value: 'US', labelKey: 'auth.registration.countries.us' },
-];
 
 const PHONE_CODES = ['+852', '+65', '+86', '+44', '+1'];
 const ENGLISH_LEGAL_NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
@@ -940,7 +933,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
       error={Boolean(errors[field])}
       helperText={fieldError(field)}
     >
-      {COUNTRIES.map((country) => (
+      {REGISTRATION_COUNTRIES.map((country) => (
         <MenuItem key={country.value} value={country.value}>
           {t(country.labelKey)}
         </MenuItem>
