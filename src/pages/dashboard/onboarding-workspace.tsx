@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { REGISTRATION_COUNTRIES } from 'src/data/registration-countries';
+import { REGISTRATION_COUNTRIES, REGISTRATION_PHONE_CODES } from 'src/data/registration-countries';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -54,6 +54,7 @@ type CustomerForm = {
   phone: string;
   phoneCountryCode: string;
   countryCode: string;
+  incorporationCountry: string;
   registrationNo: string;
   dateOfBirth: string;
   nationality: string;
@@ -75,6 +76,7 @@ const emptyCustomer: CustomerForm = {
   phone: '',
   phoneCountryCode: '+852',
   countryCode: 'SG',
+  incorporationCountry: '',
   registrationNo: '',
   dateOfBirth: '',
   nationality: '',
@@ -126,6 +128,19 @@ export default function OnboardingWorkspace() {
       setError('两次输入的密码不一致');
       return;
     }
+    if (customerForm.phone.replace(/\D/g, '').length < 6) {
+      setError('电话号码至少需要 6 位数字');
+      return;
+    }
+    if (customerForm.type === 'INDIVIDUAL') {
+      const birthDate = new Date(`${customerForm.dateOfBirth}T00:00:00Z`);
+      const adultCutoff = new Date();
+      adultCutoff.setUTCFullYear(adultCutoff.getUTCFullYear() - 18);
+      if (Number.isNaN(birthDate.getTime()) || birthDate > adultCutoff) {
+        setError('个人客户须年满 18 周岁，请检查出生日期');
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       if (IS_NEOBANK_DEPLOYMENT) {
@@ -153,7 +168,7 @@ export default function OnboardingWorkspace() {
                 : {
                     legal_name: customerForm.legalName,
                     registration_number: customerForm.registrationNo,
-                    incorporation_country: customerForm.countryCode,
+                    incorporation_country: customerForm.incorporationCountry,
                     contact_name: customerForm.contactName,
                     contact_role: customerForm.contactRole,
                     beneficial_owner_name: customerForm.beneficialOwnerName,
@@ -554,9 +569,14 @@ function CustomerDialog({
                 required
                 fullWidth
                 label={form.type === 'BUSINESS' ? '注册国家/地区' : '常住国家/地区'}
-                value={form.countryCode}
+                value={form.type === 'BUSINESS' ? form.incorporationCountry : form.countryCode}
                 select
-                onChange={(event) => set('countryCode', event.target.value)}
+                onChange={(event) =>
+                  set(
+                    form.type === 'BUSINESS' ? 'incorporationCountry' : 'countryCode',
+                    event.target.value
+                  )
+                }
               >
                 {REGISTRATION_COUNTRIES.map((country) => (
                   <MenuItem key={country.value} value={country.value}>
@@ -645,6 +665,23 @@ function CustomerDialog({
                 </Stack>
               </>
             )}
+            {form.type === 'BUSINESS' && (
+              <TextField
+                size="small"
+                required
+                fullWidth
+                select
+                label="营业国家/地区"
+                value={form.countryCode}
+                onChange={(event) => set('countryCode', event.target.value)}
+              >
+                {REGISTRATION_COUNTRIES.map((country) => (
+                  <MenuItem key={country.value} value={country.value}>
+                    {t(country.labelKey)}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
             <Typography variant="subtitle2" sx={{ pt: 1 }}>
               联系方式
             </Typography>
@@ -670,9 +707,15 @@ function CustomerDialog({
                   sx={{ width: 112, flexShrink: 0 }}
                   label="电话区号"
                   value={form.phoneCountryCode}
-                  inputProps={{ pattern: '^\\+[1-9][0-9]{0,3}$', maxLength: 5 }}
+                  select
                   onChange={(event) => set('phoneCountryCode', event.target.value)}
-                />
+                >
+                  {REGISTRATION_PHONE_CODES.map((code) => (
+                    <MenuItem key={code} value={code}>
+                      {code}
+                    </MenuItem>
+                  ))}
+                </TextField>
                 <TextField
                   size="small"
                   required

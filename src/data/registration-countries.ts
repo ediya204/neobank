@@ -5,3 +5,5 @@ export const REGISTRATION_COUNTRIES = [
   { value: 'GB', labelKey: 'auth.registration.countries.gb' },
   { value: 'US', labelKey: 'auth.registration.countries.us' },
 ];
+
+export const REGISTRATION_PHONE_CODES = ['+852', '+65', '+86', '+44', '+1'];

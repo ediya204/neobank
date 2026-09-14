@@ -24,7 +24,7 @@ import { APP_NAME_CN, APP_NAME_EN } from 'src/config-global';
 import { RouterLink } from 'src/routes/components';
 import { useAuthClassicContentMode } from 'src/layouts/auth/classic';
 import Iconify from 'src/components/iconify';
-import { REGISTRATION_COUNTRIES } from 'src/data/registration-countries';
+import { REGISTRATION_COUNTRIES, REGISTRATION_PHONE_CODES } from 'src/data/registration-countries';
 
 const SumsubWebSdk = lazy(() => import('@sumsub/websdk-react'));
 
@@ -79,7 +79,6 @@ const INITIAL_FORM: ApplicationForm = {
   termsAccepted: false,
 };
 
-const PHONE_CODES = ['+852', '+65', '+86', '+44', '+1'];
 const ENGLISH_LEGAL_NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
 const ASCII_PASSWORD_PATTERN = /^[\x20-\x7e]+$/;
 
@@ -1089,7 +1088,7 @@ export default function JwtRegisterView({ loginPath }: Props) {
           helperText={fieldError('phoneCountryCode')}
           sx={{ width: 132, flexShrink: 0 }}
         >
-          {PHONE_CODES.map((code) => (
+          {REGISTRATION_PHONE_CODES.map((code) => (
             <MenuItem key={code} value={code}>
               {code}
             </MenuItem>
