@@ -618,6 +618,7 @@ function CustomerDialog({
                 fullWidth
                 type="date"
                 label="出生日期"
+                sx={{ width: { xs: '100%', sm: 'calc((100% - 16px) / 2)' } }}
                 value={form.dateOfBirth}
                 InputLabelProps={{ shrink: true }}
                 inputProps={{ max: new Date().toISOString().slice(0, 10) }}
@@ -672,6 +673,7 @@ function CustomerDialog({
                 fullWidth
                 select
                 label="营业国家/地区"
+                sx={{ width: { xs: '100%', sm: 'calc((100% - 16px) / 2)' } }}
                 value={form.countryCode}
                 onChange={(event) => set('countryCode', event.target.value)}
               >
