@@ -32,6 +32,7 @@ import {
 import { alpha } from '@mui/material/styles';
 import { useAuthContext } from 'src/auth/hooks';
 import { hasAdminPermission } from 'src/auth/permissions';
+import VaFeePolicyPanel from 'src/features/finance/va-fee-policy-panel';
 import Iconify from 'src/components/iconify';
 import AssetIcon from 'src/components/asset-icon';
 import Label from 'src/components/label';
@@ -515,6 +516,33 @@ export default function CustomerDetailPage() {
   const [vaCurrency, setVaCurrency] = useState<Currency>('USD');
   const [vaPurpose, setVaPurpose] = useState('跨境贸易收款');
   const [vaSubmitting, setVaSubmitting] = useState(false);
+  const [vaQuote, setVaQuote] = useState<{
+    channelId: string;
+    feeUsd: string;
+    openingFeeVersion: string;
+    feePolicyVersion: number;
+  } | null>(null);
+  const [vaQuoteError, setVaQuoteError] = useState('');
+  const [vaQuoteRevision, setVaQuoteRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setVaQuote(null);
+    setVaQuoteError('');
+    if (vaRequestOpen && id && vaChannelId) {
+      coreApi<NonNullable<typeof vaQuote>>(
+        `/customers/${id}/va-opening-fee-quote?channelId=${encodeURIComponent(vaChannelId)}`
+      )
+        .then((quote) => {
+          if (active) setVaQuote(quote);
+        })
+        .catch((e) => {
+          if (active) setVaQuoteError(e instanceof Error ? e.message : '费用加载失败');
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [id, vaChannelId, vaRequestOpen, vaQuoteRevision]);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -882,7 +910,8 @@ export default function CustomerDetailPage() {
   };
 
   const submitVaRequest = async () => {
-    if (!customer || !vaChannelId || !vaPurpose.trim()) return;
+    if (!customer || !vaChannelId || !vaPurpose.trim() || vaQuote?.channelId !== vaChannelId)
+      return;
     setVaSubmitting(true);
     setLoadError('');
     try {
@@ -893,6 +922,9 @@ export default function CustomerDetailPage() {
           channelId: vaChannelId,
           currency: vaCurrency,
           purpose: vaPurpose.trim(),
+          expectedOpeningFeeUsd: vaQuote.feeUsd,
+          expectedOpeningFeeVersion: vaQuote.openingFeeVersion,
+          expectedFeePolicyVersion: vaQuote.feePolicyVersion,
         }),
       });
       setVaRequestOpen(false);
@@ -901,6 +933,7 @@ export default function CustomerDetailPage() {
       setTab('accounts');
     } catch (caught) {
       setLoadError(caught instanceof Error ? caught.message : 'VA 申请提交失败');
+      setVaQuoteRevision((value) => value + 1);
     } finally {
       setVaSubmitting(false);
     }
@@ -1083,6 +1116,13 @@ export default function CustomerDetailPage() {
             </Stack>
           </Stack>
 
+          <VaFeePolicyPanel
+            key={customer.id}
+            customerId={customer.id}
+            customerName={customer.displayName}
+            requests={vaRequests}
+            onSaved={load}
+          />
           {loadError && (
             <Alert severity="error" onClose={() => setLoadError('')}>
               {loadError}
@@ -1674,6 +1714,15 @@ export default function CustomerDetailPage() {
               onChange={(event) => setVaPurpose(event.target.value)}
               inputProps={{ maxLength: 240 }}
             />
+            {vaQuote?.channelId === vaChannelId && (
+              <Alert severity="info">
+                本次开户手续费 USD {vaQuote.feeUsd}。
+                {Number(vaQuote.feeUsd) > 0
+                  ? '提交后从客户 USD 法币钱包冻结，批准时扣费。'
+                  : '无需冻结费用。'}
+              </Alert>
+            )}
+            {vaQuoteError && <Alert severity="error">{vaQuoteError}</Alert>}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -1682,7 +1731,12 @@ export default function CustomerDetailPage() {
           </Button>
           <Button
             variant="contained"
-            disabled={vaSubmitting || !vaChannelId || !vaPurpose.trim()}
+            disabled={
+              vaSubmitting ||
+              !vaChannelId ||
+              !vaPurpose.trim() ||
+              vaQuote?.channelId !== vaChannelId
+            }
             onClick={() => submitVaRequest().catch(() => undefined)}
           >
             {vaSubmitting ? '提交中…' : '提交申请'}

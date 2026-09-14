@@ -231,6 +231,12 @@ const ADMIN_PERMISSIONS = {
 
 function requiredAdminCorePermission(pathname: string, method: string): string | null {
   const readOnly = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+  if (!readOnly && /^\/api\/core\/customers\/[^/]+\/va-fee-policy\/?$/i.test(pathname)) {
+    return ADMIN_PERMISSIONS.settings;
+  }
+  if (!readOnly && /^\/api\/core\/virtual-account-requests\/[^/]+\/waive-opening-fee\/?$/i.test(pathname)) {
+    return ADMIN_PERMISSIONS.fundsManage;
+  }
   if (pathname === '/api/core/customers' || pathname.startsWith('/api/core/customers/')) {
     return readOnly ? ADMIN_PERMISSIONS.customerRead : ADMIN_PERMISSIONS.customerReview;
   }

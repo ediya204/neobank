@@ -62,6 +62,7 @@ it('builds one VA opening fee confirmation from the active USD wallet', () => {
     'fee_not_configured'
   );
   expect(vaOpeningFeeQuote(channel, []).disabledReason).toBe('usd_wallet_missing');
+  expect(vaOpeningFeeQuote({ ...channel, openingFeeUsd: '0.00' }, []).disabledReason).toBe(null);
   expect(
     vaOpeningFeeQuote(channel, [{ ...wallet, availableBalance: '20.00' }]).disabledReason
   ).toBe('insufficient_balance');

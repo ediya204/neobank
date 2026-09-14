@@ -35,6 +35,14 @@ export class VirtualAccountsController {
   reject(@Param('id') id: string, @Body() dto: RejectVaRequestDto, @Req() request: Request) {
     return this.customers.rejectVirtualAccountRequest(id, checkerId(request), dto.reason);
   }
+
+  @Patch(':id/waive-opening-fee')
+  waiveFee(@Param('id') id: string, @Body() dto: RejectVaRequestDto, @Req() request: Request) {
+    return this.customers.waiveVaOpeningFee(id, dto.reason, {
+      userId: currentUserId(request),
+      customerId: request.header('x-authenticated-customer-id')?.trim() || undefined,
+    });
+  }
 }
 
 function checkerId(request: Request) {

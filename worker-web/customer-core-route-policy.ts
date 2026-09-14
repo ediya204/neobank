@@ -14,6 +14,14 @@ const customerReadableChannelTypes = new Set([
 ]);
 
 const CUSTOMER_CORE_INTERNAL_FIELDS = new Set([
+  'isInternal',
+  'vaFeeExempt',
+  'vaFeePolicyVersion',
+  'vaFeePolicyEvents',
+  'openingFeeBasis',
+  'openingFeeWaiverBasis',
+  'openingFeeWaivedBy',
+  'openingFeeWaiverReason',
   'creatorId',
   'reviewerId',
   'checkerId',
@@ -109,6 +117,9 @@ export function customerCoreRouteAllowed(
     );
   }
   if (method !== 'GET') return false;
+  if (url.pathname === `/api/core/customers/${customerId}/va-opening-fee-quote`) {
+    return Boolean(url.searchParams.get('channelId')) && hasOnlySearchParams(url, new Set(['channelId']));
+  }
   if (url.pathname === `/api/core/customers/${customerId}`) {
     return hasOnlySearchParams(url, new Set());
   }

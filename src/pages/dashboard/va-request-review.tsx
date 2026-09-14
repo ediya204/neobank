@@ -9,6 +9,10 @@ import {
   CircularProgress,
   Container,
   Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   FormControl,
   FormControlLabel,
   FormLabel,
@@ -25,6 +29,9 @@ import {
 } from '@mui/material';
 import Iconify from 'src/components/iconify';
 import Label from 'src/components/label';
+import { useAuthContext } from 'src/auth/hooks';
+import { hasAdminPermission } from 'src/auth/permissions';
+import { vaFeeBasisLabel } from 'src/features/finance/va-fee-presentation';
 import {
   coreApi,
   Customer,
@@ -76,6 +83,8 @@ function statusPresentation(status: VirtualAccountRequest['status']) {
 }
 
 function feeStatus(request: VirtualAccountRequest) {
+  if (request.openingFeeWaivedAt) return '已全额减免，冻结已释放';
+  if (request.openingFeeExempt) return '已全额减免，无需冻结';
   if (Number(request.openingFeeUsd) === 0) return '免费';
   if (request.status === 'APPROVED') return '已扣除并记账';
   if (request.status === 'REJECTED' || request.status === 'CANCELLED') return '已释放';
@@ -83,6 +92,7 @@ function feeStatus(request: VirtualAccountRequest) {
 }
 
 export default function VaRequestReviewPage() {
+  const { user } = useAuthContext();
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const userId = 'usr_admin';
@@ -99,6 +109,8 @@ export default function VaRequestReviewPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [waiving, setWaiving] = useState(false);
+  const [waiverReason, setWaiverReason] = useState('');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -189,11 +201,36 @@ export default function VaRequestReviewPage() {
           userId,
           body: JSON.stringify({ reason: rejectionText }),
         });
-        setSuccess('VA 申请已拒绝；客户可见原因已保存，冻结的开户费已释放。');
+        setSuccess(
+          Number(request.openingFeeEffectiveUsd ?? request.openingFeeUsd) > 0
+            ? 'VA 申请已拒绝；客户可见原因已保存，冻结的开户费已释放。'
+            : 'VA 申请已拒绝；客户可见原因已保存，本次无需释放费用。'
+        );
       }
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'VA 申请处理失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const waive = async () => {
+    if (!request) return;
+    setSubmitting(true);
+    setError('');
+    setSuccess('');
+    try {
+      await coreApi(`/virtual-account-requests/${request.id}/waive-opening-fee`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason: waiverReason.trim() }),
+      });
+      setWaiving(false);
+      setWaiverReason('');
+      setSuccess('开户费已全额减免，冻结费用已释放；申请继续待审批。');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '减免失败');
     } finally {
       setSubmitting(false);
     }
@@ -395,14 +432,46 @@ export default function VaRequestReviewPage() {
                     pb: 1.5,
                   }}
                 >
-                  <Field label="开户手续费" value={`USD ${request.openingFeeUsd}`} />
+                  <Field
+                    label="银行标准费用"
+                    value={`USD ${request.openingFeeStandardUsd ?? request.openingFeeUsd}`}
+                  />
+                  <Field label="提交时应收" value={`USD ${request.openingFeeUsd}`} />
+                  <Field
+                    label="当前应收"
+                    value={`USD ${request.openingFeeEffectiveUsd ?? request.openingFeeUsd}`}
+                  />
+                  <Field
+                    label="减免金额"
+                    value={`USD ${request.openingFeeDiscountUsd ?? '0.00'}`}
+                  />
+                  <Field label="计费依据" value={vaFeeBasisLabel(request)} />
+                  {request.openingFeeWaivedAt && (
+                    <>
+                      <Field label="减免时间" value={formatDate(request.openingFeeWaivedAt)} />
+                      <Field label="减免操作人" value={request.openingFeeWaivedBy} />
+                      <Field label="减免内部原因" value={request.openingFeeWaiverReason} />
+                    </>
+                  )}
                   <Field label="费用状态" value={feeStatus(request)} />
                   <Field label="规则版本" value={request.openingFeeVersion} />
                   <Field label="扣款钱包" value={feeSource} />
                   <Field label="费用流水" value={request.feeOperation?.reference} />
                   <Field label="流水状态" value={request.feeOperation?.status} />
                 </Box>
-                {request.status === 'APPROVED' && request.feeOperation && (
+                {request.status === 'SUBMITTED' &&
+                  Number(request.openingFeeEffectiveUsd ?? request.openingFeeUsd) > 0 &&
+                  hasAdminPermission(user, 'funds.manage') && (
+                    <Button
+                      sx={{ m: 2 }}
+                      variant="outlined"
+                      disabled={submitting}
+                      onClick={() => setWaiving(true)}
+                    >
+                      全额减免
+                    </Button>
+                  )}
+                {request.status === 'APPROVED' && request.feeOperation?.status === 'COMPLETED' && (
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ p: 2.5, pt: 1 }}>
                     <Button
                       variant="outlined"
@@ -505,8 +574,9 @@ export default function VaRequestReviewPage() {
                         onChange={(event) => setIban(event.target.value.toUpperCase())}
                       />
                       <Alert severity="info">
-                        VA 账户初始余额为 0；如配置开户费，批准时将扣除已冻结的 USD
-                        手续费并产生账本分录。
+                        VA 账户初始余额为 0；本申请当前应收 USD{' '}
+                        {request.openingFeeEffectiveUsd ?? request.openingFeeUsd}
+                        。仅非零应收会在批准时扣除冻结费用并记账。
                       </Alert>
                     </Stack>
                   ) : (
@@ -539,11 +609,13 @@ export default function VaRequestReviewPage() {
                     </Stack>
                   )}
 
-                  {decision === 'reject' && Number(request.openingFeeUsd) > 0 && (
-                    <Alert severity="info">
-                      拒绝申请后，已冻结的 USD {request.openingFeeUsd} 开户手续费将释放回客户钱包。
-                    </Alert>
-                  )}
+                  {decision === 'reject' &&
+                    Number(request.openingFeeEffectiveUsd ?? request.openingFeeUsd) > 0 && (
+                      <Alert severity="info">
+                        拒绝申请后，已冻结的 USD {request.openingFeeUsd}{' '}
+                        开户手续费将释放回客户钱包。
+                      </Alert>
+                    )}
 
                   <Divider />
                   <FormControlLabel
@@ -577,6 +649,49 @@ export default function VaRequestReviewPage() {
           </Box>
         </Stack>
       </Container>
+      <Dialog
+        open={waiving}
+        onClose={() => {
+          if (!submitting) setWaiving(false);
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>确认全额减免开户手续费</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Typography>
+              {customerDisplayName} · {request.channel?.name} · {request.id}
+            </Typography>
+            <Alert severity="info">
+              将释放已冻结的 USD {request.openingFeeEffectiveUsd ?? request.openingFeeUsd}
+              。申请保持待审批，批准时不再收取开户费。本次操作仅适用于当前申请。
+            </Alert>
+            <TextField
+              required
+              autoFocus
+              multiline
+              label="减免内部原因"
+              value={waiverReason}
+              onChange={(e) => setWaiverReason(e.target.value)}
+              inputProps={{ maxLength: 500 }}
+            />
+            {error && <Alert severity="error">{error}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={submitting} onClick={() => setWaiving(false)}>
+            取消
+          </Button>
+          <Button
+            variant="contained"
+            disabled={submitting || waiverReason.trim().length < 2}
+            onClick={waive}
+          >
+            确认减免并释放冻结
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

@@ -28,6 +28,219 @@ const customer = {
   status: 'ACTIVE',
 };
 
+test('internal and special fee waivers retain their basis and require fresh policy confirmation', async () => {
+  for (const basis of ['INTERNAL', 'SPECIAL', 'BANK_FREE']) {
+    const current = {
+      ...customer,
+      isInternal: basis === 'INTERNAL',
+      vaFeeExempt: basis !== 'INTERNAL',
+      vaFeePolicyVersion: 3,
+    };
+    let bank = { ...channel, openingFeeUsdMinor: basis === 'BANK_FREE' ? 0n : 2500n };
+    const db = {
+      customer: { findUnique: async () => current, findUniqueOrThrow: async () => current },
+      fundingChannel: { findUnique: async () => bank },
+      virtualAccountRequest: { findFirst: async () => null, create: async ({ data }) => data },
+      $transaction: async (fn) => fn(db),
+    };
+    const service = new CustomersService(db);
+    const actor = { userId: 'admin', customerId: current.id };
+    const input = {
+      channelId: bank.id,
+      currency: 'USD',
+      purpose: 'Receive payments',
+      expectedOpeningFeeUsd: '0.00',
+      expectedOpeningFeeVersion: '2',
+      expectedFeePolicyVersion: 3,
+      idempotencyKey: `waiver-${basis}`,
+    };
+    const quote = await service.quoteVaOpeningFee(current.id, bank.id, actor);
+    assert.equal(quote.feeUsd, '0.00');
+    assert.equal(quote.feePolicyVersion, 3);
+    assert.equal('isInternal' in quote, false);
+    const result = await service.requestVirtualAccount(current.id, input, actor);
+    assert.equal(result.openingFeeBasis, basis);
+    assert.equal(result.openingFeeUsd, '0.00');
+    assert.equal(result.openingFeeDiscountUsd, basis === 'BANK_FREE' ? '0.00' : '25.00');
+    assert.equal(result.feeOperationId, null);
+    await assert.rejects(
+      service.requestVirtualAccount(current.id, { ...input, expectedFeePolicyVersion: 2 }, actor),
+      /virtual_account_opening_fee_changed/
+    );
+    bank = { ...bank, openingFeeUsdMinor: null };
+    await assert.rejects(
+      service.requestVirtualAccount(current.id, input, actor),
+      /virtual_account_opening_fee_not_configured/
+    );
+  }
+});
+
+test('waiving a pending fee releases once, preserves snapshot and never settles or releases again', async () => {
+  let balanceWrites = 0;
+  let operationWrites = 0;
+  let request = {
+    id: 'waiver-pending',
+    customerId: customer.id,
+    customer,
+    channelId: channel.id,
+    status: 'SUBMITTED',
+    openingFeeUsdMinor: 2500n,
+    openingFeeVersion: 2n,
+    openingFeeStandardUsdMinor: 2500n,
+    feeOperationId: 'fee-operation',
+    feeOperation: {
+      id: 'fee-operation',
+      customerId: customer.id,
+      channelId: channel.id,
+      type: 'VA_OPENING_FEE',
+      status: 'SUBMITTED',
+      currency: 'USD',
+      amount: new Prisma.Decimal(25),
+      sourceAccountId: 'wallet-usd',
+    },
+  };
+  const db = {
+    user: {
+      findUnique: async () => ({
+        id: 'admin',
+        active: true,
+        role: 'ADMIN',
+        organizationId: customer.organizationId,
+      }),
+    },
+    virtualAccountRequest: {
+      findUnique: async () => request,
+      update: async ({ data }) => (request = { ...request, ...data }),
+    },
+    account: {
+      updateMany: async ({ where, data }) => {
+        assert.equal(where.customerId, customer.id);
+        assert.equal(where.frozenBalance.gte.toString(), '25');
+        assert.equal(data.availableBalance.increment.toString(), '25');
+        assert.equal(data.frozenBalance.decrement.toString(), '25');
+        balanceWrites += 1;
+        return { count: 1 };
+      },
+    },
+    operation: {
+      update: async ({ data }) => {
+        operationWrites += 1;
+        request.feeOperation = { ...request.feeOperation, ...data };
+      },
+    },
+    $transaction: async (fn, options) => {
+      assert.equal(options.isolationLevel, 'Serializable');
+      return fn(db);
+    },
+  };
+  const service = new CustomersService(db);
+  const actor = { userId: 'admin' };
+  await assert.rejects(
+    service.waiveVaOpeningFee(request.id, 'test reason', { ...actor, customerId: customer.id }),
+    /admin_role_required/
+  );
+  const result = await service.waiveVaOpeningFee(request.id, 'Approved customer concession', actor);
+  assert.equal(result.status, 'SUBMITTED');
+  assert.equal(result.openingFeeUsd, '25.00');
+  assert.equal(result.openingFeeEffectiveUsd, '0.00');
+  assert.equal(result.openingFeeDiscountUsd, '25.00');
+  assert.equal(result.openingFeeWaiverBasis, 'SPECIAL');
+  assert.equal(request.feeOperation.status, 'CANCELLED');
+  assert.match(request.feeOperation.rejectionReason, /waived/);
+  await service.waiveVaOpeningFee(request.id, 'Repeated action', actor);
+  await service.settleVaOpeningFee(db, request, 'admin');
+  await service.releaseVaOpeningFee(db, request, 'REJECTED', 'admin');
+  await service.releaseVaOpeningFee(db, request, 'CANCELLED');
+  assert.equal(balanceWrites, 1);
+  assert.equal(operationWrites, 1);
+  for (const status of ['APPROVED', 'REJECTED', 'CANCELLED']) {
+    request.status = status;
+    await assert.rejects(
+      service.waiveVaOpeningFee(request.id, 'Late waiver', actor),
+      /request_not_pending/
+    );
+  }
+  request.status = 'SUBMITTED';
+  request.customer = { ...customer, organizationId: 'another-tenant' };
+  await assert.rejects(
+    service.waiveVaOpeningFee(request.id, 'Wrong tenant', actor),
+    /virtual_account_request_not_found/
+  );
+});
+
+test('customer policy changes audit separately and removing internal identity clears special benefits', async () => {
+  let current = { ...customer, isInternal: true, vaFeeExempt: false, vaFeePolicyVersion: 1 };
+  const events = [];
+  const db = {
+    user: {
+      findUnique: async () => ({
+        active: true,
+        role: 'ADMIN',
+        organizationId: customer.organizationId,
+      }),
+    },
+    customer: {
+      findUnique: async () => current,
+      updateMany: async ({ data }) => {
+        current = { ...current, ...data };
+        return { count: 1 };
+      },
+    },
+    vaFeePolicyEvent: {
+      create: async ({ data }) => {
+        events.push(data);
+      },
+    },
+    $transaction: async (fn) => fn(db),
+  };
+  const service = new CustomersService(db);
+  const actor = { userId: 'admin' };
+  await assert.rejects(
+    service.updateVaFeePolicy(
+      customer.id,
+      'exemption',
+      { enabled: true, expectedVersion: 1, reason: 'special request' },
+      actor
+    ),
+    /internal_customer_already_exempt/
+  );
+  await service.updateVaFeePolicy(
+    customer.id,
+    'identity',
+    { enabled: false, expectedVersion: 1, reason: 'No longer internal' },
+    actor
+  );
+  assert.equal(current.isInternal, false);
+  assert.equal(current.vaFeeExempt, false);
+  assert.equal(current.vaFeePolicyVersion, 2);
+  assert.equal(events[0].before.isInternal, true);
+  assert.equal(events[0].actorId, 'admin');
+  await assert.rejects(
+    service.updateVaFeePolicy(
+      customer.id,
+      'exemption',
+      { enabled: true, expectedVersion: 1, reason: 'stale request' },
+      actor
+    ),
+    /va_fee_policy_changed/
+  );
+  await service.updateVaFeePolicy(
+    customer.id,
+    'exemption',
+    { enabled: true, expectedVersion: 2, reason: 'Special customer approval' },
+    actor
+  );
+  assert.equal(current.isInternal, false);
+  assert.equal(current.vaFeeExempt, true);
+  assert.equal(events.length, 2);
+  await assert.rejects(
+    service.updateVaFeePolicy(customer.id, 'identity', { enabled: false, expectedVersion: 3, reason: 'Cannot revoke special fee policy via identity' }, actor),
+    /customer_identity_unchanged/
+  );
+  assert.equal(current.vaFeeExempt, true);
+  assert.equal(events.length, 2);
+});
+
 test('VA opening fee schema keeps one request snapshot and one optional operation', async () => {
   const schema = await readFile(new URL('../prisma/schema.prisma', import.meta.url), 'utf8');
   assert.match(schema, /VA_OPENING_FEE/);

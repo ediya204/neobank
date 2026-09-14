@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import {
   IsDateString,
+  IsBoolean,
+  IsInt,
   IsEmail,
   IsEnum,
   IsNumber,
@@ -91,6 +93,13 @@ class CreateVaRequestDto {
   @IsString() @Length(2, 500) purpose!: string;
   @IsOptional() @IsNumberString() expectedOpeningFeeUsd?: string;
   @IsOptional() @IsString() expectedOpeningFeeVersion?: string;
+  @IsOptional() @IsInt() @Min(0) expectedFeePolicyVersion?: number;
+}
+
+class VaFeePolicyDto {
+  @IsBoolean() enabled!: boolean;
+  @IsInt() @Min(0) expectedVersion!: number;
+  @IsString() @Length(2, 500) reason!: string;
 }
 
 @Controller('customers')
@@ -142,6 +151,37 @@ export class CustomersController {
       { ...dto, idempotencyKey },
       requestActor(request)
     );
+  }
+
+  @Get(':id/va-opening-fee-quote')
+  quoteVaFee(
+    @Param('id') id: string,
+    @Query('channelId') channelId: string,
+    @Req() request: Request
+  ) {
+    if (typeof channelId !== 'string' || !channelId.trim() || channelId.length > 128) {
+      throw new BadRequestException('channel_id_required');
+    }
+    return this.customers.quoteVaOpeningFee(id, channelId, requestActor(request));
+  }
+
+  @Get(':id/va-fee-policy')
+  getVaFeePolicy(@Param('id') id: string, @Req() request: Request) {
+    return this.customers.getVaFeePolicy(id, requestActor(request));
+  }
+
+  @Patch(':id/internal-identity')
+  setInternalIdentity(
+    @Param('id') id: string,
+    @Body() dto: VaFeePolicyDto,
+    @Req() request: Request
+  ) {
+    return this.customers.updateVaFeePolicy(id, 'identity', dto, requestActor(request));
+  }
+
+  @Patch(':id/va-fee-policy')
+  setVaFeePolicy(@Param('id') id: string, @Body() dto: VaFeePolicyDto, @Req() request: Request) {
+    return this.customers.updateVaFeePolicy(id, 'exemption', dto, requestActor(request));
   }
 
   @Get(':id/virtual-account-requests')

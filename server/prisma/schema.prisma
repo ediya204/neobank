@@ -256,6 +256,10 @@ model User {
 }
 
 model Customer {
+  isInternal               Boolean                 @default(false)
+  vaFeeExempt              Boolean                 @default(false)
+  vaFeePolicyVersion       Int                     @default(0)
+  vaFeePolicyEvents        VaFeePolicyEvent[]
   id                       String                  @id @default(uuid())
   organizationId           String
   organization             Organization            @relation(fields: [organizationId], references: [id])
@@ -364,6 +368,13 @@ model CryptoTransfer {
 }
 
 model VirtualAccountRequest {
+  openingFeeStandardUsdMinor BigInt?
+  openingFeeBasis           String   @default("STANDARD")
+  openingFeePolicyVersion   Int      @default(0)
+  openingFeeWaivedAt        DateTime? @db.Timestamptz(6)
+  openingFeeWaivedBy        String?
+  openingFeeWaiverReason    String?
+  openingFeeWaiverBasis     String?
   id                 String               @id @default(uuid())
   customerId         String
   customer           Customer             @relation(fields: [customerId], references: [id])
@@ -394,6 +405,20 @@ model VirtualAccountRequest {
   @@unique([customerId, idempotencyKey])
   @@index([customerId, status])
   @@index([channelId, status])
+}
+
+model VaFeePolicyEvent {
+  id         String   @id @default(uuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  version    Int
+  before     Json
+  after      Json
+  reason     String
+  actorId    String
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([customerId, version])
 }
 
 model Account {

@@ -49,6 +49,14 @@ export default function VirtualAccountsPage() {
   const [success, setSuccess] = useState('');
   const [cancellingId, setCancellingId] = useState('');
   const [cancelRequest, setCancelRequest] = useState<VirtualAccountRequest | null>(null);
+  const [serverQuote, setServerQuote] = useState<{
+    channelId: string;
+    feeUsd: string;
+    exempt: boolean;
+    openingFeeVersion: string;
+    feePolicyVersion: number;
+  } | null>(null);
+  const [quoteRevision, setQuoteRevision] = useState(0);
   const idempotencyKey = useRef<string | null>(null);
 
   const load = useCallback(async () => {
@@ -87,9 +95,34 @@ export default function VirtualAccountsPage() {
     [channelId, channels]
   );
   const feeQuote = useMemo(
-    () => vaOpeningFeeQuote(selectedChannel, customer?.accounts || []),
-    [customer?.accounts, selectedChannel]
+    () =>
+      vaOpeningFeeQuote(
+        selectedChannel && serverQuote?.channelId === selectedChannel.id
+          ? { ...selectedChannel, openingFeeUsd: serverQuote.feeUsd }
+          : undefined,
+        customer?.accounts || []
+      ),
+    [customer?.accounts, selectedChannel, serverQuote]
   );
+
+  useEffect(() => {
+    let active = true;
+    setServerQuote(null);
+    if (customer?.id && channelId) {
+      coreApi<NonNullable<typeof serverQuote>>(
+        `/customers/${customer.id}/va-opening-fee-quote?channelId=${encodeURIComponent(channelId)}`
+      )
+        .then((quote) => {
+          if (active) setServerQuote(quote);
+        })
+        .catch((value) => {
+          if (active) setError(vaErrorMessage(value));
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [customer?.id, channelId, quoteRevision]);
 
   const resetSubmission = () => {
     idempotencyKey.current = null;
@@ -106,7 +139,14 @@ export default function VirtualAccountsPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!customer?.id || !selectedChannel || feeQuote.disabledReason || !feeQuote.feeUsd) return;
+    if (
+      !customer?.id ||
+      !selectedChannel ||
+      !serverQuote ||
+      feeQuote.disabledReason ||
+      !feeQuote.feeUsd
+    )
+      return;
     setSubmitting(true);
     setError('');
     setSuccess('');
@@ -121,7 +161,8 @@ export default function VirtualAccountsPage() {
           currency,
           purpose,
           expectedOpeningFeeUsd: feeQuote.feeUsd,
-          expectedOpeningFeeVersion: selectedChannel.openingFeeVersion,
+          expectedOpeningFeeVersion: serverQuote.openingFeeVersion,
+          expectedFeePolicyVersion: serverQuote.feePolicyVersion,
         }),
       });
       setSuccess(
@@ -134,6 +175,7 @@ export default function VirtualAccountsPage() {
       await Promise.all([load(), refresh()]);
     } catch (value) {
       setError(vaErrorMessage(value));
+      setQuoteRevision((revision) => revision + 1);
     } finally {
       setSubmitting(false);
     }
@@ -145,10 +187,17 @@ export default function VirtualAccountsPage() {
     setError('');
     setSuccess('');
     try {
-      await coreApi(`/customers/${customer.id}/virtual-account-requests/${request.id}/cancel`, {
-        method: 'PATCH',
-      });
-      setSuccess(portalText('VA 申请已取消，冻结的开户手续费已释放。'));
+      const cancelled = await coreApi<VirtualAccountRequest>(
+        `/customers/${customer.id}/virtual-account-requests/${request.id}/cancel`,
+        {
+          method: 'PATCH',
+        }
+      );
+      setSuccess(
+        Number(cancelled.openingFeeEffectiveUsd ?? cancelled.openingFeeUsd) > 0
+          ? portalText('VA 申请已取消，冻结的开户手续费已释放。')
+          : portalText('VA 申请已取消。')
+      );
       setCancelRequest(null);
       await Promise.all([load(), refresh()]);
     } catch (value) {
@@ -187,7 +236,10 @@ export default function VirtualAccountsPage() {
             <Button
               variant={applying ? 'outlined' : 'contained'}
               startIcon={<Iconify icon="solar:buildings-2-bold-duotone" />}
-              onClick={() => setApplying((value) => !value)}
+              onClick={() => {
+                setQuoteRevision((value) => value + 1);
+                setApplying((value) => !value);
+              }}
             >
               {applying ? portalText('收起申请表') : portalText('申请 VA 账户')}
             </Button>
@@ -331,7 +383,12 @@ export default function VirtualAccountsPage() {
                       />
                     </Box>
                   )}
-                  {feeQuote.disabledReason && (
+                  {serverQuote?.exempt && (
+                    <Alert severity="info">
+                      {portalText('本次开户手续费已减免，无需冻结费用。')}
+                    </Alert>
+                  )}
+                  {serverQuote && feeQuote.disabledReason && (
                     <Alert severity="warning">{feeDisabledMessage(feeQuote.disabledReason)}</Alert>
                   )}
 
@@ -421,7 +478,7 @@ export default function VirtualAccountsPage() {
                   portalText('历史 VA 申请')}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {Number(cancelRequest.openingFeeUsd) > 0
+                {Number(cancelRequest.openingFeeEffectiveUsd ?? cancelRequest.openingFeeUsd) > 0
                   ? portalText('确认取消申请并释放已冻结的 USD 开户手续费？')
                   : portalText('确认取消这笔免费 VA 申请？')}
               </Typography>
@@ -429,7 +486,9 @@ export default function VirtualAccountsPage() {
                 <Typography variant="caption" color="text.secondary">
                   {portalText('开户手续费')}
                 </Typography>
-                <Typography variant="h6">USD {cancelRequest.openingFeeUsd}</Typography>
+                <Typography variant="h6">
+                  USD {cancelRequest.openingFeeEffectiveUsd ?? cancelRequest.openingFeeUsd}
+                </Typography>
               </Box>
             </Stack>
           )}
@@ -563,6 +622,11 @@ function FeeItem({ label, value }: { label: string; value: string }) {
 }
 
 function feeLifecycleText(request: VirtualAccountRequest) {
+  if (request.openingFeeWaivedAt)
+    return portalText('开户手续费已减免，冻结的 USD {{value0}} 已释放。', {
+      value0: request.openingFeeUsd,
+    });
+  if (request.openingFeeExempt) return portalText('开户手续费：已减免');
   if (Number(request.openingFeeUsd) === 0) return portalText('开户手续费：免费');
   if (request.status === 'APPROVED') {
     return portalText('开户手续费：USD {{value0}} · 已扣除', { value0: request.openingFeeUsd });
@@ -584,6 +648,9 @@ function feeDisabledMessage(
 function vaErrorMessage(value: unknown) {
   const message = value instanceof Error ? value.message : '';
   const messages: Record<string, string> = {
+    virtual_account_opening_fee_changed: portalText(
+      '开户手续费规则已变化，请核对最新费用后重新提交。'
+    ),
     active_customer_required: portalText('账户尚未激活，暂时无法申请 VA 账户。'),
     virtual_account_channel_not_found: portalText('所选银行已停用或不存在，请刷新后重新选择。'),
     virtual_account_channel_currency_unsupported:

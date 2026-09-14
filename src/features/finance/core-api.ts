@@ -91,6 +91,9 @@ export type AssetSummary = {
 };
 
 export type Customer = {
+  isInternal?: boolean;
+  vaFeeExempt?: boolean;
+  vaFeePolicyVersion?: number;
   id: string;
   organizationId: string;
   externalId?: string;
@@ -126,6 +129,15 @@ export type Customer = {
 };
 
 export type VirtualAccountRequest = {
+  openingFeeStandardUsd?: string;
+  openingFeeEffectiveUsd?: string;
+  openingFeeDiscountUsd?: string;
+  openingFeeExempt?: boolean;
+  openingFeeBasis?: string;
+  openingFeeWaiverBasis?: string | null;
+  openingFeeWaivedAt?: string | null;
+  openingFeeWaivedBy?: string | null;
+  openingFeeWaiverReason?: string | null;
   id: string;
   customerId: string;
   currency: Currency;
@@ -216,7 +228,7 @@ export function vaOpeningFeeQuote(
     (account) =>
       account.kind === 'SYSTEM_WALLET' && account.currency === 'USD' && account.status === 'ACTIVE'
   );
-  if (!wallet) return { feeUsd, disabledReason: 'usd_wallet_missing' };
+  if (!wallet) return { feeUsd, disabledReason: fee === 0 ? null : 'usd_wallet_missing' };
   const available = Number(wallet.availableBalance);
   const availableUsd = available.toFixed(2);
   const availableAfterUsd = (available - fee).toFixed(2);
@@ -445,6 +457,13 @@ const apiBoundaryErrorMessages: Record<string, string> = {
     '所选银行暂未配置开户手续费，请选择其他银行或稍后重试。',
   usd_wallet_not_found: '未找到可用的 USD 钱包，暂时无法支付开户手续费。',
   insufficient_available_balance: 'USD 钱包可用余额不足，请充值后重试。',
+  va_fee_policy_changed: '客户收费待遇已变化，请刷新并重新确认。',
+  customer_identity_unchanged: '客户身份未变化；特殊免收须通过收费待遇设置调整。',
+  va_fee_concurrent_change: '该申请正在被其他操作处理，请刷新后核对结果再重试。',
+  va_fee_reason_required: '请填写 2 至 500 字的操作原因。',
+  admin_created_customer_required: '仅允许标记有后台创建记录的客户为内部人员；普通客户可使用特殊免收。',
+  internal_customer_already_exempt: '内部人员已自动免收，请先取消内部身份再调整普通客户待遇。',
+  va_opening_fee_already_free: '本申请原本免费，无需再次减免。',
 };
 
 type ApiRequestInit = RequestInit & {

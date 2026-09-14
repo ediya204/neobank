@@ -294,6 +294,175 @@ export class CustomersService {
     );
   }
 
+  private vaFeePolicy(customer: {
+    isInternal?: boolean;
+    vaFeeExempt?: boolean;
+    vaFeePolicyVersion?: number;
+  }) {
+    return {
+      exempt: Boolean(customer.isInternal || customer.vaFeeExempt),
+      basis: customer.isInternal ? 'INTERNAL' : customer.vaFeeExempt ? 'SPECIAL' : 'STANDARD',
+      version: customer.vaFeePolicyVersion ?? 0,
+    };
+  }
+
+  async quoteVaOpeningFee(customerId: string, channelId: string, actor: VaRequestActor) {
+    await this.requireVaCustomerAccess(customerId, undefined, actor);
+    return this.db.$transaction(
+      async (tx) => {
+        const customer = await tx.customer.findUniqueOrThrow({ where: { id: customerId } });
+        const channel = await tx.fundingChannel.findUnique({ where: { id: channelId } });
+        if (
+          !channel ||
+          channel.organizationId !== customer.organizationId ||
+          !channel.active ||
+          channel.type !== 'VIRTUAL_ACCOUNT'
+        ) {
+          throw new NotFoundException('virtual_account_channel_not_found');
+        }
+        if (channel.openingFeeUsdMinor === null)
+          throw new ConflictException('virtual_account_opening_fee_not_configured');
+        const policy = this.vaFeePolicy(customer);
+        return {
+          channelId,
+          feeUsd: this.fromUsdMinor(policy.exempt ? 0n : channel.openingFeeUsdMinor),
+          standardFeeUsd: this.fromUsdMinor(channel.openingFeeUsdMinor),
+          exempt: policy.exempt && channel.openingFeeUsdMinor > 0n,
+          openingFeeVersion: channel.openingFeeVersion.toString(),
+          feePolicyVersion: policy.version,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  }
+
+  async getVaFeePolicy(customerId: string, actor: VaRequestActor) {
+    if (actor.customerId) throw new ForbiddenException('admin_role_required');
+    await requireCustomerAccess(this.db, actor.userId, customerId);
+    const customer = await this.db.customer.findUniqueOrThrow({ where: { id: customerId } });
+    const events = await this.db.vaFeePolicyEvent.findMany({
+      where: { customerId },
+      orderBy: { version: 'desc' },
+    });
+    return {
+      isInternal: customer.isInternal,
+      exempt: customer.vaFeeExempt,
+      version: customer.vaFeePolicyVersion,
+      events,
+    };
+  }
+
+  async updateVaFeePolicy(
+    customerId: string,
+    kind: 'identity' | 'exemption',
+    input: { enabled: boolean; expectedVersion: number; reason: string },
+    actor: VaRequestActor
+  ) {
+    if (actor.customerId) throw new ForbiddenException('admin_role_required');
+    const reason = input.reason.trim();
+    if (reason.length < 2 || reason.length > 500)
+      throw new BadRequestException('va_fee_reason_required');
+    return this.db.$transaction(
+      async (tx) => {
+        const admin = await this.requireChecker(tx, actor.userId);
+        const customer = await tx.customer.findUnique({ where: { id: customerId } });
+        if (!customer || customer.organizationId !== admin.organizationId)
+          throw new NotFoundException('customer_not_found');
+        if (customer.vaFeePolicyVersion !== input.expectedVersion)
+          throw new ConflictException('va_fee_policy_changed');
+        if (kind === 'identity' && customer.isInternal === input.enabled) {
+          throw new ConflictException('customer_identity_unchanged');
+        }
+        if (kind === 'identity' && input.enabled) {
+          const tenantId = process.env.NEOBANK_SOURCE_TENANT_ID?.trim();
+          if (!tenantId) throw new ConflictException('admin_created_customer_required');
+          const source = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+          SELECT c.id FROM customers c WHERE c.id = ${customerId} AND c.tenant_id = ${tenantId}
+          AND c.created_by <> 'public_registration' AND c.created_by <> ''
+          AND EXISTS (SELECT 1 FROM customer_auth_audit_events e
+            WHERE e.customer_id = c.id AND e.event_type = 'customer.created' AND e.actor = c.created_by)
+        `);
+          if (source.length !== 1) throw new ConflictException('admin_created_customer_required');
+        }
+        if (kind === 'exemption' && customer.isInternal)
+          throw new ConflictException('internal_customer_already_exempt');
+        const before = { isInternal: customer.isInternal, vaFeeExempt: customer.vaFeeExempt };
+        const after =
+          kind === 'identity'
+            ? { isInternal: input.enabled, vaFeeExempt: false }
+            : { isInternal: false, vaFeeExempt: input.enabled };
+        const version = customer.vaFeePolicyVersion + 1;
+        const updated = await tx.customer.updateMany({
+          where: { id: customerId, vaFeePolicyVersion: input.expectedVersion },
+          data: { ...after, vaFeePolicyVersion: version },
+        });
+        if (updated.count !== 1) throw new ConflictException('va_fee_policy_changed');
+        await tx.vaFeePolicyEvent.create({
+          data: { customerId, version, before, after, reason, actorId: actor.userId },
+        });
+        return { ...after, version };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    ).catch((error) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        throw new ConflictException('va_fee_policy_changed');
+      }
+      throw error;
+    });
+  }
+
+  async waiveVaOpeningFee(id: string, reasonInput: string, actor: VaRequestActor) {
+    if (actor.customerId) throw new ForbiddenException('admin_role_required');
+    const reason = reasonInput.trim();
+    if (reason.length < 2 || reason.length > 500)
+      throw new BadRequestException('va_fee_reason_required');
+    return this.db.$transaction(
+      async (tx) => {
+        const admin = await this.requireChecker(tx, actor.userId);
+        const request = await tx.virtualAccountRequest.findUnique({
+          where: { id },
+          include: { customer: true, ...vaRequestInclude },
+        });
+        if (!request || request.customer.organizationId !== admin.organizationId)
+          throw new NotFoundException('virtual_account_request_not_found');
+        if (request.status !== 'SUBMITTED') throw new ConflictException('request_not_pending');
+        if (request.openingFeeWaivedAt) return this.serializeVirtualAccountRequest(request);
+        if (request.openingFeeUsdMinor === 0n)
+          throw new ConflictException('va_opening_fee_already_free');
+        if (
+          request.feeOperation?.customerId !== request.customerId ||
+          request.feeOperation?.channelId !== request.channelId
+        ) {
+          throw new ConflictException('va_opening_fee_reservation_invalid');
+        }
+        await this.releaseVaOpeningFee(
+          tx,
+          request,
+          'CANCELLED',
+          actor.userId,
+          'VA opening fee waived'
+        );
+        const updated = await tx.virtualAccountRequest.update({
+          where: { id },
+          data: {
+            openingFeeWaivedAt: new Date(),
+            openingFeeWaivedBy: actor.userId,
+            openingFeeWaiverReason: reason,
+            openingFeeWaiverBasis: request.customer.isInternal ? 'INTERNAL' : 'SPECIAL',
+          },
+          include: vaRequestInclude,
+        });
+        return this.serializeVirtualAccountRequest(updated);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    ).catch((error) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        throw new ConflictException('va_fee_concurrent_change');
+      }
+      throw error;
+    });
+  }
+
   async requestVirtualAccount(
     customerId: string,
     input: {
@@ -302,6 +471,7 @@ export class CustomersService {
       purpose: string;
       expectedOpeningFeeUsd?: string;
       expectedOpeningFeeVersion?: string;
+      expectedFeePolicyVersion?: number;
       idempotencyKey?: string;
     },
     actor: VaRequestActor
@@ -370,8 +540,10 @@ export class CustomersService {
           if (channel.openingFeeUsdMinor === null) {
             throw new ConflictException('virtual_account_opening_fee_not_configured');
           }
-          const fee = new Prisma.Decimal(channel.openingFeeUsdMinor.toString()).div(100);
-          if (actor.customerId) {
+          const policy = this.vaFeePolicy(currentCustomer);
+          const effectiveMinor = policy.exempt ? 0n : channel.openingFeeUsdMinor;
+          const fee = new Prisma.Decimal(effectiveMinor.toString()).div(100);
+          if (actor.customerId || input.expectedOpeningFeeUsd !== undefined) {
             let expectedFee: Prisma.Decimal;
             try {
               expectedFee = new Prisma.Decimal(input.expectedOpeningFeeUsd || '');
@@ -380,7 +552,8 @@ export class CustomersService {
             }
             if (
               !expectedFee.equals(fee) ||
-              input.expectedOpeningFeeVersion !== channel.openingFeeVersion.toString()
+              input.expectedOpeningFeeVersion !== channel.openingFeeVersion.toString() ||
+              (input.expectedFeePolicyVersion ?? 0) !== policy.version
             ) {
               throw new ConflictException('virtual_account_opening_fee_changed');
             }
@@ -462,7 +635,10 @@ export class CustomersService {
               requestSource: actor.customerId ? 'CUSTOMER' : 'ADMIN',
               requesterEmail: actor.email,
               idempotencyKey,
-              openingFeeUsdMinor: channel.openingFeeUsdMinor,
+              openingFeeUsdMinor: effectiveMinor,
+              openingFeeStandardUsdMinor: channel.openingFeeUsdMinor,
+              openingFeeBasis: channel.openingFeeUsdMinor === 0n ? 'BANK_FREE' : policy.basis,
+              openingFeePolicyVersion: policy.version,
               openingFeeVersion: channel.openingFeeVersion,
               feeOperationId,
             },
@@ -727,7 +903,7 @@ export class CustomersService {
     }>,
     checkerId: string
   ) {
-    if (request.openingFeeUsdMinor === 0n) return;
+    if (request.openingFeeUsdMinor === 0n || request.openingFeeWaivedAt) return;
     const operation = request.feeOperation;
     const amount = new Prisma.Decimal(request.openingFeeUsdMinor.toString()).div(100);
     if (
@@ -812,7 +988,7 @@ export class CustomersService {
     checkerId?: string,
     reason?: string
   ) {
-    if (request.openingFeeUsdMinor === 0n) return;
+    if (request.openingFeeUsdMinor === 0n || request.openingFeeWaivedAt) return;
     const operation = request.feeOperation;
     const amount = new Prisma.Decimal(request.openingFeeUsdMinor.toString()).div(100);
     if (
@@ -901,13 +1077,22 @@ export class CustomersService {
     T extends {
       openingFeeUsdMinor: bigint;
       openingFeeVersion: bigint;
+      openingFeeStandardUsdMinor?: bigint | null;
+      openingFeeWaivedAt?: Date | null;
       channel?: FundingChannel | null;
     },
   >(request: T) {
-    const { openingFeeUsdMinor, openingFeeVersion, channel, ...rest } = request;
+    const { openingFeeUsdMinor, openingFeeStandardUsdMinor, openingFeeVersion, channel, ...rest } =
+      request;
+    const standard = openingFeeStandardUsdMinor ?? openingFeeUsdMinor;
+    const effective = request.openingFeeWaivedAt ? 0n : openingFeeUsdMinor;
     return {
       ...rest,
       openingFeeUsd: this.fromUsdMinor(openingFeeUsdMinor),
+      openingFeeStandardUsd: this.fromUsdMinor(standard),
+      openingFeeEffectiveUsd: this.fromUsdMinor(effective),
+      openingFeeDiscountUsd: this.fromUsdMinor(standard - effective),
+      openingFeeExempt: standard > effective,
       openingFeeVersion: openingFeeVersion.toString(),
       channel: channel ? this.serializeVaChannel(channel) : channel,
     };

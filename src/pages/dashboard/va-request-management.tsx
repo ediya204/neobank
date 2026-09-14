@@ -25,6 +25,7 @@ import Label from 'src/components/label';
 import UiIconBadge from 'src/components/ui-icon-badge';
 import { coreApi, demoOrganizationId, VirtualAccountRequest } from 'src/features/finance/core-api';
 import { paths } from 'src/routes/paths';
+import { vaFeeBasis, vaFeeBasisLabel } from 'src/features/finance/va-fee-presentation';
 import { ACTION_ICONS } from 'src/theme/iconography';
 
 function formatDate(value?: string) {
@@ -43,6 +44,7 @@ function formatDate(value?: string) {
 function statusPresentation(status: VirtualAccountRequest['status']) {
   if (status === 'APPROVED') return { label: '已开通', color: 'success' as const };
   if (status === 'REJECTED') return { label: '已拒绝', color: 'error' as const };
+  if (status === 'CANCELLED') return { label: '已取消', color: 'default' as const };
   return { label: '待处理', color: 'warning' as const };
 }
 
@@ -53,6 +55,7 @@ export default function VaRequestManagementPage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<'ALL' | VirtualAccountRequest['status']>('ALL');
   const [source, setSource] = useState<'ALL' | 'CUSTOMER' | 'ADMIN'>('ALL');
+  const [feeBasis, setFeeBasis] = useState('ALL');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -81,6 +84,7 @@ export default function VaRequestManagementPage() {
     return rows.filter((request) => {
       if (status !== 'ALL' && request.status !== status) return false;
       if (source !== 'ALL' && request.requestSource !== source) return false;
+      if (feeBasis !== 'ALL' && vaFeeBasis(request) !== feeBasis) return false;
       return (
         !keyword ||
         [
@@ -99,7 +103,7 @@ export default function VaRequestManagementPage() {
         )
       );
     });
-  }, [query, rows, source, status]);
+  }, [query, rows, source, status, feeBasis]);
 
   const counts = {
     pending: rows.filter((row) => row.status === 'SUBMITTED').length,
@@ -211,6 +215,7 @@ export default function VaRequestManagementPage() {
                 <MenuItem value="SUBMITTED">待处理</MenuItem>
                 <MenuItem value="APPROVED">已开通</MenuItem>
                 <MenuItem value="REJECTED">已拒绝</MenuItem>
+                <MenuItem value="CANCELLED">已取消</MenuItem>
               </TextField>
               <TextField
                 select
@@ -224,7 +229,27 @@ export default function VaRequestManagementPage() {
                 <MenuItem value="CUSTOMER">客户 Portal</MenuItem>
                 <MenuItem value="ADMIN">管理员代申请</MenuItem>
               </TextField>
+              <TextField
+                select
+                size="small"
+                label="收费类别"
+                value={feeBasis}
+                onChange={(event) => setFeeBasis(event.target.value)}
+                sx={{ minWidth: 180 }}
+              >
+                <MenuItem value="ALL">全部收费类别</MenuItem>
+                <MenuItem value="STANDARD">银行标准收费</MenuItem>
+                <MenuItem value="BANK_FREE">银行免费</MenuItem>
+                <MenuItem value="INTERNAL">内部人员免收</MenuItem>
+                <MenuItem value="SPECIAL">特殊客户免收</MenuItem>
+              </TextField>
             </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ px: 2, pb: 2 }}>
+              当前筛选 {filtered.length} 笔 · 内部免收{' '}
+              {filtered.filter((r) => vaFeeBasis(r) === 'INTERNAL').length} 笔 · 特殊免收{' '}
+              {filtered.filter((r) => vaFeeBasis(r) === 'SPECIAL').length}{' '}
+              笔（按申请计数，非收入统计）
+            </Typography>
 
             <TableContainer>
               <Table sx={{ minWidth: 1180 }}>
@@ -235,6 +260,7 @@ export default function VaRequestManagementPage() {
                     <TableCell>来源</TableCell>
                     <TableCell>银行与币种</TableCell>
                     <TableCell>账户用途</TableCell>
+                    <TableCell>开户手续费</TableCell>
                     <TableCell>状态</TableCell>
                     <TableCell align="right">操作</TableCell>
                   </TableRow>
@@ -294,6 +320,13 @@ export default function VaRequestManagementPage() {
                           </Typography>
                         </TableCell>
                         <TableCell>
+                          <Typography variant="body2">{vaFeeBasisLabel(request)}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            应付 USD{' '}
+                            {request.openingFeeEffectiveUsd ?? request.openingFeeUsd ?? '0.00'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
                           <Label color={presentation.color}>{presentation.label}</Label>
                         </TableCell>
                         <TableCell align="right">
@@ -316,7 +349,7 @@ export default function VaRequestManagementPage() {
                   })}
                   {!filtered.length && (
                     <TableRow>
-                      <TableCell colSpan={7} align="center" sx={{ py: 10 }}>
+                      <TableCell colSpan={8} align="center" sx={{ py: 10 }}>
                         {loading ? (
                           <CircularProgress size={28} />
                         ) : (

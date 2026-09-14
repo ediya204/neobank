@@ -584,32 +584,86 @@ function VaRequestDialog({
   const [purpose, setPurpose] = useState(portalText('接收客户货款'));
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [serverQuote, setServerQuote] = useState<{
+    channelId: string;
+    feeUsd: string;
+    exempt: boolean;
+    openingFeeVersion: string;
+    feePolicyVersion: number;
+  } | null>(null);
+  const [quoteRevision, setQuoteRevision] = useState(0);
   const idempotencyKey = useRef<string | null>(null);
   const selectedChannel = channels.find((channel) => channel.id === channelId);
-  const feeQuote = vaOpeningFeeQuote(selectedChannel, accounts);
+  const feeQuote = vaOpeningFeeQuote(
+    selectedChannel && serverQuote?.channelId === selectedChannel.id
+      ? { ...selectedChannel, openingFeeUsd: serverQuote.feeUsd }
+      : undefined,
+    accounts
+  );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
+    let active = true;
+    setError('');
+    setChannelId('');
     idempotencyKey.current = null;
     coreApi<FundingChannel[]>(
       `/funding-channels?organizationId=${demoOrganizationId}&type=VIRTUAL_ACCOUNT&active=true`
     )
       .then((rows) => {
+        if (!active) return;
         setChannels(rows);
         const first = rows[0];
         setChannelId(first?.id || '');
         if (first?.supportedCurrencies[0]) setCurrency(first.supportedCurrencies[0]);
       })
-      .catch((value) =>
-        setError(
-          value instanceof Error ? value.message : portalText('暂时无法读取可选银行，请稍后重试。')
-        )
-      );
+      .catch((value) => {
+        if (active)
+          setError(
+            value instanceof Error
+              ? value.message
+              : portalText('暂时无法读取可选银行，请稍后重试。')
+          );
+      });
+    return () => {
+      active = false;
+    };
   }, [open]);
+
+  useEffect(() => {
+    let active = true;
+    setServerQuote(null);
+    if (open && customerId && channelId) {
+      coreApi<NonNullable<typeof serverQuote>>(
+        `/customers/${customerId}/va-opening-fee-quote?channelId=${encodeURIComponent(channelId)}`
+      )
+        .then((quote) => {
+          if (active) setServerQuote(quote);
+        })
+        .catch((value) => {
+          if (active)
+            setError(
+              value instanceof Error
+                ? value.message
+                : portalText('VA 账户申请暂时无法提交，请稍后重试。')
+            );
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [open, customerId, channelId, quoteRevision]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedChannel || feeQuote.disabledReason || !feeQuote.feeUsd) return;
+    if (
+      submitting ||
+      !selectedChannel ||
+      !serverQuote ||
+      feeQuote.disabledReason ||
+      !feeQuote.feeUsd
+    )
+      return;
     setError('');
     setSubmitting(true);
     try {
@@ -623,12 +677,15 @@ function VaRequestDialog({
           currency,
           purpose,
           expectedOpeningFeeUsd: feeQuote.feeUsd,
-          expectedOpeningFeeVersion: selectedChannel.openingFeeVersion,
+          expectedOpeningFeeVersion: serverQuote.openingFeeVersion,
+          expectedFeePolicyVersion: serverQuote.feePolicyVersion,
         }),
       });
       idempotencyKey.current = null;
       onCreated();
     } catch (value) {
+      setServerQuote(null);
+      setQuoteRevision((revision) => revision + 1);
       const message = value instanceof Error ? value.message : '';
       setError(
         message === 'virtual_account_request_already_pending'
@@ -680,7 +737,7 @@ function VaRequestDialog({
               <InputLabel>{portalText('币种')}</InputLabel>
               <Select
                 label={portalText('币种')}
-                value={currency}
+                value={selectedChannel ? currency : ''}
                 onChange={(event) => {
                   setCurrency(event.target.value as Currency);
                   idempotencyKey.current = null;
@@ -735,7 +792,10 @@ function VaRequestDialog({
                 />
               </Box>
             )}
-            {feeQuote.disabledReason && (
+            {serverQuote?.exempt && (
+              <Alert severity="info">{portalText('本次开户手续费已减免，无需冻结费用。')}</Alert>
+            )}
+            {serverQuote && feeQuote.disabledReason && (
               <Alert severity="warning">{vaFeeDisabledMessage(feeQuote.disabledReason)}</Alert>
             )}
 

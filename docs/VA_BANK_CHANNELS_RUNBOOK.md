@@ -8,6 +8,14 @@
 
 ## 数据边界
 
+### 开户费全额免收（2026-09-11，开发分支，未发布）
+
+- 客户详情分别设置内部身份（`customers.review`）与普通客户特殊免收（`settings.manage`），需填写原因；内部身份仅接受有后台创建审计的客户。取消内部身份恢复标准收费。
+- 设置仅影响新申请；待审批收费申请在 VA 详情逐笔减免（`funds.manage`）。原金额和 Operation 关联保留，冻结释放一次，Operation 取消，申请继续待审批；后续批准不再扣费，不生成零金额凭证或平台收入。
+- 新申请保存银行标准费、有效费、银行版本与客户待遇版本。客户 API 隐藏内部身份、减免依据及内部原因。界面使用现有 Dialog。
+- 迁移 `20260911000000_va_opening_fee_waiver` 同时修正数据库状态守卫，仅允许 VA 开户费从 `SUBMITTED` 转 `CANCELLED`；其他交易限制不变。须先迁移再发布依赖新字段的 API。
+- 回归：`npm run api:build`；在已迁移的隔离本机 `va_waiver_test*` 数据库设置 `VA_WAIVER_TEST_DATABASE_URL`，运行 `node --test server/test/va-waiver-postgres.test.mjs`。测试只使用合成数据；不允许指向生产。
+
 银行渠道固定资料：
 
 - 通道代码与显示名称
